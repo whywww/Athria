@@ -1,0 +1,6 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "rootDir": "src", "outDir": "dist", "types": ["bun"] },
+  "include": ["src"],
+  "references": [{ "path": "../../packages/application" }, { "path": "../../packages/data" }, { "path": "../../packages/integrations" }, { "path": "../../packages/mcp" }]
+}

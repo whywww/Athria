@@ -1,0 +1,10 @@
+{
+  "name": "athria-xunji-records",
+  "version": "0.1.0",
+  "purpose": "Read and explain Xunji records already synchronized into Athria.",
+  "appliesWhen": ["The user asks for their Xunji or 训记 training records or sync freshness."],
+  "doesNotApplyWhen": ["The user asks to write, edit, or delete Xunji data."],
+  "allowedTools": ["get_xunji_sync_status", "list_xunji_training_sessions"],
+  "workflow": ["check-sync", "read-local-records", "explain"],
+  "safetyRules": ["Never request or expose the Xunji API key.", "Never describe local records as newer than the last successful sync.", "Do not write to Xunji."]
+}

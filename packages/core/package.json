@@ -1,0 +1,9 @@
+{
+  "name": "@athria/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": { "@athria/schemas": "workspace:*" },
+  "scripts": { "build": "tsc -b", "typecheck": "tsc -b --pretty false", "test": "vitest run" }
+}

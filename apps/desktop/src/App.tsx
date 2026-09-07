@@ -1,0 +1,355 @@
+import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { api, getIntervalsStatus, getMcpStatus, getXunjiStatus, importXunjiSkill, syncIntervals, syncXunji, testIntervals } from "./api";
+import { mcpConfig, mcpGuides } from "./mcp-guides";
+import {
+  dashboardPages, deviceTimezone, formatDateTime, formatDistance, formatDuration, friendlyLabel, isUntouchedDefaultProfile,
+  isPlanDraftApproved, primaryPlanDraft, profilePayload, proposalChanges, timezoneOptions, validationMessage,
+  type AthleteProfile, type DoctorResult, type ExerciseDefinition, type HevyImportStatus, type ImportPreview,
+  type ImportResult, type NextTrainingDay, type PlanValidation, type PlanVersion, type ProfileProposal,
+  type StoredDraft, type TrainingSummary, type XunjiConnectionStatus,
+} from "./view-models";
+
+type Page = (typeof dashboardPages)[number]["id"];
+const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const commonGoals = ["general_fitness", "build_strength", "build_muscle", "improve_endurance", "fat_loss"];
+
+function goalTone(goal: string) {
+  switch (goal) {
+    case "build_strength":
+    case "build_muscle": return "coral";
+    case "improve_endurance": return "yellow";
+    case "general_fitness": return "green";
+    case "fat_loss": return "purple";
+    default: return "blue";
+  }
+}
+
+const Card = ({ title, children, className = "", action }: { title: string; children: React.ReactNode; className?: string; action?: React.ReactNode }) => <section className={`card ${className}`}><div className="card-heading"><h2>{title}</h2>{action}</div>{children}</section>;
+const ErrorBanner = ({ error }: { error: unknown }) => error ? <div className="error" role="alert">{error instanceof Error ? error.message : String(error)}</div> : null;
+const Loading = () => <p className="muted">Loading…</p>;
+const Empty = ({ children }: { children: React.ReactNode }) => <div className="empty">{children}</div>;
+
+function ServiceStatus() {
+  const health = useQuery({ queryKey: ["doctor"], queryFn: () => api<DoctorResult>("/api/system/doctor"), retry: 3, retryDelay: 500 });
+  const label = health.isPending ? "Starting…" : health.isError ? "Service unavailable" : "Local service";
+  return <span className={`status ${health.isError ? "offline" : ""}`}><i/>{label}</span>;
+}
+
+function Overview() {
+  const query = useQuery({ queryKey: ["summary", 7], queryFn: () => api<TrainingSummary>("/api/summary?days=7") });
+  if (query.isPending) return <Loading/>;
+  if (query.isError) return <ErrorBanner error={query.error}/>;
+  const summary = query.data;
+  const incomplete = summary.metrics.strength.workingSets.dataQuality.completeness < 1 || summary.metrics.endurance.distanceMeters.dataQuality.completeness < 1;
+  return <>
+    <p className="page-intro">Your training activity from the last 7 days.</p>
+    <div className="stat-grid">
+      <div className="stat"><span>Workouts</span><strong>{summary.sessionCount}</strong><small>{summary.sessionCount === 1 ? "completed session" : "completed sessions"}</small></div>
+      <div className="stat"><span>Training time</span><strong>{formatDuration(summary.totalDurationMinutes)}</strong><small>across all activities</small></div>
+      <div className="stat"><span>Strength work</span><strong>{summary.metrics.strength.workingSets.value} sets</strong><small>{summary.byModality.strength ?? 0} strength workouts</small></div>
+      <div className="stat"><span>Endurance distance</span><strong>{formatDistance(summary.metrics.endurance.distanceMeters.value)}</strong><small>{summary.byModality.endurance ?? 0} endurance workouts</small></div>
+    </div>
+    {summary.sessionCount === 0 && <Empty>Import or sync a workout to see your weekly overview.</Empty>}
+    {summary.sessionCount > 0 && incomplete && <div className="notice">Some workout details were unavailable, so one or more totals may be incomplete.</div>}
+  </>;
+}
+
+function ChoiceChip({ selected, onClick, children }: { selected: boolean; onClick: () => void; children: React.ReactNode }) {
+  return <button type="button" className={`chip ${selected ? "selected" : ""}`} aria-pressed={selected} onClick={onClick}>{children}</button>;
+}
+
+function GoalTag({ goal, selected = true, onClick, onDelete }: { goal: string; selected?: boolean; onClick?: () => void; onDelete?: () => void }) {
+  const className = `goal-tag ${goalTone(goal)} ${selected ? "selected" : ""}`;
+  const content = <><span className="goal-dot" aria-hidden="true"/>{friendlyLabel(goal)}</>;
+  if (!onClick) return <span className={className}>{content}</span>;
+  const tag = <button type="button" className={className} aria-pressed={selected} onClick={onClick}>{content}</button>;
+  return onDelete
+    ? <span className="goal-tag-control">{tag}<button type="button" className="goal-delete" aria-label={`Delete ${friendlyLabel(goal)} goal`} onClick={onDelete}>×</button></span>
+    : tag;
+}
+
+function Profile() {
+  const client = useQueryClient();
+  const profileQuery = useQuery({ queryKey: ["profile"], queryFn: () => api<AthleteProfile>("/api/profile") });
+  const proposals = useQuery({ queryKey: ["profile-proposals"], queryFn: () => api<ProfileProposal[]>("/api/profile-proposals") });
+  const exercises = useQuery({ queryKey: ["exercises"], queryFn: () => api<ExerciseDefinition[]>("/api/exercises") });
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState<AthleteProfile | null>(null);
+  const [customGoal, setCustomGoal] = useState("");
+  const [availableGoals, setAvailableGoals] = useState<string[]>(commonGoals);
+  const [saved, setSaved] = useState(false);
+  const profile = profileQuery.data;
+  const equipmentOptions = useMemo(() => [...new Set([...(exercises.data ?? []).flatMap((item) => item.equipment), ...(form?.equipment ?? profile?.equipment ?? [])])].sort(), [exercises.data, form?.equipment, profile?.equipment]);
+  const save = useMutation({
+    mutationFn: (value: AthleteProfile) => api<AthleteProfile>("/api/profile", { method: "PUT", body: JSON.stringify(value) }),
+    onSuccess: () => { setForm(null); setAvailableGoals(commonGoals); setEditing(false); setSaved(true); void client.invalidateQueries({ queryKey: ["profile"] }); },
+  });
+  useEffect(() => {
+    if (!saved) return;
+    const timeout = window.setTimeout(() => setSaved(false), 5000);
+    return () => window.clearTimeout(timeout);
+  }, [saved]);
+  const approve = useMutation({
+    mutationFn: (id: string) => api(`/api/profile-proposals/${encodeURIComponent(id)}/approve`, { method: "POST", body: JSON.stringify({ approvedBy: "local-user" }) }),
+    onSuccess: () => { setForm(null); setEditing(false); void client.invalidateQueries({ queryKey: ["profile"] }); void client.invalidateQueries({ queryKey: ["profile-proposals"] }); },
+  });
+
+  if (profileQuery.isPending) return <Loading/>;
+  if (profileQuery.isError) return <ErrorBanner error={profileQuery.error}/>;
+  if (!profile) return <Loading/>;
+
+  const toggleList = (field: "goals" | "equipment", value: string) => setForm((current) => current ? { ...current, [field]: current[field].includes(value) ? current[field].filter((item) => item !== value) : [...current[field], value] } : current);
+  const toggleTrainingDay = (weekday: number) => setForm((current) => current ? { ...current, trainingDays: current.trainingDays.includes(weekday) ? current.trainingDays.filter((day) => day !== weekday) : [...current.trainingDays, weekday].sort((a, b) => a - b) } : current);
+  const beginEdit = () => { setSaved(false); setCustomGoal(""); setAvailableGoals([...new Set([...commonGoals, ...profile.goals])]); setForm({ ...profile, timezone: isUntouchedDefaultProfile(profile) ? deviceTimezone() : profile.timezone, goals: [...profile.goals], trainingDays: [...profile.trainingDays], equipment: [...profile.equipment] }); setEditing(true); };
+  const cancelEdit = () => { setForm(null); setCustomGoal(""); setAvailableGoals(commonGoals); setEditing(false); save.reset(); };
+  const pending = proposals.data?.filter((item) => item.status === "pending") ?? [];
+
+  const profileActions = editing && form ? <div className="profile-actions"><button type="button" className="secondary compact" onClick={cancelEdit}>Cancel</button><button type="button" className="compact" disabled={save.isPending || form.goals.length === 0} onClick={() => { setSaved(false); save.mutate(profilePayload(profile, form)); }}>{save.isPending ? "Saving…" : "Save"}</button></div> : <button type="button" className="secondary compact edit-button" onClick={beginEdit}><span aria-hidden="true">✎</span>Edit</button>;
+
+  return <div className="profile-page">
+    <Card title="Training Profile" className={`profile-board ${editing ? "is-editing" : ""}`} action={profileActions}>
+      {editing && form ? <EditableProfileBoard profile={profile} form={form} setForm={setForm} customGoal={customGoal} setCustomGoal={setCustomGoal} availableGoals={availableGoals} setAvailableGoals={setAvailableGoals} equipmentOptions={equipmentOptions} toggleList={toggleList} toggleTrainingDay={toggleTrainingDay}/> : <ProfileBoard profile={profile}/>} 
+      <ErrorBanner error={save.error}/>
+      {saved && <div className="success">Profile saved!</div>}
+    </Card>
+    <Card title="Agent Suggestions" className="profile-suggestions" action={pending.length > 0 ? <button disabled={approve.isPending} onClick={() => approve.mutate(pending[0]!.id)}>✓ Approve</button> : undefined}>
+      <p className="card-subtitle">Personalized recommendations to optimize your training.</p>
+      {proposals.isPending ? <Loading/> : pending.length === 0 ? <Empty>No suggestions waiting for review.</Empty> : pending.map((proposal) => <article className="proposal" key={proposal.id}><div className="suggestion-type"><span aria-hidden="true">☆</span><strong>Suggested change</strong></div><div className="suggestion-content"><div><strong>Recommended profile update</strong><p>{proposal.rationale}</p></div><div className="change-list">{proposalChanges(profile, proposal.patch).map((change) => <div key={change.label}><strong>{change.label}</strong><span>Before　{change.before}</span><span className="arrow">→</span><span>After　{change.after}</span></div>)}</div>{pending.length > 1 && <button disabled={approve.isPending} onClick={() => approve.mutate(proposal.id)}>Approve changes</button>}</div></article>)}
+      <ErrorBanner error={proposals.error ?? approve.error}/>
+    </Card>
+  </div>;
+}
+
+function EditableProfileBoard({ profile, form, setForm, customGoal, setCustomGoal, availableGoals, setAvailableGoals, equipmentOptions, toggleList, toggleTrainingDay }: { profile: AthleteProfile; form: AthleteProfile; setForm: React.Dispatch<React.SetStateAction<AthleteProfile | null>>; customGoal: string; setCustomGoal: React.Dispatch<React.SetStateAction<string>>; availableGoals: string[]; setAvailableGoals: React.Dispatch<React.SetStateAction<string[]>>; equipmentOptions: string[]; toggleList: (field: "goals" | "equipment", value: string) => void; toggleTrainingDay: (weekday: number) => void }) {
+  const deleteCustomGoal = (goal: string) => {
+    setAvailableGoals((current) => current.filter((item) => item !== goal));
+    setForm((current) => current ? { ...current, goals: current.goals.filter((item) => item !== goal) } : current);
+  };
+  return <div className="profile-content profile-editor">
+    <section className="profile-goals-panel"><span className="profile-icon coral" aria-hidden="true">◎</span><div className="editable-panel-content"><strong>Training Goals</strong><div className="goal-tags">{availableGoals.map((goal) => commonGoals.includes(goal) ? <GoalTag key={goal} goal={goal} selected={form.goals.includes(goal)} onClick={() => toggleList("goals", goal)}/> : <GoalTag key={goal} goal={goal} selected={form.goals.includes(goal)} onClick={() => toggleList("goals", goal)} onDelete={() => deleteCustomGoal(goal)}/>)}</div><div className="inline-input"><input aria-label="Custom training goal" placeholder="Add another goal" value={customGoal} onChange={(event) => setCustomGoal(event.target.value)}/><button type="button" className="secondary" disabled={!customGoal.trim()} onClick={() => { const goal = customGoal.trim(); setAvailableGoals((current) => current.includes(goal) ? current : [...current, goal]); setForm((current) => current && !current.goals.includes(goal) ? { ...current, goals: [...current.goals, goal] } : current); setCustomGoal(""); }}>Add</button></div></div></section>
+    <div className="profile-metrics">
+      <div><span className="profile-icon coral" aria-hidden="true">🏋️</span><label>Strength / week<select value={form.weeklyStrengthSessions} onChange={(event) => setForm({ ...form, weeklyStrengthSessions: Number(event.target.value) })}>{Array.from({ length: 8 }, (_, value) => <option key={value} value={value}>{value} sessions</option>)}</select></label></div>
+      <div><span className="profile-icon yellow" aria-hidden="true">🏃</span><label>Endurance / week<select value={form.weeklyEnduranceSessions} onChange={(event) => setForm({ ...form, weeklyEnduranceSessions: Number(event.target.value) })}>{Array.from({ length: 8 }, (_, value) => <option key={value} value={value}>{value} sessions</option>)}</select></label></div>
+      <div><span className="profile-icon green" aria-hidden="true">◷</span><label>Max session length<select value={form.maxSessionMinutes} onChange={(event) => setForm({ ...form, maxSessionMinutes: Number(event.target.value) })}>{[15, 30, 45, 60, 75, 90, 120, 180, 240].map((value) => <option key={value} value={value}>{value} min</option>)}</select></label></div>
+    </div>
+    <div className="profile-detail-layout">
+      <div className="profile-detail-column">
+        <section className="profile-section"><strong>♧　Available equipment</strong><div className="chips">{equipmentOptions.map((item) => <ChoiceChip key={item} selected={form.equipment.includes(item)} onClick={() => toggleList("equipment", item)}>{friendlyLabel(item)}</ChoiceChip>)}</div></section>
+        <section className="profile-section timezone-section"><label>◉　Time zone<select value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })}>{timezoneOptions(form.timezone).map((zone) => <option key={zone} value={zone}>{zone}{zone === deviceTimezone() ? " (device)" : ""}</option>)}</select></label><label>Training priority<select value={form.priority} onChange={(event) => setForm({ ...form, priority: event.target.value as AthleteProfile["priority"] })}><option value="balanced">Balanced</option><option value="strength">Strength</option><option value="endurance">Endurance</option></select></label></section>
+      </div>
+      <div className="profile-detail-column">
+        <section className="profile-section training-days"><strong>▣　Training days <small>(Optional)</small></strong><div className="day-list">{weekdays.map((day, index) => <button type="button" key={day} className={form.trainingDays.includes(index) ? "selected" : ""} aria-pressed={form.trainingDays.includes(index)} onClick={() => toggleTrainingDay(index)}>{day.slice(0, 3)}{form.trainingDays.includes(index) ? " ✓" : ""}</button>)}</div></section>
+        <AgentManagedDetails profile={profile}/>
+      </div>
+    </div>
+  </div>;
+}
+
+function ReadonlyTags({ values, empty = "None" }: { values: string[]; empty?: string }) {
+  return <div className="readonly-tags">{values.length ? values.map((value) => <span key={value}>{friendlyLabel(value)}</span>) : <span className="muted-tag">{empty}</span>}</div>;
+}
+
+function AgentManagedDetails({ profile }: { profile: AthleteProfile }) {
+  return <div className="agent-managed"><div className="detail-heading"><strong><span aria-hidden="true">♢</span> Agent-managed</strong></div><div className="detail-grid"><div><small>◌　Recovery interval</small><span>{profile.explicitRecoveryHours === null ? "Not set" : `${profile.explicitRecoveryHours} hours between hard sessions`}</span></div><div><small>☷　Constraints</small><span>{profile.constraints.length ? profile.constraints.map(friendlyLabel).join(" · ") : "None"}</span></div><div><small>⊖　Excluded exercises</small><span>{profile.excludedExercises.length ? profile.excludedExercises.map(friendlyLabel).join(" · ") : "None"}</span></div></div></div>;
+}
+
+function ProfileBoard({ profile }: { profile: AthleteProfile }) {
+  const selectedDays = new Set(profile.trainingDays);
+  return <div className="profile-content">
+    <section className="profile-goals-panel"><span className="profile-icon coral" aria-hidden="true">◎</span><div><strong>Training Goals</strong>{profile.goals.length ? <div className="goal-tags">{profile.goals.map((goal) => <GoalTag key={goal} goal={goal}/>)}</div> : <p>No goals selected</p>}</div></section>
+    <div className="profile-metrics">
+      <div><span className="profile-icon coral" aria-hidden="true">🏋️</span><div><span>Strength / week</span><strong>{profile.weeklyStrengthSessions}</strong><small>sessions</small></div></div>
+      <div><span className="profile-icon yellow" aria-hidden="true">🏃</span><div><span>Endurance / week</span><strong>{profile.weeklyEnduranceSessions}</strong><small>sessions</small></div></div>
+      <div><span className="profile-icon green" aria-hidden="true">◷</span><div><span>Max session length</span><strong>{profile.maxSessionMinutes}</strong><small>min</small></div></div>
+    </div>
+    <div className="profile-detail-layout">
+      <div className="profile-detail-column">
+        <section className="profile-section"><strong>♧　Available equipment</strong><ReadonlyTags values={profile.equipment}/></section>
+        <section className="profile-section timezone-section"><strong>◉　Time zone</strong><span>{profile.timezone}</span></section>
+      </div>
+      <div className="profile-detail-column">
+        <section className="profile-section training-days"><strong>▣　Training days <small>(Optional)</small></strong><div className="day-list">{weekdays.map((day, index) => <span key={day} className={selectedDays.has(index) ? "selected" : ""}>{day.slice(0, 3)}{selectedDays.has(index) ? " ✓" : ""}</span>)}</div></section>
+        <AgentManagedDetails profile={profile}/>
+      </div>
+    </div>
+  </div>;
+}
+
+function Connections() {
+  const client = useQueryClient();
+  const hevyStatus = useQuery({ queryKey: ["hevy-status"], queryFn: () => api<HevyImportStatus | null>("/api/imports/hevy/status") });
+  const intervalsStatus = useQuery({ queryKey: ["intervals-status"], queryFn: getIntervalsStatus });
+  const xunjiStatus = useQuery({ queryKey: ["xunji-status"], queryFn: () => getXunjiStatus<XunjiConnectionStatus>() });
+  const [editingHevy, setEditingHevy] = useState(false); const [editingIntervals, setEditingIntervals] = useState(false);
+  const [editingXunji, setEditingXunji] = useState(false); const [xunjiSkill, setXunjiSkill] = useState("");
+  const [preview, setPreview] = useState<ImportPreview>(); const [importResult, setImportResult] = useState<ImportResult>();
+  const [hevyError, setHevyError] = useState<unknown>(); const [intervalsError, setIntervalsError] = useState<unknown>();
+  const [intervalsMessage, setIntervalsMessage] = useState("");
+  const [xunjiError, setXunjiError] = useState<unknown>(); const [xunjiMessage, setXunjiMessage] = useState(""); const [xunjiBusy, setXunjiBusy] = useState(false);
+  const [key, setKey] = useState(""); const [athleteId, setAthleteId] = useState("0");
+  const onFile = async (file: File) => { try { setHevyError(undefined); setImportResult(undefined); const bytes = new Uint8Array(await file.arrayBuffer()); let binary = ""; bytes.forEach((byte) => { binary += String.fromCharCode(byte); }); setPreview(await api<ImportPreview>("/api/imports/hevy/preview", { method: "POST", body: JSON.stringify({ fileName: file.name, contentBase64: btoa(binary) }) })); } catch (value) { setHevyError(value); } };
+  const commit = async () => { if (!preview?.previewToken) return; try { setHevyError(undefined); setImportResult(await api<ImportResult>("/api/imports/hevy/commit", { method: "POST", body: JSON.stringify({ previewToken: preview.previewToken }) })); setPreview(undefined); setEditingHevy(false); await client.invalidateQueries({ queryKey: ["hevy-status"] }); } catch (value) { setHevyError(value); } };
+  const cancelHevy = () => { setEditingHevy(false); setPreview(undefined); setImportResult(undefined); setHevyError(undefined); };
+  const beginIntervalsEdit = () => { setKey(""); setAthleteId(intervalsStatus.data?.athleteId ?? "0"); setIntervalsMessage(""); setIntervalsError(undefined); setEditingIntervals(true); };
+  const cancelIntervals = () => { setKey(""); setAthleteId(intervalsStatus.data?.athleteId ?? "0"); setIntervalsError(undefined); setEditingIntervals(false); };
+  const saveIntervals = async () => { try { setIntervalsError(undefined); await testIntervals(key, athleteId); setIntervalsMessage("Connected. Your credentials were saved securely on this device."); setKey(""); setEditingIntervals(false); await client.invalidateQueries({ queryKey: ["intervals-status"] }); } catch (value) { setIntervalsError(value); } };
+  const sync = async () => { try { setIntervalsError(undefined); const result = await syncIntervals() as ImportResult; setIntervalsMessage(`Sync complete: ${result.added ?? 0} added, ${result.updated ?? 0} updated.`); } catch (value) { setIntervalsError(value); } };
+  const cancelXunji = () => { setEditingXunji(false); setXunjiSkill(""); setXunjiError(undefined); };
+  const refreshXunjiViews = async () => { await Promise.all([client.invalidateQueries({ queryKey: ["xunji-status"] }), client.invalidateQueries({ queryKey: ["sessions"] }), client.invalidateQueries({ queryKey: ["summary"] }), client.invalidateQueries({ queryKey: ["state"] })]); };
+  const connectXunji = async () => { try { setXunjiBusy(true); setXunjiError(undefined); const result = await importXunjiSkill(xunjiSkill) as ImportResult & { sync?: { status?: string } }; setXunjiMessage(`Sync ${result.sync?.status ?? "complete"}: ${result.added ?? 0} added, ${result.updated ?? 0} updated.`); setXunjiSkill(""); setEditingXunji(false); await refreshXunjiViews(); } catch (value) { setXunjiError(value); } finally { setXunjiBusy(false); } };
+  const runXunjiSync = async () => { try { setXunjiBusy(true); setXunjiError(undefined); const result = await syncXunji() as ImportResult & { sync?: { status?: string } }; setXunjiMessage(`Sync ${result.sync?.status ?? "complete"}: ${result.added ?? 0} added, ${result.updated ?? 0} updated.`); await refreshXunjiViews(); } catch (value) { setXunjiError(value); } finally { setXunjiBusy(false); } };
+  return <div className="grid">
+    <Card title="Import from Hevy" action={<button type="button" className="secondary compact" onClick={() => editingHevy ? cancelHevy() : setEditingHevy(true)}>{editingHevy ? "Cancel" : "Edit"}</button>}><p>Import strength workouts from a reviewed Hevy CSV export.</p>{hevyStatus.isPending ? <Loading/> : editingHevy ? <><input aria-label="Hevy CSV export" type="file" accept=".csv,text/csv" onChange={(event) => event.target.files?.[0] && void onFile(event.target.files[0])}/>{preview && <ImportSummary value={preview}><button onClick={() => void commit()}>Import reviewed workouts</button></ImportSummary>}</> : hevyStatus.data ? <ConnectionState configured label="Imported"><strong>{hevyStatus.data.fileName}</strong><span>Last imported {formatDateTime(hevyStatus.data.importedAt)}</span><MiniStats counts={hevyStatus.data.counts}/></ConnectionState> : <ConnectionState configured={false} label="Not configured"><span>No Hevy file has been imported yet.</span></ConnectionState>}{importResult && <div className="success">Import complete: {importResult.added ?? 0} added, {importResult.updated ?? 0} updated.</div>}<ErrorBanner error={hevyStatus.error ?? hevyError}/></Card>
+    <Card title="Import from Xunji" action={<button type="button" className="secondary compact" onClick={() => editingXunji ? cancelXunji() : setEditingXunji(true)}>{editingXunji ? "Cancel" : "Edit"}</button>}><p>Sync the latest 90 days of 训记 training records into your local Athria history.</p>{xunjiStatus.isPending ? <Loading/> : editingXunji ? <><label>Xunji exported Skill<textarea rows={9} autoComplete="off" spellCheck={false} placeholder="Paste the complete Skill exported by Xunji" value={xunjiSkill} onChange={(event) => setXunjiSkill(event.target.value)}/></label><p className="helper">Athria extracts only the API key. The pasted text is never stored, and credentials stay in Windows Credential Manager.</p><button disabled={!xunjiSkill.trim() || xunjiBusy} onClick={() => void connectXunji()}>{xunjiBusy ? "Connecting and syncing…" : "Connect and sync"}</button></> : xunjiStatus.data?.configured ? <ConnectionState configured label={xunjiStatus.data.sync?.status === "partial" ? "Partially synced" : "Connected"}><div className="connection-detail"><small>Last successful sync</small><strong>{xunjiStatus.data.sync?.lastSuccessAt ? formatDateTime(xunjiStatus.data.sync.lastSuccessAt) : "Not yet completed"}</strong></div>{xunjiStatus.data.sync && <span>{xunjiStatus.data.sync.rangeStart} – {xunjiStatus.data.sync.rangeEnd} · {xunjiStatus.data.sync.data.records ?? 0} records</span>}<button className="secondary" disabled={xunjiBusy} onClick={() => void runXunjiSync()}>{xunjiBusy ? "Syncing…" : "Sync now"}</button></ConnectionState> : <ConnectionState configured={false} label="Not configured"><span>Export your training-data Skill from Xunji, then paste it here.</span></ConnectionState>}{xunjiMessage && <div className="success">{xunjiMessage}</div>}<ErrorBanner error={xunjiStatus.error ?? xunjiError}/></Card>
+    <Card title="Connect Intervals.icu" action={<button type="button" className="secondary compact" onClick={editingIntervals ? cancelIntervals : beginIntervalsEdit}>{editingIntervals ? "Cancel" : "Edit"}</button>}><p>Sync endurance activities and wellness data with saved credentials.</p>{intervalsStatus.isPending ? <Loading/> : editingIntervals ? <><label>API key<input type="password" autoComplete="off" placeholder={intervalsStatus.data?.configured ? "Enter a new key to replace the saved key" : "Enter API key"} value={key} onChange={(event) => setKey(event.target.value)}/></label><label>Athlete ID<input value={athleteId} onChange={(event) => setAthleteId(event.target.value)}/></label><p className="helper">Find these in Intervals.icu → Settings → Developer Settings.</p><button disabled={!key} onClick={() => void saveIntervals()}>Test and save</button></> : <ConnectionState configured={Boolean(intervalsStatus.data?.configured)} label={intervalsStatus.data?.configured ? "Connected" : "Not configured"}>{intervalsStatus.data?.configured ? <><div className="connection-detail"><small>Athlete ID</small><strong>{intervalsStatus.data.athleteId}</strong></div><button className="secondary" onClick={() => void sync()}>Sync now</button></> : <span>Add an API key and Athlete ID to start syncing.</span>}</ConnectionState>}{intervalsMessage && <div className="success">{intervalsMessage}</div>}<ErrorBanner error={intervalsStatus.error ?? intervalsError}/></Card>
+  </div>;
+}
+
+function MiniStats({ counts }: { counts: { sessions?: number; sets?: number; rows?: number } }) {
+  return <div className="mini-stats"><span>{counts.sessions ?? 0}<small>workouts</small></span><span>{counts.sets ?? 0}<small>sets</small></span><span>{counts.rows ?? 0}<small>rows</small></span></div>;
+}
+
+function ImportSummary({ value, children }: { value: ImportPreview; children: React.ReactNode }) {
+  return <div className="preview"><strong>{value.fileName}</strong><MiniStats counts={value.counts ?? {}}/>{Boolean(value.unknownColumns?.length) && <p>Ignored columns: {value.unknownColumns!.join(", ")}</p>}{Boolean(value.errors?.length) && <div className="warning-list"><strong>{value.errors!.length} rows need attention</strong>{value.errors!.map((item, index) => <span key={index}>{item}</span>)}</div>}{children}</div>;
+}
+
+function ConnectionState({ configured, label, children }: { configured: boolean; label: string; children: React.ReactNode }) {
+  return <div className="connection-state"><div className={`connection-badge ${configured ? "configured" : ""}`}><i/>{label}</div>{children}</div>;
+}
+
+interface TimelineSession { id: string; name: string; startAt: string; modality: string; durationMinutes: number }
+function Timeline() {
+  const query = useQuery({ queryKey: ["sessions"], queryFn: () => api<TimelineSession[]>("/api/sessions?days=365") });
+  return <Card title="Training timeline"><ErrorBanner error={query.error}/>{query.isPending ? <Loading/> : !query.data?.length ? <Empty>No workouts imported yet.</Empty> : <div className="timeline">{query.data.map((item) => <article key={item.id}><strong>{item.name}</strong><span>{formatDateTime(item.startAt)} · {friendlyLabel(item.modality)} · {formatDuration(item.durationMinutes)}</span></article>)}</div>}</Card>;
+}
+
+function ValidationSummary({ validation }: { validation: PlanValidation }) {
+  const blockers = validation.results.filter((item) => !item.passed && item.severity === "hard");
+  const warnings = validation.results.filter((item) => !item.passed && item.severity !== "hard");
+  return <div className={`validation ${blockers.length ? "blocked" : warnings.length ? "warning" : "valid"}`}><strong>{blockers.length ? "Changes required before approval" : warnings.length ? "Ready with recommendations" : "Plan checks passed"}</strong>{[...blockers, ...warnings].map((item, index) => <span key={`${item.reasonCode}-${index}`}>{validationMessage(item)}</span>)}{validation.dataGaps.length > 0 && <span>Missing information: {validation.dataGaps.map(friendlyLabel).join(", ")}</span>}</div>;
+}
+
+function formatRest(seconds: number): string {
+  if (seconds < 60) return `${seconds} sec`;
+  const minutes = seconds / 60;
+  return Number.isInteger(minutes) ? `${minutes} min` : `${seconds} sec`;
+}
+
+function MesocycleProposal({ item }: { item: StoredDraft }) {
+  const plan = item.draft;
+  const mesocycle = plan.mesocycle;
+  const [selectedTemplateId, setSelectedTemplateId] = useState(mesocycle?.sessionTemplates[0]?.id ?? "");
+  if (!mesocycle) return <section className="mesocycle-card legacy-plan"><div className="proposal-heading"><div><span className="proposal-mark" aria-hidden="true">◎</span><div><h2>{plan.title}</h2><p>Legacy plan · Mesocycle structure was not recorded</p></div></div></div><ValidationSummary validation={item.validation}/></section>;
+  const templates = new Map(mesocycle.sessionTemplates.map((template) => [template.id, template]));
+  const selectedTemplate = templates.get(selectedTemplateId) ?? mesocycle.sessionTemplates[0]!;
+  const weeklySessions = mesocycle.weeklyStructure.reduce((total, day) => total + day.templateIds.length, 0);
+  const modalities = [...new Set(mesocycle.sessionTemplates.map((template) => friendlyLabel(template.modality)))].join(" + ");
+  return <>
+    <section className="mesocycle-card">
+      <div className="proposal-heading"><div><span className="proposal-mark" aria-hidden="true">◎</span><div><h2>{plan.title}</h2>{plan.summary && <p>{plan.summary}</p>}</div></div><div className="proposal-facts"><span>▣　{mesocycle.durationWeeks} weeks</span><span>⌁　{weeklySessions} sessions / week</span><span>↔　{modalities}</span></div></div>
+      <section className="proposal-section"><h3>Weekly Structure</h3><div className="weekly-structure">{weekdays.map((day, dayOfWeek) => { const entry = mesocycle.weeklyStructure.find((item) => item.dayOfWeek === dayOfWeek); const dayTemplates = (entry?.templateIds ?? []).map((id) => templates.get(id)).filter((item) => item !== undefined); return <div key={day}><strong>{day.slice(0, 3)}</strong>{dayTemplates.length ? dayTemplates.map((template) => <span key={template.id} className={`template-pill tone-${template.label.charCodeAt(0) % 4}`}>{template.name}</span>) : <span className="rest-pill">Rest</span>}</div>; })}</div></section>
+      <section className="proposal-section"><h3>Phase Progression</h3><div className="phase-progression">{[...mesocycle.phases].sort((a, b) => a.startWeek - b.startWeek).map((phase, index) => <div className="phase-step" key={phase.id}><span className={`phase-number tone-${index % 4}`}>{index + 1}</span><div><strong>{phase.name}</strong><span>{phase.startWeek === phase.endWeek ? `Week ${phase.startWeek}` : `Weeks ${phase.startWeek}–${phase.endWeek}`}</span><small>{phase.focus}</small></div>{index < mesocycle.phases.length - 1 && <i aria-hidden="true">→</i>}</div>)}</div></section>
+      <section className="proposal-section session-templates"><h3>Session Templates</h3><div className="template-tabs" role="tablist" aria-label="Session templates">{mesocycle.sessionTemplates.map((template, index) => <button key={template.id} type="button" role="tab" aria-selected={template.id === selectedTemplate.id} className={template.id === selectedTemplate.id ? "selected" : ""} onClick={() => setSelectedTemplateId(template.id)}><span className={`tone-${index % 4}`}>{template.label}</span>{template.name}</button>)}</div>
+        <div className="template-summary"><span>{friendlyLabel(selectedTemplate.modality)}</span><span>{formatDuration(selectedTemplate.durationMinutes)}</span><span>{friendlyLabel(selectedTemplate.recoveryDemand)} recovery demand</span></div>
+        {selectedTemplate.exercises.length > 0 ? <div className="exercise-table"><div className="exercise-row exercise-header"><span>Exercise</span><span>Prescription</span><span>Effort</span><span>Rest</span><span>Notes</span></div>{selectedTemplate.exercises.map((exercise, index) => <div className="exercise-row" key={`${exercise.exerciseKey}-${index}`}><span><b>{index + 1}</b>{exercise.name}</span><span>{exercise.sets} × {exercise.repsMin === exercise.repsMax ? exercise.repsMin : `${exercise.repsMin}–${exercise.repsMax}`}</span><span>{exercise.targetRpe ? `RPE ${exercise.targetRpe}` : "Controlled"}</span><span>{formatRest(exercise.restSeconds)}</span><span>{exercise.notes || "—"}</span></div>)}</div> : <div className="conditioning-template"><strong>{selectedTemplate.intent}</strong><p>{selectedTemplate.notes || "Follow the prescribed duration and intensity for this session."}</p></div>}
+      </section>
+    </section>
+    <details className="adjustment-card"><summary><span className="progression-icon" aria-hidden="true">↗</span><strong>How this plan progresses</strong><span className="progression-preview">{mesocycle.phases.slice(0, 2).map((phase) => phase.focus).join(" · ")}</span><span className="rules-link">View progression & adjustment rules</span></summary><div className="adjustment-content">{mesocycle.adjustmentRules.length ? mesocycle.adjustmentRules.map((rule, index) => <article key={`${rule.trigger}-${index}`}><strong>If {rule.trigger}</strong><span>{rule.action}</span><small>{rule.rationale}</small></article>) : <p>No adjustment rules were supplied.</p>}</div></details>
+    <ValidationSummary validation={item.validation}/>
+  </>;
+}
+
+function NextTrainingDayCard({ value }: { value: NextTrainingDay | undefined }) {
+  if (!value?.nextTrainingDay) return <section className="notice">No upcoming training day is currently available.</section>;
+  const day = value.nextTrainingDay;
+  return <section className="mesocycle-card"><div className="proposal-heading"><div><span className="proposal-mark" aria-hidden="true">›</span><div><h2>Next training day</h2><p>{day.scheduledDate} · Week {day.weekNumber} · {friendlyLabel(day.phaseType)}</p></div></div><span>{day.timezone}</span></div><div className="session-list">{day.existingSessions.length ? day.existingSessions.map((session) => <article className="session-card" key={session.id}><div className="session-heading"><div><span className="badge">{friendlyLabel(session.status)}</span><h3>{session.name}</h3></div><span>{formatDuration(session.durationMinutes)}</span></div><p>{session.intent}</p></article>) : <p>No sessions have been created for this training day yet. Expected templates: {day.expectedTemplateIds.join(", ")}.</p>}</div></section>;
+}
+
+function Plan() {
+  const client = useQueryClient();
+  const drafts = useQuery({ queryKey: ["drafts"], queryFn: () => api<StoredDraft[]>("/api/drafts") });
+  const versions = useQuery({ queryKey: ["versions"], queryFn: () => api<PlanVersion[]>("/api/plans/versions") });
+  const nextDay = useQuery({ queryKey: ["next-training-day"], queryFn: () => api<NextTrainingDay>("/api/plans/next-training-day") });
+  const profile = useQuery({ queryKey: ["profile"], queryFn: () => api<AthleteProfile>("/api/profile") });
+  const [approvedId, setApprovedId] = useState("");
+  const approve = useMutation({ mutationFn: (id: string) => api<PlanVersion>(`/api/drafts/${encodeURIComponent(id)}/approve`, { method: "POST", body: JSON.stringify({ approvedBy: "local-user", changeReason: "Approved in Dashboard" }) }), onSuccess: (version) => { setApprovedId(version.plan.id); void client.invalidateQueries({ queryKey: ["drafts"] }); void client.invalidateQueries({ queryKey: ["versions"] }); void client.invalidateQueries({ queryKey: ["current-plan"] }); } });
+  const selected = primaryPlanDraft(drafts.data ?? [], versions.data ?? []);
+  const approved = Boolean(selected && (approvedId === selected.draft.id || isPlanDraftApproved(selected.draft.id, versions.data ?? [])));
+  const loading = drafts.isPending || versions.isPending;
+  const error = drafts.error ?? versions.error ?? profile.error ?? nextDay.error ?? approve.error;
+  return <div className="plan-page">
+    <div className="plan-page-header"><div><h1>Mesocycle Planner</h1><p>Plan smarter. Train better.</p></div><button className={`approve-mesocycle ${approved ? "approved" : ""}`} disabled={!selected || approved || !selected.validation.valid || approve.isPending} onClick={() => selected && approve.mutate(selected.draft.id)}>{approve.isPending ? "Approving…" : approved ? "✓  Approved" : "✓  Approve Mesocycle"}</button></div>
+    <ErrorBanner error={error}/>{approvedId && approvedId === selected?.draft.id && <div className="success">Mesocycle approved and saved as the current version.</div>}
+    {loading ? <Loading/> : !selected ? <Empty>There is no Mesocycle Proposal yet. Ask your connected Agent to create and validate one for review.</Empty> : <MesocycleProposal key={selected.draft.id} item={selected}/>}
+    {versions.data?.length ? <NextTrainingDayCard value={nextDay.data}/> : null}
+  </div>;
+}
+
+function Backup() {
+  const doctor = useQuery({ queryKey: ["backup-doctor"], queryFn: () => api<DoctorResult>("/api/system/doctor") });
+  const dataDir = (doctor.data as DoctorResult | undefined)?.dataDir;
+  const [message, setMessage] = useState(""); const [error, setError] = useState<unknown>();
+  const [source, setSource] = useState(""); const [target, setTarget] = useState("");
+  const createBackup = () => { setError(undefined); api<{ path: string }>("/api/system/backup", { method: "POST", body: "{}" }).then((result) => setMessage(`Backup created at ${result.path}`)).catch(setError); };
+  const restore = () => { setError(undefined); api<{ status: string; target: string }>("/api/system/restore", { method: "POST", body: JSON.stringify({ path: source, target }) }).then((result) => setMessage(`Backup verified and restored to ${result.target}. Your active data was not replaced.`)).catch(setError); };
+  return <Card title="Backup and restore"><p>Backups include your training database and retained imports. Account credentials are never included.</p>{dataDir && <div className="data-location"><strong>Local data location</strong><span>{dataDir}</span><small>This folder contains Athria's local database, imports, backups, logs, and exports.</small></div>}<div className="section"><h3>Create a backup</h3><p>Save a timestamped backup ZIP inside your local Athria data folder.</p><button onClick={createBackup}>Create backup</button></div><div className="section"><h3>Verify and restore a backup</h3><p>Restore into an empty folder for review. Athria will not replace the active database automatically.</p><label>Backup ZIP path<input value={source} onChange={(event) => setSource(event.target.value)}/></label><label>Empty restore folder<input value={target} onChange={(event) => setTarget(event.target.value)}/></label><button className="secondary" disabled={!source || !target} onClick={restore}>Verify and restore</button></div>{message && <div className="success">{message}</div>}<ErrorBanner error={doctor.error ?? error}/></Card>;
+}
+
+function Settings() {
+  return <><Card title="System status" className="system-card"><p>Athria runs locally and keeps your training data on this device.</p><ServiceStatus/></Card><Backup/></>;
+}
+
+function Copyable({ label, value, block = false }: { label: string; value: string; block?: boolean }) {
+  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setState("copied");
+      window.setTimeout(() => setState("idle"), 2000);
+    } catch { setState("failed"); }
+  };
+  return <div className={`copyable ${block ? "block" : ""}`}><div><small>{label}</small>{block ? <pre>{value}</pre> : <code>{value}</code>}</div><button type="button" className="secondary compact" onClick={() => void copy()}>{state === "copied" ? "Copied" : state === "failed" ? "Copy failed" : "Copy"}</button><span className="sr-only" aria-live="polite">{state === "copied" ? `${label} copied.` : state === "failed" ? `${label} could not be copied.` : ""}</span></div>;
+}
+
+function McpSetup() {
+  const status = useQuery({ queryKey: ["mcp-status"], queryFn: getMcpStatus, retry: false });
+  if (status.isPending) return <Loading/>;
+  if (status.isError) return <div className="error" role="alert">Athria could not determine its installation path. Close and reopen Athria, then try again. {status.error instanceof Error ? status.error.message : String(status.error)}</div>;
+  const executablePath = status.data.executablePath;
+  const config = mcpConfig(executablePath);
+  return <>
+    <p className="mcp-intro">Connect a supported desktop agent to your local Athria data. The command shown below uses this copy of Athria, wherever it is installed.</p>
+    <div className="mcp-guides">
+      {mcpGuides.map((guide) => <details key={guide.id} className="mcp-guide">
+        <summary><span>{guide.name}</span><small>{guide.path}</small></summary>
+        <div className="mcp-guide-content"><p>{guide.instructions}</p>
+          <div className="mcp-fields">
+            <Copyable label="Name" value="Athria"/><Copyable label="Transport" value="STDIO"/>
+            <Copyable label="Command" value={executablePath}/><Copyable label="Arguments" value={status.data.arguments.join(" ")}/>
+          </div>
+          {(guide.mode === "config" || guide.id === "qoder") && <Copyable label={guide.id === "qoder" ? "JSON option" : "Configuration"} value={config} block/>}
+        </div>
+      </details>)}
+    </div>
+    <div className="mcp-finish"><strong>Finish and check</strong><ol><li>Save the server, then restart or re-enable MCP if your agent asks you to.</li><li>In a new conversation, ask: <code>Show my recent training sessions</code></li></ol></div>
+    <div className="notice"><strong>If it does not connect:</strong> Confirm that Athria is still installed at the Command path shown above. Then reopen the agent and enable the Athria server again.</div>
+  </>;
+}
+
+function Help() {
+  return <><Card title="Help & Support"><p>Athria is your local-first training companion. Use Devices to connect data sources, Profile to confirm your preferences, and Plan to review Agent-created training plans.</p><div className="help-grid"><section><strong>Need to update your profile?</strong><span>Open Profile and choose Edit. Agent-managed details can only change through an approved suggestion.</span></section><section><strong>Having trouble with a connection?</strong><span>Open Devices, re-enter the connection details, then test or sync again.</span></section><section><strong>Protect your data</strong><span>Create a local backup from Settings before troubleshooting or moving Athria to another device.</span></section></div></Card><Card title="Connect Athria to your AI agent" className="mcp-card"><McpSetup/></Card></>;
+}
+
+const views: Record<Page, () => React.ReactElement> = { Overview, Training: Timeline, Profile, Plan, Devices: Connections, Settings, Help };
+
+export function App() {
+  const [page, setPage] = useState<Page>("Overview"); const [serviceCrash, setServiceCrash] = useState(false); const View = views[page];
+  const profile = useQuery({ queryKey: ["profile"], queryFn: () => api<AthleteProfile>("/api/profile") });
+  const primaryPages = dashboardPages.filter((item) => item.group === "primary");
+  const supportPages = dashboardPages.filter((item) => item.group === "support");
+  useEffect(() => { let unlisten: UnlistenFn | undefined; void listen("athria-service-crashed", () => setServiceCrash(true)).then((dispose) => { unlisten = dispose; }); return () => unlisten?.(); }, []);
+  const NavItems = ({ items }: { items: typeof dashboardPages[number][] }) => <>{items.map((item) => <button key={item.id} className={item.id === page ? "active" : ""} onClick={() => setPage(item.id)}><span aria-hidden="true">{item.icon}</span>{item.label}</button>)}</>;
+  return <div className="shell"><aside><div className="brand"><img src="/athria-logo.png" alt="Athria" /></div><nav aria-label="Main navigation"><NavItems items={primaryPages}/></nav><nav className="support-nav" aria-label="Support navigation"><NavItems items={supportPages}/></nav></aside><main>{page !== "Plan" && <header><div><h1>Hi, {profile.data?.displayName || "Athlete"} <span aria-hidden="true">👋</span></h1><p>Your AI fitness hub. Local-first. Data you own.</p></div></header>}{serviceCrash && <div className="error">The local service stopped unexpectedly. Close and reopen Athria. If the problem continues, create a backup before troubleshooting.</div>}<View/></main></div>;
+}

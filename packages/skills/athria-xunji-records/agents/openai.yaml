@@ -1,0 +1,10 @@
+interface:
+  display_name: "Athria Xunji Records"
+  short_description: "Read locally synced Xunji workouts through Athria MCP"
+  default_prompt: "Use $athria-xunji-records to retrieve and summarize my recently synced Xunji training records."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "athria"
+      description: "Local Athria MCP server with normalized Xunji records"

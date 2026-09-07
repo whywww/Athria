@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "ownerId": {
+      "default": "local-user",
+      "type": "string"
+    },
+    "preferredExercises": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "dislikedExercises": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "preferredSessionMinutes": {
+      "default": 60,
+      "type": "integer",
+      "minimum": 15,
+      "maximum": 240
+    },
+    "notes": {
+      "default": "",
+      "type": "string",
+      "maxLength": 2000
+    }
+  },
+  "required": [
+    "ownerId",
+    "preferredExercises",
+    "dislikedExercises",
+    "preferredSessionMinutes",
+    "notes"
+  ],
+  "additionalProperties": false
+}

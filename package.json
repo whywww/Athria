@@ -1,0 +1,29 @@
+{
+  "name": "athria",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "packageManager": "pnpm@11.19.0",
+  "type": "module",
+  "scripts": {
+    "build": "bun run --filter '*' build",
+    "check": "bun run typecheck && bun run test",
+    "dev": "bun run --cwd apps/desktop tauri dev --config src-tauri/tauri.dev.conf.json",
+    "service": "bun run apps/service/src/main.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -b",
+    "build:service": "bun build --compile --target=bun-windows-x64-baseline apps/service/src/main.ts --outfile apps/desktop/src-tauri/binaries/athria-service-x86_64-pc-windows-msvc.exe",
+    "build:app": "bun run build:service && bun run --cwd apps/desktop tauri build --no-bundle",
+    "release:msi": "bun run build:service && bun run --cwd apps/desktop tauri build --bundles msi",
+    "build:desktop": "bun run release:msi",
+    "perf:smoke": "bun run scripts/performance-smoke.ts",
+    "schema:export": "bun run scripts/export-schemas.ts",
+    "validate:skill": "python C:/Users/tclre/.codex/skills/.system/skill-creator/scripts/quick_validate.py packages/skills/athria-training-planner && python C:/Users/tclre/.codex/skills/.system/skill-creator/scripts/quick_validate.py packages/skills/athria-xunji-records"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "latest",
+    "vitest": "latest",
+    "zod": "latest"
+  }
+}

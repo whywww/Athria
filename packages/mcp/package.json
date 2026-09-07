@@ -1,0 +1,14 @@
+{
+  "name": "@athria/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@athria/application": "workspace:*",
+    "@athria/data": "workspace:*",
+    "@modelcontextprotocol/server": "2.0.0",
+    "zod": "latest"
+  },
+  "scripts": { "build": "tsc -b", "typecheck": "tsc -b --pretty false" }
+}

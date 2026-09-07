@@ -1,0 +1,23 @@
+{
+  "name": "athria-training-planner",
+  "version": "0.1.0",
+  "purpose": "Create and revise an evidence-aware training plan draft through Athria's deterministic tools.",
+  "appliesWhen": ["The user asks to create, revise, validate, or explain a training plan."],
+  "doesNotApplyWhen": ["The request is for medical diagnosis, injury treatment, or unsupervised rehabilitation."],
+  "requiredContext": ["AthleteProfile", "TrainingPreference", "TrainingStateSnapshot", "ExerciseDefinition"],
+  "allowedTools": [
+    "get_athlete_profile", "get_training_preferences", "get_training_state", "list_training_sessions",
+    "get_training_summary", "get_current_plan", "get_exercise_catalog", "calculate_training_metrics",
+    "estimate_1rm", "calculate_heart_rate_zones", "evaluate_progression", "find_exercise_candidates",
+    "validate_workout", "validate_plan", "check_training_constraints", "compare_plan_versions",
+    "explain_validation_result", "save_plan_draft", "propose_profile_update"
+  ],
+  "workflow": ["read", "identify-gaps", "plan", "validate", "revise", "explain", "save-draft"],
+  "outputSchema": "TrainingPlanDraft",
+  "approvalPoints": ["Before save_plan_draft", "Dashboard approval before formal plan version"],
+  "safetyRules": [
+    "Do not infer missing health or recovery data.",
+    "Do not bypass hard validation or user approval.",
+    "Do not provide medical diagnosis or injury treatment."
+  ]
+}
