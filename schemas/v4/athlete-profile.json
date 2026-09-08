@@ -1,0 +1,208 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "ownerId": {
+      "default": "local-user",
+      "type": "string"
+    },
+    "displayName": {
+      "default": "Athlete",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "timezone": {
+      "default": "Asia/Hong_Kong",
+      "type": "string",
+      "minLength": 1
+    },
+    "goals": {
+      "default": [
+        "general_fitness"
+      ],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "priority": {
+      "default": "balanced",
+      "type": "string",
+      "enum": [
+        "strength",
+        "endurance",
+        "balanced"
+      ]
+    },
+    "weeklyStrengthSessions": {
+      "default": 2,
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 7
+    },
+    "weeklyEnduranceSessions": {
+      "default": 2,
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 7
+    },
+    "maxSessionMinutes": {
+      "default": 60,
+      "type": "integer",
+      "minimum": 15,
+      "maximum": 240
+    },
+    "trainingDays": {
+      "default": [],
+      "uniqueItems": true,
+      "maxItems": 7,
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 6
+      }
+    },
+    "equipment": {
+      "default": [
+        "bodyweight",
+        "dumbbell",
+        "cable",
+        "machine"
+      ],
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "bodyweight",
+          "barbell",
+          "dumbbell",
+          "kettlebell",
+          "cable",
+          "machine",
+          "band",
+          "smith_machine",
+          "trap_bar",
+          "ez_bar",
+          "bench",
+          "pull_up_bar",
+          "rings",
+          "suspension",
+          "medicine_ball",
+          "landmine",
+          "sled",
+          "other"
+        ]
+      }
+    },
+    "strengthConstraints": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "type": {
+                "type": "string",
+                "const": "exclude_exercise"
+              },
+              "canonicalKey": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "id",
+              "type",
+              "canonicalKey"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "type": {
+                "type": "string",
+                "const": "prohibit_movement_pattern"
+              },
+              "movementPattern": {
+                "type": "string",
+                "enum": [
+                  "squat",
+                  "hinge",
+                  "lunge",
+                  "horizontal_push",
+                  "vertical_push",
+                  "horizontal_pull",
+                  "vertical_pull",
+                  "carry",
+                  "rotation",
+                  "anti_rotation",
+                  "flexion",
+                  "extension",
+                  "abduction",
+                  "adduction",
+                  "calf_raise",
+                  "isolation",
+                  "other"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "type",
+              "movementPattern"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "constraintNotes": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "explicitRecoveryHours": {
+      "default": null,
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 168
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "ownerId",
+    "displayName",
+    "timezone",
+    "goals",
+    "priority",
+    "weeklyStrengthSessions",
+    "weeklyEnduranceSessions",
+    "maxSessionMinutes",
+    "trainingDays",
+    "equipment",
+    "strengthConstraints",
+    "constraintNotes",
+    "explicitRecoveryHours"
+  ],
+  "additionalProperties": false
+}

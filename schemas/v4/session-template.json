@@ -1,0 +1,875 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "intent": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240
+    },
+    "durationMinutes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 240
+    },
+    "recoveryDemand": {
+      "type": "string",
+      "enum": [
+        "low",
+        "normal",
+        "high"
+      ]
+    },
+    "notes": {
+      "default": "",
+      "type": "string",
+      "maxLength": 4000
+    },
+    "components": {
+      "minItems": 1,
+      "maxItems": 20,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "domain": {
+            "type": "object",
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "strength",
+                      "endurance",
+                      "sport_skill",
+                      "mind_body",
+                      "recovery"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "catalog",
+                  "structured_source",
+                  "exact_alias",
+                  "ai_inferred",
+                  "user_confirmed",
+                  "migration"
+                ]
+              },
+              "confidence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "evidence": {
+                "type": "string",
+                "maxLength": 1000
+              },
+              "taxonomyVersion": {
+                "type": "string",
+                "const": "strength-1.0"
+              },
+              "conflicts": {
+                "maxItems": 10,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "enum": [
+                        "catalog",
+                        "structured_source",
+                        "exact_alias",
+                        "ai_inferred",
+                        "user_confirmed",
+                        "migration"
+                      ]
+                    },
+                    "value": {},
+                    "evidence": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1000
+                    }
+                  },
+                  "required": [
+                    "source",
+                    "value",
+                    "evidence"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "value",
+              "source",
+              "confidence",
+              "evidence",
+              "taxonomyVersion"
+            ],
+            "additionalProperties": false
+          },
+          "prescription": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "strength"
+                  },
+                  "exercises": {
+                    "minItems": 1,
+                    "maxItems": 30,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "displayName": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "canonicalKey": {
+                          "default": null,
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "classification": {
+                          "type": "object",
+                          "properties": {
+                            "primaryMovement": {
+                              "type": "object",
+                              "properties": {
+                                "value": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "squat",
+                                        "hinge",
+                                        "lunge",
+                                        "horizontal_push",
+                                        "vertical_push",
+                                        "horizontal_pull",
+                                        "vertical_pull",
+                                        "carry",
+                                        "rotation",
+                                        "anti_rotation",
+                                        "flexion",
+                                        "extension",
+                                        "abduction",
+                                        "adduction",
+                                        "calf_raise",
+                                        "isolation",
+                                        "other"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "source": {
+                                  "type": "string",
+                                  "enum": [
+                                    "catalog",
+                                    "structured_source",
+                                    "exact_alias",
+                                    "ai_inferred",
+                                    "user_confirmed",
+                                    "migration"
+                                  ]
+                                },
+                                "confidence": {
+                                  "type": "number",
+                                  "minimum": 0,
+                                  "maximum": 1
+                                },
+                                "evidence": {
+                                  "type": "string",
+                                  "maxLength": 1000
+                                },
+                                "taxonomyVersion": {
+                                  "type": "string",
+                                  "const": "strength-1.0"
+                                },
+                                "conflicts": {
+                                  "maxItems": 10,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "source": {
+                                        "type": "string",
+                                        "enum": [
+                                          "catalog",
+                                          "structured_source",
+                                          "exact_alias",
+                                          "ai_inferred",
+                                          "user_confirmed",
+                                          "migration"
+                                        ]
+                                      },
+                                      "value": {},
+                                      "evidence": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 1000
+                                      }
+                                    },
+                                    "required": [
+                                      "source",
+                                      "value",
+                                      "evidence"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                }
+                              },
+                              "required": [
+                                "value",
+                                "source",
+                                "confidence",
+                                "evidence",
+                                "taxonomyVersion"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "primaryMuscles": {
+                              "type": "object",
+                              "properties": {
+                                "value": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "enum": [
+                                      "chest",
+                                      "upper_back",
+                                      "back",
+                                      "lats",
+                                      "shoulders",
+                                      "biceps",
+                                      "triceps",
+                                      "forearms",
+                                      "quadriceps",
+                                      "hamstrings",
+                                      "glutes",
+                                      "calves",
+                                      "core",
+                                      "spinal_erectors",
+                                      "hip_flexors",
+                                      "adductors",
+                                      "abductors",
+                                      "full_body",
+                                      "other"
+                                    ]
+                                  }
+                                },
+                                "source": {
+                                  "type": "string",
+                                  "enum": [
+                                    "catalog",
+                                    "structured_source",
+                                    "exact_alias",
+                                    "ai_inferred",
+                                    "user_confirmed",
+                                    "migration"
+                                  ]
+                                },
+                                "confidence": {
+                                  "type": "number",
+                                  "minimum": 0,
+                                  "maximum": 1
+                                },
+                                "evidence": {
+                                  "type": "string",
+                                  "maxLength": 1000
+                                },
+                                "taxonomyVersion": {
+                                  "type": "string",
+                                  "const": "strength-1.0"
+                                },
+                                "conflicts": {
+                                  "maxItems": 10,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "source": {
+                                        "type": "string",
+                                        "enum": [
+                                          "catalog",
+                                          "structured_source",
+                                          "exact_alias",
+                                          "ai_inferred",
+                                          "user_confirmed",
+                                          "migration"
+                                        ]
+                                      },
+                                      "value": {},
+                                      "evidence": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 1000
+                                      }
+                                    },
+                                    "required": [
+                                      "source",
+                                      "value",
+                                      "evidence"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                }
+                              },
+                              "required": [
+                                "value",
+                                "source",
+                                "confidence",
+                                "evidence",
+                                "taxonomyVersion"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "secondaryMuscles": {
+                              "type": "object",
+                              "properties": {
+                                "value": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "enum": [
+                                      "chest",
+                                      "upper_back",
+                                      "back",
+                                      "lats",
+                                      "shoulders",
+                                      "biceps",
+                                      "triceps",
+                                      "forearms",
+                                      "quadriceps",
+                                      "hamstrings",
+                                      "glutes",
+                                      "calves",
+                                      "core",
+                                      "spinal_erectors",
+                                      "hip_flexors",
+                                      "adductors",
+                                      "abductors",
+                                      "full_body",
+                                      "other"
+                                    ]
+                                  }
+                                },
+                                "source": {
+                                  "type": "string",
+                                  "enum": [
+                                    "catalog",
+                                    "structured_source",
+                                    "exact_alias",
+                                    "ai_inferred",
+                                    "user_confirmed",
+                                    "migration"
+                                  ]
+                                },
+                                "confidence": {
+                                  "type": "number",
+                                  "minimum": 0,
+                                  "maximum": 1
+                                },
+                                "evidence": {
+                                  "type": "string",
+                                  "maxLength": 1000
+                                },
+                                "taxonomyVersion": {
+                                  "type": "string",
+                                  "const": "strength-1.0"
+                                },
+                                "conflicts": {
+                                  "maxItems": 10,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "source": {
+                                        "type": "string",
+                                        "enum": [
+                                          "catalog",
+                                          "structured_source",
+                                          "exact_alias",
+                                          "ai_inferred",
+                                          "user_confirmed",
+                                          "migration"
+                                        ]
+                                      },
+                                      "value": {},
+                                      "evidence": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 1000
+                                      }
+                                    },
+                                    "required": [
+                                      "source",
+                                      "value",
+                                      "evidence"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                }
+                              },
+                              "required": [
+                                "value",
+                                "source",
+                                "confidence",
+                                "evidence",
+                                "taxonomyVersion"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "equipment": {
+                              "type": "object",
+                              "properties": {
+                                "value": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "enum": [
+                                      "bodyweight",
+                                      "barbell",
+                                      "dumbbell",
+                                      "kettlebell",
+                                      "cable",
+                                      "machine",
+                                      "band",
+                                      "smith_machine",
+                                      "trap_bar",
+                                      "ez_bar",
+                                      "bench",
+                                      "pull_up_bar",
+                                      "rings",
+                                      "suspension",
+                                      "medicine_ball",
+                                      "landmine",
+                                      "sled",
+                                      "other"
+                                    ]
+                                  }
+                                },
+                                "source": {
+                                  "type": "string",
+                                  "enum": [
+                                    "catalog",
+                                    "structured_source",
+                                    "exact_alias",
+                                    "ai_inferred",
+                                    "user_confirmed",
+                                    "migration"
+                                  ]
+                                },
+                                "confidence": {
+                                  "type": "number",
+                                  "minimum": 0,
+                                  "maximum": 1
+                                },
+                                "evidence": {
+                                  "type": "string",
+                                  "maxLength": 1000
+                                },
+                                "taxonomyVersion": {
+                                  "type": "string",
+                                  "const": "strength-1.0"
+                                },
+                                "conflicts": {
+                                  "maxItems": 10,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "source": {
+                                        "type": "string",
+                                        "enum": [
+                                          "catalog",
+                                          "structured_source",
+                                          "exact_alias",
+                                          "ai_inferred",
+                                          "user_confirmed",
+                                          "migration"
+                                        ]
+                                      },
+                                      "value": {},
+                                      "evidence": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 1000
+                                      }
+                                    },
+                                    "required": [
+                                      "source",
+                                      "value",
+                                      "evidence"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                }
+                              },
+                              "required": [
+                                "value",
+                                "source",
+                                "confidence",
+                                "evidence",
+                                "taxonomyVersion"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "impact": {
+                              "type": "object",
+                              "properties": {
+                                "value": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "low",
+                                        "moderate",
+                                        "high"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "source": {
+                                  "type": "string",
+                                  "enum": [
+                                    "catalog",
+                                    "structured_source",
+                                    "exact_alias",
+                                    "ai_inferred",
+                                    "user_confirmed",
+                                    "migration"
+                                  ]
+                                },
+                                "confidence": {
+                                  "type": "number",
+                                  "minimum": 0,
+                                  "maximum": 1
+                                },
+                                "evidence": {
+                                  "type": "string",
+                                  "maxLength": 1000
+                                },
+                                "taxonomyVersion": {
+                                  "type": "string",
+                                  "const": "strength-1.0"
+                                },
+                                "conflicts": {
+                                  "maxItems": 10,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "source": {
+                                        "type": "string",
+                                        "enum": [
+                                          "catalog",
+                                          "structured_source",
+                                          "exact_alias",
+                                          "ai_inferred",
+                                          "user_confirmed",
+                                          "migration"
+                                        ]
+                                      },
+                                      "value": {},
+                                      "evidence": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 1000
+                                      }
+                                    },
+                                    "required": [
+                                      "source",
+                                      "value",
+                                      "evidence"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                }
+                              },
+                              "required": [
+                                "value",
+                                "source",
+                                "confidence",
+                                "evidence",
+                                "taxonomyVersion"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "laterality": {
+                              "type": "object",
+                              "properties": {
+                                "value": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "bilateral",
+                                        "unilateral",
+                                        "alternating"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "source": {
+                                  "type": "string",
+                                  "enum": [
+                                    "catalog",
+                                    "structured_source",
+                                    "exact_alias",
+                                    "ai_inferred",
+                                    "user_confirmed",
+                                    "migration"
+                                  ]
+                                },
+                                "confidence": {
+                                  "type": "number",
+                                  "minimum": 0,
+                                  "maximum": 1
+                                },
+                                "evidence": {
+                                  "type": "string",
+                                  "maxLength": 1000
+                                },
+                                "taxonomyVersion": {
+                                  "type": "string",
+                                  "const": "strength-1.0"
+                                },
+                                "conflicts": {
+                                  "maxItems": 10,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "source": {
+                                        "type": "string",
+                                        "enum": [
+                                          "catalog",
+                                          "structured_source",
+                                          "exact_alias",
+                                          "ai_inferred",
+                                          "user_confirmed",
+                                          "migration"
+                                        ]
+                                      },
+                                      "value": {},
+                                      "evidence": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 1000
+                                      }
+                                    },
+                                    "required": [
+                                      "source",
+                                      "value",
+                                      "evidence"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                }
+                              },
+                              "required": [
+                                "value",
+                                "source",
+                                "confidence",
+                                "evidence",
+                                "taxonomyVersion"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "primaryMovement",
+                            "primaryMuscles",
+                            "secondaryMuscles",
+                            "equipment",
+                            "impact",
+                            "laterality"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "sets": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 20
+                        },
+                        "repsMin": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 100
+                        },
+                        "repsMax": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 100
+                        },
+                        "targetRpe": {
+                          "default": null,
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "minimum": 1,
+                              "maximum": 10
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "restSeconds": {
+                          "default": 90,
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 600
+                        },
+                        "referenceLoad": {
+                          "default": null,
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "referenceLoadUnit": {
+                          "default": null,
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "kg",
+                                "lb"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "notes": {
+                          "default": "",
+                          "type": "string",
+                          "maxLength": 1000
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "displayName",
+                        "canonicalKey",
+                        "classification",
+                        "sets",
+                        "repsMin",
+                        "repsMax",
+                        "targetRpe",
+                        "restSeconds",
+                        "referenceLoad",
+                        "referenceLoadUnit",
+                        "notes"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "kind",
+                  "exercises"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "duration_only"
+                  },
+                  "notes": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 4000
+                  }
+                },
+                "required": [
+                  "kind",
+                  "notes"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "domain",
+          "prescription"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "intent",
+    "durationMinutes",
+    "recoveryDemand",
+    "notes",
+    "components"
+  ],
+  "additionalProperties": false
+}

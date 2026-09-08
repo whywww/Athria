@@ -1,29 +1,31 @@
 {
   "name": "athria",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "workspaces": ["apps/*", "packages/*"],
-  "packageManager": "pnpm@11.19.0",
+  "packageManager": "bun@1.4.2",
   "type": "module",
   "scripts": {
     "build": "bun run --filter '*' build",
     "check": "bun run typecheck && bun run test",
-    "dev": "bun run --cwd apps/desktop tauri dev --config src-tauri/tauri.dev.conf.json",
+    "dev": "bun run scripts/desktop-build.ts dev",
     "service": "bun run apps/service/src/main.ts",
-    "test": "vitest run",
-    "typecheck": "tsc -b",
-    "build:service": "bun build --compile --target=bun-windows-x64-baseline apps/service/src/main.ts --outfile apps/desktop/src-tauri/binaries/athria-service-x86_64-pc-windows-msvc.exe",
-    "build:app": "bun run build:service && bun run --cwd apps/desktop tauri build --no-bundle",
-    "release:msi": "bun run build:service && bun run --cwd apps/desktop tauri build --bundles msi",
-    "build:desktop": "bun run release:msi",
+    "test": "bun --bun vitest run",
+    "typecheck": "bun --bun tsc -b",
+    "build:service": "bun run scripts/desktop-build.ts service",
+    "build:debug": "bun run scripts/desktop-build.ts debug",
+    "build:app": "bun run scripts/desktop-build.ts app",
+    "release:native": "bun run scripts/desktop-build.ts release",
+    "release:msi": "bun run scripts/desktop-build.ts msi",
+    "build:desktop": "bun run release:native",
     "perf:smoke": "bun run scripts/performance-smoke.ts",
     "schema:export": "bun run scripts/export-schemas.ts",
     "validate:skill": "python C:/Users/tclre/.codex/skills/.system/skill-creator/scripts/quick_validate.py packages/skills/athria-training-planner && python C:/Users/tclre/.codex/skills/.system/skill-creator/scripts/quick_validate.py packages/skills/athria-xunji-records"
   },
   "devDependencies": {
-    "@types/bun": "latest",
-    "typescript": "latest",
-    "vitest": "latest",
-    "zod": "latest"
+    "@types/bun": "1.4.2",
+    "typescript": "7.0.2",
+    "vitest": "4.1.11",
+    "zod": "4.2.1"
   }
 }

@@ -1,7 +1,7 @@
 # Athria 项目开发文档
 
 > 状态：正式架构方案  
-> 文档版本：1.0  
+> 文档版本：1.1  
 > 日期：2026-09-02  
 > 目标读者：产品负责人、训练领域专家、软件开发与测试人员
 
@@ -21,6 +21,14 @@ Athria 的核心定位是：
 2. **最终架构：** 在同一套 Core 和工具接口上加入内置 AI Agent，使用用户自己的模型 API key。
 
 当前仓库采用本文档定义的 TypeScript/Tauri 架构；Schema、真实数据 fixture、规则案例和 golden outputs 作为持续回归测试基线。
+
+### 1.1 Athria 0.2 / Plan Schema v3 架构更新
+
+Plan Schema v3 以开放动作和多 component 取代“动作枚举 + 单一 modality”。Session 不持久化 modality；界面和 API 从 `components[].domain.value` 去重派生 `domains[]`。`mixed` 仅可作为历史采集元数据存在，不属于计划 taxonomy。
+
+Strength 动作使用稳定 ID、显示名、可空 canonical key，以及带来源、置信度、依据和 taxonomy 版本的分类事实。目录命中不是计划合法性的前提。Core 按 component domain 分派规则包，并在规则级返回 `pass | fail | unknown | not_applicable`；只有 blocker 的 `fail` 或 `unknown` 阻止批准。自然语言 `constraintNotes` 不由 Core 宣称执行。
+
+当前科学规则包仅覆盖 Strength。Endurance、Sport skill、Mind-body 与 Recovery 先通过 duration-only component 承载。数据库 migration v4 在事务中备份并转换 v2 草稿、版本、排程和变更快照；需要人工复核的迁移版本在重新批准前不能驱动排程。本节在术语、Schema 和裁决模型上覆盖下文仍保留的 MVP v2 描述。
 
 ## 2. 用户与目标
 
@@ -431,19 +439,16 @@ Memory 保存临时行程、近期主观反馈、阶段性策略，以及 Agent 
 
 Memory 不得自动覆盖 Profile。过期 Memory 默认不进入 Agent 上下文。
 
-### 10.4 Plan Version
+### 10.4 Current Mesocycle and Session Template Library
 
-每个正式计划版本至少保存：
+当前实现不再保存 Plan Draft、Approval 或不可变 Plan Version。每位用户维护：
 
-- `versionId` 和 `parentVersionId`；
-- 完整计划内容；
-- Agent、模型和 Skill 版本；
-- Core 指标与 validation 结果；
-- 用户输入的目标和约束；
-- 相对父版本的变化与原因；
-- 批准人和批准时间。
+- 独立的 `session_templates` 最新状态，支持创建、编辑、复用和受引用保护的删除；
+- 单行 `current_mesocycles` 最新状态，Weekly Structure 仅引用同一用户的 template ID；
+- 用于并发检测的 `revision`，但不以此保存历史版本；
+- 独立的 dated planned-session 快照，完成、跳过及 legacy 快照不会被计划编辑改写。
 
-草稿可以更新；正式版本不可变。恢复旧版本时，以旧内容创建一个指向当前版本的新版本。
+Dashboard 与 MCP 都可直接保存最新计划，保存前运行完整 Core 校验。Profile proposal 的审批边界保持不变。
 
 ## 11. 阶段一：MCP MVP
 
@@ -475,8 +480,8 @@ MVP 不包含：
 - Setup 与 Athlete Profile；
 - 数据导入、连接和同步状态；
 - 训练历史、指标和当前训练状态；
-- 当前计划、草稿和版本历史；
-- 计划差异、validation 结果和审批；
+- 当前 Mesocycle 与嵌套的 Session Template Library；
+- 直接编辑、validation 结果和未来排期影响选择；
 - 手工创建或编辑计划；
 - Profile、Preference、备份和 MCP 状态。
 
@@ -489,7 +494,8 @@ MVP 不包含：
 - `list_training_sessions`
 - `get_training_summary`
 - `get_current_plan`
-- `list_plan_versions`
+- `list_session_templates`
+- `get_session_template`
 - `get_exercise_catalog`
 
 #### 确定性计算
@@ -507,17 +513,20 @@ MVP 不包含：
 - `validate_workout`
 - `validate_plan`
 - `check_training_constraints`
-- `compare_plan_versions`
+- `preview_session_template_change`
+- `validate_current_plan`
 - `explain_validation_result`
 
 #### 受控写入
 
-- `save_plan_draft`
+- `create_session_template`
+- `update_session_template`
+- `delete_session_template`
+- `save_current_plan`
 - `propose_profile_update`
-- `commit_approved_plan`
 - `commit_approved_profile_update`
 
-`calculate_training_metrics` 按 Strength/Endurance 返回 `MetricResult`，不产生单一综合训练分数。读取、计算、候选筛选和 validation 工具不得修改状态。写入工具必须验证 Schema 和权限；提交正式计划前必须重新运行 Core validation，并校验有效的用户审批记录。
+`calculate_training_metrics` 按 Strength/Endurance 返回 `MetricResult`，不产生单一综合训练分数。读取、计算、候选筛选和 validation 工具不得修改状态。模板与计划写入必须验证 Schema、owner、revision、最新输入快照和 Core blocker；计划无需审批即可成为当前版本。
 
 不提供任意 SQL、任意文件读取、密钥访问、数据库删除或跳过 validation 的写入能力。
 

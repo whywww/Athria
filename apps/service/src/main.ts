@@ -1,4 +1,5 @@
 import { mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { homedir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { AthriaApplication, AthriaError } from "@athria/application";
 import { AthriaRepository } from "@athria/data";
@@ -7,8 +8,14 @@ import { createMcpHttpHandler, serveMcpStdio } from "@athria/mcp";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { applyCors, corsPreflightResponse, isAllowedOrigin } from "./http-security";
 
-const VERSION = "0.1.0";
-const localAppData = process.env.LOCALAPPDATA ?? join(process.env.USERPROFILE ?? ".", "AppData", "Local");
+const VERSION = "0.2.0";
+function platformDataRoot(): string {
+  if (process.platform === "win32") return process.env.LOCALAPPDATA ?? join(process.env.USERPROFILE ?? homedir(), "AppData", "Local");
+  if (process.platform === "darwin") return join(homedir(), "Library", "Application Support");
+  throw new Error(`Unsupported Athria service host: ${process.platform}/${process.arch}`);
+}
+
+const localAppData = platformDataRoot();
 const dataDir = resolve(process.env.ATHRIA_DATA_DIR ?? join(localAppData, "Athria", "data"));
 mkdirSync(dataDir, { recursive: true });
 for (const name of ["imports", "backups", "logs", "exports"]) mkdirSync(join(dataDir, name), { recursive: true });
@@ -68,7 +75,8 @@ async function main(): Promise<void> {
     return;
   }
   if (command === "doctor") {
-    console.log(JSON.stringify({ status: "ok", version: VERSION, dataDir, database: repository.counts(), mcpStdioCommand: "Athria.exe mcp" }, null, 2));
+    const executable = process.platform === "win32" ? "Athria.exe" : "Athria.app/Contents/MacOS/Athria";
+    console.log(JSON.stringify({ status: "ok", version: VERSION, dataDir, database: repository.counts(), mcpStdioCommand: `${executable} mcp` }, null, 2));
     repository.close();
     return;
   }
@@ -117,21 +125,23 @@ async function main(): Promise<void> {
         if (url.pathname === "/api/summary" && request.method === "GET") return json(application.getTrainingSummary(Number(url.searchParams.get("days") ?? "7")));
         if (url.pathname === "/api/sessions" && request.method === "GET") return json(application.listSessions(Number(url.searchParams.get("days") ?? "90")));
         if (url.pathname === "/api/exercises" && request.method === "GET") return json(repository.listExercises());
-        if (url.pathname === "/api/drafts" && request.method === "GET") return json(repository.listDrafts());
-        if (url.pathname === "/api/drafts" && request.method === "POST") return json(application.saveDraft(await body(request)), 201);
-        if (url.pathname === "/api/plans/current" && request.method === "GET") return json(repository.listVersions()[0] ?? null);
-        if (url.pathname === "/api/plans/versions" && request.method === "GET") return json(repository.listVersions());
+        if (url.pathname === "/api/templates" && request.method === "GET") return json(application.listTemplates());
+        if (url.pathname === "/api/templates" && request.method === "POST") return json(application.createTemplate(await body(request)), 201);
+        const template = url.pathname.match(/^\/api\/templates\/([^/]+)$/);
+        if (template && request.method === "GET") return json(application.getTemplate(decodeURIComponent(template[1]!)));
+        if (template && request.method === "PUT") return json(application.updateTemplate(await body(request)));
+        if (template && request.method === "DELETE") { const value = await body(request); return json(application.deleteTemplate(decodeURIComponent(template[1]!), Number(value.expectedRevision))); }
+        const templateImpact = url.pathname.match(/^\/api\/templates\/([^/]+)\/impact$/);
+        if (templateImpact && request.method === "POST") return json(application.templateImpact(decodeURIComponent(templateImpact[1]!)));
+        if (url.pathname === "/api/plans/current" && request.method === "GET") return json(application.getCurrentPlan());
+        if (url.pathname === "/api/plans/current" && request.method === "PUT") return json(application.saveCurrentPlan(await body(request)));
+        if (url.pathname === "/api/plans/current/validate" && request.method === "POST") return json(application.validateCurrentPlan(await body(request)));
         if (url.pathname === "/api/plans/next-training-day" && request.method === "GET") {
-          const planVersionId = url.searchParams.get("planVersionId"); const onOrAfterDate = url.searchParams.get("onOrAfterDate");
-          return json(application.getNextTrainingDay({ ...(planVersionId ? { planVersionId } : {}), ...(onOrAfterDate ? { onOrAfterDate } : {}) }));
+          const onOrAfterDate = url.searchParams.get("onOrAfterDate");
+          return json(application.getNextTrainingDay({ ...(onOrAfterDate ? { onOrAfterDate } : {}) }));
         }
         if (url.pathname === "/api/planned-sessions/validate" && request.method === "POST") return json(application.validateNextTrainingDaySessions(await body(request)));
         if (url.pathname === "/api/planned-sessions" && request.method === "POST") return json(application.saveNextTrainingDaySessions(await body(request)), 201);
-        const approve = url.pathname.match(/^\/api\/drafts\/([^/]+)\/approve$/);
-        if (approve && request.method === "POST") { const value = await body(request); return json(application.approveDraft(decodeURIComponent(approve[1]!), String(value.approvedBy ?? "local-user"), String(value.changeReason ?? "Approved in Dashboard")), 201); }
-        const restore = url.pathname.match(/^\/api\/plans\/versions\/([^/]+)\/restore$/);
-        if (restore && request.method === "POST") { const value = await body(request); return json(application.restoreVersion(decodeURIComponent(restore[1]!), String(value.approvedBy ?? "local-user"), String(value.changeReason ?? "Restored in Dashboard")), 201); }
-        if (url.pathname === "/api/validate" && request.method === "POST") return json(application.validateDraft(await body(request) as never));
         if (url.pathname === "/api/imports/hevy/status" && request.method === "GET") return json(application.getHevyImportStatus());
         if (url.pathname === "/api/imports/hevy/preview" && request.method === "POST") { const value = await body(request); const fileName = String(value.fileName ?? "hevy.csv"); if (!fileName.toLowerCase().endsWith(".csv")) throw new AthriaError("INVALID_IMPORT_TYPE", "Hevy imports must be CSV files."); const content = Uint8Array.fromBase64(String(value.contentBase64)); if (content.byteLength > 20 * 1024 * 1024) throw new AthriaError("IMPORT_TOO_LARGE", "Hevy CSV files must not exceed 20 MB.", 413); return json(application.previewHevy(content, fileName)); }
         if (url.pathname === "/api/imports/hevy/commit" && request.method === "POST") return json(application.commitHevy(String((await body(request)).previewToken)));
@@ -170,7 +180,20 @@ async function main(): Promise<void> {
     },
   });
   console.error(`ATHRIA_READY:${JSON.stringify({ port: server.port, token, mcpPath: "/mcp" })}`);
-  const shutdown = () => { server.stop(true); repository.close(); process.exit(0); };
+  let parentWatch: ReturnType<typeof setInterval> | undefined;
+  const shutdown = () => {
+    if (parentWatch) clearInterval(parentWatch);
+    server.stop(true);
+    repository.close();
+    process.exit(0);
+  };
+  const parentPid = Number(process.env.ATHRIA_PARENT_PID ?? "0");
+  if (Number.isSafeInteger(parentPid) && parentPid > 0) {
+    parentWatch = setInterval(() => {
+      try { process.kill(parentPid, 0); }
+      catch { shutdown(); }
+    }, 1_000);
+  }
   process.on("SIGINT", shutdown); process.on("SIGTERM", shutdown);
 }
 

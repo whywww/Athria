@@ -1,5 +1,5 @@
-# Athria Windows MCP MVP contracts
+# Athria Plan Schema v2 migration record
 
-These JSON Schema files are generated from the Zod 4 source of truth in `packages/schemas/src/index.ts`.
+These frozen schemas are retained only to document the input converted by database migration v4. Normal runtime reads and writes do not accept v2 plans.
 
-Run `bun run schema:export` and commit the resulting diff whenever a public contract changes. Datetimes require explicit offsets, unknown object fields are rejected, and weight units are explicit.
+Current generated contracts are in `schemas/v3`.

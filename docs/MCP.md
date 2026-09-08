@@ -17,16 +17,17 @@ Restart the MCP host after changing its configuration. stdout is reserved for JS
 
 The Dashboard-managed service also exposes Streamable HTTP at `http://127.0.0.1:<random-port>/mcp`. It validates the Host header and requires `Authorization: Bearer <token>`. The MCP HTTP token is stored in Windows Credential Manager and is not available through MCP tools.
 
-## Approval boundary
+## Write boundary
 
-MCP exposes read, calculation, validation, and candidate-search tools. Its only state-changing tools are:
+MCP exposes read, calculation, validation, candidate-search, template-library, and current-plan tools. Plan-related state-changing tools are:
 
-- `save_plan_draft`
+- `create_session_template`, `update_session_template`, `delete_session_template`
+- `save_current_plan`
 - `propose_profile_update`
 
-Neither tool can create a formal plan version or change the confirmed Profile. The user must open the Dashboard, review the diff and validation evidence, and approve. Approval revalidates in a database transaction and rejects hard violations, stale snapshots, and non-pending proposals.
+Template and plan writes are immediate latest-state writes protected by `expectedRevision`. A template or plan edit that affects future planned snapshots requires `futureSessionPolicy: keep | update`. Core blocker failures and unknowns, missing/cross-owner templates, and stale LLM snapshots are rejected. Template deletion additionally requires an explicit user request and is blocked while the Current Mesocycle references it. MCP still cannot directly change the confirmed Profile.
 
-Use the provider-neutral `packages/skills/athria-training-planner` Skill for the intended workflow: read state, identify gaps, compose a structured mesocycle plus expanded dated sessions, validate and revise, show uncertainty and diff, save a draft, then direct the user to Dashboard approval. New drafts must include duration, seven-day weekly structure, labeled session templates, contiguous phases, and structured adjustment rules.
+Use the provider-neutral `packages/skills/athria-training-planner` Skill for the intended workflow. Save templates first, then save a v4 Current Mesocycle that references their IDs. Validate and resolve blocker-relevant gaps before saving. The natural week remains sparse and plans never accept or emit `mixed`.
 
 ## Xunji records
 

@@ -9,13 +9,6 @@
   </head>
   <body>
     <div id="root"></div>
-    <script>
-      window.__TAURI_INTERNALS__ = {
-        invoke: async (command) => command === "get_service_info" ? { baseUrl: "http://127.0.0.1:4180", token: "visual-token", mcpUrl: "http://127.0.0.1:4180/mcp" } : null,
-        transformCallback: () => 1,
-        unregisterCallback: () => undefined,
-      };
-    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

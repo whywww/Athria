@@ -75,39 +75,50 @@ fn free_port() -> Result<u16, String> {
     listener.local_addr().map(|address| address.port()).map_err(|error| error.to_string())
 }
 
-#[cfg(debug_assertions)]
+#[cfg(feature = "dev-service")]
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("..")
 }
 
-#[cfg(debug_assertions)]
+#[cfg(feature = "dev-service")]
 fn resolve_dev_bun(project_root: &Path) -> Result<PathBuf, String> {
     if let Some(configured) = std::env::var_os("ATHRIA_BUN") {
         let path = PathBuf::from(configured);
         return path.is_file().then_some(path).ok_or_else(|| {
-            "ATHRIA_BUN does not point to a Bun executable. Set it to bun.exe or remove it to use the portable/PATH fallback.".to_string()
+            "ATHRIA_BUN does not point to a Bun executable. Set it to the native Bun executable or remove it to use the portable/PATH fallback.".to_string()
         });
     }
 
+    #[cfg(windows)]
     let portable = project_root.join(".tools").join("bun").join("bun-windows-x64").join("bun.exe");
-    if portable.is_file() { return Ok(portable); }
+    #[cfg(target_os = "macos")]
+    let portable = project_root.join(".tools").join("bun").join("bun-darwin-aarch64").join("bun");
+    if portable.is_file() {
+        return Ok(portable);
+    }
 
     if let Some(path) = std::env::var_os("PATH") {
-        if let Some(bun) = std::env::split_paths(&path).map(|directory| directory.join("bun.exe")).find(|candidate| candidate.is_file()) {
+        let executable_name = if cfg!(windows) { "bun.exe" } else { "bun" };
+        if let Some(bun) = std::env::split_paths(&path).map(|directory| directory.join(executable_name)).find(|candidate| candidate.is_file()) {
             return Ok(bun);
         }
     }
 
-    Err("Bun was not found. Set ATHRIA_BUN to bun.exe, place portable Bun at .tools\\bun\\bun-windows-x64\\bun.exe, or add Bun to PATH.".to_string())
+    Err("Bun was not found. Set ATHRIA_BUN to the native Bun executable, install the host portable Bun under .tools/bun, or add Bun to PATH.".to_string())
 }
 
 fn candidate_sidecars(executable: &Path) -> Vec<PathBuf> {
     let directory = executable.parent().unwrap_or_else(|| Path::new("."));
     vec![
+        directory.join("athria-service"),
         directory.join("athria-service.exe"),
+        directory.join("athria-service-aarch64-apple-darwin"),
         directory.join("athria-service-x86_64-pc-windows-msvc.exe"),
+        directory.join("resources").join("athria-service"),
         directory.join("resources").join("athria-service.exe"),
+        directory.join("resources").join("athria-service-aarch64-apple-darwin"),
         directory.join("resources").join("athria-service-x86_64-pc-windows-msvc.exe"),
+        directory.join("..").join("binaries").join("athria-service-aarch64-apple-darwin"),
         directory.join("..").join("binaries").join("athria-service-x86_64-pc-windows-msvc.exe"),
     ]
 }
@@ -215,7 +226,7 @@ fn mcp_status() -> Result<Value, String> {
 pub fn run() -> i32 {
     if std::env::args().nth(1).as_deref() == Some("mcp") { return run_mcp_passthrough(); }
 
-    #[cfg(debug_assertions)]
+    #[cfg(feature = "dev-service")]
     let dev_service = {
         let project_root = workspace_root();
         let bun = match resolve_dev_bun(&project_root) { Ok(value) => value, Err(error) => { eprintln!("{error}"); return 1; } };
@@ -233,20 +244,21 @@ pub fn run() -> i32 {
         .manage(RuntimeState { service, child: Mutex::new(None) })
         .invoke_handler(tauri::generate_handler![get_service_info, test_intervals_credentials, sync_intervals, intervals_status, import_xunji_skill, sync_xunji, xunji_status, mcp_status])
         .setup(move |app| {
-            #[cfg(debug_assertions)]
+            #[cfg(feature = "dev-service")]
             let command = {
                 let (project_root, bun, service_entry) = dev_service;
                 app.shell().command(bun)
                     .args(["--watch".as_ref(), service_entry.as_os_str(), "serve".as_ref()])
                     .current_dir(project_root)
             };
-            #[cfg(not(debug_assertions))]
+            #[cfg(not(feature = "dev-service"))]
             let command = app.shell().sidecar("athria-service")?
                 .args(["serve"]);
             let command = command
                 .env("ATHRIA_PORT", port.to_string())
                 .env("ATHRIA_SESSION_TOKEN", token)
-                .env("ATHRIA_MCP_TOKEN", mcp_token);
+                .env("ATHRIA_MCP_TOKEN", mcp_token)
+                .env("ATHRIA_PARENT_PID", std::process::id().to_string());
             let (mut events, child) = command.spawn()?;
             *app.state::<RuntimeState>().child.lock().expect("runtime state poisoned") = Some(child);
             let address = format!("127.0.0.1:{port}").parse().map_err(|error| std::io::Error::other(format!("Invalid service address: {error}")))?;

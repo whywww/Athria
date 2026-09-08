@@ -1,6 +1,6 @@
 import { AthriaApplication } from "../packages/application/src/index";
 import { AthriaRepository } from "../packages/data/src/index";
-import type { TrainingSession } from "../packages/schemas/src/index";
+import { TAXONOMY_VERSION, type TrainingSession } from "../packages/schemas/src/index";
 
 const repository = new AthriaRepository(":memory:");
 const now = new Date("2026-09-02T12:00:00Z");
@@ -12,6 +12,7 @@ try {
     const end = new Date(start.getTime() + 45 * 60_000);
     return {
       id: `perf-${index}`, ownerId: "local-user", source: "performance-fixture", externalId: String(index), modality: index % 2 ? "strength" : "endurance",
+      domains: [index % 2 ? "strength" : "endurance"],
       sport: index % 2 ? null : "Run", name: index % 2 ? "Strength" : "Run", startAt: start.toISOString(), endAt: end.toISOString(), durationMinutes: 45,
       status: "completed", timezone: "UTC", missingFields: [],
       strengthSets: index % 2 ? [{ exerciseRaw: "Goblet Squat", exerciseKey: "goblet_squat", movement: "squat", primaryMuscles: ["quadriceps"], secondaryMuscles: ["glutes"], setIndex: 1, setType: "normal", weight: 20, weightUnit: "kg", reps: 10, rpe: 8 }] : [],
@@ -23,7 +24,8 @@ try {
   const stateStart = performance.now();
   const state = application.getTrainingState();
   const stateMs = performance.now() - stateStart;
-  const draft = { sessions: [{ id: "perf-plan", name: "Full body", modality: "strength" as const, intent: "general strength", startAt: "2026-09-07T18:00:00+08:00", durationMinutes: 60, hard: true, notes: "", exercises: [{ exerciseKey: "goblet_squat", name: "Goblet Squat", sets: 3, repsMin: 8, repsMax: 12, targetRpe: 8, restSeconds: 120, referenceLoad: null, referenceLoadUnit: null }] }] };
+  const fact = <T>(value: T) => ({ value, source: "catalog" as const, confidence: 1, evidence: "performance fixture", taxonomyVersion: TAXONOMY_VERSION });
+  const draft = { mesocycle: { durationWeeks: 4, weeklyStructure: [{ dayOfWeek: 0, templateIds: ["perf-plan"] }], sessionTemplates: [{ id: "perf-plan", name: "Full body", intent: "general strength", durationMinutes: 60, recoveryDemand: "normal" as const, notes: "", components: [{ id: "perf-strength", name: "Strength", domain: fact("strength" as const), prescription: { kind: "strength" as const, exercises: [{ id: "perf-squat", displayName: "Goblet Squat", canonicalKey: "goblet_squat", classification: { primaryMovement: fact("squat" as const), primaryMuscles: fact(["quadriceps" as const]), secondaryMuscles: fact(["glutes" as const]), equipment: fact(["dumbbell" as const]), impact: fact("low" as const), laterality: fact("bilateral" as const) }, sets: 3, repsMin: 8, repsMax: 12, targetRpe: 8, restSeconds: 120, referenceLoad: null, referenceLoadUnit: null, notes: "" }] } }] }], phases: [{ id: "phase", phaseType: "foundation" as const, name: "Base", startWeek: 1, endWeek: 4, focus: "Foundation", progression: [] }], adjustmentRules: [] } };
   const validationStart = performance.now();
   const validation = application.validateDraft(draft);
   const validationMs = performance.now() - validationStart;

@@ -1,4 +1,4 @@
 interface:
   display_name: "Athria Training Planner"
   short_description: "Plan and validate training with the local Athria MCP server"
-  default_prompt: "Use Athria to read my training state, create and validate a plan draft, and leave final approval to me in the Dashboard."
+  default_prompt: "Use Athria to read my training state, maintain reusable session templates, and validate and save my current Mesocycle."

@@ -8,7 +8,7 @@ export interface TrainingSummary {
   periodDays: number;
   sessionCount: number;
   totalDurationMinutes: number;
-  byModality: Record<string, number>;
+  byDomain: Record<string, number>;
   metrics: {
     strength: { workingSets: Metric<number> };
     endurance: { distanceMeters: Metric<number> };
@@ -26,8 +26,8 @@ export interface AthleteProfile {
   maxSessionMinutes: number;
   trainingDays: number[];
   equipment: string[];
-  excludedExercises: string[];
-  constraints: string[];
+  strengthConstraints: Array<{ id: string; type: "exclude_exercise"; canonicalKey: string } | { id: string; type: "prohibit_movement_pattern"; movementPattern: string }>;
+  constraintNotes: string[];
   explicitRecoveryHours: number | null;
 }
 
@@ -41,8 +41,9 @@ export interface ProfileProposal {
 }
 
 export interface PlanExercise {
-  exerciseKey: string;
-  name: string;
+  id: string;
+  displayName: string;
+  canonicalKey: string | null;
   sets: number;
   repsMin: number;
   repsMax: number;
@@ -51,22 +52,33 @@ export interface PlanExercise {
   referenceLoad: number | null;
   referenceLoadUnit: "kg" | "lb" | null;
   notes: string;
+  classification: Record<string, { value: unknown; source: string; confidence: number; evidence: string; taxonomyVersion: string }>;
+}
+
+export interface PlanComponent {
+  id: string;
+  name: string;
+  domain: { value: "strength" | "endurance" | "sport_skill" | "mind_body" | "recovery" | null; source: string; confidence: number; evidence: string; taxonomyVersion: string };
+  prescription: { kind: "strength"; exercises: PlanExercise[] } | { kind: "duration_only"; notes: string };
 }
 
 export interface Mesocycle {
   durationWeeks: number;
   weeklyStructure: Array<{ dayOfWeek: number; templateIds: string[] }>;
-  sessionTemplates: Array<{
-    id: string; label: string; name: string; modality: string; intent: string; durationMinutes: number; recoveryDemand: "low" | "normal" | "high"; notes: string; exercises: PlanExercise[];
-  }>;
   phases: Array<{ id: string; phaseType: "foundation" | "progression" | "deload" | "peak" | "test" | "recovery"; name: string; startWeek: number; endWeek: number; focus: string; progression: string[] }>;
   adjustmentRules: Array<{ trigger: string; action: string; rationale: string }>;
 }
 
+export interface SessionTemplate { id: string; name: string; intent: string; durationMinutes: number; recoveryDemand: "low" | "normal" | "high"; notes: string; components: PlanComponent[] }
+export interface StoredSessionTemplate extends SessionTemplate { ownerId: string; revision: number; createdAt: string; updatedAt: string }
+export interface CurrentPlan { planSchemaVersion: "4.0"; ownerId: string; title: string; summary: string; effectiveStartDate: string; mesocycle: Mesocycle; revision: number; sourceAgent: string | null; model: string | null; skillVersion: string | null; inputSnapshotHash: string | null; updatedAt: string }
+export interface PlanDraft { planSchemaVersion: "3.0"; id: string; title: string; summary: string; mesocycle: (Mesocycle & { sessionTemplates: SessionTemplate[] }) | null; migration?: { reviewRequired: boolean; sourceSchema: string; sourceSessions: unknown[] } | null; updatedAt?: string }
+export interface StoredDraft { draft: PlanDraft; validation: PlanValidation }
+export interface PlanVersion { id: string; versionNumber: number; plan: PlanDraft; validation: PlanValidation; approvedAt: string; changeReason: string }
+
 export interface PlannedSession {
   id: string;
   name: string;
-  modality: string;
   intent: string;
   scheduledDate: string;
   durationMinutes: number;
@@ -74,15 +86,13 @@ export interface PlannedSession {
   phaseId: string;
   recoveryDemand: "low" | "normal" | "high";
   status: "planned" | "completed" | "skipped";
-  exercises: PlanExercise[];
+  components: PlanComponent[];
   notes: string;
 }
 
-export interface PlanDraft { id: string; title: string; summary: string; mesocycle: Mesocycle | null; updatedAt?: string }
-export interface ValidationResult { severity: "hard" | "soft" | "info"; passed: boolean; reasonCode: string; messageArgs: Record<string, string | number | boolean | null> }
-export interface PlanValidation { valid: boolean; results: ValidationResult[]; dataGaps: string[] }
-export interface StoredDraft { draft: PlanDraft; validation: PlanValidation }
-export interface PlanVersion { id: string; versionNumber: number; plan: PlanDraft; validation: PlanValidation; approvedAt: string; changeReason: string }
+export interface ValidationResult { status: "pass" | "fail" | "unknown" | "not_applicable"; enforcement: "blocker" | "advisory" | "info"; reasonCode: string; evidence: Record<string, unknown>; missingFacts: string[]; subjectRefs: string[] }
+export interface DataGap { code: string; subjectRef: string; factPath: string; requiredByRuleCodes: string[]; blocking: boolean; resolution: "agent_infer" | "user_confirm" | "add_profile_data" }
+export interface PlanValidation { valid: boolean; results: ValidationResult[]; dataGaps: DataGap[]; coverage?: { hardChecksResolved: number; hardChecksTotal: number; movementFactsResolved: number; movementFactsTotal: number; muscleFactsResolved: number; muscleFactsTotal: number; equipmentFactsResolved: number; equipmentFactsTotal: number } }
 export interface NextTrainingDay { nextTrainingDay: null | { scheduledDate: string; dayOfWeek: number; weekNumber: number; phaseId: string; phaseType: string; expectedTemplateIds: string[]; existingSessions: PlannedSession[]; revision: number; timezone: string }; reasonCode: string | null }
 
 export interface ImportPreview { previewToken?: string; fileName?: string; counts?: { sessions?: number; sets?: number; rows?: number }; errors?: string[]; unknownColumns?: string[] }
@@ -115,7 +125,7 @@ const fieldLabels: Record<string, string> = {
   displayName: "Display name", timezone: "Time zone", goals: "Training goals", priority: "Training priority",
   weeklyStrengthSessions: "Strength sessions per week", weeklyEnduranceSessions: "Endurance sessions per week",
   maxSessionMinutes: "Maximum session length", trainingDays: "Training days", equipment: "Available equipment",
-  excludedExercises: "Excluded exercises", constraints: "Training limitations",
+  strengthConstraints: "Strength constraints", constraintNotes: "Training limitations",
   explicitRecoveryHours: "Recovery time between hard sessions",
 };
 
@@ -123,7 +133,7 @@ const friendlyWords: Record<string, string> = {
   general_fitness: "General fitness", build_strength: "Build strength", build_muscle: "Build muscle",
   improve_endurance: "Improve endurance", fat_loss: "Fat loss", bodyweight: "Bodyweight",
   dumbbell: "Dumbbells", barbell: "Barbell", cable: "Cable machine", machine: "Machines",
-  strength: "Strength", endurance: "Endurance", recovery: "Recovery", mixed: "Mixed", unknown: "Other",
+  strength: "Strength", endurance: "Endurance", sport_skill: "Sport skill", mind_body: "Mind-body", recovery: "Recovery",
 };
 
 export function friendlyLabel(value: string): string {
@@ -166,7 +176,7 @@ export function proposalChanges(profile: AthleteProfile, patch: Partial<AthleteP
 }
 
 export function validationMessage(result: ValidationResult): string {
-  const details = Object.values(result.messageArgs).filter((value) => value !== null).join(", ");
+  const details = [...Object.values(result.evidence), ...result.missingFacts].filter((value) => value !== null && value !== undefined).map(String).join(", ");
   const label = friendlyLabel(result.reasonCode);
   return details ? `${label}: ${details}` : label;
 }
@@ -184,7 +194,7 @@ export function timezoneOptions(current: string): string[] {
 export function isUntouchedDefaultProfile(profile: AthleteProfile): boolean {
   return profile.displayName === "Athlete" && profile.timezone === "Asia/Hong_Kong" && profile.goals.length === 1 && profile.goals[0] === "general_fitness"
     && profile.weeklyStrengthSessions === 2 && profile.weeklyEnduranceSessions === 2 && profile.trainingDays.length === 0
-    && profile.equipment.join("|") === "bodyweight|dumbbell|cable|machine" && profile.constraints.length === 0 && profile.excludedExercises.length === 0;
+    && profile.equipment.join("|") === "bodyweight|dumbbell|cable|machine" && profile.constraintNotes.length === 0 && profile.strengthConstraints.length === 0;
 }
 
 export function profilePayload(current: AthleteProfile, edits: AthleteProfile = current): AthleteProfile {
@@ -202,15 +212,20 @@ export function profilePayload(current: AthleteProfile, edits: AthleteProfile = 
   };
 }
 
-export function pendingPlanDrafts(drafts: StoredDraft[], versions: PlanVersion[]): StoredDraft[] {
-  const approved = new Set(versions.map((version) => version.plan.id));
-  return drafts.filter((item) => !approved.has(item.draft.id));
-}
+export function pendingPlanDrafts(drafts: StoredDraft[], versions: PlanVersion[]): StoredDraft[] { const approved = new Set(versions.map((version) => version.plan.id)); return drafts.filter((item) => !approved.has(item.draft.id)); }
+export function isPlanDraftApproved(draftId: string, versions: PlanVersion[]): boolean { return versions.some((version) => version.plan.id === draftId); }
+export function primaryPlanDraft(drafts: StoredDraft[], versions: PlanVersion[]): StoredDraft | null { return pendingPlanDrafts(drafts, versions)[0] ?? drafts[0] ?? null; }
 
-export function isPlanDraftApproved(draftId: string, versions: PlanVersion[]): boolean {
-  return versions.some((version) => version.plan.id === draftId);
+export function referencedTemplates(mesocycle: Mesocycle, templates: SessionTemplate[]): { templates: SessionTemplate[]; missingIds: string[] } {
+  const byId = new Map(templates.map((item) => [item.id, item]));
+  const resolved: SessionTemplate[] = []; const missingIds: string[] = []; const seen = new Set<string>();
+  for (const day of [...mesocycle.weeklyStructure].sort((a, b) => a.dayOfWeek - b.dayOfWeek)) {
+    for (const id of day.templateIds) {
+      if (seen.has(id)) continue; seen.add(id);
+      const template = byId.get(id);
+      if (template) resolved.push(template); else missingIds.push(id);
+    }
+  }
+  return { templates: resolved, missingIds };
 }
-
-export function primaryPlanDraft(drafts: StoredDraft[], versions: PlanVersion[]): StoredDraft | null {
-  return pendingPlanDrafts(drafts, versions)[0] ?? drafts[0] ?? null;
-}
+export function resolveSelectedTemplate(referenced: SessionTemplate[], selectedId: string): SessionTemplate | undefined { return referenced.find((item) => item.id === selectedId) ?? referenced[0]; }

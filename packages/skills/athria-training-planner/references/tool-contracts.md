@@ -1,34 +1,32 @@
 # Athria tool contracts
 
-## Draft lifecycle
+## Template and current-plan lifecycle
 
-`get_training_state` returns the `inputSnapshotHash` required by `save_plan_draft`. A draft contains:
+`get_training_state` returns the `inputSnapshotHash` required by `save_current_plan`. `get_training_taxonomy` returns the Plan Schema version, domains, Strength vocabularies, allowed fact sources, and the AI hard-confidence threshold.
 
-- `id` and `clientRequestId`: unique strings; reuse `clientRequestId` only when retrying the same logical save.
-- `title`, `summary`, a complete `mesocycle`, and one or more expanded dated sessions.
-- `inputSnapshotHash`: copied unchanged from the state used to plan.
-- ISO-8601 `createdAt` and `updatedAt` with an explicit timezone offset.
-- nullable `sourceAgent`, `model`, and `skillVersion` provenance.
+A v4 Current Plan contains `planSchemaVersion: "4.0"`, title, summary, explicit `effectiveStartDate`, a complete `mesocycle`, optimistic `revision`, snapshot hash, and Agent provenance. Runtime APIs do not accept v2/v3 plan writes.
 
-The mesocycle includes `durationWeeks`, exactly seven unique `weeklyStructure` day entries, labeled `sessionTemplates`, contiguous `phases` covering the complete duration, and structured `adjustmentRules` with a trigger, action, and rationale. Weekly rest days use a null `templateId`.
+The mesocycle contains a sparse natural-week `weeklyStructure`: include training days only, with unique weekday values and one or more template IDs per entry. The same day may reference multiple templates. Phases remain contiguous across the complete duration.
 
-Each plan session needs an ID, name, modality, intent, timezone-aware start, duration, hard-session flag, matching `templateId` and `phaseId`, notes, and exercises. Each strength exercise uses a catalog `exerciseKey`, sets, a rep range, optional target RPE, rest time, and optional display notes. Do not supply a load unless history or the user provides it.
+Templates are independent latest-state resources managed with `list/get/create/update/delete_session_template`. The Current Mesocycle contains template IDs, never embedded templates. Each template has `components[]`; a Strength component uses `{ kind: "strength", exercises }`, while other or unclassified components use `{ kind: "duration_only", notes }`.
 
-Athlete profile `trainingDays` values use Monday = 0 through Sunday = 6 and constrain days only, never times. An empty list means flexible days. Recovery hours, constraints, and excluded exercises are Agent-managed facts and must be changed through a profile proposal; `availability` time windows and profile-level maximum heart rate are not supported.
+Each exercise has `id`, `displayName`, nullable `canonicalKey`, its prescription, and a classification descriptor. Every classification fact includes `value`, `source`, `confidence`, `evidence`, and `taxonomyVersion`. The absence of a canonical key is valid.
 
-`save_plan_draft` never creates a formal plan. Athria revalidates both the mesocycle structure and its expanded sessions, stores them idempotently, and returns the validation. The user approves a valid draft in the Dashboard, which creates a new immutable version.
+Profile `trainingDays` use Monday = 0 through Sunday = 6. An empty list means flexible days. `strengthConstraints` contains typed canonical-exercise exclusions and movement-pattern prohibitions. `constraintNotes` are not enforced by Core.
+
+Create or update templates before saving a plan that references them. `save_current_plan` revalidates against the current Profile, classifications, taxonomy, rule-pack versions, snapshot hash, and referenced templates, then replaces the prior Current Mesocycle. Updates and deletes require `expectedRevision`. Use `preview_session_template_change`; when future planned snapshots are affected, pass `futureSessionPolicy: keep | update`. Completed, skipped, and legacy snapshots remain unchanged.
 
 ## Validation
 
-- `hard`: a failed result blocks formal approval. Fix it or explain the contradictory constraint.
-- `soft`: advisory training-science guidance. Discuss it; do not claim it is an objective prohibition.
-- `info`: evidence, method limitations, or a data gap.
+Each result has `status: pass | fail | unknown | not_applicable` and `enforcement: blocker | advisory | info`. Only blocker `fail` or blocker `unknown` makes the plan invalid.
 
-Use `reasonCode`, `ruleVersion`, `messageArgs`, and `evidence` instead of pattern-matching natural-language messages.
+Use `reasonCode`, `rulePackId`, `ruleVersion`, `subjectRefs`, `evidence`, `missingFacts`, and `confidenceLimit`. `dataGaps` identify the fact path, affected rules, blocking state, and next resolution: `agent_infer`, `user_confirm`, or `add_profile_data`.
+
+Resolve safe inference gaps first. Ask the user only when an unresolved fact is necessary to decide a blocker. Record explicit answers with source `user_confirmed`.
 
 ## Deterministic calculations
 
-- `estimate_1rm` accepts an explicit load, `kg` or `lb`, and 1–12 repetitions. The output is an estimate, not a measured maximum.
+- `estimate_1rm` accepts an explicit load, unit, and 1–12 repetitions; it is an estimate.
 - `calculate_heart_rate_zones` requires an explicit maximum heart rate. Never derive it from age.
-- Progression and RPE tools return a proposal only; they do not modify a plan or session.
-- Strength volume, endurance duration/distance/pace, and heart-rate zones remain separate metrics.
+- Progression and RPE tools return proposals only.
+- Direct sets, indirect muscle participation, Endurance metrics, and heart-rate zones remain separate measurements.

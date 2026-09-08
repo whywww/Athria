@@ -4,6 +4,6 @@
   "private": true,
   "type": "module",
   "exports": { ".": "./src/index.ts" },
-  "dependencies": { "@athria/schemas": "workspace:*", "csv-parse": "latest" },
-  "scripts": { "build": "tsc -b", "typecheck": "tsc -b --pretty false" }
+  "dependencies": { "@athria/schemas": "workspace:*", "csv-parse": "7.0.2" },
+  "scripts": { "build": "bun --bun tsc -b --pretty false", "typecheck": "bun --bun tsc -b --pretty false" }
 }

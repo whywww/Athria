@@ -3,7 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import type { AthriaApplication } from "@athria/application";
 
 export function createMcpServer(application: AthriaApplication): McpServer {
-  const server = new McpServer({ name: "Athria", version: "0.1.0" }, { capabilities: { tools: {} } });
+  const server = new McpServer({ name: "Athria", version: "0.2.0" }, { capabilities: { tools: {} } });
   for (const tool of application.toolRegistry()) {
     server.registerTool(tool.name, {
       description: tool.description,

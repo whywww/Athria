@@ -1,6 +1,6 @@
 {
   "name": "@athria/application",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "exports": { ".": "./src/index.ts" },
@@ -9,7 +9,7 @@
     "@athria/data": "workspace:*",
     "@athria/integrations": "workspace:*",
     "@athria/schemas": "workspace:*",
-    "zod": "latest"
+    "zod": "4.2.1"
   },
-  "scripts": { "build": "tsc -b", "typecheck": "tsc -b --pretty false" }
+  "scripts": { "build": "bun --bun tsc -b --pretty false", "typecheck": "bun --bun tsc -b --pretty false" }
 }

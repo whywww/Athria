@@ -1,6 +1,6 @@
 {
   "name": "@athria/service",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "dependencies": {
@@ -8,7 +8,7 @@
     "@athria/data": "workspace:*",
     "@athria/integrations": "workspace:*",
     "@athria/mcp": "workspace:*",
-    "fflate": "latest"
+    "fflate": "0.8.2"
   },
-  "scripts": { "build": "bun build src/main.ts --target=bun --outdir=dist", "typecheck": "tsc -b --pretty false" }
+  "scripts": { "build": "bun --bun tsc -b --pretty false", "typecheck": "bun --bun tsc -b --pretty false" }
 }

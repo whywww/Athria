@@ -6,6 +6,7 @@ coverage/
 .vscode/
 .idea/
 .bun-cache/
+*.bun-build
 dist-types/
 *.log
 
@@ -25,9 +26,10 @@ apps/desktop/dist/
 apps/desktop/src-tauri/target/
 apps/desktop/src-tauri/gen/schemas/
 apps/desktop/src-tauri/binaries/*.exe
+apps/desktop/src-tauri/binaries/athria-service-*
 
 # Local application data and backups
-data/
+/data/
 backups/
 *.db
 *.db-*
