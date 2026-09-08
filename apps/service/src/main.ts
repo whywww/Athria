@@ -142,6 +142,8 @@ async function main(): Promise<void> {
         }
         if (url.pathname === "/api/planned-sessions/validate" && request.method === "POST") return json(application.validateNextTrainingDaySessions(await body(request)));
         if (url.pathname === "/api/planned-sessions" && request.method === "POST") return json(application.saveNextTrainingDaySessions(await body(request)), 201);
+        const plannedSession = url.pathname.match(/^\/api\/planned-sessions\/([^/]+)$/);
+        if (plannedSession && request.method === "PATCH") return json(application.updatePlannedSession(decodeURIComponent(plannedSession[1]!), await body(request)));
         if (url.pathname === "/api/imports/hevy/status" && request.method === "GET") return json(application.getHevyImportStatus());
         if (url.pathname === "/api/imports/hevy/preview" && request.method === "POST") { const value = await body(request); const fileName = String(value.fileName ?? "hevy.csv"); if (!fileName.toLowerCase().endsWith(".csv")) throw new AthriaError("INVALID_IMPORT_TYPE", "Hevy imports must be CSV files."); const content = Uint8Array.fromBase64(String(value.contentBase64)); if (content.byteLength > 20 * 1024 * 1024) throw new AthriaError("IMPORT_TOO_LARGE", "Hevy CSV files must not exceed 20 MB.", 413); return json(application.previewHevy(content, fileName)); }
         if (url.pathname === "/api/imports/hevy/commit" && request.method === "POST") return json(application.commitHevy(String((await body(request)).previewToken)));

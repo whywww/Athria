@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { jsonSchemas } from "../packages/schemas/src/index.ts";
 
-const outputDirectory = join(dirname(fileURLToPath(import.meta.url)), "..", "schemas", "v4");
+const outputDirectory = join(dirname(fileURLToPath(import.meta.url)), "..", "schemas", "v5");
 mkdirSync(outputDirectory, { recursive: true });
 
 const names: Record<keyof typeof jsonSchemas, string> = {

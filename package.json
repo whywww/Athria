@@ -10,7 +10,7 @@
     "check": "bun run typecheck && bun run test",
     "dev": "bun run scripts/desktop-build.ts dev",
     "service": "bun run apps/service/src/main.ts",
-    "test": "bun --bun vitest run",
+    "test": "bun --bun vitest run --configLoader runner",
     "typecheck": "bun --bun tsc -b",
     "build:service": "bun run scripts/desktop-build.ts service",
     "build:debug": "bun run scripts/desktop-build.ts debug",
@@ -20,7 +20,7 @@
     "build:desktop": "bun run release:native",
     "perf:smoke": "bun run scripts/performance-smoke.ts",
     "schema:export": "bun run scripts/export-schemas.ts",
-    "validate:skill": "python C:/Users/tclre/.codex/skills/.system/skill-creator/scripts/quick_validate.py packages/skills/athria-training-planner && python C:/Users/tclre/.codex/skills/.system/skill-creator/scripts/quick_validate.py packages/skills/athria-xunji-records"
+    "validate:skill": "bun run scripts/validate-skills.ts"
   },
   "devDependencies": {
     "@types/bun": "1.4.2",

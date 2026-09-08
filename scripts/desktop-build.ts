@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,11 +17,12 @@ const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const desktopRoot = join(projectRoot, "apps", "desktop");
 const tauriRoot = join(desktopRoot, "src-tauri");
 const bunExecutable = process.execPath;
-const buildRoot = resolve(process.env.ATHRIA_BUILD_ROOT ?? join(homedir(), "Documents", "HAILEY", "Athria"));
+const buildRoot = resolve(projectRoot, "..", "Athria");
 const binariesRoot = join(buildRoot, "binaries");
 const frontendDist = join(buildRoot, "frontend");
 const cargoTargetRoot = join(buildRoot, "target");
 const temporaryRoot = join(buildRoot, "tmp");
+const bunWorkingRoot = join(temporaryRoot, "bun-work");
 
 function hostBuild(): HostBuild {
   if (process.platform === "win32" && process.arch === "x64") {
@@ -61,7 +62,7 @@ function run(command: string[], environment: Record<string, string> = {}, cwd = 
     stdout: "inherit",
     stderr: "inherit",
   });
-  if (result.exitCode !== 0) process.exit(result.exitCode);
+  if (result.exitCode !== 0) throw new Error(`${command[0]} exited with code ${result.exitCode}`);
 }
 
 function environment(host: HostBuild): Record<string, string> {
@@ -70,7 +71,6 @@ function environment(host: HostBuild): Record<string, string> {
   const pathEntries = [dirname(bunExecutable), ...(rustBin ? [rustBin] : []), process.env.PATH ?? ""];
   return {
     ATHRIA_BUN: bunExecutable,
-    ATHRIA_BUILD_ROOT: buildRoot,
     CARGO_TARGET_DIR: cargoTargetRoot,
     PATH: pathEntries.join(delimiter),
     TEMP: temporaryRoot,
@@ -82,15 +82,21 @@ function environment(host: HostBuild): Record<string, string> {
 function buildService(host: HostBuild): void {
   mkdirSync(binariesRoot, { recursive: true });
   mkdirSync(temporaryRoot, { recursive: true });
-  run([
-    bunExecutable,
-    "build",
-    "--compile",
-    `--target=${host.bunTarget}`,
-    join(projectRoot, "apps", "service", "src", "main.ts"),
-    "--outfile",
-    join(binariesRoot, host.sidecarName),
-  ], environment(host));
+  rmSync(bunWorkingRoot, { recursive: true, force: true });
+  mkdirSync(bunWorkingRoot, { recursive: true });
+  try {
+    run([
+      bunExecutable,
+      "build",
+      "--compile",
+      `--target=${host.bunTarget}`,
+      join(projectRoot, "apps", "service", "src", "main.ts"),
+      "--outfile",
+      join(binariesRoot, host.sidecarName),
+    ], environment(host), bunWorkingRoot);
+  } finally {
+    rmSync(bunWorkingRoot, { recursive: true, force: true });
+  }
 }
 
 function tauri(host: HostBuild, args: string[], includeSidecar = true): void {
@@ -101,7 +107,9 @@ function tauri(host: HostBuild, args: string[], includeSidecar = true): void {
     build: { frontendDist: relative(tauriRoot, frontendDist).replaceAll("\\", "/") },
     bundle: { externalBin: includeSidecar ? [relative(tauriRoot, join(binariesRoot, "athria-service")).replaceAll("\\", "/")] : [] },
   });
-  run([bunExecutable, "run", "--cwd", desktopRoot, "tauri", ...args, "--config", configOverride, "--target", host.rustTarget], environment(host));
+  const buildEnvironment = environment(host);
+  if (host.platform === "macos" && args.some((argument) => argument.includes("dmg"))) buildEnvironment.CI ??= "true";
+  run([bunExecutable, "run", "--cwd", desktopRoot, "tauri", ...args, "--config", configOverride, "--target", host.rustTarget], buildEnvironment);
 }
 
 const action = (process.argv[2] ?? "") as Action;

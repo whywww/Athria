@@ -31,7 +31,16 @@ export interface AthleteProfile {
   explicitRecoveryHours: number | null;
 }
 
-export interface ExerciseDefinition { key: string; name: string; equipment: string[] }
+export interface ExerciseDefinition {
+  key: string;
+  name: string;
+  movement: string;
+  primaryMuscles: string[];
+  secondaryMuscles: string[];
+  equipment: string[];
+  unilateral: boolean;
+  tags: string[];
+}
 
 export interface ProfileProposal {
   id: string;
@@ -52,8 +61,17 @@ export interface PlanExercise {
   referenceLoad: number | null;
   referenceLoadUnit: "kg" | "lb" | null;
   notes: string;
-  classification: Record<string, { value: unknown; source: string; confidence: number; evidence: string; taxonomyVersion: string }>;
+  classification: {
+    primaryMovement: ClassificationFact<string | null>;
+    primaryMuscles: ClassificationFact<string[]>;
+    secondaryMuscles: ClassificationFact<string[]>;
+    equipment: ClassificationFact<string[]>;
+    impact: ClassificationFact<string | null>;
+    laterality: ClassificationFact<string | null>;
+  };
 }
+
+export interface ClassificationFact<T> { value: T; source: string; confidence: number; evidence: string; taxonomyVersion: string }
 
 export interface PlanComponent {
   id: string;
@@ -64,20 +82,24 @@ export interface PlanComponent {
 
 export interface Mesocycle {
   durationWeeks: number;
-  weeklyStructure: Array<{ dayOfWeek: number; templateIds: string[] }>;
+  schedule:
+    | { kind: "fixed_week"; days: Array<{ id: string; dayOfWeek: number; templateIds: string[] }> }
+    | { kind: "flexible_week"; targetSessionsPerWeek: number; minSessionsPerWeek: number; maxSessionsPerWeek: number; rotation: Array<{ id: string; templateIds: string[] }> }
+    | { kind: "interval"; intervalDays: number; rotation: Array<{ id: string; templateIds: string[] }> };
   phases: Array<{ id: string; phaseType: "foundation" | "progression" | "deload" | "peak" | "test" | "recovery"; name: string; startWeek: number; endWeek: number; focus: string; progression: string[] }>;
   adjustmentRules: Array<{ trigger: string; action: string; rationale: string }>;
 }
 
 export interface SessionTemplate { id: string; name: string; intent: string; durationMinutes: number; recoveryDemand: "low" | "normal" | "high"; notes: string; components: PlanComponent[] }
 export interface StoredSessionTemplate extends SessionTemplate { ownerId: string; revision: number; createdAt: string; updatedAt: string }
-export interface CurrentPlan { planSchemaVersion: "4.0"; ownerId: string; title: string; summary: string; effectiveStartDate: string; mesocycle: Mesocycle; revision: number; sourceAgent: string | null; model: string | null; skillVersion: string | null; inputSnapshotHash: string | null; updatedAt: string }
-export interface PlanDraft { planSchemaVersion: "3.0"; id: string; title: string; summary: string; mesocycle: (Mesocycle & { sessionTemplates: SessionTemplate[] }) | null; migration?: { reviewRequired: boolean; sourceSchema: string; sourceSessions: unknown[] } | null; updatedAt?: string }
+export interface CurrentPlan { planSchemaVersion: "5.0"; ownerId: string; title: string; summary: string; effectiveStartDate: string; mesocycle: Mesocycle; revision: number; sourceAgent: string | null; model: string | null; skillVersion: string | null; inputSnapshotHash: string | null; updatedAt: string }
+export interface PlanDraft { planSchemaVersion: "3.0"; id: string; title: string; summary: string; mesocycle: ({ durationWeeks: number; weeklyStructure: Array<{ dayOfWeek: number; templateIds: string[] }>; phases: Mesocycle["phases"]; adjustmentRules: Mesocycle["adjustmentRules"]; sessionTemplates: SessionTemplate[] }) | null; migration?: { reviewRequired: boolean; sourceSchema: string; sourceSessions: unknown[] } | null; updatedAt?: string }
 export interface StoredDraft { draft: PlanDraft; validation: PlanValidation }
 export interface PlanVersion { id: string; versionNumber: number; plan: PlanDraft; validation: PlanValidation; approvedAt: string; changeReason: string }
 
 export interface PlannedSession {
   id: string;
+  occurrenceId: string;
   name: string;
   intent: string;
   scheduledDate: string;
@@ -93,7 +115,7 @@ export interface PlannedSession {
 export interface ValidationResult { status: "pass" | "fail" | "unknown" | "not_applicable"; enforcement: "blocker" | "advisory" | "info"; reasonCode: string; evidence: Record<string, unknown>; missingFacts: string[]; subjectRefs: string[] }
 export interface DataGap { code: string; subjectRef: string; factPath: string; requiredByRuleCodes: string[]; blocking: boolean; resolution: "agent_infer" | "user_confirm" | "add_profile_data" }
 export interface PlanValidation { valid: boolean; results: ValidationResult[]; dataGaps: DataGap[]; coverage?: { hardChecksResolved: number; hardChecksTotal: number; movementFactsResolved: number; movementFactsTotal: number; muscleFactsResolved: number; muscleFactsTotal: number; equipmentFactsResolved: number; equipmentFactsTotal: number } }
-export interface NextTrainingDay { nextTrainingDay: null | { scheduledDate: string; dayOfWeek: number; weekNumber: number; phaseId: string; phaseType: string; expectedTemplateIds: string[]; existingSessions: PlannedSession[]; revision: number; timezone: string }; reasonCode: string | null }
+export interface NextTrainingDay { nextTrainingDay: null | { occurrenceId: string; scheduledDate: string; dayOfWeek: number; weekNumber: number; phaseId: string; phaseType: string; expectedTemplateIds: string[]; existingSessions: PlannedSession[]; revision: number; timezone: string }; reasonCode: string | null }
 
 export interface ImportPreview { previewToken?: string; fileName?: string; counts?: { sessions?: number; sets?: number; rows?: number }; errors?: string[]; unknownColumns?: string[] }
 export interface ImportResult { added?: number; updated?: number; rawCount?: number; wellnessCount?: number; errors?: Record<string, string> }
@@ -212,6 +234,91 @@ export function profilePayload(current: AthleteProfile, edits: AthleteProfile = 
   };
 }
 
+export type TemplateComponentDomain = NonNullable<PlanComponent["domain"]["value"]>;
+export interface CustomExerciseInput { name: string; movement: string; primaryMuscles: string[]; equipment: string[] }
+
+const taxonomyVersion = "strength-1.0";
+const classifiedFact = <T,>(value: T, source: "catalog" | "user_confirmed", evidence: string) => ({ value, source, confidence: 1, evidence, taxonomyVersion });
+
+export function catalogExercise(definition: ExerciseDefinition, id: string = crypto.randomUUID()): PlanExercise {
+  const evidence = `Exercise catalog: ${definition.key}`;
+  return {
+    id, displayName: definition.name, canonicalKey: definition.key,
+    classification: {
+      primaryMovement: classifiedFact(definition.movement, "catalog", evidence),
+      primaryMuscles: classifiedFact([...definition.primaryMuscles], "catalog", evidence),
+      secondaryMuscles: classifiedFact([...definition.secondaryMuscles], "catalog", evidence),
+      equipment: classifiedFact([...definition.equipment], "catalog", evidence),
+      impact: classifiedFact(null, "catalog", "Exercise catalog does not specify impact"),
+      laterality: classifiedFact(definition.unilateral ? "unilateral" : "bilateral", "catalog", evidence),
+    },
+    sets: 3, repsMin: 8, repsMax: 12, targetRpe: null, restSeconds: 90,
+    referenceLoad: null, referenceLoadUnit: null, notes: "",
+  };
+}
+
+export function customExercise(input: CustomExerciseInput = { name: "", movement: "", primaryMuscles: [], equipment: [] }, id: string = crypto.randomUUID()): PlanExercise {
+  const evidence = "Entered in Dashboard";
+  return {
+    id, displayName: input.name, canonicalKey: null,
+    classification: {
+      primaryMovement: classifiedFact(input.movement || null, "user_confirmed", evidence),
+      primaryMuscles: classifiedFact([...input.primaryMuscles], "user_confirmed", evidence),
+      secondaryMuscles: classifiedFact([], "user_confirmed", evidence),
+      equipment: classifiedFact([...input.equipment], "user_confirmed", evidence),
+      impact: classifiedFact(null, "user_confirmed", evidence),
+      laterality: classifiedFact(null, "user_confirmed", evidence),
+    },
+    sets: 3, repsMin: 8, repsMax: 12, targetRpe: null, restSeconds: 90,
+    referenceLoad: null, referenceLoadUnit: null, notes: "",
+  };
+}
+
+export function templateComponent(domain: TemplateComponentDomain, id: string = crypto.randomUUID()): PlanComponent {
+  const name = friendlyLabel(domain);
+  return {
+    id, name,
+    domain: classifiedFact(domain, "user_confirmed", "Selected in Dashboard"),
+    prescription: domain === "strength" ? { kind: "strength", exercises: [] } : { kind: "duration_only", notes: "" },
+  };
+}
+
+export function editableTemplate(value: SessionTemplate): SessionTemplate {
+  return structuredClone({ id: value.id, name: value.name, intent: value.intent, durationMinutes: value.durationMinutes, recoveryDemand: value.recoveryDemand, notes: value.notes, components: value.components });
+}
+
+export function templateEditorErrors(template: SessionTemplate): string[] {
+  const errors: string[] = [];
+  if (!template.name.trim()) errors.push("Enter a template name.");
+  if (!template.intent.trim()) errors.push("Enter the training goal.");
+  if (!Number.isInteger(template.durationMinutes) || template.durationMinutes < 1 || template.durationMinutes > 240) errors.push("Duration must be between 1 and 240 minutes.");
+  if (template.components.length === 0) errors.push("Add at least one component.");
+  template.components.forEach((component, componentIndex) => {
+    const componentLabel = `Component ${componentIndex + 1}`;
+    if (!component.name.trim()) errors.push(`${componentLabel} needs a name.`);
+    if (component.prescription.kind === "duration_only") {
+      if (!component.prescription.notes.trim()) errors.push(`${componentLabel} needs session instructions.`);
+      return;
+    }
+    if (component.prescription.exercises.length === 0) errors.push(`${componentLabel} needs at least one exercise.`);
+    component.prescription.exercises.forEach((exercise, exerciseIndex) => {
+      const label = `${componentLabel}, exercise ${exerciseIndex + 1}`;
+      if (!exercise.displayName.trim()) errors.push(`${label} needs a name.`);
+      if (!Number.isInteger(exercise.sets) || exercise.sets < 1 || exercise.sets > 20) errors.push(`${label} sets must be between 1 and 20.`);
+      if (!Number.isInteger(exercise.repsMin) || exercise.repsMin < 1 || exercise.repsMin > 100 || !Number.isInteger(exercise.repsMax) || exercise.repsMax < exercise.repsMin || exercise.repsMax > 100) errors.push(`${label} reps must be between 1 and 100, with max at least min.`);
+      if (exercise.targetRpe !== null && (exercise.targetRpe < 1 || exercise.targetRpe > 10)) errors.push(`${label} RPE must be between 1 and 10.`);
+      if (!Number.isInteger(exercise.restSeconds) || exercise.restSeconds < 0 || exercise.restSeconds > 600) errors.push(`${label} rest must be between 0 and 600 seconds.`);
+      if (exercise.referenceLoad !== null && exercise.referenceLoad < 0) errors.push(`${label} reference load cannot be negative.`);
+      if (exercise.canonicalKey === null) {
+        if (!exercise.classification.primaryMovement.value) errors.push(`${label} needs a movement pattern.`);
+        if (!Array.isArray(exercise.classification.primaryMuscles.value) || exercise.classification.primaryMuscles.value.length === 0) errors.push(`${label} needs a primary muscle.`);
+        if (!Array.isArray(exercise.classification.equipment.value) || exercise.classification.equipment.value.length === 0) errors.push(`${label} needs equipment.`);
+      }
+    });
+  });
+  return errors;
+}
+
 export function pendingPlanDrafts(drafts: StoredDraft[], versions: PlanVersion[]): StoredDraft[] { const approved = new Set(versions.map((version) => version.plan.id)); return drafts.filter((item) => !approved.has(item.draft.id)); }
 export function isPlanDraftApproved(draftId: string, versions: PlanVersion[]): boolean { return versions.some((version) => version.plan.id === draftId); }
 export function primaryPlanDraft(drafts: StoredDraft[], versions: PlanVersion[]): StoredDraft | null { return pendingPlanDrafts(drafts, versions)[0] ?? drafts[0] ?? null; }
@@ -219,8 +326,9 @@ export function primaryPlanDraft(drafts: StoredDraft[], versions: PlanVersion[])
 export function referencedTemplates(mesocycle: Mesocycle, templates: SessionTemplate[]): { templates: SessionTemplate[]; missingIds: string[] } {
   const byId = new Map(templates.map((item) => [item.id, item]));
   const resolved: SessionTemplate[] = []; const missingIds: string[] = []; const seen = new Set<string>();
-  for (const day of [...mesocycle.weeklyStructure].sort((a, b) => a.dayOfWeek - b.dayOfWeek)) {
-    for (const id of day.templateIds) {
+  const slots = mesocycle.schedule.kind === "fixed_week" ? [...mesocycle.schedule.days].sort((a, b) => a.dayOfWeek - b.dayOfWeek) : mesocycle.schedule.rotation;
+  for (const slot of slots) {
+    for (const id of slot.templateIds) {
       if (seen.has(id)) continue; seen.add(id);
       const template = byId.get(id);
       if (template) resolved.push(template); else missingIds.push(id);

@@ -3,7 +3,7 @@
 - Native development targets Windows x64 and Apple Silicon macOS. Windows ARM, Intel macOS, Linux, and cross-compilation are unsupported. The MSI is unsigned and may trigger SmartScreen; macOS debug builds use ad-hoc signing and a rebuilt binary may prompt again for Keychain access.
 - The UI is English-only.
 - The MVP has no built-in LLM, cloud service, mobile client, or third-party write-back.
-- Plan Schema v2/v3 files are retained as historical format documentation. Runtime writes accept v4 only; the v5 database migration imports the latest approved legacy plan into the template library and Current Mesocycle, then removes active legacy plan history.
+- Plan Schema v2/v3/v4 files are retained as historical format documentation. Runtime writes accept v5 only; database migration 6 converts existing weekly structures into fixed-week schedules without changing their dates or templates.
 - The exercise catalog is intentionally small, but exercises are open-world. Missing catalog membership never fails by itself; only a blocker that lacks a required trusted fact returns `UNKNOWN`.
 - Hevy supports the migrated CSV aliases and preview-before-commit behavior. A current real export remains a release gate.
 - Intervals.icu is read-only. Real-account fields, timezone behavior, overlapping sync, and partial failure remain a release gate until temporary credentials are supplied.

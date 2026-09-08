@@ -27,7 +27,7 @@ MCP exposes read, calculation, validation, candidate-search, template-library, a
 
 Template and plan writes are immediate latest-state writes protected by `expectedRevision`. A template or plan edit that affects future planned snapshots requires `futureSessionPolicy: keep | update`. Core blocker failures and unknowns, missing/cross-owner templates, and stale LLM snapshots are rejected. Template deletion additionally requires an explicit user request and is blocked while the Current Mesocycle references it. MCP still cannot directly change the confirmed Profile.
 
-Use the provider-neutral `packages/skills/athria-training-planner` Skill for the intended workflow. Save templates first, then save a v4 Current Mesocycle that references their IDs. Validate and resolve blocker-relevant gaps before saving. The natural week remains sparse and plans never accept or emit `mixed`.
+Use the provider-neutral `packages/skills/athria-training-planner` Skill for the intended workflow. Save templates first, then save a v5 Current Mesocycle that references their IDs through a fixed-week, flexible-week, or interval schedule. Validate and resolve blocker-relevant gaps before saving. Plans never accept or emit `mixed`.
 
 ## Xunji records
 

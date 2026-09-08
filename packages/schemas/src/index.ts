@@ -3,7 +3,7 @@ import * as z from "zod";
 export const OWNER_ID = "local-user";
 export const FORMULA_VERSION = "0.2.0";
 export const RULE_VERSION = "0.2.0";
-export const PLAN_SCHEMA_VERSION = "4.0";
+export const PLAN_SCHEMA_VERSION = "5.0";
 export const TAXONOMY_VERSION = "strength-1.0";
 export const AI_HARD_CONFIDENCE = 0.9;
 
@@ -68,8 +68,14 @@ export const trainingComponentSchema = z.object({ id: z.string().min(1), name: z
   if (value.prescription.kind === "duration_only" && value.domain.value === "strength") context.addIssue({ code: "custom", path: ["prescription", "kind"], message: "strength domain requires strength prescription" });
 });
 export const sessionTemplateSchema = z.object({ id: z.string().min(1), name: z.string().min(1).max(100), intent: z.string().min(1).max(240), durationMinutes: z.number().int().min(1).max(240), recoveryDemand: recoveryDemandSchema, notes: z.string().max(4000).default(""), components: z.array(trainingComponentSchema).min(1).max(20) }).strict();
+export const trainingDaySlotSchema = z.object({ id: z.string().min(1), templateIds: z.array(z.string().min(1)).min(1).max(26) }).strict();
+export const scheduleSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("fixed_week"), days: z.array(trainingDaySlotSchema.extend({ dayOfWeek: z.number().int().min(0).max(6) }).strict()).min(1).max(7) }).strict(),
+  z.object({ kind: z.literal("flexible_week"), targetSessionsPerWeek: z.number().int().min(1).max(7), minSessionsPerWeek: z.number().int().min(1).max(7), maxSessionsPerWeek: z.number().int().min(1).max(7), rotation: z.array(trainingDaySlotSchema).min(1).max(26) }).strict().refine((value) => value.minSessionsPerWeek <= value.targetSessionsPerWeek && value.targetSessionsPerWeek <= value.maxSessionsPerWeek, { message: "expected minSessionsPerWeek <= targetSessionsPerWeek <= maxSessionsPerWeek" }),
+  z.object({ kind: z.literal("interval"), intervalDays: z.number().int().min(1).max(30), rotation: z.array(trainingDaySlotSchema).min(1).max(26) }).strict(),
+]);
 export const mesocycleSchema = z.object({
-  durationWeeks: z.number().int().min(1).max(52), weeklyStructure: z.array(z.object({ dayOfWeek: z.number().int().min(0).max(6), templateIds: z.array(z.string().min(1)).min(1).max(26) }).strict()).min(1).max(7),
+  durationWeeks: z.number().int().min(1).max(52), schedule: scheduleSchema,
   phases: z.array(z.object({ id: z.string().min(1), phaseType: phaseTypeSchema, name: z.string().min(1).max(40), startWeek: z.number().int().min(1).max(52), endWeek: z.number().int().min(1).max(52), focus: z.string().min(1).max(300), progression: z.array(z.string().min(1).max(1000)).default([]) }).strict()).min(1).max(52),
   adjustmentRules: z.array(z.object({ trigger: z.string().min(1).max(1000), action: z.string().min(1).max(1000), rationale: z.string().min(1).max(2000) }).strict()).default([]),
 }).strict();
@@ -83,8 +89,10 @@ export const currentPlanWriteSchema = currentPlanSchema.omit({ revision: true, u
 export const sessionTemplateCreateSchema = sessionTemplateSchema.extend({ clientRequestId: z.string().min(1).optional() }).strict();
 export const sessionTemplateUpdateSchema = z.object({ template: sessionTemplateSchema, expectedRevision: z.number().int().positive(), futureSessionPolicy: z.enum(["keep", "update"]).optional() }).strict();
 // Read-only legacy contracts used solely by the v3-to-v4 database migration.
+const legacyWeeklyStructureSchema = z.array(z.object({ dayOfWeek: z.number().int().min(0).max(6), templateIds: z.array(z.string().min(1)).min(1).max(26) }).strict()).min(1).max(7);
+const legacyResolvedMesocycleSchema = z.object({ durationWeeks: z.number().int().min(1).max(52), weeklyStructure: legacyWeeklyStructureSchema, sessionTemplates: z.array(sessionTemplateSchema).min(1).max(52), phases: mesocycleSchema.shape.phases, adjustmentRules: mesocycleSchema.shape.adjustmentRules }).strict();
 const legacyMigrationSchema = z.object({ reviewRequired: z.boolean(), sourceSchema: z.string(), sourceSessions: z.array(z.unknown()).default([]) }).strict().nullable().default(null);
-const legacyPlanDraftShape = { planSchemaVersion: z.literal("3.0"), id: z.string().min(1), ownerId: z.string().default(OWNER_ID), clientRequestId: z.string().min(1), title: z.string().min(1).max(200), summary: z.string().max(4000).default(""), mesocycle: resolvedMesocycleSchema.nullable().default(null), migration: legacyMigrationSchema, sourceAgent: z.string().nullable().default(null), model: z.string().nullable().default(null), skillVersion: z.string().nullable().default(null), inputSnapshotHash: z.string().min(1), createdAt: z.string().datetime({ offset: true }), updatedAt: z.string().datetime({ offset: true }) };
+const legacyPlanDraftShape = { planSchemaVersion: z.literal("3.0"), id: z.string().min(1), ownerId: z.string().default(OWNER_ID), clientRequestId: z.string().min(1), title: z.string().min(1).max(200), summary: z.string().max(4000).default(""), mesocycle: legacyResolvedMesocycleSchema.nullable().default(null), migration: legacyMigrationSchema, sourceAgent: z.string().nullable().default(null), model: z.string().nullable().default(null), skillVersion: z.string().nullable().default(null), inputSnapshotHash: z.string().min(1), createdAt: z.string().datetime({ offset: true }), updatedAt: z.string().datetime({ offset: true }) };
 export const planDraftSchema = z.object(legacyPlanDraftShape).strict();
 export const agentPlanDraftSchema = z.object({ ...legacyPlanDraftShape, mesocycle: resolvedMesocycleSchema, migration: z.null().default(null) }).strict();
 
@@ -92,7 +100,12 @@ export const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "expected YYYY
 export const exerciseOverrideSchema = z.object({ exerciseId: z.string().min(1), sets: z.number().int().min(1).max(20).optional(), repsMin: z.number().int().min(1).max(100).optional(), repsMax: z.number().int().min(1).max(100).optional(), targetRpe: z.number().min(1).max(10).nullable().optional(), restSeconds: z.number().int().min(0).max(600).optional(), referenceLoad: z.number().min(0).nullable().optional(), referenceLoadUnit: weightUnitSchema.nullable().optional() }).strict().refine((value) => value.repsMin === undefined || value.repsMax === undefined || value.repsMax >= value.repsMin, { message: "repsMax must be >= repsMin" });
 export const plannedSessionInputSchema = z.object({ id: z.string().min(1), templateId: z.string().min(1), notes: z.string().max(4000).default(""), overrideReason: z.string().min(1).max(1000).optional(), exerciseOverrides: z.array(exerciseOverrideSchema).max(30).default([]) }).strict();
 export const nextTrainingDayWriteSchema = z.object({ clientRequestId: z.string().min(1), scheduledDate: dateSchema, expectedRevision: z.number().int().min(0), mode: z.enum(["append", "replace"]), sessions: z.array(plannedSessionInputSchema).min(1).max(15) }).strict();
-export const plannedSessionSchema = z.object({ id: z.string().min(1), ownerId: z.string().min(1), planRevision: z.number().int().positive(), scheduledDate: dateSchema, weekNumber: z.number().int().min(1).max(52), phaseId: z.string().min(1), templateId: z.string().min(1), name: z.string().min(1).max(100), intent: z.string().min(1).max(240), recoveryDemand: recoveryDemandSchema, durationMinutes: z.number().int().min(1).max(240), components: z.array(trainingComponentSchema).min(1), exerciseOverrides: z.array(exerciseOverrideSchema).default([]), legacySnapshot: z.boolean().default(false), notes: z.string().max(4000).default(""), overrideReason: z.string().max(1000).nullable().default(null), status: z.enum(["planned", "completed", "skipped"]).default("planned"), completedTrainingSessionId: z.string().nullable().default(null), createdAt: z.string().datetime({ offset: true }), updatedAt: z.string().datetime({ offset: true }) }).strict();
+export const plannedSessionSchema = z.object({ id: z.string().min(1), occurrenceId: z.string().min(1), ownerId: z.string().min(1), planRevision: z.number().int().positive(), scheduledDate: dateSchema, weekNumber: z.number().int().min(1).max(52), phaseId: z.string().min(1), templateId: z.string().min(1), name: z.string().min(1).max(100), intent: z.string().min(1).max(240), recoveryDemand: recoveryDemandSchema, durationMinutes: z.number().int().min(1).max(240), components: z.array(trainingComponentSchema).min(1), exerciseOverrides: z.array(exerciseOverrideSchema).default([]), legacySnapshot: z.boolean().default(false), notes: z.string().max(4000).default(""), overrideReason: z.string().max(1000).nullable().default(null), status: z.enum(["planned", "completed", "skipped"]).default("planned"), completedTrainingSessionId: z.string().nullable().default(null), completedAt: z.string().datetime({ offset: true }).nullable().default(null), completionSource: z.enum(["manual", "import"]).nullable().default(null), createdAt: z.string().datetime({ offset: true }), updatedAt: z.string().datetime({ offset: true }) }).strict();
+export const plannedSessionActionSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("complete"), expectedRevision: z.number().int().min(0) }).strict(),
+  z.object({ action: z.literal("skip"), expectedRevision: z.number().int().min(0) }).strict(),
+  z.object({ action: z.literal("move_occurrence"), expectedRevision: z.number().int().min(0), scheduledDate: dateSchema }).strict(),
+]);
 
 export const ruleResultSchema = z.object({ status: z.enum(["pass", "fail", "unknown", "not_applicable"]), enforcement: z.enum(["blocker", "advisory", "info"]), reasonCode: z.string(), rulePackId: z.string(), ruleVersion: z.string(), subjectRefs: z.array(z.string()), evidence: z.record(z.string(), z.unknown()), missingFacts: z.array(z.string()), confidenceLimit: z.object({ required: z.number().min(0).max(1).nullable(), observed: z.number().min(0).max(1).nullable() }).nullable() });
 export const dataGapSchema = z.object({ code: z.string(), subjectRef: z.string(), factPath: z.string(), requiredByRuleCodes: z.array(z.string()), blocking: z.boolean(), resolution: z.enum(["agent_infer", "user_confirm", "add_profile_data"]) }).strict();
@@ -104,6 +117,8 @@ export type TrainingPreference = z.infer<typeof trainingPreferenceSchema>;
 export type TrainingSession = z.infer<typeof trainingSessionSchema>;
 export type ExerciseDefinition = z.infer<typeof exerciseDefinitionSchema>;
 export type Mesocycle = z.infer<typeof mesocycleSchema>;
+export type Schedule = z.infer<typeof scheduleSchema>;
+export type TrainingDaySlot = z.infer<typeof trainingDaySlotSchema>;
 export type ResolvedMesocycle = z.infer<typeof resolvedMesocycleSchema>;
 export type SessionTemplate = z.infer<typeof sessionTemplateSchema>;
 export type StoredSessionTemplate = z.infer<typeof storedSessionTemplateSchema>;
@@ -112,6 +127,7 @@ export type CurrentPlanWrite = z.infer<typeof currentPlanWriteSchema>;
 export type PlanDraft = z.infer<typeof planDraftSchema>;
 export type PlannedSession = z.infer<typeof plannedSessionSchema>;
 export type NextTrainingDayWrite = z.infer<typeof nextTrainingDayWriteSchema>;
+export type PlannedSessionAction = z.infer<typeof plannedSessionActionSchema>;
 export type PlanValidation = z.infer<typeof planValidationSchema>;
 export type PlanVersion = z.infer<typeof planVersionSchema>;
 export type RuleResult = z.infer<typeof ruleResultSchema>;

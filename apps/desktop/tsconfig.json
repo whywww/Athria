@@ -2,10 +2,12 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": "src",
-    "outDir": "dist-types",
+    "outDir": "../../../Athria/types/apps/desktop",
+    "tsBuildInfoFile": "../../../Athria/types/apps/desktop/tsconfig.tsbuildinfo",
     "jsx": "react-jsx",
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": ["vite/client"]
   },
-  "include": ["src"]
+  "include": ["src"],
+  "references": [{ "path": "../../packages/core" }]
 }

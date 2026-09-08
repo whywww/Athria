@@ -41,17 +41,7 @@ fn credential(name: &str) -> Result<keyring::Entry, String> {
         .map_err(|error| error.to_string())
 }
 
-fn get_or_create_mcp_token() -> Result<String, String> {
-    let entry = credential("mcp-http-token")?;
-    match entry.get_password() {
-        Ok(value) => Ok(value),
-        Err(_) => {
-            let value = Uuid::new_v4().simple().to_string();
-            entry.set_password(&value).map_err(|error| error.to_string())?;
-            Ok(value)
-        }
-    }
-}
+fn new_runtime_token() -> String { Uuid::new_v4().simple().to_string() }
 
 fn extract_xunji_api_key(skill_text: &str) -> Result<String, String> {
     if skill_text.len() > 65_536 { return Err("The Xunji Skill text is too large.".to_string()); }
@@ -217,7 +207,7 @@ fn mcp_status() -> Result<Value, String> {
     let executable = std::env::current_exe().map_err(|error| format!("Athria could not determine its installation path: {error}"))?;
     let executable_path = executable.to_str().ok_or_else(|| "Athria's installation path contains unsupported characters.".to_string())?;
     Ok(json!({
-        "configured": get_or_create_mcp_token().is_ok(),
+        "configured": true,
         "executablePath": executable_path,
         "arguments": ["mcp"]
     }))
@@ -234,8 +224,8 @@ pub fn run() -> i32 {
         (project_root, bun, service_entry)
     };
     let port = match free_port() { Ok(value) => value, Err(error) => { eprintln!("{error}"); return 1; } };
-    let token = Uuid::new_v4().simple().to_string();
-    let mcp_token = match get_or_create_mcp_token() { Ok(value) => value, Err(error) => { eprintln!("Credential Manager: {error}"); return 1; } };
+    let token = new_runtime_token();
+    let mcp_token = new_runtime_token();
     let service = ServiceInfo { base_url: format!("http://127.0.0.1:{port}"), token: token.clone(), mcp_url: format!("http://127.0.0.1:{port}/mcp") };
     let service_for_setup = service.clone();
 
@@ -297,7 +287,7 @@ pub fn run() -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_xunji_api_key, mcp_status};
+    use super::{extract_xunji_api_key, mcp_status, new_runtime_token};
 
     #[test]
     fn extracts_bearer_and_api_key_headers() {
@@ -322,8 +312,18 @@ mod tests {
     fn reports_the_current_executable_for_mcp_stdio() {
         let expected = std::env::current_exe().unwrap();
         let status = mcp_status().unwrap();
+        assert_eq!(status["configured"], true);
         assert_eq!(status["executablePath"], expected.to_str().unwrap());
         assert_eq!(status["arguments"], serde_json::json!(["mcp"]));
         assert!(expected.is_absolute());
+    }
+
+    #[test]
+    fn creates_distinct_runtime_tokens() {
+        let first = new_runtime_token();
+        let second = new_runtime_token();
+        assert_eq!(first.len(), 32);
+        assert!(first.chars().all(|character| character.is_ascii_hexdigit()));
+        assert_ne!(first, second);
     }
 }

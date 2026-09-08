@@ -43,7 +43,7 @@ The current MCP MVP provides:
 - Local SQLite persistence with migrations, WAL, backup, and restore.
 - MCP v2 over stdio, plus authenticated Streamable HTTP on a loopback-only address.
 - Deterministic strength and endurance metrics with formula versions and explicit data-quality indicators.
-- Plan Schema v4 validation with blocker, advisory, informational, and unknown outcomes.
+- Plan Schema v5 validation with fixed-week, flexible-week, and interval rhythms plus blocker, advisory, informational, and unknown outcomes.
 - A reusable Session Template Library and one editable Current Mesocycle per athlete.
 - Optimistic revision checks and validation gates for MCP writes.
 - Hevy CSV import with preview-before-commit, plus read-only Intervals.icu and Xunji synchronization.
@@ -104,7 +104,7 @@ bun run build:app
 bun run release:native
 ```
 
-Build output defaults to `~/Documents/HAILEY/Athria` and is separated by target triple. Set `ATHRIA_BUILD_ROOT` to use another machine-local output directory. Packaged apps include the service sidecar and do not require Bun, Rust, Node.js, Python, Docker, or an external database at runtime.
+Keep the checkout in a directory named `Athria-repo`. Every generated file is written to its sibling `Athria` directory and separated by purpose and target triple; the build location is intentionally not configurable. Packaged apps include the service sidecar and do not require Bun, Rust, Node.js, Python, Docker, or an external database at runtime.
 
 On first launch, use the dashboard to complete the athlete profile and preferences, then import or synchronize any training records you want Athria to use.
 
@@ -158,7 +158,7 @@ A typical planning flow is:
 1. Read the confirmed profile, preferences, current state, taxonomy, and relevant history.
 2. Surface missing facts that matter to blocker rules.
 3. Create or update reusable session templates.
-4. Assemble a sparse natural-week mesocycle that references those templates.
+4. Assemble a fixed-week, flexible-week, or interval mesocycle that references those templates.
 5. Validate, revise, and explain the result.
 6. Save only after the user confirms the proposed changes.
 
@@ -285,7 +285,7 @@ Athria 的确定性 Core 负责计算和校验；连接的 MCP 客户端负责�
 - 使用 SQLite、migration 和 WAL 的本地数据持久化，以及备份与恢复能力。
 - 基于 stdio 的 MCP v2，以及仅在本机回环地址提供、需要身份验证的 Streamable HTTP。
 - 可复现的力量与耐力训练指标，并明确标记公式版本和数据质量。
-- 基于 Plan Schema v4 的计划校验，结果分为阻断、建议、信息和未知。
+- 基于 Plan Schema v5 的计划校验，支持固定周、灵活周和间隔节奏，结果分为阻断、建议、信息和未知。
 - 可复用的 Session Template Library，以及每位运动者一个可编辑的 Current Mesocycle。
 - 使用 revision 乐观锁和校验门禁保护 MCP 写入。
 - 提交前可预览的 Hevy CSV 导入，以及只读的 Intervals.icu 和训记同步。
@@ -346,7 +346,7 @@ bun run build:app
 bun run release:native
 ```
 
-构建产物默认写入 `~/Documents/HAILEY/Athria`，并按 target triple 分开存放。可通过 `ATHRIA_BUILD_ROOT` 指定其他本机输出目录。打包后的应用包含服务 sidecar，运行时不需要 Bun、Rust、Node.js、Python、Docker 或外部数据库。
+请将代码仓库保存在名为 `Athria-repo` 的目录中。所有生成文件均写入其同级的 `Athria` 目录，并按用途和 target triple 分开存放；构建位置不可更改。打包后的应用包含服务 sidecar，运行时不需要 Bun、Rust、Node.js、Python、Docker 或外部数据库。
 
 首次启动后，请先在 Dashboard 中完成运动者资料和偏好设置，再导入或同步希望 Athria 使用的训练记录。
 

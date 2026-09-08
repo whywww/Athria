@@ -11,11 +11,11 @@ Signing: unsigned
 - `bun run release:msi` compiles the sidecar and creates the MSI. `bun run build:desktop` is retained as a compatibility alias.
 - `bun run release:native` creates an MSI on Windows or an app plus DMG on Apple Silicon macOS.
 
-Build output is machine-local under `~/Documents/HAILEY/Athria` by default and can be redirected with `ATHRIA_BUILD_ROOT`. MSI builds are reserved for release and installation validation. The development service locates Bun through `ATHRIA_BUN`, the repository portable runtime, or `PATH`, in that order; installed builds continue to use the bundled sidecar and require no Bun runtime.
+The checkout must be named `Athria-repo`. All generated output is machine-local under its sibling `Athria` directory; this location is intentionally not configurable. MSI builds are reserved for release and installation validation. The development service locates Bun through `ATHRIA_BUN`, the repository portable runtime, or `PATH`, in that order; installed builds continue to use the bundled sidecar and require no Bun runtime.
 
 ## Current artifact
 
-- Legacy file: `$ATHRIA_BUILD_ROOT/target/x86_64-pc-windows-msvc/release/bundle/msi/Athria_0.1.0_x64_en-US.msi`
+- Legacy file: `../Athria/target/x86_64-pc-windows-msvc/release/bundle/msi/Athria_0.1.0_x64_en-US.msi`
 - Size: 47,149,056 bytes
 - SHA-256: `FB321AD29F5CE7F0F2C2F9EA8EFB98BCC9647D7B03682C6A8EFCAA81EE2EA2E3`
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { TAXONOMY_VERSION, defaultProfile, type ExerciseDefinition, type PlanDraft, type TrainingSession } from "@athria/schemas";
-import { calculateHeartRateZones, calculateTrainingMetrics, estimateOneRepMax, evaluateDoubleProgression, evaluateRpeAutoregulation, stableHash, validatePlan } from "./index";
+import { TAXONOMY_VERSION, defaultProfile, type ExerciseDefinition, type ResolvedMesocycle, type TrainingSession } from "@athria/schemas";
+import { calculateHeartRateZones, calculateTrainingMetrics, estimateOneRepMax, evaluateDoubleProgression, evaluateRpeAutoregulation, expandSchedule, stableHash, validatePlan } from "./index";
 
 const fact = <T>(value: T, source = "catalog", confidence = 1, evidence = "fixture") => ({ value, source: source as "catalog" | "ai_inferred" | "user_confirmed", confidence, evidence, taxonomyVersion: TAXONOMY_VERSION as typeof TAXONOMY_VERSION });
 const exercise = (patch: Record<string, unknown> = {}) => ({
@@ -8,15 +8,21 @@ const exercise = (patch: Record<string, unknown> = {}) => ({
   classification: { primaryMovement: fact("squat" as const), primaryMuscles: fact(["quadriceps" as const]), secondaryMuscles: fact(["glutes" as const]), equipment: fact(["barbell" as const]), impact: fact("low" as const), laterality: fact("bilateral" as const) },
   sets: 3, repsMin: 5, repsMax: 8, targetRpe: 8, restSeconds: 120, referenceLoad: null, referenceLoadUnit: null, notes: "", ...patch,
 });
-const draft: PlanDraft = {
-  planSchemaVersion: "3.0", id: "draft", ownerId: "local-user", clientRequestId: "request", title: "Plan", summary: "", migration: null, sourceAgent: null, model: null, skillVersion: null,
-  inputSnapshotHash: "snapshot", createdAt: "2026-09-01T00:00:00+08:00", updatedAt: "2026-09-01T00:00:00+08:00",
-  mesocycle: { durationWeeks: 1, weeklyStructure: [{ dayOfWeek: 0, templateIds: ["squat"] }], sessionTemplates: [{ id: "squat", name: "Squat", intent: "strength", durationMinutes: 60, recoveryDemand: "high", notes: "", components: [{ id: "strength-main", name: "Strength", domain: fact("strength" as const), prescription: { kind: "strength", exercises: [exercise()] } }] }], phases: [{ id: "base", phaseType: "foundation", name: "Base", startWeek: 1, endWeek: 1, focus: "Build capacity", progression: [] }], adjustmentRules: [] },
-};
+const draft: { effectiveStartDate: string; mesocycle: ResolvedMesocycle } = { effectiveStartDate: "2026-09-07", mesocycle: { durationWeeks: 1, schedule: { kind: "fixed_week", days: [{ id: "monday", dayOfWeek: 0, templateIds: ["squat"] }] }, sessionTemplates: [{ id: "squat", name: "Squat", intent: "strength", durationMinutes: 60, recoveryDemand: "high", notes: "", components: [{ id: "strength-main", name: "Strength", domain: fact("strength" as const), prescription: { kind: "strength", exercises: [exercise()] } }] }], phases: [{ id: "base", phaseType: "foundation", name: "Base", startWeek: 1, endWeek: 1, focus: "Build capacity", progression: [] }], adjustmentRules: [] } };
 const catalog: ExerciseDefinition[] = [{ key: "squat", name: "Squat", movement: "squat", primaryMuscles: ["quadriceps"], secondaryMuscles: ["glutes"], equipment: ["barbell"], unilateral: false, tags: [] }];
 const session: TrainingSession = { id: "s1", ownerId: "local-user", source: "fixture", externalId: "one", modality: "strength", domains: ["strength"], sport: null, name: "Strength", startAt: "2026-09-01T18:00:00+08:00", endAt: "2026-09-01T19:00:00+08:00", durationMinutes: 60, status: "completed", timezone: "Asia/Hong_Kong", endurance: null, missingFields: [], strengthSets: [{ exerciseRaw: "Squat", exerciseKey: "squat", movement: "squat", primaryMuscles: ["quadriceps"], secondaryMuscles: ["glutes"], setIndex: 1, setType: "normal", weight: 100, weightUnit: "kg", reps: 5, rpe: 8 }] };
 
 describe("deterministic core", () => {
+  it("expands fixed, flexible, and interval rhythms deterministically", () => {
+    const fixed = expandSchedule({ effectiveStartDate: "2026-09-07", durationWeeks: 2, schedule: { kind: "fixed_week", days: [{ id: "monday", dayOfWeek: 0, templateIds: ["a"] }] } });
+    expect(fixed.map((item) => item.scheduledDate)).toEqual(["2026-09-07", "2026-09-14"]);
+    const flexible = expandSchedule({ effectiveStartDate: "2026-09-07", durationWeeks: 2, schedule: { kind: "flexible_week", targetSessionsPerWeek: 3, minSessionsPerWeek: 2, maxSessionsPerWeek: 4, rotation: [{ id: "a", templateIds: ["a"] }, { id: "b", templateIds: ["b"] }] }, trainingDays: [0, 2, 4] });
+    expect(flexible).toHaveLength(6); expect(flexible.every((item) => [0, 2, 4].includes(item.dayOfWeek))).toBe(true); expect(flexible.map((item) => item.slotId)).toEqual(["a", "b", "a", "b", "a", "b"]);
+    const interval = expandSchedule({ effectiveStartDate: "2026-09-07", durationWeeks: 1, schedule: { kind: "interval", intervalDays: 2, rotation: [{ id: "a", templateIds: ["a"] }] }, trainingDays: [0, 2, 4] });
+    expect(interval.map((item) => item.scheduledDate)).toEqual(["2026-09-07", "2026-09-09", "2026-09-11"]);
+    const recovered = expandSchedule({ effectiveStartDate: "2026-09-07", durationWeeks: 1, schedule: { kind: "interval", intervalDays: 1, rotation: [{ id: "hard", templateIds: ["hard"] }] }, recoveryDemandByTemplate: { hard: "high" }, explicitRecoveryHours: 48 });
+    expect(recovered.map((item) => item.scheduledDate)).toEqual(["2026-09-07", "2026-09-09", "2026-09-11", "2026-09-13"]);
+  });
   it("uses hand-calculable metrics and preserves separated domains", () => {
     expect(estimateOneRepMax(100, 5, "kg").value).toBe(116.67);
     expect(calculateHeartRateZones(200).value.zone1).toEqual({ min: 100, max: 119 });
@@ -26,7 +32,7 @@ describe("deterministic core", () => {
   });
   it("accepts sparse weeks and blocks unavailable equipment", () => {
     const result = validatePlan(defaultProfile(), draft, catalog, new Date("2026-09-01T00:00:00Z"));
-    expect(result.results.find((item) => item.reasonCode === "MESOCYCLE_WEEKLY_STRUCTURE")?.status).toBe("pass");
+    expect(result.results.find((item) => item.reasonCode === "MESOCYCLE_SCHEDULE")?.status).toBe("pass");
     expect(result.results.find((item) => item.reasonCode === "EXERCISE_EQUIPMENT")?.status).toBe("fail");
   });
   it("allows a custom exercise with a supported high-confidence AI classification", () => {

@@ -200,9 +200,22 @@ function migratePlannedSession(value: unknown, catalog: Map<string, ExerciseDefi
   }
   delete session.planVersionId;
   session.planRevision ??= 1;
+  session.occurrenceId ??= `legacy-${String(session.id ?? crypto.randomUUID())}`;
   session.exerciseOverrides ??= [];
   session.legacySnapshot ??= true;
+  session.completedAt ??= null;
+  session.completionSource ??= session.completedTrainingSessionId ? "import" : null;
   return session;
+}
+
+function migrateCurrentMesocycle(value: unknown): unknown {
+  if (!value || typeof value !== "object") return value;
+  const mesocycle = structuredClone(value) as Record<string, unknown>;
+  if (!mesocycle.schedule && Array.isArray(mesocycle.weeklyStructure)) {
+    mesocycle.schedule = { kind: "fixed_week", days: (mesocycle.weeklyStructure as Array<Record<string, unknown>>).map((day, index) => ({ id: String(day.id ?? `weekday-${day.dayOfWeek ?? index}`), dayOfWeek: day.dayOfWeek, templateIds: day.templateIds })) };
+  }
+  delete mesocycle.weeklyStructure;
+  return mesocycle;
 }
 
 export class AthriaRepository {
@@ -213,12 +226,15 @@ export class AthriaRepository {
     this.sqlite = new Database(path, { create: true });
     this.sqlite.exec("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;");
     const hasMigrationTable = Boolean(this.sqlite.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'athria_migrations'").get());
+    // Migration 5 introduced the current-plan tables. Once it is present we must
+    // not replay the legacy bootstrap SQL, even when migration 6 is still pending.
     const isCurrentSchema = hasMigrationTable && Boolean(this.sqlite.query("SELECT version FROM athria_migrations WHERE version = 5").get());
     if (!isCurrentSchema) this.sqlite.exec(INITIAL_MIGRATION_SQL);
     this.db = drizzle({ client: this.sqlite, schema });
     try {
       this.migratePlanSchemaV3();
       this.migratePlanSchemaV4();
+      this.migrateTrainingRhythmV5();
     } catch (error) {
       this.sqlite.close();
       throw error;
@@ -290,7 +306,8 @@ export class AthriaRepository {
         const activation = this.sqlite.query("SELECT effective_start_date FROM plan_activations WHERE plan_version_id = ?").get(row.id) as { effective_start_date: string } | null;
         const profile = profiles.get(row.owner_id);
         const effectiveStartDate = activation?.effective_start_date ?? localDate(new Date().toISOString(), profile?.timezone ?? "UTC");
-        const { sessionTemplates: _templates, ...mesocycle } = version.plan.mesocycle;
+        const { sessionTemplates: _templates, ...legacyMesocycle } = version.plan.mesocycle;
+        const mesocycle = migrateCurrentMesocycle(legacyMesocycle);
         const current = currentPlanSchema.parse({ planSchemaVersion: PLAN_SCHEMA_VERSION, ownerId: row.owner_id, title: version.plan.title, summary: version.plan.summary, effectiveStartDate, mesocycle, revision: 1, sourceAgent: version.plan.sourceAgent, model: version.plan.model, skillVersion: version.plan.skillVersion, inputSnapshotHash: version.plan.inputSnapshotHash, updatedAt: timestamp });
         this.sqlite.query("INSERT INTO current_mesocycles(owner_id,data,revision,updated_at) VALUES (?,?,1,?)").run(row.owner_id, JSON.stringify(current), timestamp);
       }
@@ -306,7 +323,8 @@ export class AthriaRepository {
         }
         const profile = profiles.get(row.owner_id);
         const effectiveStartDate = localDate(new Date().toISOString(), profile?.timezone ?? "UTC");
-        const { sessionTemplates: _templates, ...mesocycle } = draft.mesocycle;
+        const { sessionTemplates: _templates, ...legacyMesocycle } = draft.mesocycle;
+        const mesocycle = migrateCurrentMesocycle(legacyMesocycle);
         const current = currentPlanSchema.parse({ planSchemaVersion: PLAN_SCHEMA_VERSION, ownerId: row.owner_id, title: draft.title, summary: draft.summary, effectiveStartDate, mesocycle, revision: 1, sourceAgent: draft.sourceAgent, model: draft.model, skillVersion: draft.skillVersion, inputSnapshotHash: draft.inputSnapshotHash, updatedAt: timestamp });
         this.sqlite.query("INSERT INTO current_mesocycles(owner_id,data,revision,updated_at) VALUES (?,?,1,?)").run(row.owner_id, JSON.stringify(current), timestamp);
       }
@@ -337,6 +355,29 @@ export class AthriaRepository {
         DROP TABLE plan_schema_migration_backups;
         INSERT INTO athria_migrations(version, applied_at) VALUES (5, CURRENT_TIMESTAMP);
       `);
+    })();
+  }
+
+  private migrateTrainingRhythmV5(): void {
+    if (this.sqlite.query("SELECT version FROM athria_migrations WHERE version = 6").get()) return;
+    this.sqlite.transaction(() => {
+      for (const row of this.sqlite.query("SELECT owner_id, data FROM current_mesocycles").all() as Array<{ owner_id: string; data: string }>) {
+        const value = parseJson(row.data) as Record<string, unknown>;
+        value.planSchemaVersion = PLAN_SCHEMA_VERSION;
+        value.mesocycle = migrateCurrentMesocycle(value.mesocycle);
+        const current = currentPlanSchema.parse(value);
+        this.sqlite.query("UPDATE current_mesocycles SET data = ? WHERE owner_id = ?").run(JSON.stringify(current), row.owner_id);
+      }
+      for (const row of this.sqlite.query("SELECT id, data FROM planned_sessions").all() as Array<{ id: string; data: string }>) {
+        const session = plannedSessionSchema.parse(migratePlannedSession(parseJson(row.data), new Map()));
+        this.sqlite.query("UPDATE planned_sessions SET data = ? WHERE id = ?").run(JSON.stringify(session), row.id);
+      }
+      for (const row of this.sqlite.query("SELECT id, before_data, after_data FROM planned_session_changes").all() as Array<{ id: string; before_data: string; after_data: string }>) {
+        const before = (parseJson(row.before_data) as unknown[]).map((item) => plannedSessionSchema.parse(migratePlannedSession(item, new Map())));
+        const after = (parseJson(row.after_data) as unknown[]).map((item) => plannedSessionSchema.parse(migratePlannedSession(item, new Map())));
+        this.sqlite.query("UPDATE planned_session_changes SET before_data = ?, after_data = ? WHERE id = ?").run(JSON.stringify(before), JSON.stringify(after), row.id);
+      }
+      this.sqlite.query("INSERT INTO athria_migrations(version, applied_at) VALUES (6, CURRENT_TIMESTAMP)").run();
     })();
   }
 
@@ -502,7 +543,7 @@ export class AthriaRepository {
       if ((this.getCurrentPlan(plan.ownerId)?.revision ?? 0) !== expectedRevision) throw new Error("REVISION_CONFLICT");
       this.db.insert(schema.currentMesocycles).values({ ownerId: plan.ownerId, data: plan, revision: plan.revision, updatedAt: plan.updatedAt }).onConflictDoUpdate({ target: schema.currentMesocycles.ownerId, set: { data: plan, revision: plan.revision, updatedAt: plan.updatedAt } }).run();
       for (const id of deletedSessionIds) this.db.delete(schema.plannedSessions).where(and(eq(schema.plannedSessions.id, id), eq(schema.plannedSessions.ownerId, plan.ownerId))).run();
-      for (const session of updatedSessions) this.db.update(schema.plannedSessions).set({ data: session, status: session.status }).where(and(eq(schema.plannedSessions.id, session.id), eq(schema.plannedSessions.ownerId, plan.ownerId))).run();
+      for (const session of updatedSessions) this.db.insert(schema.plannedSessions).values({ id: session.id, ownerId: session.ownerId, planVersionId: null, scheduledDate: session.scheduledDate, status: session.status, data: session }).onConflictDoUpdate({ target: schema.plannedSessions.id, set: { scheduledDate: session.scheduledDate, status: session.status, data: session } }).run();
       return plan;
     })();
   }
@@ -513,6 +554,17 @@ export class AthriaRepository {
   }
 
   scheduleRevision(ownerId = "local-user"): number { return Number((this.sqlite.query("SELECT COUNT(*) AS count FROM planned_session_changes WHERE owner_id = ?").get(ownerId) as { count: number }).count); }
+
+  updateCurrentPlannedSessions(input: { ownerId: string; expectedRevision: number; mode: string; sessions: PlannedSession[] }): { sessions: PlannedSession[]; revision: number } {
+    return this.sqlite.transaction(() => {
+      const revision = this.scheduleRevision(input.ownerId);
+      if (revision !== input.expectedRevision) throw new Error("PLANNED_SESSION_REVISION_CONFLICT");
+      const before = input.sessions.map((session) => this.listCurrentPlannedSessions(input.ownerId).find((item) => item.id === session.id)).filter((item): item is PlannedSession => Boolean(item));
+      for (const session of input.sessions) this.db.update(schema.plannedSessions).set({ scheduledDate: session.scheduledDate, status: session.status, data: session }).where(and(eq(schema.plannedSessions.id, session.id), eq(schema.plannedSessions.ownerId, input.ownerId))).run();
+      this.db.insert(schema.plannedSessionChanges).values({ id: crypto.randomUUID(), ownerId: input.ownerId, clientRequestId: crypto.randomUUID(), planVersionId: null, scheduledDate: input.sessions[0]?.scheduledDate ?? "1970-01-01", mode: input.mode, beforeData: before, afterData: input.sessions, createdAt: new Date().toISOString() }).run();
+      return { sessions: input.sessions, revision: revision + 1 };
+    })();
+  }
 
   saveCurrentPlannedSessions(input: { ownerId: string; clientRequestId: string; scheduledDate: string; expectedRevision: number; mode: "append" | "replace"; sessions: PlannedSession[] }) {
     return this.sqlite.transaction(() => {
@@ -605,7 +657,8 @@ export class AthriaRepository {
       if (!row) return null;
       const current = plannedSessionSchema.parse(parseJson(row.data));
       if (current.status !== "planned") return current;
-      const updated = plannedSessionSchema.parse({ ...current, status: "completed", completedTrainingSessionId: trainingSessionId, updatedAt: new Date().toISOString() });
+      const completedAt = new Date().toISOString();
+      const updated = plannedSessionSchema.parse({ ...current, status: "completed", completedTrainingSessionId: trainingSessionId, completedAt, completionSource: "import", updatedAt: completedAt });
       this.db.update(schema.plannedSessions).set({ status: updated.status, data: updated }).where(eq(schema.plannedSessions.id, plannedSessionId)).run();
       return updated;
     })();

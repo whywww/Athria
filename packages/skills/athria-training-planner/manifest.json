@@ -1,6 +1,6 @@
 {
   "name": "athria-training-planner",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "purpose": "Create and revise reusable session templates and the single current Mesocycle through Athria's deterministic tools.",
   "appliesWhen": ["The user asks to create, revise, validate, or explain a training plan."],
   "doesNotApplyWhen": ["The request is for medical diagnosis, injury treatment, or unsupervised rehabilitation."],
@@ -10,7 +10,7 @@
     "get_training_summary", "get_current_plan", "list_session_templates", "get_session_template", "get_exercise_catalog", "get_training_taxonomy", "calculate_training_metrics",
     "estimate_1rm", "calculate_heart_rate_zones", "evaluate_progression", "find_exercise_candidates",
     "validate_workout", "validate_current_plan", "check_training_constraints", "preview_session_template_change",
-    "explain_validation_result", "create_session_template", "update_session_template", "delete_session_template", "save_current_plan", "propose_profile_update"
+    "explain_validation_result", "create_session_template", "update_session_template", "delete_session_template", "save_current_plan", "update_planned_session", "propose_profile_update"
   ],
   "workflow": ["read", "identify-gaps", "save-templates", "plan", "validate", "revise", "explain", "save-current-plan"],
   "outputSchema": "CurrentPlan",

@@ -1,9 +1,10 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const buildRoot = resolve(process.env.ATHRIA_BUILD_ROOT ?? join(homedir(), "Documents", "HAILEY", "Athria"));
+const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+const buildRoot = resolve(projectRoot, "..", "Athria");
 
 export default defineConfig({
   plugins: [react()],
