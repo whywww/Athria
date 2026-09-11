@@ -1,12 +1,12 @@
-import { mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { join, resolve } from "node:path";
 import { AthriaApplication, AthriaError } from "@athria/application";
 import { AthriaRepository } from "@athria/data";
 import { XUNJI_SYNC_DAYS, XunjiAuthenticationError, fetchIntervals, fetchXunjiTraining } from "@athria/integrations";
 import { createMcpHttpHandler, serveMcpStdio } from "@athria/mcp";
-import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { applyCors, corsPreflightResponse, isAllowedOrigin } from "./http-security";
+import { createBackup, prepareRestore, previewBackup } from "./backup";
 
 const VERSION = "0.2.0";
 function platformDataRoot(): string {
@@ -32,41 +32,7 @@ async function body(request: Request): Promise<Record<string, unknown>> {
   catch { throw new AthriaError("INVALID_JSON", "Request body must be valid JSON."); }
 }
 
-async function backupDatabase(): Promise<string> {
-  repository.checkpoint();
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const target = join(dataDir, "backups", `athria-backup-${stamp}.zip`);
-  const files: Record<string, Uint8Array> = {
-    "manifest.json": strToU8(JSON.stringify({ athriaVersion: VERSION, createdAt: new Date().toISOString(), secretsIncluded: false }, null, 2)),
-  };
-  if (statSync(databasePath, { throwIfNoEntry: false })?.isFile()) files["athria.sqlite3"] = new Uint8Array(await Bun.file(databasePath).arrayBuffer());
-  const importsRoot = join(dataDir, "imports");
-  const visit = (directory: string): void => {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      const path = join(directory, entry.name);
-      if (entry.isDirectory()) visit(path);
-      else if (entry.isFile()) files[`imports/${relative(importsRoot, path).replaceAll("\\", "/")}`] = readFileSync(path);
-    }
-  };
-  visit(importsRoot);
-  const archive = zipSync(files, { level: 6 });
-  await Bun.write(target, archive);
-  return target;
-}
-
-async function restoreBackup(path: string, target: string): Promise<void> {
-  const resolvedTarget = resolve(target);
-  mkdirSync(resolvedTarget, { recursive: true });
-  if (readdirSync(resolvedTarget).length) throw new AthriaError("RESTORE_TARGET_NOT_EMPTY", "Restore target must be empty.");
-  const entries = unzipSync(new Uint8Array(await Bun.file(path).arrayBuffer()));
-  for (const [name, content] of Object.entries(entries)) {
-    const destination = resolve(resolvedTarget, name);
-    if (destination !== resolvedTarget && !destination.startsWith(`${resolvedTarget}${sep}`)) throw new AthriaError("INVALID_BACKUP", "Backup contains an unsafe path.");
-    if (basename(name) === "manifest.json") JSON.parse(strFromU8(content));
-    mkdirSync(dirname(destination), { recursive: true });
-    await Bun.write(destination, content);
-  }
-}
+const backupDatabase = () => createBackup(repository, databasePath, dataDir, VERSION);
 
 async function main(): Promise<void> {
   const command = process.argv[2] ?? "serve";
@@ -86,9 +52,9 @@ async function main(): Promise<void> {
     return;
   }
   if (command === "restore") {
-    const source = process.argv[3]; const target = process.argv[4];
-    if (!source || !target) throw new Error("Usage: athria-service restore BACKUP_PATH EMPTY_TARGET_DIR");
-    await restoreBackup(source, target);
+    const source = process.argv[3];
+    if (!source) throw new Error("Usage: athria-service restore BACKUP_PATH");
+    console.log(JSON.stringify(await prepareRestore(source, repository, databasePath, dataDir, VERSION), null, 2));
     repository.close();
     return;
   }
@@ -178,7 +144,8 @@ async function main(): Promise<void> {
         }
         if (url.pathname === "/api/system/doctor" && request.method === "GET") return json({ status: "ok", version: VERSION, dataDir, database: repository.counts() });
         if (url.pathname === "/api/system/backup" && request.method === "POST") return json({ path: await backupDatabase() });
-        if (url.pathname === "/api/system/restore" && request.method === "POST") { const value = await body(request); await restoreBackup(String(value.path), String(value.target)); return json({ status: "restored", target: value.target }); }
+        if (url.pathname === "/api/system/backup/preview" && request.method === "POST") { const value = await body(request); return json(await previewBackup(String(value.path), dataDir, VERSION)); }
+        if (url.pathname === "/api/system/restore/prepare" && request.method === "POST") { const value = await body(request); return json(await prepareRestore(String(value.path), repository, databasePath, dataDir, VERSION)); }
         return json({ error: { code: "NOT_FOUND", message: "Route not found." } }, 404);
         } catch (error) {
           const athriaError = error instanceof AthriaError ? error : new AthriaError("INTERNAL_ERROR", error instanceof Error ? error.message : String(error), 500);

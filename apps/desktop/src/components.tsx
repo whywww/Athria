@@ -2,7 +2,7 @@ import { friendlyLabel, validationMessage, type PlanValidation } from "./view-mo
 
 export const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
-export const Card = ({ title, children, className = "", action }: { title: string; children: React.ReactNode; className?: string; action?: React.ReactNode }) => <section className={`card ${className}`}><div className="card-heading"><h2>{title}</h2>{action}</div>{children}</section>;
+export const Card = ({ title, children, className = "", action }: { title: React.ReactNode; children: React.ReactNode; className?: string; action?: React.ReactNode }) => <section className={`card ${className}`}><div className="card-heading"><h2>{title}</h2>{action}</div>{children}</section>;
 export const ErrorBanner = ({ error }: { error: unknown }) => error ? <div className="error" role="alert">{error instanceof Error ? error.message : String(error)}</div> : null;
 export const Loading = () => <p className="muted">Loading…</p>;
 export const Empty = ({ children }: { children: React.ReactNode }) => <div className="empty">{children}</div>;

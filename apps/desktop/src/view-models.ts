@@ -185,6 +185,11 @@ export interface XunjiConnectionStatus {
   };
 }
 export interface DoctorResult { dataDir: string }
+export interface BackupPreview {
+  path: string;
+  manifest: { athriaVersion: string; createdAt: string; secretsIncluded: false };
+  counts: { workouts: number; templates: number; plans: number };
+}
 export const dashboardPages = [
   { id: "Overview", label: "Overview", icon: "⌂", group: "primary" },
   { id: "Training", label: "Training", icon: "›››", group: "primary" },

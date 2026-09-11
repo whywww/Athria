@@ -315,6 +315,47 @@ async fn pick_data_location(app: AppHandle) -> Option<String> {
 }
 
 #[tauri::command]
+async fn pick_backup_file(app: AppHandle) -> Option<String> {
+    app.dialog()
+        .file()
+        .add_filter("Athria backup", &["zip"])
+        .blocking_pick_file()
+        .and_then(|file| file.into_path().ok())
+        .map(|path| path.to_string_lossy().into_owned())
+}
+
+fn activate_restore(current: &Path, stage: &Path) -> Result<PathBuf, String> {
+    let parent = current.parent().ok_or_else(|| "Athria's data folder has no parent directory.".to_string())?;
+    if stage.parent() != Some(parent) || !stage.file_name().and_then(|name| name.to_str()).is_some_and(|name| name.starts_with(".athria-restore-")) || !stage.is_dir() {
+        return Err("The prepared restore folder is invalid.".to_string());
+    }
+    let rollback = parent.join(format!(".athria-rollback-{}", Uuid::new_v4()));
+    fs::rename(current, &rollback).map_err(|error| format!("Athria could not preserve the current data before restoring: {error}"))?;
+    if let Err(error) = fs::rename(stage, current) {
+        let rollback_error = fs::rename(&rollback, current).err();
+        return Err(match rollback_error {
+            Some(rollback_error) => format!("Restore failed ({error}) and Athria could not put the original data back ({rollback_error}). The original data remains at {}.", rollback.display()),
+            None => format!("Restore failed and the original data was restored: {error}"),
+        });
+    }
+    Ok(rollback)
+}
+
+#[tauri::command]
+async fn restore_backup(app: AppHandle, state: State<'_, RuntimeState>, path: String) -> Result<Value, String> {
+    let prepared = service_post(&state, "/api/system/restore/prepare", json!({ "path": path })).await?;
+    let stage = prepared.get("stagePath").and_then(Value::as_str).map(PathBuf::from).ok_or_else(|| "Athria service returned an invalid restore folder.".to_string())?;
+    let current = current_data_dir();
+    if let Some(child) = state.child.lock().expect("runtime state poisoned").take() {
+        let _ = child.kill();
+        std::thread::sleep(Duration::from_millis(600));
+    }
+    let rollback = activate_restore(&current, &stage)?;
+    let _ = fs::remove_dir_all(rollback);
+    app.restart()
+}
+
+#[tauri::command]
 async fn change_data_location(app: AppHandle, state: State<'_, RuntimeState>, new_path: String) -> Result<Value, String> {
     let selected = PathBuf::from(&new_path);
     if !selected.is_absolute() { return Err("The selected folder must be an absolute path.".to_string()); }
@@ -364,7 +405,7 @@ pub fn run() -> i32 {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .manage(RuntimeState { service, child: Mutex::new(None) })
-        .invoke_handler(tauri::generate_handler![get_service_info, test_intervals_credentials, sync_intervals, intervals_status, import_xunji_skill, sync_xunji, xunji_status, mcp_status, pick_data_location, change_data_location])
+        .invoke_handler(tauri::generate_handler![get_service_info, test_intervals_credentials, sync_intervals, intervals_status, import_xunji_skill, sync_xunji, xunji_status, mcp_status, pick_data_location, change_data_location, pick_backup_file, restore_backup])
         .setup(move |app| {
             #[cfg(feature = "dev-service")]
             let command = {
@@ -525,6 +566,21 @@ mod tests {
         std::fs::write(from.join("nested").join("deeper").join("log.txt"), b"log").unwrap();
         copy_directory(&from, &to).unwrap();
         assert_eq!(std::fs::read(to.join("nested").join("deeper").join("log.txt")).unwrap(), b"log");
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn activates_a_prepared_restore_and_preserves_the_old_directory() {
+        let root = temp_root("athria-restore");
+        let current = root.join("data");
+        let stage = root.join(".athria-restore-test");
+        std::fs::create_dir_all(&current).unwrap();
+        std::fs::create_dir_all(&stage).unwrap();
+        std::fs::write(current.join("athria.sqlite3"), b"old").unwrap();
+        std::fs::write(stage.join("athria.sqlite3"), b"restored").unwrap();
+        let rollback = activate_restore(&current, &stage).unwrap();
+        assert_eq!(std::fs::read(current.join("athria.sqlite3")).unwrap(), b"restored");
+        assert_eq!(std::fs::read(rollback.join("athria.sqlite3")).unwrap(), b"old");
         std::fs::remove_dir_all(&root).unwrap();
     }
 }

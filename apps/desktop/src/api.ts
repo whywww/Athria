@@ -35,3 +35,5 @@ export async function getMcpStatus(): Promise<McpStatus> { return invoke("mcp_st
 
 export async function pickDataLocation(): Promise<string | null> { return invoke<string | null>("pick_data_location"); }
 export async function changeDataLocation(newPath: string): Promise<void> { return invoke("change_data_location", { newPath }); }
+export async function pickBackupFile(): Promise<string | null> { return invoke<string | null>("pick_backup_file"); }
+export async function restoreBackup(path: string): Promise<void> { return invoke("restore_backup", { path }); }

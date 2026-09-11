@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { api, changeDataLocation, getIntervalsStatus, getMcpStatus, getXunjiStatus, importXunjiSkill, pickDataLocation, syncIntervals, syncXunji, testIntervals } from "./api";
+import { api, changeDataLocation, getIntervalsStatus, getMcpStatus, getXunjiStatus, importXunjiSkill, pickBackupFile, pickDataLocation, restoreBackup, syncIntervals, syncXunji, testIntervals } from "./api";
 import { mcpConfig, mcpGuides } from "./mcp-guides";
 import {
   dashboardPages, deviceTimezone, equipmentGroupState, formatDateTime, formatDistance, formatDuration, formatTimezoneLabel, formatTrainingRhythm, friendlyLabel, isUntouchedDefaultProfile,
   profilePayload, timezoneOptions, PREFERENCE_MAX_LENGTH,
   toggleEquipmentGroup,
-  type AthleteProfile, type CurrentPlan, type DoctorResult, type HevyImportStatus, type ImportPreview,
+  type AthleteProfile, type BackupPreview, type CurrentPlan, type DoctorResult, type HevyImportStatus, type ImportPreview,
   type EquipmentCategory, type ImportResult, type NextTrainingDay, type PersonalInformation, type TrainingTaxonomy, type TrainingSummary, type XunjiConnectionStatus,
 } from "./view-models";
 import { Card, Empty, ErrorBanner, Loading, weekdays } from "./components";
@@ -16,6 +16,33 @@ import { localDateForTimezone } from "./plan/view";
 
 type Page = (typeof dashboardPages)[number]["id"];
 const commonGoals = ["general_fitness", "build_strength", "build_muscle", "improve_endurance", "fat_loss"];
+
+type IconName = "overview" | "training" | "profile" | "plan" | "devices" | "settings" | "help" | "globe" | "edit" | "target" | "preferences" | "rhythm" | "clock" | "equipment" | "sparkles" | "warning" | "notes" | "recovery" | "info";
+
+function AppIcon({ name, className = "" }: { name: IconName; className?: string }) {
+  const paths: Record<IconName, React.ReactNode> = {
+    overview: <><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10M9 20v-6h6v6"/></>,
+    training: <><path d="M4 20v-7M10 20V7M16 20V3"/></>,
+    profile: <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21l7.8-7.5 1.1-1.1a5.5 5.5 0 0 0-.1-7.8Z"/>,
+    plan: <><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></>,
+    devices: <><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></>,
+    settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></>,
+    help: <><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.7 2.7 0 1 1 4.5 2c-1.2.8-2 1.3-2 3M12 18h.01"/></>,
+    globe: <><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></>,
+    edit: <><path d="m4 20 4.5-1 10-10-3.5-3.5-10 10L4 20Z"/><path d="m13.5 7 3.5 3.5"/></>,
+    target: <><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><path d="m14.5 9.5 5-5M16 4h3.5v3.5"/></>,
+    preferences: <><circle cx="12" cy="12" r="3"/><path d="M19 12h2M3 12h2M12 3v2M12 19v2M17 7l1.5-1.5M5.5 18.5 7 17M17 17l1.5 1.5M5.5 5.5 7 7"/></>,
+    rhythm: <><path d="M4 20v-5M10 20V9M16 20V4"/></>,
+    clock: <><circle cx="12" cy="12" r="9"/><path d="M12 7v6l4 2"/></>,
+    equipment: <><path d="M6 9v6M3 10v4M18 9v6M21 10v4M6 12h12"/><path d="M8 7v10M16 7v10"/></>,
+    sparkles: <><path d="m12 3 1.4 4.1L17.5 9l-4.1 1.4L12 14.5l-1.4-4.1L6.5 9l4.1-1.9L12 3ZM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15ZM5 3l.7 1.8L7.5 5.5l-1.8.7L5 8l-.7-1.8-1.8-.7 1.8-.7L5 3Z"/></>,
+    warning: <><path d="M10.3 4.2 2.7 18a2 2 0 0 0 1.8 3h15a2 2 0 0 0 1.8-3L13.7 4.2a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></>,
+    notes: <><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 12h6M9 16h6"/></>,
+    recovery: <><path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.5"/><path d="M4 4v4.5h4.5"/></>,
+    info: <><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/></>,
+  };
+  return <svg className={`app-icon ${className}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
+}
 
 function goalTone(goal: string) {
   switch (goal) {
@@ -97,17 +124,20 @@ function Profile() {
   const cancelEdit = () => { setForm(null); setCustomGoal(""); setAvailableGoals(commonGoals); setEditing(false); save.reset(); };
 
   const rhythmValid = !form || (form.trainingRhythm.kind === "fixed_week" ? form.trainingRhythm.days.length > 0 : form.trainingRhythm.kind === "flexible_week" ? form.trainingRhythm.minDaysPerWeek >= 1 && form.trainingRhythm.minDaysPerWeek <= form.trainingRhythm.targetDaysPerWeek && form.trainingRhythm.targetDaysPerWeek <= form.trainingRhythm.maxDaysPerWeek && form.trainingRhythm.maxDaysPerWeek <= 7 : form.trainingRhythm.intervalDays >= 1 && form.trainingRhythm.intervalDays <= 30);
-  const profileActions = editing && form ? <div className="profile-actions"><select className="profile-timezone-select" aria-label="Time zone" value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })}>{timezoneOptions(form.timezone).map((zone) => <option key={zone} value={zone}>{zone}{zone === deviceTimezone() ? " (device)" : ""}</option>)}</select><button type="button" className="secondary compact" onClick={cancelEdit}>Cancel</button><button type="button" className="compact" disabled={save.isPending || form.goals.length === 0 || !rhythmValid} onClick={() => { setSaved(false); save.mutate(profilePayload(profile, form)); }}>{save.isPending ? "Saving…" : "Save"}</button></div> : <div className="profile-actions"><span className="profile-timezone-pill">{formatTimezoneLabel(profile.timezone)}</span><button type="button" className="secondary compact edit-button" onClick={beginEdit}><span aria-hidden="true">✎</span>Edit</button></div>;
+  const profileActions = editing && form ? <div className="profile-actions"><label className="profile-timezone-field"><AppIcon name="globe"/><select className="profile-timezone-select" aria-label="Time zone" value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })}>{timezoneOptions(form.timezone).map((zone) => <option key={zone} value={zone}>{zone}{zone === deviceTimezone() ? " (device)" : ""}</option>)}</select></label><button type="button" className="secondary compact" onClick={cancelEdit}>Cancel</button><button type="button" className="compact" disabled={save.isPending || form.goals.length === 0 || !rhythmValid} onClick={() => { setSaved(false); save.mutate(profilePayload(profile, form)); }}>{save.isPending ? "Saving…" : "Save"}</button></div> : <div className="profile-actions"><span className="profile-timezone-pill"><AppIcon name="globe"/>{formatTimezoneLabel(profile.timezone)}</span><button type="button" className="secondary compact edit-button" onClick={beginEdit}><AppIcon name="edit"/>Edit</button></div>;
 
   return <div className="profile-page">
-    <Card title="Training Profile" className={`profile-board ${editing ? "is-editing" : ""}`} action={profileActions}>
-      {editing && form ? <EditableProfileBoard profile={profile} form={form} setForm={setForm} customGoal={customGoal} setCustomGoal={setCustomGoal} availableGoals={availableGoals} setAvailableGoals={setAvailableGoals} equipmentCategories={taxonomy.data.equipmentCategories} toggleList={toggleList} toggleTrainingDay={toggleTrainingDay}/> : <ProfileBoard profile={profile} equipmentCategories={taxonomy.data.equipmentCategories}/>}
+    <header className="profile-page-header"><div><h1>Hi, {profile.preferredName || "Athlete"} <span aria-hidden="true">👋</span></h1><p>Your AI fitness hub. Local-first. Data you own.</p></div>{profileActions}</header>
+    <Card title={<span className="profile-card-title"><span className="profile-title-icon"><AppIcon name="profile"/></span><span>Training Profile<small>Your training setup and preferences</small></span></span>} className={`profile-board ${editing ? "is-editing" : ""}`}>
+      <div className="profile-board-art" aria-hidden="true"><i/><i/><i/></div>
+      {editing && form ? <EditableProfileBoard profile={profile} form={form} setForm={setForm} customGoal={customGoal} setCustomGoal={setCustomGoal} availableGoals={availableGoals} setAvailableGoals={setAvailableGoals} toggleList={toggleList} toggleTrainingDay={toggleTrainingDay}/> : <ProfileBoard profile={profile} equipmentCategories={taxonomy.data.equipmentCategories}/>}
       <ErrorBanner error={save.error}/>
       {saved && <div className="success">Profile saved! Your current plan may be affected — ask your AI agent to review and update it to match your new profile.</div>}
     </Card>
-    <Card title="Agent Suggestions" className="profile-suggestions">
+    {editing && form && <Card title={null} className="profile-equipment-board"><EquipmentSelector categories={taxonomy.data.equipmentCategories} selected={form.equipment} onToggleItem={(id) => toggleList("equipment", id)} onToggleGroup={(ids) => setForm((current) => current ? { ...current, equipment: toggleEquipmentGroup(current.equipment, ids) } : current)}/></Card>}
+    <Card title={<span className="profile-card-title suggestions-title"><span className="profile-title-icon"><AppIcon name="sparkles"/></span><span>Agent Suggestions<small>Personalized guidance based on your profile</small></span></span>} className="profile-suggestions">
       <AgentManagedDetails profile={profile}/>
-      <p className="profile-disclaimer">AI-generated planning suggestions only, not medical advice — consult a qualified professional for any injury, diagnosis, or treatment.</p>
+      <p className="profile-disclaimer"><AppIcon name="info"/>AI-generated planning suggestions only, not medical advice — consult a qualified professional for any injury, diagnosis, or treatment.</p>
     </Card>
   </div>;
 }
@@ -120,8 +150,10 @@ function GroupCheckbox({ state, label, onChange }: { state: "none" | "some" | "a
 
 function EquipmentSelector({ categories, selected, onToggleItem, onToggleGroup }: { categories: EquipmentCategory[]; selected: string[]; onToggleItem?: (id: string) => void; onToggleGroup?: (ids: string[]) => void }) {
   const editable = Boolean(onToggleItem && onToggleGroup);
+  const selectedItems = categories.flatMap((category) => category.groups.flatMap((group) => group.items)).filter((item) => selected.includes(item.id));
+  if (!editable) return <section className="profile-section equipment-section"><div className="profile-section-heading"><AppIcon name="equipment"/><span><strong>Available equipment</strong><small>Select equipment available to you</small></span></div>{selectedItems.length ? <div className="equipment-items readonly-equipment">{selectedItems.map((item) => <span className="equipment-item selected" key={item.id}>{item.label}</span>)}</div> : <span className="muted-tag">None</span>}</section>;
   const visibleCategories = editable ? categories : categories.map((category) => ({ ...category, groups: category.groups.map((group) => ({ ...group, items: group.items.filter((item) => selected.includes(item.id)) })).filter((group) => group.items.length) })).filter((category) => category.groups.length);
-  return <section className="profile-section equipment-section"><strong>♧　Available equipment</strong>{visibleCategories.length ? <div className="equipment-categories">{visibleCategories.map((category) => <section className="equipment-category" key={category.id}><h3>{category.label}</h3><div className="equipment-groups">{category.groups.map((group) => {
+  return <section className="profile-section equipment-section"><div className="profile-section-heading"><AppIcon name="equipment"/><span><strong>Available equipment</strong><small>Select equipment available to you</small></span></div>{visibleCategories.length ? <div className="equipment-categories">{visibleCategories.map((category) => <section className="equipment-category" key={category.id}><h3>{category.label}</h3><div className="equipment-groups">{category.groups.map((group) => {
     const ids = group.items.map((item) => item.id);
     return <div className="equipment-group" key={group.id}>{editable && onToggleGroup ? <GroupCheckbox state={equipmentGroupState(selected, ids)} label={group.label === category.label ? "Select all" : group.label} onChange={() => onToggleGroup(ids)}/> : <h4>{group.label === category.label ? "Equipment" : group.label}</h4>}<div className="equipment-items">{group.items.map((item) => {
       const isSelected = selected.includes(item.id);
@@ -133,7 +165,7 @@ function EquipmentSelector({ categories, selected, onToggleItem, onToggleGroup }
   })}</div></section>)}</div> : <span className="muted-tag">None</span>}</section>;
 }
 
-function EditableProfileBoard({ profile, form, setForm, customGoal, setCustomGoal, availableGoals, setAvailableGoals, equipmentCategories, toggleList, toggleTrainingDay }: { profile: AthleteProfile; form: AthleteProfile; setForm: React.Dispatch<React.SetStateAction<AthleteProfile | null>>; customGoal: string; setCustomGoal: React.Dispatch<React.SetStateAction<string>>; availableGoals: string[]; setAvailableGoals: React.Dispatch<React.SetStateAction<string[]>>; equipmentCategories: EquipmentCategory[]; toggleList: (field: "goals" | "equipment", value: string) => void; toggleTrainingDay: (weekday: number) => void }) {
+function EditableProfileBoard({ profile, form, setForm, customGoal, setCustomGoal, availableGoals, setAvailableGoals, toggleList, toggleTrainingDay }: { profile: AthleteProfile; form: AthleteProfile; setForm: React.Dispatch<React.SetStateAction<AthleteProfile | null>>; customGoal: string; setCustomGoal: React.Dispatch<React.SetStateAction<string>>; availableGoals: string[]; setAvailableGoals: React.Dispatch<React.SetStateAction<string[]>>; toggleList: (field: "goals" | "equipment", value: string) => void; toggleTrainingDay: (weekday: number) => void }) {
   const deleteCustomGoal = (goal: string) => {
     setAvailableGoals((current) => current.filter((item) => item !== goal));
     setForm((current) => current ? { ...current, goals: current.goals.filter((item) => item !== goal) } : current);
@@ -150,16 +182,15 @@ function EditableProfileBoard({ profile, form, setForm, customGoal, setCustomGoa
   const updateIntervalRhythm = (intervalDays: number) => setForm((current) => current?.trainingRhythm.kind === "interval" ? { ...current, trainingRhythm: { ...current.trainingRhythm, intervalDays } } : current);
   return <div className="profile-content profile-editor">
     <section className="profile-top-summary">
-      <section className="profile-goals-panel"><span className="profile-icon coral" aria-hidden="true">◎</span><div className="editable-panel-content"><strong>Training Goals</strong><div className="goal-tags">{availableGoals.map((goal) => commonGoals.includes(goal) ? <GoalTag key={goal} goal={goal} selected={form.goals.includes(goal)} onClick={() => toggleList("goals", goal)}/> : <GoalTag key={goal} goal={goal} selected={form.goals.includes(goal)} onClick={() => toggleList("goals", goal)} onDelete={() => deleteCustomGoal(goal)}/>)}</div><div className="inline-input"><input aria-label="Custom training goal" placeholder="Add another goal" value={customGoal} onChange={(event) => setCustomGoal(event.target.value)}/><button type="button" className="secondary" disabled={!customGoal.trim()} onClick={() => { const goal = customGoal.trim(); setAvailableGoals((current) => current.includes(goal) ? current : [...current, goal]); setForm((current) => current && !current.goals.includes(goal) ? { ...current, goals: [...current.goals, goal] } : current); setCustomGoal(""); }}>Add</button></div></div></section>
-      <div className="profile-summary-item"><label>Preferences<span className="preference-input"><input type="text" maxLength={PREFERENCE_MAX_LENGTH} value={form.preference} onChange={(event) => setForm({ ...form, preference: event.target.value })} placeholder="用一句话描述你的训练偏好"/><small>{form.preference.length}/{PREFERENCE_MAX_LENGTH}</small></span></label></div>
-      <div className="profile-summary-item"><span>▣　Training rhythm</span><div className="profile-rhythm-options">
+      <section className="profile-goals-panel"><span className="profile-feature-icon" aria-hidden="true"><AppIcon name="target"/></span><div className="editable-panel-content"><strong>Training Goals</strong><small>What do you want to focus on?</small><div className="goal-tags">{availableGoals.map((goal) => commonGoals.includes(goal) ? <GoalTag key={goal} goal={goal} selected={form.goals.includes(goal)} onClick={() => toggleList("goals", goal)}/> : <GoalTag key={goal} goal={goal} selected={form.goals.includes(goal)} onClick={() => toggleList("goals", goal)} onDelete={() => deleteCustomGoal(goal)}/>)}</div><div className="inline-input"><input aria-label="Custom training goal" placeholder="Add another goal" value={customGoal} onChange={(event) => setCustomGoal(event.target.value)}/><button type="button" className="secondary" disabled={!customGoal.trim()} onClick={() => { const goal = customGoal.trim(); setAvailableGoals((current) => current.includes(goal) ? current : [...current, goal]); setForm((current) => current && !current.goals.includes(goal) ? { ...current, goals: [...current.goals, goal] } : current); setCustomGoal(""); }}>Add</button></div></div></section>
+      <div className="profile-summary-item profile-preferences-editor"><AppIcon name="preferences"/><label><span className="profile-editor-title">Preferences</span><small className="profile-editor-subtitle">Tell us more about your training</small><span className="preference-input"><textarea rows={4} maxLength={PREFERENCE_MAX_LENGTH} value={form.preference} onChange={(event) => setForm({ ...form, preference: event.target.value })} placeholder="e.g. I prefer morning workouts, 3–4 days per week…"/><small>{form.preference.length}/{PREFERENCE_MAX_LENGTH}</small></span></label></div>
+      <div className="profile-summary-item profile-rhythm-editor"><AppIcon name="rhythm"/><div><span className="profile-editor-title">Training rhythm</span><small className="profile-editor-subtitle">How often do you want to train?</small><div className="profile-rhythm-options">
         <div className="profile-rhythm-option"><label><input type="radio" name="training-rhythm" checked={form.trainingRhythm.kind === "fixed_week"} onChange={() => changeRhythm("fixed_week")}/><span>Fixed week</span></label>{form.trainingRhythm.kind === "fixed_week" && <div className="day-list">{weekdays.map((day, index) => <button type="button" key={day} className={form.trainingRhythm.kind === "fixed_week" && form.trainingRhythm.days.includes(index) ? "selected" : ""} aria-pressed={form.trainingRhythm.kind === "fixed_week" && form.trainingRhythm.days.includes(index)} onClick={() => toggleTrainingDay(index)}>{day.slice(0, 3)}{form.trainingRhythm.kind === "fixed_week" && form.trainingRhythm.days.includes(index) ? " ✓" : ""}</button>)}</div>}</div>
         <div className="profile-rhythm-option"><label><input type="radio" name="training-rhythm" checked={form.trainingRhythm.kind === "flexible_week"} onChange={() => changeRhythm("flexible_week")}/><span>Flexible week</span></label>{form.trainingRhythm.kind === "flexible_week" && <div className="rhythm-parameters"><label>Target days<input type="number" min="1" max="7" value={form.trainingRhythm.targetDaysPerWeek} onChange={(event) => updateFlexibleRhythm("targetDaysPerWeek", Number(event.target.value))}/></label><label>Min<input type="number" min="1" max="7" value={form.trainingRhythm.minDaysPerWeek} onChange={(event) => updateFlexibleRhythm("minDaysPerWeek", Number(event.target.value))}/></label><label>Max<input type="number" min="1" max="7" value={form.trainingRhythm.maxDaysPerWeek} onChange={(event) => updateFlexibleRhythm("maxDaysPerWeek", Number(event.target.value))}/></label></div>}</div>
         <div className="profile-rhythm-option"><label><input type="radio" name="training-rhythm" checked={form.trainingRhythm.kind === "interval"} onChange={() => changeRhythm("interval")}/><span>Intervals</span></label>{form.trainingRhythm.kind === "interval" && <span className="interval-parameter">Every <input aria-label="Interval days" type="number" min="1" max="30" value={form.trainingRhythm.intervalDays} onChange={(event) => updateIntervalRhythm(Number(event.target.value))}/> days</span>}</div>
-      </div></div>
-      <div className="profile-summary-item"><label>Max session length<select value={form.maxSessionMinutes} onChange={(event) => setForm({ ...form, maxSessionMinutes: Number(event.target.value) })}>{[15, 30, 45, 60, 75, 90, 120, 180, 240].map((value) => <option key={value} value={value}>{value} min</option>)}</select></label></div>
+      </div></div></div>
+      <div className="profile-summary-item profile-duration-editor"><AppIcon name="clock"/><label><span className="profile-editor-title">Max session length</span><small className="profile-editor-subtitle">How much time per session?</small><select value={form.maxSessionMinutes} onChange={(event) => setForm({ ...form, maxSessionMinutes: Number(event.target.value) })}>{[15, 30, 45, 60, 75, 90, 120, 180, 240].map((value) => <option key={value} value={value}>{value} min</option>)}</select></label></div>
     </section>
-    <EquipmentSelector categories={equipmentCategories} selected={form.equipment} onToggleItem={(id) => toggleList("equipment", id)} onToggleGroup={(ids) => setForm((current) => current ? { ...current, equipment: toggleEquipmentGroup(current.equipment, ids) } : current)}/>
   </div>;
 }
 
@@ -168,21 +199,21 @@ function ReadonlyTags({ values, empty = "None" }: { values: string[]; empty?: st
 }
 
 function AgentManagedDetails({ profile }: { profile: AthleteProfile }) {
-  const rows: Array<{ label: string; value: string } | { label: string; notes: string[] }> = [];
-  if (profile.explicitRecoveryDays !== null) rows.push({ label: "Recovery interval", value: `${profile.explicitRecoveryDays} day${profile.explicitRecoveryDays === 1 ? "" : "s"} between hard sessions` });
-  if (profile.injuries.length) rows.push({ label: "Injuries", notes: profile.injuries });
-  if (profile.constraintNotes.length) rows.push({ label: "Constraint notes", notes: profile.constraintNotes });
-  if (!rows.length) return null;
-  return <ul className="agent-managed-list">{rows.map((row) => <li key={row.label}><strong>{row.label}</strong>{"notes" in row ? <ol className="agent-note-list">{row.notes.map((note, index) => <li key={index}>{note}</li>)}</ol> : <> {row.value}</>}</li>)}</ul>;
+  const rows: Array<{ label: string; description: string; icon: IconName; value?: string; notes?: string[] }> = [];
+  if (profile.injuries.length) rows.push({ label: "Injuries", description: "These are taken into account when planning your training.", icon: "warning", notes: profile.injuries });
+  if (profile.constraintNotes.length) rows.push({ label: "Constraint notes", description: "These help guide exercise selection and programming.", icon: "notes", notes: profile.constraintNotes });
+  if (profile.explicitRecoveryDays !== null) rows.push({ label: "Recovery interval", description: "This guides spacing between demanding sessions.", icon: "recovery", value: `${profile.explicitRecoveryDays} day${profile.explicitRecoveryDays === 1 ? "" : "s"} between hard sessions` });
+  if (!rows.length) return <div className="agent-managed-empty">No injuries or training constraints recorded.</div>;
+  return <div className="agent-managed-grid">{rows.map((row) => <article className="agent-managed-card" key={row.label}><span className="agent-card-icon"><AppIcon name={row.icon}/></span><div><strong>{row.label}</strong><p>{row.description}</p>{row.notes ? <ol className="agent-note-list">{row.notes.map((note, index) => <li key={index}>{note}</li>)}</ol> : <span className="agent-value">{row.value}</span>}</div></article>)}</div>;
 }
 
 function ProfileBoard({ profile, equipmentCategories }: { profile: AthleteProfile; equipmentCategories: EquipmentCategory[] }) {
   return <div className="profile-content">
     <section className="profile-top-summary">
-      <section className="profile-goals-panel"><span className="profile-icon coral" aria-hidden="true">◎</span><div><strong>Training Goals</strong>{profile.goals.length ? <div className="goal-tags">{profile.goals.map((goal) => <GoalTag key={goal} goal={goal}/>)}</div> : <p>No goals selected</p>}</div></section>
-      <div className="profile-summary-item"><span>Preferences</span><strong>{profile.preference || "Not set"}</strong></div>
-      <div className="profile-summary-item"><span>Training rhythm</span><strong>{formatTrainingRhythm(profile.trainingRhythm)}</strong></div>
-      <div className="profile-summary-item"><span>Max session length</span><strong>{profile.maxSessionMinutes} min</strong></div>
+      <section className="profile-goals-panel"><span className="profile-feature-icon" aria-hidden="true"><AppIcon name="target"/></span><div><strong>Training Goals</strong><small>What do you want to focus on?</small>{profile.goals.length ? <div className="goal-tags">{profile.goals.map((goal) => <GoalTag key={goal} goal={goal}/>)}</div> : <p>No goals selected</p>}</div></section>
+      <div className="profile-summary-item"><AppIcon name="preferences"/><div><span>Preferences</span><strong>{profile.preference || "Not set"}</strong></div></div>
+      <div className="profile-summary-item"><AppIcon name="rhythm"/><div><span>Training rhythm</span><strong>{formatTrainingRhythm(profile.trainingRhythm)}</strong></div></div>
+      <div className="profile-summary-item"><AppIcon name="clock"/><div><span>Max session length</span><strong>{profile.maxSessionMinutes} min</strong></div></div>
     </section>
     <EquipmentSelector categories={equipmentCategories} selected={profile.equipment}/>
   </div>;
@@ -240,11 +271,22 @@ function Backup() {
   const doctor = useQuery({ queryKey: ["backup-doctor"], queryFn: () => api<DoctorResult>("/api/system/doctor") });
   const dataDir = (doctor.data as DoctorResult | undefined)?.dataDir;
   const [message, setMessage] = useState(""); const [error, setError] = useState<unknown>();
-  const [source, setSource] = useState(""); const [target, setTarget] = useState("");
+  const [preview, setPreview] = useState<BackupPreview>(); const [restoring, setRestoring] = useState(false);
   const [pendingLocation, setPendingLocation] = useState(""); const [moving, setMoving] = useState(false);
   const pendingTarget = pendingLocation ? `${pendingLocation.replace(/[\\/]+$/, "")}${pendingLocation.includes("\\") ? "\\" : "/"}AthriaData` : "";
   const createBackup = () => { setError(undefined); api<{ path: string }>("/api/system/backup", { method: "POST", body: "{}" }).then((result) => setMessage(`Backup created at ${result.path}`)).catch(setError); };
-  const restore = () => { setError(undefined); api<{ status: string; target: string }>("/api/system/restore", { method: "POST", body: JSON.stringify({ path: source, target }) }).then((result) => setMessage(`Backup verified and restored to ${result.target}. Your active data was not replaced.`)).catch(setError); };
+  const chooseBackup = async () => {
+    setError(undefined); setMessage(""); setPreview(undefined);
+    try {
+      const path = await pickBackupFile();
+      if (path) setPreview(await api<BackupPreview>("/api/system/backup/preview", { method: "POST", body: JSON.stringify({ path }) }));
+    } catch (value) { setError(value); }
+  };
+  const confirmRestore = async () => {
+    if (!preview) return;
+    try { setRestoring(true); setError(undefined); await restoreBackup(preview.path); }
+    catch (value) { setRestoring(false); setError(value); }
+  };
   const chooseLocation = async () => {
     setError(undefined);
     try {
@@ -273,7 +315,26 @@ function Backup() {
         : <div className="data-location-actions"><button type="button" className="secondary compact" onClick={() => void chooseLocation()}>Change location</button></div>}
     </div>}
     <div className="section"><h3>Create a backup</h3><p>Save a timestamped backup ZIP inside your local Athria data folder.</p><button onClick={createBackup}>Create backup</button></div>
-    <div className="section"><h3>Verify and restore a backup</h3><p>Restore into an empty folder for review. Athria will not replace the active database automatically.</p><label>Backup ZIP path<input value={source} onChange={(event) => setSource(event.target.value)}/></label><label>Empty restore folder<input value={target} onChange={(event) => setTarget(event.target.value)}/></label><button className="secondary" disabled={!source || !target} onClick={restore}>Verify and restore</button></div>
+    <div className="section"><h3>Restore a backup</h3><p>Select an Athria backup ZIP to inspect it before replacing the data in your current local data location.</p>
+      {!preview
+        ? <button type="button" className="secondary" onClick={() => void chooseBackup()}>Choose backup</button>
+        : <div className="restore-confirm">
+          <strong>Restore this backup?</strong>
+          <span className="restore-path">{preview.path}</span>
+          <div className="restore-summary">
+            <span><b>{formatDateTime(preview.manifest.createdAt)}</b><small>created</small></span>
+            <span><b>{preview.manifest.athriaVersion}</b><small>Athria version</small></span>
+            <span><b>{preview.counts.workouts}</b><small>workouts</small></span>
+            <span><b>{preview.counts.templates}</b><small>templates</small></span>
+            <span><b>{preview.counts.plans}</b><small>plans</small></span>
+          </div>
+          <p>Your current Athria data will be replaced. The local data location will not change. Athria will create a safety backup first and restart when restoration is complete.</p>
+          <div className="data-location-actions">
+            <button type="button" className="secondary compact" disabled={restoring} onClick={() => setPreview(undefined)}>Cancel</button>
+            <button type="button" className="compact" disabled={restoring} onClick={() => void confirmRestore()}>{restoring ? "Preparing restore…" : "Restore and restart"}</button>
+          </div>
+        </div>}
+    </div>
     {message && <div className="success">{message}</div>}
     <ErrorBanner error={doctor.error ?? error}/>
   </Card>;
@@ -305,12 +366,12 @@ function PersonalInformationCard() {
   const valid = Boolean(form?.preferredName.trim()) && (form?.heightCm === null || (form!.heightCm >= 50 && form!.heightCm <= 250)) && validWeight && (!form?.birthDate || form.birthDate <= new Date().toISOString().slice(0, 10));
   return <Card title="Personal Information" className="personal-information-card" action={form ? <div className="actions"><button className="secondary compact" onClick={cancel}>Cancel</button><button className="compact" disabled={!valid || save.isPending} onClick={submit}>{save.isPending ? "Saving…" : "Save"}</button></div> : <button className="secondary compact" onClick={begin}><span aria-hidden="true">✎</span>Edit</button>}>
     {form ? <div className="personal-information-form">
-      <label>Preferred name<input maxLength={100} value={form.preferredName} onChange={(event) => setForm({ ...form, preferredName: event.target.value })}/></label>
-      <label>Gender<select value={form.gender ?? ""} onChange={(event) => setForm({ ...form, gender: (event.target.value || null) as PersonalInformation["gender"] })}><option value="">Not specified</option><option value="female">Female</option><option value="male">Male</option><option value="non_binary">Non-binary</option><option value="prefer_not_to_say">Prefer not to say</option></select></label>
-      <label>Height <span>cm</span><input type="number" min="50" max="250" step="0.1" value={form.heightCm ?? ""} onChange={(event) => setForm({ ...form, heightCm: event.target.value ? Number(event.target.value) : null })}/></label>
-      <label>Current weight <span>kg</span><input type="number" min="20" max="500" step="0.1" value={weightText} onChange={(event) => { setWeightText(event.target.value); setWeightChanged(true); }}/><small>{value.weightDate ? `Latest entry: ${value.weightDate}` : "No weight recorded"}</small></label>
-      <label>Birth date<input type="date" max={new Date().toISOString().slice(0, 10)} value={form.birthDate ?? ""} onChange={(event) => setForm({ ...form, birthDate: event.target.value || null })}/></label>
-    </div> : <dl className="personal-information-summary"><div><dt>Preferred name</dt><dd>{value.preferredName}</dd></div><div><dt>Gender</dt><dd>{genderLabel}</dd></div><div><dt>Height</dt><dd>{value.heightCm == null ? "Not specified" : `${value.heightCm} cm`}</dd></div><div><dt>Current weight</dt><dd>{value.weightKg == null ? "Not recorded" : `${value.weightKg} kg`}{value.weightDate && <small>{value.weightDate}</small>}</dd></div><div><dt>Birth date</dt><dd>{value.birthDate ?? "Not specified"}</dd></div></dl>}
+      <label><span>Preferred name</span><input maxLength={100} value={form.preferredName} onChange={(event) => setForm({ ...form, preferredName: event.target.value })}/></label>
+      <label><span>Gender</span><select value={form.gender ?? ""} onChange={(event) => setForm({ ...form, gender: (event.target.value || null) as PersonalInformation["gender"] })}><option value="">Not specified</option><option value="female">Female</option><option value="male">Male</option><option value="non_binary">Non-binary</option><option value="prefer_not_to_say">Prefer not to say</option></select></label>
+      <label><span>Height <em>cm</em></span><input type="number" min="50" max="250" step="0.1" value={form.heightCm ?? ""} onChange={(event) => setForm({ ...form, heightCm: event.target.value ? Number(event.target.value) : null })}/></label>
+      <label><span>Weight <em>kg</em></span><input type="number" min="20" max="500" step="0.1" value={weightText} onChange={(event) => { setWeightText(event.target.value); setWeightChanged(true); }}/></label>
+      <label><span>Birth date</span><input type="date" max={new Date().toISOString().slice(0, 10)} value={form.birthDate ?? ""} onChange={(event) => setForm({ ...form, birthDate: event.target.value || null })}/></label>
+    </div> : <dl className="personal-information-summary"><div><dt>Preferred name</dt><dd>{value.preferredName}</dd></div><div><dt>Gender</dt><dd>{genderLabel}</dd></div><div><dt>Height</dt><dd>{value.heightCm == null ? "Not specified" : `${value.heightCm} cm`}</dd></div><div><dt>Weight</dt><dd>{value.weightKg == null ? "Not recorded" : `${value.weightKg} kg`}{value.weightDate && <small>{value.weightDate}</small>}</dd></div><div><dt>Birth date</dt><dd>{value.birthDate ?? "Not specified"}</dd></div></dl>}
     <ErrorBanner error={save.error}/>
   </Card>;
 }
@@ -368,6 +429,7 @@ export function App() {
   const primaryPages = dashboardPages.filter((item) => item.group === "primary");
   const supportPages = dashboardPages.filter((item) => item.group === "support");
   useEffect(() => { let unlisten: UnlistenFn | undefined; void listen("athria-service-crashed", () => setServiceCrash(true)).then((dispose) => { unlisten = dispose; }); return () => unlisten?.(); }, []);
-  const NavItems = ({ items }: { items: typeof dashboardPages[number][] }) => <>{items.map((item) => <button key={item.id} className={item.id === page ? "active" : ""} onClick={() => setPage(item.id)}><span aria-hidden="true">{item.icon}</span>{item.label}</button>)}</>;
-  return <div className="shell"><aside><div className="brand"><img src="/athria-logo.png" alt="Athria" /></div><nav aria-label="Main navigation"><NavItems items={primaryPages}/></nav><nav className="support-nav" aria-label="Support navigation"><NavItems items={supportPages}/></nav></aside><main>{page !== "Plan" && <header><div><h1>Hi, {profile.data?.preferredName || "Athlete"} <span aria-hidden="true">👋</span></h1><p>Your AI fitness hub. Local-first. Data you own.</p></div></header>}{serviceCrash && <div className="error">The local service stopped unexpectedly. Close and reopen Athria. If the problem continues, create a backup before troubleshooting.</div>}<View/></main></div>;
+  const navIcons: Record<Page, IconName> = { Overview: "overview", Training: "training", Profile: "profile", Plan: "plan", Devices: "devices", Settings: "settings", Help: "help" };
+  const NavItems = ({ items }: { items: typeof dashboardPages[number][] }) => <>{items.map((item) => <button key={item.id} className={item.id === page ? "active" : ""} aria-current={item.id === page ? "page" : undefined} onClick={() => setPage(item.id)}><AppIcon name={navIcons[item.id]}/>{item.label}</button>)}</>;
+  return <div className="shell"><aside><div className="brand"><img src="/athria-logo.png" alt="Athria" /></div><nav aria-label="Main navigation"><NavItems items={primaryPages}/></nav><div className="sidebar-lower"><nav className="support-nav" aria-label="Support navigation"><NavItems items={supportPages}/></nav><div className="sidebar-motto" aria-hidden="true"><span>Stronger<br/>You, Brighter<br/>Days</span><i/><i/><i/></div></div></aside><main>{page !== "Plan" && page !== "Profile" && <header><div><h1>Hi, {profile.data?.preferredName || "Athlete"} <span aria-hidden="true">👋</span></h1><p>Your AI fitness hub. Local-first. Data you own.</p></div></header>}{serviceCrash && <div className="error">The local service stopped unexpectedly. Close and reopen Athria. If the problem continues, create a backup before troubleshooting.</div>}<View/></main></div>;
 }
