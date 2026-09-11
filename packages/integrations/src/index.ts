@@ -113,6 +113,7 @@ export function intervalModality(value: unknown): TrainingSession["modality"] {
 }
 
 export function normalizeIntervalsActivity(item: Record<string, unknown>, resource: "activities" | "events"): TrainingSession | null {
+  if (resource === "events") return null;
   const startValue = item.start_date ?? item.start_date_local ?? item.start;
   if (!startValue) return null;
   const start = new Date(String(startValue));
@@ -126,7 +127,7 @@ export function normalizeIntervalsActivity(item: Record<string, unknown>, resour
   return trainingSessionSchema.parse({
     id: `intervals:${resource}:${external}`, source: "intervals", externalId: `${resource}:${external}`, modality: intervalModality(type), sport: type == null ? null : String(type),
     name: String(item.name ?? type ?? "Intervals activity"), startAt: start.toISOString(), endAt: new Date(start.getTime() + durationMinutes * 60_000).toISOString(), durationMinutes,
-    status: resource === "events" ? "planned" : "completed", missingFields: durationValue == null ? ["duration"] : [],
+    status: "completed", missingFields: durationValue == null ? ["duration"] : [],
     endurance: { distanceMeters: item.distance == null ? null : Number(item.distance), averageHeartRate: item.average_heartrate == null ? null : Number(item.average_heartrate), maxHeartRate: item.max_heartrate == null ? null : Number(item.max_heartrate), averagePowerWatts: item.average_watts == null ? null : Number(item.average_watts), maxPowerWatts: item.max_watts == null ? null : Number(item.max_watts), heartRateZoneSeconds: typeof item.time_in_zones === "object" && item.time_in_zones ? item.time_in_zones : {} },
   });
 }

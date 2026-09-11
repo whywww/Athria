@@ -9,8 +9,8 @@ import "./target.css";
  * The first layer of the Plan page: one screen answers *what* this plan is,
  * *where* the athlete currently sits, and *what the cycle is optimising for*.
  * The Primary Goal always carries the highest visual weight; the supporting
- * detail (Supporting / Maintenance / Constraints / Coordination) collapses into
- * a single "Plan details" disclosure so mixed-training plans stay legible.
+ * detail (Supporting / Maintenance / Coordination) collapses into a single
+ * "Plan details" disclosure so mixed-training plans stay legible.
  *
  * All week/date maths is delegated to the pure helpers in `./view` — this
  * component never re-derives week numbers itself.
@@ -50,12 +50,11 @@ export function MesocycleTarget({ plan, today, currentWeek, currentPhaseNames, s
   const primary = target?.primaryGoal;
   const supporting = target?.supporting ?? [];
   const maintenance = target?.maintenance ?? [];
-  const constraints = target?.constraints ?? [];
   const coordination = target?.coordinationStrategy;
 
   // Legacy plans (no `target`) degrade to title + summary and render no empty
-  // Supporting / Maintenance / Constraints / Coordination regions (§5.4).
-  const hasDetails = supporting.length > 0 || maintenance.length > 0 || constraints.length > 0 || Boolean(coordination);
+  // Supporting / Maintenance / Coordination regions (§5.4).
+  const hasDetails = supporting.length > 0 || maintenance.length > 0 || Boolean(coordination);
 
   return (
     <section className="mesocycle-card mt-card">
@@ -144,17 +143,6 @@ export function MesocycleTarget({ plan, today, currentWeek, currentPhaseNames, s
                       </ul>
                     </div>
                   )}
-                </div>
-              )}
-
-              {constraints.length > 0 && (
-                <div className="mt-block">
-                  <h4 className="mt-eyebrow">Constraints</h4>
-                  <div className="mt-constraints">
-                    {constraints.map((constraint, index) => (
-                      <span className="mt-constraint" key={`constraint-${index}`}>{constraint}</span>
-                    ))}
-                  </div>
                 </div>
               )}
 

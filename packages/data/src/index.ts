@@ -1,36 +1,40 @@
-import { Database } from "bun:sqlite";
-import { createHash } from "node:crypto";
-import { and, desc, eq, gte, notInArray } from "drizzle-orm";
+import { Database, SQLiteError } from "bun:sqlite";
+import { and, desc, eq, gte } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import {
+  MAX_PROFILE_NOTE_ENTRIES,
+  MAX_PROFILE_NOTE_LENGTH,
   PLAN_SCHEMA_VERSION,
   TAXONOMY_VERSION,
+  TEMPLATE_CATALOG_VERSION,
   athleteProfileSchema,
   currentPlanSchema,
-  defaultPreference,
   defaultProfile,
-  exerciseDefinitionSchema,
+  equipmentTypeIds,
+  normalizeProfileNote,
   planDraftSchema,
   plannedSessionSchema,
   planValidationSchema,
   planVersionSchema,
   sessionTemplateSchema,
   storedSessionTemplateSchema,
-  trainingPreferenceSchema,
   trainingSessionSchema,
+  wellnessRecordSchema,
   type AthleteProfile,
   type CurrentPlan,
-  type ExerciseDefinition,
   type PlanDraft,
   type PlanValidation,
   type PlanVersion,
   type PlannedSession,
   type SessionTemplate,
   type StoredSessionTemplate,
-  type TrainingPreference,
   type TrainingSession,
+  type WellnessRecord,
 } from "@athria/schemas";
 import * as schema from "./schema";
+
+interface LegacyExerciseDefinition { key: string; name: string; movement: string; primaryMuscles: string[]; secondaryMuscles: string[]; equipment: string[]; unilateral: boolean }
+type ExerciseDefinition = LegacyExerciseDefinition;
 
 export const INITIAL_MIGRATION_SQL = `
 CREATE TABLE IF NOT EXISTS profiles (owner_id TEXT PRIMARY KEY, data TEXT NOT NULL, updated_at TEXT NOT NULL);
@@ -67,7 +71,76 @@ CREATE TABLE IF NOT EXISTS plan_schema_migration_backups (table_name TEXT NOT NU
 `;
 
 const parseJson = (value: unknown): unknown => typeof value === "string" ? JSON.parse(value) : value;
-const contentHash = (value: unknown): string => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+const equipment = new Set<string>(equipmentTypeIds);
+const equipmentAliases: Record<string, string> = { band: "resistance_band", suspension: "trx" };
+const migratedEquipment = (values: unknown): string[] => Array.isArray(values)
+  ? [...new Set(values.map(String).map((item) => equipmentAliases[item] ?? item).filter((item) => equipment.has(item)))]
+  : [];
+
+function migrateEquipmentFacts(value: unknown): void {
+  if (Array.isArray(value)) { value.forEach(migrateEquipmentFacts); return; }
+  if (typeof value !== "object" || value === null) return;
+  const record = value as Record<string, unknown>;
+  if (Array.isArray(record.equipment)) record.equipment = migratedEquipment(record.equipment);
+  if (typeof record.equipment === "object" && record.equipment !== null) {
+    const equipmentFact = record.equipment as Record<string, unknown>;
+    if (Array.isArray(equipmentFact.value)) equipmentFact.value = migratedEquipment(equipmentFact.value);
+  }
+  Object.values(record).forEach(migrateEquipmentFacts);
+}
+
+const legacyRecoveryDays = (hours: unknown): number | null => {
+  const value = Number(hours);
+  return Number.isFinite(value) && value > 0 ? Math.min(7, Math.max(1, Math.ceil(value / 24))) : null;
+};
+
+function sanitizeProfileNotes(notes: unknown[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const raw of notes) {
+    if (typeof raw !== "string") continue;
+    const note = raw.trim().slice(0, MAX_PROFILE_NOTE_LENGTH);
+    const key = normalizeProfileNote(note);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    result.push(note);
+    if (result.length === MAX_PROFILE_NOTE_ENTRIES) break;
+  }
+  return result;
+}
+
+// Legacy on-disk profiles predate the day-based recovery field, the id-less
+// constraints, and the free-text injuries/constraintNotes model. Every
+// migration that parses an existing profile must normalize first, otherwise
+// the strict athleteProfileSchema rejects the legacy keys.
+function migrateLegacyProfileFields(raw: Record<string, unknown>): Record<string, unknown> {
+  const profile: Record<string, unknown> = { ...raw };
+  profile.preferredName ??= typeof profile.displayName === "string" && profile.displayName.trim() ? profile.displayName : "Athlete";
+  profile.gender ??= null;
+  profile.heightCm ??= null;
+  profile.birthDate ??= null;
+  delete profile.displayName;
+  profile.equipment = migratedEquipment(profile.equipment);
+  if ("explicitRecoveryHours" in profile) {
+    profile.explicitRecoveryDays = legacyRecoveryDays(profile.explicitRecoveryHours);
+    delete profile.explicitRecoveryHours;
+  }
+  if (Array.isArray(profile.strengthConstraints)) {
+    const converted = profile.strengthConstraints.flatMap((item) => {
+      if (typeof item !== "object" || item === null) return [];
+      const constraint = item as Record<string, unknown>;
+      const key = constraint.type === "exclude_exercise" ? constraint.canonicalKey : constraint.movementPattern;
+      return typeof key === "string" && key.trim() ? [`Avoid ${key.trim().replace(/_/g, " ")}`] : [];
+    });
+    const existing = Array.isArray(profile.constraintNotes) ? profile.constraintNotes as unknown[] : [];
+    profile.constraintNotes = sanitizeProfileNotes([...existing, ...converted]);
+    delete profile.strengthConstraints;
+  } else if (Array.isArray(profile.constraintNotes)) {
+    profile.constraintNotes = sanitizeProfileNotes(profile.constraintNotes);
+  }
+  if (Array.isArray(profile.injuries)) profile.injuries = sanitizeProfileNotes(profile.injuries);
+  return profile;
+}
 
 function inferPhaseType(name: string): "foundation" | "progression" | "deload" | "peak" | "test" | "recovery" {
   const value = name.toLowerCase();
@@ -81,10 +154,8 @@ function inferPhaseType(name: string): "foundation" | "progression" | "deload" |
 
 const movements = new Set(["squat", "hinge", "lunge", "horizontal_push", "vertical_push", "horizontal_pull", "vertical_pull", "carry", "rotation", "anti_rotation", "flexion", "extension", "abduction", "adduction", "calf_raise", "isolation", "other"]);
 const muscles = new Set(["chest", "upper_back", "back", "lats", "shoulders", "biceps", "triceps", "forearms", "quadriceps", "hamstrings", "glutes", "calves", "core", "spinal_erectors", "hip_flexors", "adductors", "abductors", "full_body", "other"]);
-const equipment = new Set(["bodyweight", "barbell", "dumbbell", "kettlebell", "cable", "machine", "band", "smith_machine", "trap_bar", "ez_bar", "bench", "pull_up_bar", "rings", "suspension", "medicine_ball", "landmine", "sled", "other"]);
 const fact = (value: unknown, known: boolean, evidence: string) => ({ value, source: known ? "catalog" : "migration", confidence: known ? 1 : 0, evidence, taxonomyVersion: TAXONOMY_VERSION });
 const normalizedList = (values: unknown, allowed: Set<string>) => Array.isArray(values) ? values.map(String).filter((item) => allowed.has(item)) : [];
-const migratedEquipment = (values: unknown) => Array.isArray(values) ? [...new Set(values.map(String).map((item) => equipment.has(item) ? item : "other"))] : [];
 
 function migrateExercise(value: Record<string, unknown>, catalog: Map<string, ExerciseDefinition>) {
   const canonicalKey = String(value.canonicalKey ?? value.exerciseKey ?? "") || null;
@@ -218,6 +289,50 @@ function migrateCurrentMesocycle(value: unknown): unknown {
   return mesocycle;
 }
 
+type TemplateRow = { id: string; ownerId: string; data: unknown; revision: number; createdAt: string; updatedAt: string };
+
+function templateData(template: SessionTemplate) {
+  const { id: _id, ...data } = sessionTemplateSchema.parse(template);
+  return data;
+}
+
+function storedTemplate(row: TemplateRow): StoredSessionTemplate {
+  return storedSessionTemplateSchema.parse({ id: row.id, ...(parseJson(row.data) as Record<string, unknown>), origin: "user", revision: row.revision }) as StoredSessionTemplate;
+}
+
+function migrateTemplateNode(value: Record<string, unknown>) {
+  const variables: string[] = [];
+  const optionalVariables: string[] = [];
+  for (const item of (Array.isArray(value.variables) ? value.variables : []) as Array<Record<string, unknown>>) {
+    const key = String(item.key ?? "");
+    if (key) (item.required === false ? optionalVariables : variables).push(key);
+  }
+  const node: Record<string, unknown> = { role: value.role, variables };
+  if (typeof value.name === "string" && value.name.trim()) node.name = value.name;
+  if (value.required === false) node.optional = true;
+  if (optionalVariables.length) node.optionalVariables = optionalVariables;
+  if (Array.isArray(value.movementPatternIds) && value.movementPatternIds.length) node.movementPatternIds = value.movementPatternIds;
+  if (Array.isArray(value.targetMuscleIds) && value.targetMuscleIds.length) node.targetMuscleIds = value.targetMuscleIds;
+  if (value.matchPolicy === "all") node.matchPolicy = "all";
+  return node;
+}
+
+function migrateSessionTemplate(value: Record<string, unknown>, id: string): SessionTemplate {
+  if (Array.isArray(value.nodes)) return sessionTemplateSchema.parse({ id, name: value.name, intent: value.intent, domain: value.domain, nodes: value.nodes });
+  const structure = value.structure as Record<string, unknown> | undefined;
+  const nodes = (structure?.slots ?? structure?.blocks) as Array<Record<string, unknown>> | undefined;
+  return sessionTemplateSchema.parse({ id, name: value.name, intent: value.intent, domain: value.domain, nodes: (nodes ?? []).map(migrateTemplateNode) });
+}
+
+const legacyBuiltinTemplateIds = new Set(["builtin.easy-run", "builtin.intervals", "builtin.long-run", "builtin.lower-strength-a", "builtin.upper-strength-a", "builtin.basketball-practice", "builtin.mobility-reset", "builtin.mind-body-reset"]);
+function migrateBuiltinTemplateRefs(value: unknown): void {
+  if (Array.isArray(value)) { value.forEach(migrateBuiltinTemplateRefs); return; }
+  if (typeof value !== "object" || value === null) return;
+  const record = value as Record<string, unknown>;
+  if (record.source === "builtin" && record.catalogVersion === "1.0" && legacyBuiltinTemplateIds.has(String(record.id))) record.catalogVersion = TEMPLATE_CATALOG_VERSION;
+  Object.values(record).forEach(migrateBuiltinTemplateRefs);
+}
+
 export class AthriaRepository {
   readonly sqlite: Database;
   readonly db: ReturnType<typeof drizzle<typeof schema>>;
@@ -236,6 +351,13 @@ export class AthriaRepository {
       this.migratePlanningSchemaV7Reset();
       this.migrateDomainProgressionV7Reset();
       this.migrateProfilePreferenceV10();
+      this.migrateSessionTemplatesV11();
+      this.migrateSimplifiedStorageV12();
+      this.migrateProfileConstraintsV13();
+      this.migrateProfileNotesV14();
+      this.migratePlanTargetV15();
+      this.migrateEquipmentCatalogV16();
+      this.migratePersonalInformationV17();
     } catch (error) {
       this.sqlite.close();
       throw error;
@@ -244,19 +366,19 @@ export class AthriaRepository {
 
   private migratePlanSchemaV3(): void {
     if (this.sqlite.query("SELECT version FROM athria_migrations WHERE version = 4").get()) return;
-    const catalog = new Map(this.sqlite.query("SELECT key, data FROM exercises").all().map((row) => [String((row as { key: unknown }).key), exerciseDefinitionSchema.parse(parseJson((row as { data: unknown }).data))]));
+    const catalog = new Map(this.sqlite.query("SELECT key, data FROM exercises").all().map((row) => [String((row as { key: unknown }).key), parseJson((row as { data: unknown }).data) as ExerciseDefinition]));
     const profiles = new Map(this.sqlite.query("SELECT owner_id, data FROM profiles").all().map((row) => [String((row as { owner_id: unknown }).owner_id), parseJson((row as { data: unknown }).data) as Record<string, unknown>]));
     this.sqlite.transaction(() => {
       for (const [ownerId, profile] of profiles) {
         const migrated: Record<string, unknown> = { ...profile, strengthConstraints: [
           ...((profile.strengthConstraints as unknown[] | undefined) ?? []),
-          ...((profile.excludedExercises as string[] | undefined) ?? []).map((canonicalKey, index) => ({ id: `migrated-exclusion-${index}`, type: "exclude_exercise", canonicalKey })),
+          ...((profile.excludedExercises as string[] | undefined) ?? []).map((canonicalKey) => ({ type: "exclude_exercise", canonicalKey })),
         ], constraintNotes: profile.constraintNotes ?? profile.constraints ?? [], equipment: migratedEquipment(profile.equipment ?? []) };
         const trainingDays = Array.isArray(migrated.trainingDays) ? migrated.trainingDays : [];
         migrated.trainingRhythm = trainingDays.length ? { kind: "fixed_week", days: [...new Set(trainingDays)].sort() } : { kind: "flexible_week", targetDaysPerWeek: 4, minDaysPerWeek: 3, maxDaysPerWeek: 5 };
         delete migrated.weeklyStrengthSessions; delete migrated.weeklyEnduranceSessions; delete migrated.trainingDays;
         delete migrated.excludedExercises; delete migrated.constraints; delete migrated.availability; delete migrated.maxHeartRate;
-        this.sqlite.query("UPDATE profiles SET data = ? WHERE owner_id = ?").run(JSON.stringify(athleteProfileSchema.parse(migrated)), ownerId);
+        this.sqlite.query("UPDATE profiles SET data = ? WHERE owner_id = ?").run(JSON.stringify(athleteProfileSchema.parse(migrateLegacyProfileFields(migrated))), ownerId);
       }
       for (const row of this.sqlite.query("SELECT id, owner_id, data, validation FROM plan_drafts").all() as Array<{ id: string; owner_id: string; data: string; validation: string }>) {
         this.sqlite.query("INSERT INTO plan_schema_migration_backups(table_name,row_id,data,validation,migrated_at) VALUES ('plan_drafts',?,?,?,CURRENT_TIMESTAMP)").run(row.id, row.data, row.validation);
@@ -401,7 +523,7 @@ export class AthriaRepository {
         delete migrated.weeklyEnduranceSessions;
         delete migrated.priority;
         migrated.preference ??= "";
-        this.sqlite.query("UPDATE profiles SET data = ? WHERE owner_id = ?").run(JSON.stringify(athleteProfileSchema.parse(migrated)), row.owner_id);
+        this.sqlite.query("UPDATE profiles SET data = ? WHERE owner_id = ?").run(JSON.stringify(athleteProfileSchema.parse(migrateLegacyProfileFields(migrated))), row.owner_id);
       }
       this.sqlite.query("INSERT INTO athria_migrations(version, applied_at) VALUES (7, CURRENT_TIMESTAMP)").run();
     })();
@@ -486,7 +608,7 @@ export class AthriaRepository {
         const legacy = parseJson(row.data) as Record<string, unknown>;
         delete legacy.priority;
         legacy.preference ??= "";
-        this.sqlite.query("UPDATE profiles SET data = ? WHERE owner_id = ?").run(JSON.stringify(athleteProfileSchema.parse(legacy)), row.owner_id);
+        this.sqlite.query("UPDATE profiles SET data = ? WHERE owner_id = ?").run(JSON.stringify(athleteProfileSchema.parse(migrateLegacyProfileFields(legacy))), row.owner_id);
       }
       for (const row of this.sqlite.query("SELECT id, patch FROM profile_update_proposals WHERE status = 'pending'").all() as Array<{ id: string; patch: string }>) {
         const patch = parseJson(row.patch) as Record<string, unknown>;
@@ -494,6 +616,162 @@ export class AthriaRepository {
         this.sqlite.query("UPDATE profile_update_proposals SET patch = ? WHERE id = ?").run(JSON.stringify(patch), row.id);
       }
       this.sqlite.query("INSERT INTO athria_migrations(version, applied_at) VALUES (10, CURRENT_TIMESTAMP)").run();
+    })();
+  }
+
+  private migrateSessionTemplatesV11(): void {
+    if (this.sqlite.query("SELECT version FROM athria_migrations WHERE version = 11").get()) return;
+    this.sqlite.transaction(() => {
+      for (const row of this.sqlite.query("SELECT id, data FROM session_templates").all() as Array<{ id: string; data: string }>) {
+        const template = migrateSessionTemplate(parseJson(row.data) as Record<string, unknown>, row.id);
+        this.sqlite.query("UPDATE session_templates SET data = ? WHERE id = ?").run(JSON.stringify(templateData(template)), row.id);
+      }
+      for (const row of this.sqlite.query("SELECT owner_id, data FROM current_mesocycles").all() as Array<{ owner_id: string; data: string }>) {
+        const value = parseJson(row.data);
+        migrateBuiltinTemplateRefs(value);
+        migrateEquipmentFacts(value);
+        this.sqlite.query("UPDATE current_mesocycles SET data = ? WHERE owner_id = ?").run(JSON.stringify(currentPlanSchema.parse(value)), row.owner_id);
+      }
+      if (this.sqlite.query("SELECT name FROM sqlite_master WHERE type='table' AND name='planned_sessions'").get()) for (const row of this.sqlite.query("SELECT id, data FROM planned_sessions").all() as Array<{ id: string; data: string }>) {
+        const value = parseJson(row.data); migrateBuiltinTemplateRefs(value); migrateEquipmentFacts(value);
+        this.sqlite.query("UPDATE planned_sessions SET data = ? WHERE id = ?").run(JSON.stringify(plannedSessionSchema.parse(value)), row.id);
+      }
+      if (this.sqlite.query("SELECT name FROM sqlite_master WHERE type='table' AND name='planned_session_changes'").get()) for (const row of this.sqlite.query("SELECT id, before_data, after_data FROM planned_session_changes").all() as Array<{ id: string; before_data: string; after_data: string }>) {
+        const before = parseJson(row.before_data); const after = parseJson(row.after_data); migrateBuiltinTemplateRefs(before); migrateBuiltinTemplateRefs(after);
+        this.sqlite.query("UPDATE planned_session_changes SET before_data = ?, after_data = ? WHERE id = ?").run(JSON.stringify(before), JSON.stringify(after), row.id);
+      }
+      this.sqlite.query("INSERT INTO athria_migrations(version, applied_at) VALUES (11, CURRENT_TIMESTAMP)").run();
+    })();
+  }
+
+  private migrateSimplifiedStorageV12(): void {
+    if (this.sqlite.query("SELECT version FROM athria_migrations WHERE version = 12").get()) return;
+    const tableExists = (name: string) => Boolean(this.sqlite.query("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(name));
+    this.sqlite.transaction(() => {
+      if (tableExists("preferences")) {
+        for (const row of this.sqlite.query("SELECT owner_id, data FROM preferences").all() as Array<{ owner_id: string; data: string }>) {
+          const preference = parseJson(row.data) as Record<string, unknown>;
+          const profileRow = this.sqlite.query("SELECT data FROM profiles WHERE owner_id=?").get(row.owner_id) as { data: string } | null;
+          if (!profileRow) continue;
+          const profile = parseJson(profileRow.data) as Record<string, unknown>;
+          if (!("maxSessionMinutes" in profile) && Number.isFinite(Number(preference.preferredSessionMinutes))) profile.maxSessionMinutes = Number(preference.preferredSessionMinutes);
+          const notes = typeof preference.notes === "string" ? preference.notes.trim() : "";
+          if (!String(profile.preference ?? "").trim() && notes.length <= 80) profile.preference = notes;
+          const constraints = Array.isArray(profile.strengthConstraints) ? profile.strengthConstraints as Array<Record<string, unknown>> : [];
+          const existing = new Set(constraints.filter((item) => item.type === "exclude_exercise").map((item) => String(item.canonicalKey)));
+          for (const key of Array.isArray(preference.dislikedExercises) ? preference.dislikedExercises.map(String) : []) if (key && !existing.has(key)) constraints.push({ type: "exclude_exercise", canonicalKey: key });
+          profile.strengthConstraints = constraints;
+          this.sqlite.query("UPDATE profiles SET data=? WHERE owner_id=?").run(JSON.stringify(athleteProfileSchema.parse(migrateLegacyProfileFields(profile))), row.owner_id);
+        }
+      }
+      if (tableExists("planned_sessions")) {
+        for (const row of this.sqlite.query("SELECT owner_id, data FROM current_mesocycles").all() as Array<{ owner_id: string; data: string }>) {
+          const rawPlan = parseJson(row.data); migrateEquipmentFacts(rawPlan); const plan = currentPlanSchema.parse(rawPlan);
+          const snapshots = this.sqlite.query("SELECT data FROM planned_sessions WHERE owner_id=?").all(row.owner_id).map((item) => { const value = parseJson((item as { data: string }).data); migrateEquipmentFacts(value); return plannedSessionSchema.parse(value); });
+          const byId = new Map(snapshots.map((item) => [item.id, item]));
+          const known = new Set(plan.mesocycle.weeks.flatMap((week) => week.sessions.map((session) => session.id)));
+          const weeks = plan.mesocycle.weeks.map((week) => ({ ...week, sessions: week.sessions.map((session) => {
+            const snapshot = byId.get(session.id); if (!snapshot) return session;
+            return { ...session, scheduledDate: snapshot.scheduledDate, order: snapshot.order, status: snapshot.status === "skipped" ? "skipped" as const : "planned" as const, templateRef: snapshot.templateRef, name: snapshot.name, intent: snapshot.intent, durationMinutes: snapshot.durationMinutes, recoveryDemand: snapshot.recoveryDemand, keySession: snapshot.keySession, components: snapshot.components, progressionNote: snapshot.progressionNote, schedulingRationale: snapshot.schedulingRationale, legacySnapshot: snapshot.legacySnapshot };
+          }) }));
+          for (const snapshot of snapshots.filter((item) => !known.has(item.id))) {
+            const week = weeks.find((item) => item.weekNumber === snapshot.weekNumber); if (!week) continue;
+            week.sessions.push({ id: snapshot.id, scheduledDate: snapshot.scheduledDate, order: snapshot.order, status: snapshot.status === "skipped" ? "skipped" : "planned", templateRef: snapshot.templateRef, name: snapshot.name, intent: snapshot.intent, durationMinutes: snapshot.durationMinutes, recoveryDemand: snapshot.recoveryDemand, keySession: snapshot.keySession, components: snapshot.components, progressionNote: snapshot.progressionNote, schedulingRationale: snapshot.schedulingRationale, legacySnapshot: snapshot.legacySnapshot });
+          }
+          const migrated = currentPlanSchema.parse({ ...plan, mesocycle: { ...plan.mesocycle, weeks } });
+          this.sqlite.query("UPDATE current_mesocycles SET data=? WHERE owner_id=?").run(JSON.stringify(migrated), row.owner_id);
+          for (const snapshot of snapshots) if (snapshot.completedTrainingSessionId) {
+            const training = this.sqlite.query("SELECT data FROM training_sessions WHERE id=? AND owner_id=?").get(snapshot.completedTrainingSessionId, row.owner_id) as { data: string } | null;
+            if (training) this.sqlite.query("UPDATE training_sessions SET data=? WHERE id=?").run(JSON.stringify(trainingSessionSchema.parse({ ...(parseJson(training.data) as object), status: "completed", plannedSessionId: snapshot.id })), snapshot.completedTrainingSessionId);
+          }
+        }
+      }
+      this.sqlite.exec(`
+        CREATE TABLE IF NOT EXISTS wellness (owner_id TEXT NOT NULL, day TEXT NOT NULL, data TEXT NOT NULL, updated_at TEXT NOT NULL);
+        CREATE UNIQUE INDEX IF NOT EXISTS wellness_owner_day_v12 ON wellness(owner_id, day);
+      `);
+      if (tableExists("wellness_daily")) {
+        for (const row of this.sqlite.query("SELECT owner_id, day, data FROM wellness_daily").all() as Array<{ owner_id: string; day: string; data: string }>) {
+          const value = parseJson(row.data) as Record<string, unknown>; const updatedAt = this.now().toISOString(); const fields: Record<string, unknown> = {};
+          const aliases: Record<string, string[]> = { restingHeartRateBpm: ["restingHR", "restingHeartRate"], hrvRmssdMs: ["hrv", "hrvRmssd"], sleepSeconds: ["sleepSecs", "sleepSeconds"], sleepScore: ["sleepScore"], weightKg: ["weight"], fatigue: ["fatigue"], soreness: ["soreness"], stress: ["stress"], mood: ["mood"], motivation: ["motivation"], readiness: ["readiness"] };
+          for (const [field, names] of Object.entries(aliases)) { const raw = names.map((name) => value[name]).find((item) => item !== undefined && item !== null && item !== ""); const number = Number(raw); if (raw !== undefined && Number.isFinite(number)) fields[field] = { value: number, source: "intervals_icu", updatedAt }; }
+          const record = wellnessRecordSchema.parse({ ownerId: row.owner_id, day: row.day, fields, updatedAt });
+          this.sqlite.query("INSERT INTO wellness VALUES (?,?,?,?) ON CONFLICT(owner_id,day) DO UPDATE SET data=excluded.data,updated_at=excluded.updated_at").run(row.owner_id, row.day, JSON.stringify(record), updatedAt);
+        }
+      }
+      this.sqlite.exec(`
+        DROP TABLE IF EXISTS preferences; DROP TABLE IF EXISTS exercises; DROP TABLE IF EXISTS planned_sessions; DROP TABLE IF EXISTS planned_session_changes;
+        DROP TABLE IF EXISTS raw_records; DROP TABLE IF EXISTS profile_update_proposals; DROP TABLE IF EXISTS approvals; DROP TABLE IF EXISTS plan_drafts;
+        DROP TABLE IF EXISTS plan_versions; DROP TABLE IF EXISTS plan_activations; DROP TABLE IF EXISTS plan_schema_migration_backups;
+        DROP TABLE IF EXISTS planning_v7_reset_backups; DROP TABLE IF EXISTS domain_progression_v7_reset_backups; DROP TABLE IF EXISTS wellness_daily;
+        INSERT INTO athria_migrations(version, applied_at) VALUES (12, CURRENT_TIMESTAMP);
+      `);
+    })();
+  }
+
+  private migrateProfileConstraintsV13(): void {
+    if (this.sqlite.query("SELECT version FROM athria_migrations WHERE version = 13").get()) return;
+    this.sqlite.transaction(() => {
+      for (const row of this.sqlite.query("SELECT owner_id, data FROM profiles").all() as Array<{ owner_id: string; data: string }>) {
+        const profile = migrateLegacyProfileFields(parseJson(row.data) as Record<string, unknown>);
+        this.sqlite.query("UPDATE profiles SET data = ? WHERE owner_id = ?").run(JSON.stringify(athleteProfileSchema.parse(profile)), row.owner_id);
+      }
+      this.sqlite.query("INSERT INTO athria_migrations(version, applied_at) VALUES (13, CURRENT_TIMESTAMP)").run();
+    })();
+  }
+
+  private migrateProfileNotesV14(): void {
+    if (this.sqlite.query("SELECT version FROM athria_migrations WHERE version = 14").get()) return;
+    this.sqlite.transaction(() => {
+      for (const row of this.sqlite.query("SELECT owner_id, data FROM profiles").all() as Array<{ owner_id: string; data: string }>) {
+        const profile = migrateLegacyProfileFields(parseJson(row.data) as Record<string, unknown>);
+        this.sqlite.query("UPDATE profiles SET data = ? WHERE owner_id = ?").run(JSON.stringify(athleteProfileSchema.parse(profile)), row.owner_id);
+      }
+      this.sqlite.query("INSERT INTO athria_migrations(version, applied_at) VALUES (14, CURRENT_TIMESTAMP)").run();
+    })();
+  }
+
+  // Plan targets no longer carry the free-text `constraints` chips; strip the
+  // legacy key so the strict currentPlanSchema keeps parsing stored plans.
+  private migratePlanTargetV15(): void {
+    if (this.sqlite.query("SELECT version FROM athria_migrations WHERE version = 15").get()) return;
+    this.sqlite.transaction(() => {
+      for (const row of this.sqlite.query("SELECT owner_id, data FROM current_mesocycles").all() as Array<{ owner_id: string; data: string }>) {
+        const plan = parseJson(row.data) as Record<string, unknown>;
+        migrateEquipmentFacts(plan);
+        const target = plan.target;
+        if (typeof target !== "object" || target === null || !("constraints" in (target as Record<string, unknown>))) continue;
+        delete (target as Record<string, unknown>).constraints;
+        this.sqlite.query("UPDATE current_mesocycles SET data = ? WHERE owner_id = ?").run(JSON.stringify(currentPlanSchema.parse(plan)), row.owner_id);
+      }
+      this.sqlite.query("INSERT INTO athria_migrations(version, applied_at) VALUES (15, CURRENT_TIMESTAMP)").run();
+    })();
+  }
+
+  private migrateEquipmentCatalogV16(): void {
+    if (this.sqlite.query("SELECT version FROM athria_migrations WHERE version = 16").get()) return;
+    this.sqlite.transaction(() => {
+      for (const row of this.sqlite.query("SELECT owner_id, data FROM profiles").all() as Array<{ owner_id: string; data: string }>) {
+        const profile = migrateLegacyProfileFields(parseJson(row.data) as Record<string, unknown>);
+        this.sqlite.query("UPDATE profiles SET data = ? WHERE owner_id = ?").run(JSON.stringify(athleteProfileSchema.parse(profile)), row.owner_id);
+      }
+      for (const row of this.sqlite.query("SELECT owner_id, data FROM current_mesocycles").all() as Array<{ owner_id: string; data: string }>) {
+        const plan = parseJson(row.data);
+        migrateEquipmentFacts(plan);
+        this.sqlite.query("UPDATE current_mesocycles SET data = ? WHERE owner_id = ?").run(JSON.stringify(currentPlanSchema.parse(plan)), row.owner_id);
+      }
+      this.sqlite.query("INSERT INTO athria_migrations(version, applied_at) VALUES (16, CURRENT_TIMESTAMP)").run();
+    })();
+  }
+
+  private migratePersonalInformationV17(): void {
+    if (this.sqlite.query("SELECT version FROM athria_migrations WHERE version = 17").get()) return;
+    this.sqlite.transaction(() => {
+      for (const row of this.sqlite.query("SELECT owner_id, data FROM profiles").all() as Array<{ owner_id: string; data: string }>) {
+        const profile = migrateLegacyProfileFields(parseJson(row.data) as Record<string, unknown>);
+        this.sqlite.query("UPDATE profiles SET data = ? WHERE owner_id = ?").run(JSON.stringify(athleteProfileSchema.parse(profile)), row.owner_id);
+      }
+      this.sqlite.query("INSERT INTO athria_migrations(version, applied_at) VALUES (17, CURRENT_TIMESTAMP)").run();
     })();
   }
 
@@ -510,28 +788,6 @@ export class AthriaRepository {
     const updatedAt = this.now().toISOString();
     this.db.insert(schema.profiles).values({ ownerId: parsed.ownerId, data: parsed, updatedAt }).onConflictDoUpdate({ target: schema.profiles.ownerId, set: { data: parsed, updatedAt } }).run();
     return parsed;
-  }
-
-  getPreference(ownerId = "local-user"): TrainingPreference {
-    const row = this.db.select().from(schema.preferences).where(eq(schema.preferences.ownerId, ownerId)).get();
-    return row ? trainingPreferenceSchema.parse(parseJson(row.data)) : defaultPreference();
-  }
-
-  savePreference(preference: TrainingPreference): TrainingPreference {
-    const parsed = trainingPreferenceSchema.parse(preference);
-    const updatedAt = this.now().toISOString();
-    this.db.insert(schema.preferences).values({ ownerId: parsed.ownerId, data: parsed, updatedAt }).onConflictDoUpdate({ target: schema.preferences.ownerId, set: { data: parsed, updatedAt } }).run();
-    return parsed;
-  }
-
-  listExercises(): ExerciseDefinition[] {
-    return this.db.select().from(schema.exercises).all().map((row) => exerciseDefinitionSchema.parse(parseJson(row.data)));
-  }
-
-  seedExercises(exercises: ExerciseDefinition[]): void {
-    this.sqlite.transaction(() => {
-      for (const exercise of exercises) this.db.insert(schema.exercises).values({ key: exercise.key, data: exercise }).onConflictDoUpdate({ target: schema.exercises.key, set: { data: exercise } }).run();
-    })();
   }
 
   listSessions(ownerId = "local-user", since?: string): TrainingSession[] {
@@ -570,21 +826,6 @@ export class AthriaRepository {
     return this.db.select().from(schema.importBatches).where(and(eq(schema.importBatches.ownerId, ownerId), eq(schema.importBatches.source, source))).orderBy(desc(schema.importBatches.createdAt)).get() ?? null;
   }
 
-  upsertRawRecords(ownerId: string, source: string, records: unknown[]): number {
-    let stored = 0;
-    this.sqlite.transaction(() => {
-      records.forEach((payload) => {
-        const hash = contentHash(payload);
-        const externalKey = typeof payload === "object" && payload !== null
-          ? String((payload as Record<string, unknown>).id ?? (payload as Record<string, unknown>).localid ?? (payload as Record<string, unknown>).external_id ?? (payload as Record<string, unknown>).workout_id ?? (payload as Record<string, unknown>).set_id ?? hash)
-          : hash;
-        this.db.insert(schema.rawRecords).values({ id: crypto.randomUUID(), ownerId, source, externalKey, contentHash: hash, payload }).onConflictDoUpdate({ target: [schema.rawRecords.ownerId, schema.rawRecords.source, schema.rawRecords.externalKey], set: { contentHash: hash, payload } }).run();
-        stored += 1;
-      });
-    })();
-    return stored;
-  }
-
   getConnectionSyncState(source: string, ownerId = "local-user") {
     const row = this.db.select().from(schema.connectionSyncState).where(and(eq(schema.connectionSyncState.ownerId, ownerId), eq(schema.connectionSyncState.source, source))).get();
     return row ? { ...row, data: parseJson(row.data) as Record<string, unknown> } : null;
@@ -607,39 +848,67 @@ export class AthriaRepository {
         const value = payload as Record<string, unknown>;
         const day = String(value.id ?? value.day ?? value.date ?? "").slice(0, 10);
         if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) continue;
-        this.db.insert(schema.wellnessDaily).values({ ownerId, day, data: value }).onConflictDoUpdate({ target: [schema.wellnessDaily.ownerId, schema.wellnessDaily.day], set: { data: value } }).run();
+        const existing = this.getWellness(ownerId, day);
+        const updatedAt = this.now().toISOString();
+        const aliases: Record<string, string[]> = { restingHeartRateBpm: ["restingHR", "restingHeartRate"], hrvRmssdMs: ["hrv", "hrvRmssd"], sleepSeconds: ["sleepSecs", "sleepSeconds"], sleepScore: ["sleepScore"], weightKg: ["weight"], fatigue: ["fatigue"], soreness: ["soreness"], stress: ["stress"], mood: ["mood"], motivation: ["motivation"], readiness: ["readiness"] };
+        const fields = { ...(existing?.fields ?? {}) } as WellnessRecord["fields"];
+        for (const [field, names] of Object.entries(aliases)) {
+          const prior = fields[field as keyof typeof fields];
+          if (prior && prior.source !== "intervals_icu") continue;
+          const raw = names.map((name) => value[name]).find((item) => item !== undefined && item !== null && item !== "");
+          const number = Number(raw); if (raw !== undefined && Number.isFinite(number)) (fields as Record<string, unknown>)[field] = { value: number, source: "intervals_icu", updatedAt };
+        }
+        const record = wellnessRecordSchema.parse({ ownerId, day, fields, updatedAt });
+        this.db.insert(schema.wellness).values({ ownerId, day, data: record, updatedAt }).onConflictDoUpdate({ target: [schema.wellness.ownerId, schema.wellness.day], set: { data: record, updatedAt } }).run();
         stored += 1;
       }
     })();
     return stored;
   }
 
+  getWellness(ownerId: string, day: string): WellnessRecord | null {
+    const row = this.db.select().from(schema.wellness).where(and(eq(schema.wellness.ownerId, ownerId), eq(schema.wellness.day, day))).get();
+    return row ? wellnessRecordSchema.parse(parseJson(row.data)) : null;
+  }
+
+  listWellness(ownerId = "local-user", since?: string): WellnessRecord[] {
+    const rows = this.db.select().from(schema.wellness).where(eq(schema.wellness.ownerId, ownerId)).orderBy(desc(schema.wellness.day)).all();
+    return rows.filter((row) => !since || row.day >= since).map((row) => wellnessRecordSchema.parse(parseJson(row.data)));
+  }
+
+  saveWellness(record: WellnessRecord): WellnessRecord {
+    const parsed = wellnessRecordSchema.parse(record);
+    this.db.insert(schema.wellness).values({ ownerId: parsed.ownerId, day: parsed.day, data: parsed, updatedAt: parsed.updatedAt }).onConflictDoUpdate({ target: [schema.wellness.ownerId, schema.wellness.day], set: { data: parsed, updatedAt: parsed.updatedAt } }).run();
+    return parsed;
+  }
+
   listTemplates(ownerId = "local-user"): StoredSessionTemplate[] {
-    return this.db.select().from(schema.sessionTemplates).where(eq(schema.sessionTemplates.ownerId, ownerId)).orderBy(desc(schema.sessionTemplates.updatedAt)).all().map((row) => storedSessionTemplateSchema.parse(parseJson(row.data)) as StoredSessionTemplate);
+    return this.db.select().from(schema.sessionTemplates).where(eq(schema.sessionTemplates.ownerId, ownerId)).orderBy(desc(schema.sessionTemplates.updatedAt)).all().map(storedTemplate);
   }
 
   getTemplate(id: string, ownerId = "local-user"): StoredSessionTemplate | null {
     const row = this.db.select().from(schema.sessionTemplates).where(and(eq(schema.sessionTemplates.id, id), eq(schema.sessionTemplates.ownerId, ownerId))).get();
-    return row ? storedSessionTemplateSchema.parse(parseJson(row.data)) as StoredSessionTemplate : null;
+    return row ? storedTemplate(row) : null;
   }
 
   createTemplate(template: SessionTemplate, ownerId = "local-user"): StoredSessionTemplate {
     if (this.getTemplate(template.id, ownerId)) throw new Error("TEMPLATE_ALREADY_EXISTS");
     const now = this.now().toISOString();
-    const stored = storedSessionTemplateSchema.parse({ ...sessionTemplateSchema.parse(template), ownerId, revision: 1, createdAt: now, updatedAt: now }) as StoredSessionTemplate;
-    this.db.insert(schema.sessionTemplates).values({ id: stored.id, ownerId, data: stored, revision: stored.revision, createdAt: now, updatedAt: now }).run();
+    const parsed = sessionTemplateSchema.parse(template);
+    const stored = storedSessionTemplateSchema.parse({ ...parsed, origin: "user", revision: 1 }) as StoredSessionTemplate;
+    this.db.insert(schema.sessionTemplates).values({ id: stored.id, ownerId, data: templateData(parsed), revision: stored.revision, createdAt: now, updatedAt: now }).run();
     return stored;
   }
 
-  updateTemplate(template: SessionTemplate, expectedRevision: number, ownerId = "local-user", sessions: PlannedSession[] = []): StoredSessionTemplate {
+  updateTemplate(template: SessionTemplate, expectedRevision: number, ownerId = "local-user"): StoredSessionTemplate {
     return this.sqlite.transaction(() => {
       const current = this.getTemplate(template.id, ownerId);
       if (!current) throw new Error("TEMPLATE_NOT_FOUND");
       if (current.revision !== expectedRevision) throw new Error("REVISION_CONFLICT");
       const now = this.now().toISOString();
-      const stored = storedSessionTemplateSchema.parse({ ...sessionTemplateSchema.parse(template), ownerId, revision: current.revision + 1, createdAt: current.createdAt, updatedAt: now }) as StoredSessionTemplate;
-      this.db.update(schema.sessionTemplates).set({ data: stored, revision: stored.revision, updatedAt: now }).where(and(eq(schema.sessionTemplates.id, stored.id), eq(schema.sessionTemplates.ownerId, ownerId))).run();
-      for (const session of sessions) this.db.update(schema.plannedSessions).set({ data: session, status: session.status }).where(and(eq(schema.plannedSessions.id, session.id), eq(schema.plannedSessions.ownerId, ownerId))).run();
+      const parsed = sessionTemplateSchema.parse(template);
+      const stored = storedSessionTemplateSchema.parse({ ...parsed, origin: "user", revision: current.revision + 1 }) as StoredSessionTemplate;
+      this.db.update(schema.sessionTemplates).set({ data: templateData(parsed), revision: stored.revision, updatedAt: now }).where(and(eq(schema.sessionTemplates.id, stored.id), eq(schema.sessionTemplates.ownerId, ownerId))).run();
       return stored;
     })();
   }
@@ -656,172 +925,77 @@ export class AthriaRepository {
     return row ? currentPlanSchema.parse(parseJson(row.data)) : null;
   }
 
-  saveCurrentPlan(plan: CurrentPlan, expectedRevision: number, deletedSessionIds: string[] = [], updatedSessions: PlannedSession[] = []): CurrentPlan {
-    return this.sqlite.transaction(() => {
-      if ((this.getCurrentPlan(plan.ownerId)?.revision ?? 0) !== expectedRevision) throw new Error("REVISION_CONFLICT");
-      this.db.insert(schema.currentMesocycles).values({ ownerId: plan.ownerId, data: plan, revision: plan.revision, updatedAt: plan.updatedAt }).onConflictDoUpdate({ target: schema.currentMesocycles.ownerId, set: { data: plan, revision: plan.revision, updatedAt: plan.updatedAt } }).run();
-      for (const id of deletedSessionIds) this.db.delete(schema.plannedSessions).where(and(eq(schema.plannedSessions.id, id), eq(schema.plannedSessions.ownerId, plan.ownerId))).run();
-      for (const session of updatedSessions) this.db.insert(schema.plannedSessions).values({ id: session.id, ownerId: session.ownerId, planVersionId: null, scheduledDate: session.scheduledDate, status: session.status, data: session }).onConflictDoUpdate({ target: schema.plannedSessions.id, set: { scheduledDate: session.scheduledDate, status: session.status, data: session } }).run();
-      return plan;
-    })();
+  saveCurrentPlan(plan: CurrentPlan, expectedRevision: number, _deletedSessionIds: string[] = [], _updatedSessions: PlannedSession[] = []): CurrentPlan {
+    try {
+      return this.sqlite.transaction(() => {
+        if ((this.getCurrentPlan(plan.ownerId)?.revision ?? 0) !== expectedRevision) throw new Error("REVISION_CONFLICT");
+        this.db.insert(schema.currentMesocycles).values({ ownerId: plan.ownerId, data: plan, revision: plan.revision, updatedAt: plan.updatedAt }).onConflictDoUpdate({ target: schema.currentMesocycles.ownerId, set: { data: plan, revision: plan.revision, updatedAt: plan.updatedAt } }).run();
+        return plan;
+      }).immediate();
+    } catch (error) {
+      if (error instanceof SQLiteError && error.code?.startsWith("SQLITE_BUSY")) throw new Error("WRITE_BUSY");
+      throw error;
+    }
   }
 
   listCurrentPlannedSessions(ownerId = "local-user", scheduledDate?: string): PlannedSession[] {
-    const condition = scheduledDate ? and(eq(schema.plannedSessions.ownerId, ownerId), eq(schema.plannedSessions.scheduledDate, scheduledDate)) : eq(schema.plannedSessions.ownerId, ownerId);
-    return this.db.select().from(schema.plannedSessions).where(condition).orderBy(schema.plannedSessions.scheduledDate).all().map((row) => plannedSessionSchema.parse(parseJson(row.data)));
+    const plan = this.getCurrentPlan(ownerId); if (!plan) return [];
+    const timestamp = plan.updatedAt;
+    const completedByPlanId = new Map<string, TrainingSession>();
+    for (const row of this.db.select().from(schema.trainingSessions).where(eq(schema.trainingSessions.ownerId, ownerId)).all()) {
+      const training = trainingSessionSchema.parse(parseJson(row.data));
+      if (!training.plannedSessionId) continue;
+      const previous = completedByPlanId.get(training.plannedSessionId);
+      if (!previous || training.startAt > previous.startAt) completedByPlanId.set(training.plannedSessionId, training);
+    }
+    return plan.mesocycle.weeks.flatMap((week) => week.sessions.map((session) => plannedSessionSchema.parse({
+      ...session, occurrenceId: `plan:${session.scheduledDate}`, ownerId, planRevision: plan.revision, weekNumber: week.weekNumber,
+      phaseRefs: [...new Set(session.components.map((component) => component.domain.value).filter(Boolean))].map((domain) => ({ domain, phaseId: plan.mesocycle.domainProgressions.find((item) => item.domain === domain)!.phases.find((phase) => week.weekNumber >= phase.startWeek && week.weekNumber <= phase.endWeek)!.id })),
+      exerciseOverrides: [], notes: "", overrideReason: null,
+      status: completedByPlanId.has(session.id) ? "completed" : session.status,
+      completedTrainingSessionId: completedByPlanId.get(session.id)?.id ?? null,
+      completedAt: completedByPlanId.get(session.id)?.endAt ?? null,
+      completionSource: completedByPlanId.has(session.id) ? (completedByPlanId.get(session.id)?.source === "manual" ? "manual" : "import") : null,
+      createdAt: timestamp, updatedAt: timestamp,
+    }))).filter((session) => !scheduledDate || session.scheduledDate === scheduledDate).sort((a, b) => a.scheduledDate.localeCompare(b.scheduledDate) || a.order - b.order);
   }
 
-  scheduleRevision(ownerId = "local-user"): number { return Number((this.sqlite.query("SELECT COUNT(*) AS count FROM planned_session_changes WHERE owner_id = ?").get(ownerId) as { count: number }).count); }
+  scheduleRevision(ownerId = "local-user"): number { return this.getCurrentPlan(ownerId)?.revision ?? 0; }
 
   updateCurrentPlannedSessions(input: { ownerId: string; expectedRevision: number; mode: string; sessions: PlannedSession[] }): { sessions: PlannedSession[]; revision: number } {
-    return this.sqlite.transaction(() => {
-      const revision = this.scheduleRevision(input.ownerId);
-      if (revision !== input.expectedRevision) throw new Error("PLANNED_SESSION_REVISION_CONFLICT");
-      const before = input.sessions.map((session) => this.listCurrentPlannedSessions(input.ownerId).find((item) => item.id === session.id)).filter((item): item is PlannedSession => Boolean(item));
-      for (const session of input.sessions) this.db.update(schema.plannedSessions).set({ scheduledDate: session.scheduledDate, status: session.status, data: session }).where(and(eq(schema.plannedSessions.id, session.id), eq(schema.plannedSessions.ownerId, input.ownerId))).run();
-      this.db.insert(schema.plannedSessionChanges).values({ id: crypto.randomUUID(), ownerId: input.ownerId, clientRequestId: crypto.randomUUID(), planVersionId: null, scheduledDate: input.sessions[0]?.scheduledDate ?? "1970-01-01", mode: input.mode, beforeData: before, afterData: input.sessions, createdAt: this.now().toISOString() }).run();
-      return { sessions: input.sessions, revision: revision + 1 };
-    })();
+    const current = this.getCurrentPlan(input.ownerId); if (!current) throw new Error("NO_CURRENT_PLAN");
+    if (current.revision !== input.expectedRevision) throw new Error("PLANNED_SESSION_REVISION_CONFLICT");
+    const updates = new Map(input.sessions.map((session) => [session.id, session]));
+    const weeks = current.mesocycle.weeks.map((week) => ({ ...week, sessions: week.sessions.filter((session) => !updates.has(session.id)) }));
+    for (const session of input.sessions) {
+      const week = weeks.find((item) => item.weekNumber === session.weekNumber); if (!week) throw new Error("PLAN_WEEK_NOT_FOUND");
+      week.sessions.push({ id: session.id, scheduledDate: session.scheduledDate, order: session.order, status: session.status === "skipped" ? "skipped" : "planned", templateRef: session.templateRef, name: session.name, intent: session.intent, durationMinutes: session.durationMinutes, recoveryDemand: session.recoveryDemand, keySession: session.keySession, components: session.components, progressionNote: session.progressionNote, schedulingRationale: session.schedulingRationale, legacySnapshot: session.legacySnapshot });
+    }
+    const updatedAt = this.now().toISOString(); const plan = currentPlanSchema.parse({ ...current, mesocycle: { ...current.mesocycle, weeks }, revision: current.revision + 1, updatedAt });
+    this.saveCurrentPlan(plan, current.revision);
+    return { sessions: input.sessions, revision: plan.revision };
   }
 
   saveCurrentPlannedSessions(input: { ownerId: string; clientRequestId: string; scheduledDate: string; expectedRevision: number; mode: "append" | "replace"; sessions: PlannedSession[] }) {
-    return this.sqlite.transaction(() => {
-      const prior = this.db.select().from(schema.plannedSessionChanges).where(and(eq(schema.plannedSessionChanges.ownerId, input.ownerId), eq(schema.plannedSessionChanges.clientRequestId, input.clientRequestId))).get();
-      if (prior) return { sessions: (parseJson(prior.afterData) as unknown[]).map((item) => plannedSessionSchema.parse(item)), revision: this.scheduleRevision(input.ownerId), idempotentReplay: true };
-      const revision = this.scheduleRevision(input.ownerId);
-      if (revision !== input.expectedRevision) throw new Error("PLANNED_SESSION_REVISION_CONFLICT");
-      const before = this.listCurrentPlannedSessions(input.ownerId, input.scheduledDate);
-      if (input.mode === "replace" && before.some((item) => item.status !== "planned")) throw new Error("COMPLETED_SESSION_CANNOT_BE_REPLACED");
-      if (input.mode === "replace") this.db.delete(schema.plannedSessions).where(and(eq(schema.plannedSessions.ownerId, input.ownerId), eq(schema.plannedSessions.scheduledDate, input.scheduledDate))).run();
-      for (const session of input.sessions) this.db.insert(schema.plannedSessions).values({ id: session.id, ownerId: session.ownerId, planVersionId: null, scheduledDate: session.scheduledDate, status: session.status, data: session }).run();
-      const after = this.listCurrentPlannedSessions(input.ownerId, input.scheduledDate);
-      this.db.insert(schema.plannedSessionChanges).values({ id: crypto.randomUUID(), ownerId: input.ownerId, clientRequestId: input.clientRequestId, planVersionId: null, scheduledDate: input.scheduledDate, mode: input.mode, beforeData: before, afterData: after, createdAt: this.now().toISOString() }).run();
-      return { sessions: after, revision: revision + 1, idempotentReplay: false };
-    })();
+    const current = this.getCurrentPlan(input.ownerId); if (!current) throw new Error("NO_CURRENT_PLAN");
+    if (current.revision !== input.expectedRevision) throw new Error("PLANNED_SESSION_REVISION_CONFLICT");
+    const targetWeek = input.sessions[0]?.weekNumber; if (!targetWeek) throw new Error("PLAN_WEEK_NOT_FOUND");
+    const weeks = current.mesocycle.weeks.map((week) => ({ ...week, sessions: week.weekNumber === targetWeek ? [...(input.mode === "replace" ? week.sessions.filter((session) => session.scheduledDate !== input.scheduledDate) : week.sessions), ...input.sessions.map((session) => ({ id: session.id, scheduledDate: session.scheduledDate, order: session.order, status: "planned" as const, templateRef: session.templateRef, name: session.name, intent: session.intent, durationMinutes: session.durationMinutes, recoveryDemand: session.recoveryDemand, keySession: session.keySession, components: session.components, progressionNote: session.progressionNote, schedulingRationale: session.schedulingRationale, legacySnapshot: session.legacySnapshot }))] : week.sessions }));
+    const updatedAt = this.now().toISOString(); const plan = currentPlanSchema.parse({ ...current, mesocycle: { ...current.mesocycle, weeks }, revision: current.revision + 1, updatedAt });
+    this.saveCurrentPlan(plan, current.revision);
+    return { sessions: this.listCurrentPlannedSessions(input.ownerId, input.scheduledDate), revision: plan.revision, idempotentReplay: false };
   }
 
-  saveDraft(draft: PlanDraft, validation: PlanValidation): { draft: PlanDraft; validation: PlanValidation } {
-    const parsedDraft = planDraftSchema.parse(draft);
-    const parsedValidation = planValidationSchema.parse(validation);
-    return this.sqlite.transaction(() => {
-      const existing = this.db.select().from(schema.planDrafts).where(and(eq(schema.planDrafts.ownerId, parsedDraft.ownerId), eq(schema.planDrafts.clientRequestId, parsedDraft.clientRequestId))).get();
-      if (existing) return { draft: planDraftSchema.parse(parseJson(existing.data)), validation: planValidationSchema.parse(parseJson(existing.validation)) };
-      this.db.insert(schema.planDrafts).values({ id: parsedDraft.id, ownerId: parsedDraft.ownerId, clientRequestId: parsedDraft.clientRequestId, data: parsedDraft, validation: parsedValidation, updatedAt: parsedDraft.updatedAt }).run();
-      this.prunePendingDrafts(parsedDraft.ownerId, parsedDraft.id);
-      return { draft: parsedDraft, validation: parsedValidation };
-    })();
-  }
-
-  private prunePendingDrafts(ownerId: string, keepDraftId: string): void {
-    const approved = this.db.select({ subjectId: schema.approvals.subjectId }).from(schema.approvals).where(and(eq(schema.approvals.ownerId, ownerId), eq(schema.approvals.subjectType, "plan_draft"))).all().map((row) => row.subjectId);
-    this.db.delete(schema.planDrafts).where(and(eq(schema.planDrafts.ownerId, ownerId), notInArray(schema.planDrafts.id, [...approved, keepDraftId]))).run();
-  }
-
-  getDraft(id: string, ownerId = "local-user"): { draft: PlanDraft; validation: PlanValidation } | null {
-    const row = this.db.select().from(schema.planDrafts).where(and(eq(schema.planDrafts.id, id), eq(schema.planDrafts.ownerId, ownerId))).get();
-    return row ? { draft: planDraftSchema.parse(parseJson(row.data)), validation: planValidationSchema.parse(parseJson(row.validation)) } : null;
-  }
-
-  listDrafts(ownerId = "local-user"): Array<{ draft: PlanDraft; validation: PlanValidation }> {
-    return this.db.select().from(schema.planDrafts).where(eq(schema.planDrafts.ownerId, ownerId)).orderBy(desc(schema.planDrafts.updatedAt)).all().map((row) => ({ draft: planDraftSchema.parse(parseJson(row.data)), validation: planValidationSchema.parse(parseJson(row.validation)) }));
-  }
-
-  listVersions(ownerId = "local-user"): PlanVersion[] {
-    return this.db.select().from(schema.planVersions).where(eq(schema.planVersions.ownerId, ownerId)).orderBy(desc(schema.planVersions.versionNumber)).all().map((row) => {
-      const value = parseJson(row.data) as Record<string, unknown>;
-      return planVersionSchema.parse(value);
-    });
-  }
-
-  getPlanActivation(planVersionId: string, ownerId = "local-user") {
-    return this.db.select().from(schema.planActivations).where(and(eq(schema.planActivations.planVersionId, planVersionId), eq(schema.planActivations.ownerId, ownerId))).get() ?? null;
-  }
-
-  listPlannedSessions(planVersionId: string, ownerId = "local-user", scheduledDate?: string): PlannedSession[] {
-    const condition = scheduledDate
-      ? and(eq(schema.plannedSessions.ownerId, ownerId), eq(schema.plannedSessions.planVersionId, planVersionId), eq(schema.plannedSessions.scheduledDate, scheduledDate))
-      : and(eq(schema.plannedSessions.ownerId, ownerId), eq(schema.plannedSessions.planVersionId, planVersionId));
-    return this.db.select().from(schema.plannedSessions).where(condition).orderBy(schema.plannedSessions.scheduledDate).all().map((row) => plannedSessionSchema.parse(parseJson(row.data)));
-  }
-
-  replayPlannedSessions(input: { ownerId: string; clientRequestId: string; planVersionId: string; expectedRevision: number }) {
-    const priorChange = this.db.select().from(schema.plannedSessionChanges).where(and(eq(schema.plannedSessionChanges.ownerId, input.ownerId), eq(schema.plannedSessionChanges.clientRequestId, input.clientRequestId))).get();
-    if (!priorChange) return null;
-    return { sessions: (parseJson(priorChange.afterData) as unknown[]).map((item) => plannedSessionSchema.parse(item)), revision: this.getPlanActivation(input.planVersionId, input.ownerId)?.revision ?? input.expectedRevision, idempotentReplay: true };
-  }
-
-  savePlannedSessions(input: { ownerId: string; clientRequestId: string; planVersionId: string; scheduledDate: string; expectedRevision: number; mode: "append" | "replace"; effectiveStartDate: string; sessions: PlannedSession[] }) {
-    return this.sqlite.transaction(() => {
-      const replay = this.replayPlannedSessions(input);
-      if (replay) return replay;
-      const activation = this.getPlanActivation(input.planVersionId, input.ownerId);
-      const revision = activation?.revision ?? 0;
-      if (revision !== input.expectedRevision) throw new Error("PLANNED_SESSION_REVISION_CONFLICT");
-      const before = this.listPlannedSessions(input.planVersionId, input.ownerId, input.scheduledDate);
-      if (input.mode === "replace" && before.some((item) => item.status !== "planned")) throw new Error("COMPLETED_SESSION_CANNOT_BE_REPLACED");
-      if (input.mode === "replace") this.db.delete(schema.plannedSessions).where(and(eq(schema.plannedSessions.ownerId, input.ownerId), eq(schema.plannedSessions.planVersionId, input.planVersionId), eq(schema.plannedSessions.scheduledDate, input.scheduledDate))).run();
-      for (const session of input.sessions) this.db.insert(schema.plannedSessions).values({ id: session.id, ownerId: session.ownerId, planVersionId: input.planVersionId, scheduledDate: session.scheduledDate, status: session.status, data: session }).run();
-      const after = this.listPlannedSessions(input.planVersionId, input.ownerId, input.scheduledDate);
-      const nextRevision = revision + 1;
-      this.db.insert(schema.planActivations).values({ planVersionId: input.planVersionId, ownerId: input.ownerId, effectiveStartDate: activation?.effectiveStartDate ?? input.effectiveStartDate, revision: nextRevision }).onConflictDoUpdate({ target: schema.planActivations.planVersionId, set: { revision: nextRevision } }).run();
-      this.db.insert(schema.plannedSessionChanges).values({ id: crypto.randomUUID(), ownerId: input.ownerId, clientRequestId: input.clientRequestId, planVersionId: input.planVersionId, scheduledDate: input.scheduledDate, mode: input.mode, beforeData: before, afterData: after, createdAt: this.now().toISOString() }).run();
-      return { sessions: after, revision: nextRevision, idempotentReplay: false };
-    })();
-  }
-
-  completePlannedSession(plannedSessionId: string, trainingSessionId: string, ownerId = "local-user"): PlannedSession | null {
-    return this.sqlite.transaction(() => {
-      const row = this.db.select().from(schema.plannedSessions).where(and(eq(schema.plannedSessions.id, plannedSessionId), eq(schema.plannedSessions.ownerId, ownerId))).get();
-      if (!row) return null;
-      const current = plannedSessionSchema.parse(parseJson(row.data));
-      if (current.status !== "planned") return current;
-      const completedAt = this.now().toISOString();
-      const updated = plannedSessionSchema.parse({ ...current, status: "completed", completedTrainingSessionId: trainingSessionId, completedAt, completionSource: "import", updatedAt: completedAt });
-      this.db.update(schema.plannedSessions).set({ status: updated.status, data: updated }).where(eq(schema.plannedSessions.id, plannedSessionId)).run();
-      return updated;
-    })();
-  }
-
-  hasApproval(ownerId: string, subjectType: string, subjectId: string): boolean {
-    return Boolean(this.db.select({ id: schema.approvals.id }).from(schema.approvals).where(and(eq(schema.approvals.ownerId, ownerId), eq(schema.approvals.subjectType, subjectType), eq(schema.approvals.subjectId, subjectId))).get());
-  }
-
-  createApprovedVersion(input: { draft: PlanDraft; validation: PlanValidation; approvedBy: string; changeReason: string }): PlanVersion {
-    return this.sqlite.transaction(() => {
-      const previous = this.db.select().from(schema.planVersions).where(eq(schema.planVersions.ownerId, input.draft.ownerId)).orderBy(desc(schema.planVersions.versionNumber)).get();
-      const approvedAt = this.now().toISOString();
-      const version: PlanVersion = planVersionSchema.parse({ id: crypto.randomUUID(), parentVersionId: previous?.id ?? null, versionNumber: (previous?.versionNumber ?? 0) + 1, plan: input.draft, validation: input.validation, approvedAt, approvedBy: input.approvedBy, changeReason: input.changeReason });
-      this.db.insert(schema.approvals).values({ id: crypto.randomUUID(), ownerId: input.draft.ownerId, subjectType: "plan_draft", subjectId: input.draft.id, approvedBy: input.approvedBy, approvedAt, snapshotHash: input.validation.inputHash }).run();
-      this.db.insert(schema.planVersions).values({ id: version.id, ownerId: input.draft.ownerId, parentVersionId: version.parentVersionId, versionNumber: version.versionNumber, data: version, createdAt: approvedAt }).run();
-      return version;
-    })();
-  }
-
-  saveProfileUpdateProposal(input: { id: string; ownerId: string; clientRequestId: string; patch: Record<string, unknown>; rationale: string; baseSnapshotHash: string; createdAt: string }) {
-    const existing = this.db.select().from(schema.profileUpdateProposals).where(and(eq(schema.profileUpdateProposals.ownerId, input.ownerId), eq(schema.profileUpdateProposals.clientRequestId, input.clientRequestId))).get();
-    if (existing) return { ...existing, patch: parseJson(existing.patch) };
-    this.db.insert(schema.profileUpdateProposals).values({ ...input, status: "pending" }).run();
-    return { ...input, status: "pending" };
-  }
-
-  listProfileUpdateProposals(ownerId = "local-user") {
-    return this.db.select().from(schema.profileUpdateProposals).where(eq(schema.profileUpdateProposals.ownerId, ownerId)).orderBy(desc(schema.profileUpdateProposals.createdAt)).all().map((row) => ({ ...row, patch: parseJson(row.patch) as Record<string, unknown> }));
-  }
-
-  approveProfileUpdate(input: { proposalId: string; ownerId: string; profile: AthleteProfile; approvedBy: string; snapshotHash: string }): AthleteProfile {
-    return this.sqlite.transaction(() => {
-      const proposal = this.db.select().from(schema.profileUpdateProposals).where(and(eq(schema.profileUpdateProposals.id, input.proposalId), eq(schema.profileUpdateProposals.ownerId, input.ownerId))).get();
-      if (!proposal || proposal.status !== "pending") throw new Error("PROFILE_PROPOSAL_NOT_PENDING");
-      const approvedAt = this.now().toISOString();
-      this.db.insert(schema.profiles).values({ ownerId: input.ownerId, data: input.profile, updatedAt: approvedAt }).onConflictDoUpdate({ target: schema.profiles.ownerId, set: { data: input.profile, updatedAt: approvedAt } }).run();
-      this.db.update(schema.profileUpdateProposals).set({ status: "approved" }).where(eq(schema.profileUpdateProposals.id, input.proposalId)).run();
-      this.db.insert(schema.approvals).values({ id: crypto.randomUUID(), ownerId: input.ownerId, subjectType: "profile_update", subjectId: input.proposalId, approvedBy: input.approvedBy, approvedAt, snapshotHash: input.snapshotHash }).run();
-      return input.profile;
-    })();
+  linkTrainingSession(trainingSessionId: string, plannedSessionId: string, ownerId = "local-user"): TrainingSession | null {
+    const row = this.db.select().from(schema.trainingSessions).where(and(eq(schema.trainingSessions.id, trainingSessionId), eq(schema.trainingSessions.ownerId, ownerId))).get();
+    if (!row) return null;
+    const session = trainingSessionSchema.parse({ ...trainingSessionSchema.parse(parseJson(row.data)), plannedSessionId });
+    this.db.update(schema.trainingSessions).set({ data: session }).where(eq(schema.trainingSessions.id, trainingSessionId)).run();
+    return session;
   }
 
   counts(): Record<string, number> {
-    const names = ["profiles", "preferences", "exercises", "training_sessions", "wellness_daily", "import_batches", "raw_records", "connection_sync_state", "session_templates", "current_mesocycles", "approvals", "planned_sessions", "planned_session_changes"];
+    const names = ["profiles", "training_sessions", "wellness", "import_batches", "connection_sync_state", "session_templates", "current_mesocycles"];
     return Object.fromEntries(names.map((name) => [name, Number((this.sqlite.query(`SELECT COUNT(*) AS count FROM ${name}`).get() as { count: number }).count)]));
   }
 

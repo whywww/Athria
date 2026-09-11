@@ -141,15 +141,14 @@ COORDINATION STRATEGY
 1. 计划标题、日期范围、当前进度。
 2. Primary Goal，视觉权重最高。
 3. Supporting 与 Maintenance 目标。
-4. Constraints。
-5. Coordination Strategy。
+4. Coordination Strategy。
 
 不要将所有目标平铺为同等权重的标签。混合训练最重要的信息是“当前周期究竟优先优化什么”。
 
 ### 5.4 折叠规则
 
 - Primary Goal 与当前进度始终展示。
-- Supporting、Maintenance、Constraints 和 Coordination Strategy 在窄屏可折叠到 `Plan details`。
+- Supporting、Maintenance 和 Coordination Strategy 在窄屏可折叠到 `Plan details`。
 - 用户展开或折叠后的偏好在本次使用过程中保持。
 - 如果只有一个目标，也保留 Primary 标识，不显示空的 Supporting/Maintenance 区域。
 
@@ -497,9 +496,9 @@ Interval 的核心是训练序列与间隔，但保存后同样投影到周历�
 
 ### 11.1 Template 的用户心智与边界
 
-Schema v7 的 Template 是单一 domain、稳定且可复用的训练原型。它只描述顺序、角色、必选性、允许变化的参数以及少量用于维持原型身份的范围；不保存动作、sets/reps、距离、时长、负重、恢复需求或任何默认剂量。Weekly Session 始终保存完整可执行处方。`templateRef` 只是版本化来源，不绑定节点，也不触发复制、推荐或符合性判断。
+Schema v7 的 Template 是单一 domain、稳定且可复用的训练原型。它只保存名称、一句简短 intent，以及节点的顺序、角色、必选性和必填/可选变量；不保存额外说明、使用场景、身份范围、动作、sets/reps、距离、时长、负重、恢复需求或任何默认剂量。节点名称可省略并从 role 派生。Weekly Session 始终保存完整可执行处方。`templateRef` 只是版本化来源，不绑定节点，也不触发复制、推荐或符合性判断。
 
-Core 没有 LLM，不根据目标、阶段、历史或恢复状态推荐剂量。Core 只确定性验证结构、枚举 ID、范围内部合法性和 Weekly Session 约束；显式输入的 progression calculator 与 Template 实例化无关。
+Core 没有 LLM，不根据目标、阶段、历史或恢复状态推荐剂量。Core 只确定性验证 Template 结构、枚举 ID 和 Weekly Session 约束；显式输入的 progression calculator 与 Template 实例化无关。
 
 ### 11.2 Template 详情页
 
@@ -508,10 +507,9 @@ Template 详情重点展示：
 - 名称与训练目的。
 - 稳定的训练结构。
 - 可变化的参数。
-- 常见使用场景。
 - 来源（Built-in 或本地用户 Template）及当前是否被计划引用。
 
-Strength slot 同时支持受控的动作模式与目标肌群：至少提供一类，可同时提供，并用 `matchPolicy: any | all` 表达选择关系。两类 ID 都必须来自 `strength-2.0` taxonomy，UI 不提供自由文本 ID。
+Strength node 同时支持受控的动作模式与目标肌群：至少提供一类，可同时提供；省略 `matchPolicy` 表示 `any`，仅 `all` 显式存储。两类 ID 都必须来自 `strength-2.0` taxonomy，UI 不提供自由文本 ID。
 
 ### 11.3 推荐 Sample Templates
 

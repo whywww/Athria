@@ -19,7 +19,10 @@ export interface TrainingSummary {
 
 export interface AthleteProfile {
   ownerId: string;
-  displayName: string;
+  preferredName: string;
+  gender: "female" | "male" | "non_binary" | "prefer_not_to_say" | null;
+  heightCm: number | null;
+  birthDate: string | null;
   timezone: string;
   goals: string[];
   preference: string;
@@ -29,27 +32,9 @@ export interface AthleteProfile {
     | { kind: "flexible_week"; targetDaysPerWeek: number; minDaysPerWeek: number; maxDaysPerWeek: number }
     | { kind: "interval"; intervalDays: number };
   equipment: string[];
-  strengthConstraints: Array<{ id: string; type: "exclude_exercise"; canonicalKey: string } | { id: string; type: "prohibit_movement_pattern"; movementPattern: string }>;
+  injuries: string[];
   constraintNotes: string[];
-  explicitRecoveryHours: number | null;
-}
-
-export interface ExerciseDefinition {
-  key: string;
-  name: string;
-  movement: string;
-  primaryMuscles: string[];
-  secondaryMuscles: string[];
-  equipment: string[];
-  unilateral: boolean;
-  tags: string[];
-}
-
-export interface ProfileProposal {
-  id: string;
-  rationale: string;
-  status: string;
-  patch: Partial<AthleteProfile>;
+  explicitRecoveryDays: number | null;
 }
 
 export interface PlanExercise {
@@ -102,30 +87,37 @@ export interface Mesocycle {
   weeks: Array<{ weekNumber: number; focus: string | null; sessions: Array<{ id: string; scheduledDate: string; order: number; templateRef: TemplateRef | null; name: string; intent: string; durationMinutes: number; recoveryDemand: "low" | "normal" | "high"; keySession: boolean; components: PlanComponent[]; progressionNote: string | null; schedulingRationale: string | null; legacySnapshot: boolean }> }>;
   adjustmentRules: Array<{ trigger: string; action: string; rationale: string }>;
 }
+
+export interface PersonalInformation {
+  preferredName: string;
+  gender: AthleteProfile["gender"];
+  heightCm: number | null;
+  birthDate: string | null;
+  weightKg: number | null;
+  weightDate: string | null;
+  snapshotHash: string;
+}
 export interface DomainPhase { id: string; phaseType: "foundation" | "progression" | "deload" | "peak" | "test" | "recovery"; name: string; startWeek: number; endWeek: number; focus: string; progression: string[] }
 export interface PhaseRef { domain: TemplateComponentDomain; phaseId: string }
 
-export interface TemplateVariable { key: string; required: boolean; identityConstraint?: { min?: number; max?: number; unit: string } }
-export interface TemplateBlock { id: string; name: string; role: string; required: boolean; variables: TemplateVariable[] }
-export interface StrengthTemplateSlot extends TemplateBlock { movementPatternIds: string[]; targetMuscleIds: string[]; matchPolicy: "any" | "all" }
-export interface SessionTemplate { id: string; name: string; intent: string; domain: TemplateComponentDomain; commonUseCases: string[]; notes: string; structure: { kind: "strength"; slots: StrengthTemplateSlot[] } | { kind: "endurance" | "sport_skill" | "recovery" | "mind_body"; blocks: TemplateBlock[] } }
-export type StoredSessionTemplate = SessionTemplate & ({ origin: "builtin"; catalogVersion: string } | { origin: "user"; ownerId: string; revision: number; createdAt: string; updatedAt: string });
+export interface TemplateBlock { name?: string; role: string; optional?: true; variables: string[]; optionalVariables?: string[] }
+export interface StrengthTemplateSlot extends TemplateBlock { movementPatternIds?: string[]; targetMuscleIds?: string[]; matchPolicy?: "all" }
+export interface SessionTemplate { id: string; name: string; intent: string; domain: TemplateComponentDomain; nodes: Array<TemplateBlock | StrengthTemplateSlot> }
+export type StoredSessionTemplate = SessionTemplate & ({ origin: "builtin"; catalogVersion: string } | { origin: "user"; revision: number });
 export type TemplateRef = { source: "builtin"; id: string; catalogVersion: string } | { source: "user"; id: string; revision: number };
 export interface TaxonomyEntry { id: string; label: string; parentId: string | null; selectable: boolean }
-export interface TrainingTaxonomy { taxonomyVersion: string; templateCatalogVersion: string; strength: { movementPatterns: TaxonomyEntry[]; muscleGroups: TaxonomyEntry[]; equipment: string[] }; templateVariables: Record<TemplateComponentDomain, string[]> }
+export interface EquipmentItem { id: string; label: string }
+export interface EquipmentGroup { id: string; label: string; items: EquipmentItem[] }
+export interface EquipmentCategory { id: string; label: string; groups: EquipmentGroup[] }
+export interface TrainingTaxonomy { taxonomyVersion: string; templateCatalogVersion: string; equipmentCategories: EquipmentCategory[]; strength: { movementPatterns: TaxonomyEntry[]; muscleGroups: TaxonomyEntry[]; equipment: string[] }; templateVariables: Record<TemplateComponentDomain, string[]> }
 // Optional Plan Target layer mirroring planTargetSchema (see UNIFIED_MULTISPORT_MESOCYCLE_DESIGN §5). Absent on legacy plans.
 export interface PlanTarget {
   primaryGoal?: { label: string; baseline?: string | null; testDate?: string | null };
   supporting?: Array<{ label: string; detail?: string }>;
   maintenance?: Array<{ label: string; detail?: string }>;
-  constraints?: string[];
   coordinationStrategy?: string;
 }
 export interface CurrentPlan { planSchemaVersion: "7.0"; ownerId: string; title: string; summary: string; effectiveStartDate: string; mesocycle: Mesocycle; revision: number; sourceAgent: string | null; model: string | null; skillVersion: string | null; inputSnapshotHash: string | null; updatedAt: string; target?: PlanTarget }
-export interface LegacySessionTemplate { id: string; name: string; intent: string; durationMinutes: number; recoveryDemand: "low" | "normal" | "high"; notes: string; components: PlanComponent[] }
-export interface PlanDraft { planSchemaVersion: "3.0"; id: string; title: string; summary: string; mesocycle: ({ durationWeeks: number; weeklyStructure: Array<{ dayOfWeek: number; templateIds: string[] }>; phases: DomainPhase[]; adjustmentRules: Mesocycle["adjustmentRules"]; sessionTemplates: LegacySessionTemplate[] }) | null; migration?: { reviewRequired: boolean; sourceSchema: string; sourceSessions: unknown[] } | null; updatedAt?: string }
-export interface StoredDraft { draft: PlanDraft; validation: PlanValidation }
-export interface PlanVersion { id: string; versionNumber: number; plan: PlanDraft; validation: PlanValidation; approvedAt: string; changeReason: string }
 
 export interface PlannedSession {
   id: string;
@@ -203,17 +195,10 @@ export const dashboardPages = [
   { id: "Help", label: "Help & Support", icon: "?", group: "support" },
 ] as const;
 
-const fieldLabels: Record<string, string> = {
-  displayName: "Display name", timezone: "Time zone", goals: "Training goals", preference: "Preferences",
-  maxSessionMinutes: "Maximum session length", trainingRhythm: "Training rhythm", equipment: "Available equipment",
-  strengthConstraints: "Strength constraints", constraintNotes: "Training limitations",
-  explicitRecoveryHours: "Recovery time between hard sessions",
-};
-
 const friendlyWords: Record<string, string> = {
   general_fitness: "General fitness", build_strength: "Build strength", build_muscle: "Build muscle",
   improve_endurance: "Improve endurance", fat_loss: "Fat loss", bodyweight: "Bodyweight",
-  dumbbell: "Dumbbells", barbell: "Barbell", cable: "Cable machine", machine: "Machines",
+  dumbbell: "Dumbbells", barbell: "Barbell", cable: "Cable Machine", machine: "Fixed Machines", trx: "TRX", ski_erg: "SkiErg", sled: "Sled / Prowler", mini_stability_ball: "Mini Stability Ball",
   strength: "Strength", endurance: "Endurance", sport_skill: "Sport skill", mind_body: "Mind-body", recovery: "Recovery",
 };
 
@@ -245,21 +230,22 @@ export function formatProposalValue(value: unknown): string {
   return friendlyLabel(String(value));
 }
 
+export function equipmentGroupState(selected: string[], itemIds: string[]): "none" | "some" | "all" {
+  const count = itemIds.filter((id) => selected.includes(id)).length;
+  return count === 0 ? "none" : count === itemIds.length ? "all" : "some";
+}
+
+export function toggleEquipmentGroup(selected: string[], itemIds: string[]): string[] {
+  const group = new Set(itemIds);
+  return equipmentGroupState(selected, itemIds) === "all"
+    ? selected.filter((id) => !group.has(id))
+    : [...selected, ...itemIds.filter((id) => !selected.includes(id))];
+}
+
 export function formatTrainingRhythm(rhythm: AthleteProfile["trainingRhythm"]): string {
   if (rhythm.kind === "fixed_week") return `Fixed · ${rhythm.days.map((day) => ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][day]).join(" / ")}`;
   if (rhythm.kind === "flexible_week") return `Flexible · Target ${rhythm.targetDaysPerWeek} days (${rhythm.minDaysPerWeek}–${rhythm.maxDaysPerWeek})`;
   return `Every ${rhythm.intervalDays} ${rhythm.intervalDays === 1 ? "day" : "days"}`;
-}
-
-export function proposalChanges(profile: AthleteProfile, patch: Partial<AthleteProfile>) {
-  return Object.entries(patch)
-    .filter(([key]) => key !== "ownerId" && key in fieldLabels)
-    .map(([key, value]) => {
-      const format = (entry: unknown) => key === "trainingRhythm" && entry && typeof entry === "object" && "kind" in entry
-        ? formatTrainingRhythm(entry as AthleteProfile["trainingRhythm"])
-        : formatProposalValue(entry);
-      return { label: fieldLabels[key]!, before: format(profile[key as keyof AthleteProfile]), after: format(value) };
-    });
 }
 
 export function validationMessage(result: ValidationResult): string {
@@ -293,9 +279,9 @@ export function timezoneOptions(current: string): string[] {
 }
 
 export function isUntouchedDefaultProfile(profile: AthleteProfile): boolean {
-  return profile.displayName === "Athlete" && profile.timezone === "Asia/Hong_Kong" && profile.goals.length === 1 && profile.goals[0] === "general_fitness"
+  return profile.preferredName === "Athlete" && profile.timezone === "Asia/Hong_Kong" && profile.goals.length === 1 && profile.goals[0] === "general_fitness"
     && profile.trainingRhythm.kind === "flexible_week" && profile.trainingRhythm.targetDaysPerWeek === 4 && profile.trainingRhythm.minDaysPerWeek === 3 && profile.trainingRhythm.maxDaysPerWeek === 5
-    && profile.equipment.join("|") === "bodyweight|dumbbell|cable|machine" && profile.constraintNotes.length === 0 && profile.strengthConstraints.length === 0;
+    && profile.equipment.length === 30 && profile.injuries.length === 0 && profile.constraintNotes.length === 0 && profile.explicitRecoveryDays === null;
 }
 
 export function profilePayload(current: AthleteProfile, edits: AthleteProfile = current): AthleteProfile {
@@ -316,25 +302,8 @@ export function profilePayload(current: AthleteProfile, edits: AthleteProfile = 
 export type TemplateComponentDomain = NonNullable<PlanComponent["domain"]["value"]>;
 export interface CustomExerciseInput { name: string; movement: string; primaryMuscles: string[]; equipment: string[] }
 
-const taxonomyVersion = "strength-1.0";
-const classifiedFact = <T,>(value: T, source: "catalog" | "user_confirmed", evidence: string) => ({ value, source, confidence: 1, evidence, taxonomyVersion });
-
-export function catalogExercise(definition: ExerciseDefinition, id: string = crypto.randomUUID()): PlanExercise {
-  const evidence = `Exercise catalog: ${definition.key}`;
-  return {
-    id, displayName: definition.name, canonicalKey: definition.key,
-    classification: {
-      primaryMovement: classifiedFact(definition.movement, "catalog", evidence),
-      primaryMuscles: classifiedFact([...definition.primaryMuscles], "catalog", evidence),
-      secondaryMuscles: classifiedFact([...definition.secondaryMuscles], "catalog", evidence),
-      equipment: classifiedFact([...definition.equipment], "catalog", evidence),
-      impact: classifiedFact(null, "catalog", "Exercise catalog does not specify impact"),
-      laterality: classifiedFact(definition.unilateral ? "unilateral" : "bilateral", "catalog", evidence),
-    },
-    sets: 3, repsMin: 8, repsMax: 12, targetRpe: null, restSeconds: 90,
-    referenceLoad: null, referenceLoadUnit: null, notes: "",
-  };
-}
+const taxonomyVersion = "strength-2.0";
+const classifiedFact = <T,>(value: T, source: "user_confirmed", evidence: string) => ({ value, source, confidence: 1, evidence, taxonomyVersion });
 
 export function customExercise(input: CustomExerciseInput = { name: "", movement: "", primaryMuscles: [], equipment: [] }, id: string = crypto.randomUUID()): PlanExercise {
   const evidence = "Entered in Dashboard";
@@ -354,29 +323,28 @@ export function customExercise(input: CustomExerciseInput = { name: "", movement
 }
 
 export function editableTemplate(value: SessionTemplate): SessionTemplate {
-  return structuredClone({ id: value.id, name: value.name, intent: value.intent, domain: value.domain, commonUseCases: value.commonUseCases, notes: value.notes, structure: value.structure });
+  return structuredClone({ id: value.id, name: value.name, intent: value.intent, domain: value.domain, nodes: value.nodes });
 }
+
+export function templateNodeName(node: TemplateBlock): string { return node.name ?? friendlyLabel(node.role); }
 
 export function templateEditorErrors(template: SessionTemplate): string[] {
   const errors: string[] = [];
   if (!template.name.trim()) errors.push("Enter a template name.");
   if (!template.intent.trim()) errors.push("Enter the training goal.");
-  const nodes = template.structure.kind === "strength" ? template.structure.slots : template.structure.blocks;
+  const nodes = template.nodes;
   if (!nodes.length) errors.push("Add at least one structure node.");
   nodes.forEach((node, index) => {
-    if (!node.name.trim()) errors.push(`Node ${index + 1} needs a name.`);
-    if (!node.variables.length) errors.push(`Node ${index + 1} needs at least one variable.`);
-    if (template.structure.kind === "strength") {
+    const optionalVariables = node.optionalVariables ?? [];
+    if (!node.variables.length && !optionalVariables.length) errors.push(`Node ${index + 1} needs at least one variable.`);
+    if (node.variables.some((key) => optionalVariables.includes(key))) errors.push(`Node ${index + 1} has a variable marked both required and optional.`);
+    if (template.domain === "strength") {
       const slot = node as StrengthTemplateSlot;
-      if (!slot.movementPatternIds.length && !slot.targetMuscleIds.length) errors.push(`Node ${index + 1} needs a movement pattern or target muscle.`);
+      if (!slot.movementPatternIds?.length && !slot.targetMuscleIds?.length) errors.push(`Node ${index + 1} needs a movement pattern or target muscle.`);
     }
   });
   return errors;
 }
-
-export function pendingPlanDrafts(drafts: StoredDraft[], versions: PlanVersion[]): StoredDraft[] { const approved = new Set(versions.map((version) => version.plan.id)); return drafts.filter((item) => !approved.has(item.draft.id)); }
-export function isPlanDraftApproved(draftId: string, versions: PlanVersion[]): boolean { return versions.some((version) => version.plan.id === draftId); }
-export function primaryPlanDraft(drafts: StoredDraft[], versions: PlanVersion[]): StoredDraft | null { return pendingPlanDrafts(drafts, versions)[0] ?? drafts[0] ?? null; }
 
 export function referencedTemplates(mesocycle: Mesocycle, templates: SessionTemplate[]): { templates: SessionTemplate[]; missingIds: string[] } {
   const byId = new Map(templates.map((item) => [item.id, item])); const ids = [...new Set(mesocycle.weeks.flatMap((week) => week.sessions.map((session) => session.templateRef?.id).filter((id): id is string => Boolean(id))))];

@@ -5,8 +5,10 @@ export const FORMULA_VERSION = "0.2.0";
 export const RULE_VERSION = "0.2.0";
 export const PLAN_SCHEMA_VERSION = "7.0";
 export const TAXONOMY_VERSION = "strength-2.0";
-export const TEMPLATE_CATALOG_VERSION = "1.0";
+export const TEMPLATE_CATALOG_VERSION = "2.0";
 export const AI_HARD_CONFIDENCE = 0.9;
+export const MAX_PROFILE_NOTE_ENTRIES = 10;
+export const MAX_PROFILE_NOTE_LENGTH = 200;
 
 // Kept only as source metadata for imported records. Plans use components.
 export const modalitySchema = z.enum(["strength", "endurance", "recovery", "mixed", "unknown"]);
@@ -29,7 +31,26 @@ const muscleParents: Record<string, string> = {
 };
 export const muscleTaxonomy: TaxonomyEntry[] = muscleGroupIds.map((id) => ({ id, label: title(id), parentId: muscleParents[id] ?? null, selectable: true }));
 export const movementPatternTaxonomy: TaxonomyEntry[] = movementPatternIds.map((id) => ({ id, label: title(id), parentId: null, selectable: true }));
-export const equipmentTypeSchema = z.enum(["bodyweight", "barbell", "dumbbell", "kettlebell", "cable", "machine", "band", "smith_machine", "trap_bar", "ez_bar", "bench", "pull_up_bar", "rings", "suspension", "medicine_ball", "landmine", "sled", "other"]);
+export const equipmentCategories = [
+  { id: "strength_resistance", label: "Strength & Resistance", groups: [
+    { id: "free_weights", label: "Free Weights", items: [{ id: "dumbbell", label: "Dumbbells" }, { id: "barbell", label: "Barbell" }, { id: "kettlebell", label: "Kettlebell" }] },
+    { id: "machines_cable", label: "Machines & Cable", items: [{ id: "cable", label: "Cable Machine" }, { id: "smith_machine", label: "Smith Machine" }, { id: "machine", label: "Fixed Machines" }, { id: "landmine", label: "Landmine" }] },
+    { id: "bodyweight_gymnastics", label: "Bodyweight & Gymnastics", items: [{ id: "pull_up_bar", label: "Pull-Up Bar" }, { id: "trx", label: "TRX" }, { id: "bench", label: "Bench" }, { id: "plyo_box", label: "Plyo Box" }] },
+    { id: "functional_gear", label: "Functional Gear", items: [{ id: "resistance_band", label: "Resistance Bands" }, { id: "medicine_ball", label: "Medicine Ball" }, { id: "sandbag", label: "Sandbag" }, { id: "sled", label: "Sled / Prowler" }] },
+  ] },
+  { id: "cardio_endurance", label: "Cardio & Endurance", groups: [
+    { id: "indoor_cardio", label: "Indoor Cardio Machines", items: [{ id: "treadmill", label: "Treadmill" }, { id: "exercise_bike", label: "Exercise Bike" }, { id: "rowing_machine", label: "Rowing Machine" }, { id: "elliptical", label: "Elliptical" }, { id: "stepper", label: "Stepper" }, { id: "ski_erg", label: "SkiErg" }, { id: "jump_rope", label: "Jump Rope" }, { id: "battle_rope", label: "Battle Rope" }] },
+  ] },
+  { id: "mobility_recovery", label: "Mobility, Pilates & Recovery", groups: [
+    { id: "mobility_tools", label: "Mobility Tools", items: [{ id: "yoga_mat", label: "Yoga Mat" }, { id: "foam_roller", label: "Foam Roller" }, { id: "massage_ball", label: "Massage Ball" }] },
+    { id: "pilates_core", label: "Pilates & Core", items: [{ id: "reformer", label: "Reformer" }, { id: "pilates_ring", label: "Pilates Ring" }, { id: "mini_stability_ball", label: "Mini Stability Ball" }] },
+  ] },
+  { id: "ball_sport", label: "Ball & Sport-Specific Tools", groups: [
+    { id: "ball_sport_tools", label: "Ball & Sport-Specific Tools", items: [{ id: "ball_machine", label: "Ball Machine" }] },
+  ] },
+] as const;
+export const equipmentTypeIds = equipmentCategories.flatMap((category) => category.groups.flatMap((group) => group.items.map((item) => item.id))) as [string, ...string[]];
+export const equipmentTypeSchema = z.enum(equipmentTypeIds);
 
 const classifiedFact = <T extends z.ZodTypeAny>(value: T) => z.object({
   value, source: factSourceSchema, confidence: z.number().min(0).max(1), evidence: z.string().max(1000), taxonomyVersion: z.literal(TAXONOMY_VERSION),
@@ -42,10 +63,9 @@ export const equipmentFactSchema = classifiedFact(z.array(equipmentTypeSchema));
 export const impactFactSchema = classifiedFact(z.enum(["low", "moderate", "high"]).nullable());
 export const lateralityFactSchema = classifiedFact(z.enum(["bilateral", "unilateral", "alternating"]).nullable());
 
-export const strengthConstraintSchema = z.discriminatedUnion("type", [
-  z.object({ id: z.string().min(1), type: z.literal("exclude_exercise"), canonicalKey: z.string().min(1) }).strict(),
-  z.object({ id: z.string().min(1), type: z.literal("prohibit_movement_pattern"), movementPattern: movementPatternSchema }).strict(),
-]);
+export const normalizeProfileNote = (value: string): string => value.trim().replace(/\s+/g, " ").toLowerCase();
+export const profileNoteListSchema = z.array(z.string().trim().min(1).max(MAX_PROFILE_NOTE_LENGTH)).max(MAX_PROFILE_NOTE_ENTRIES)
+  .refine((notes) => new Set(notes.map(normalizeProfileNote)).size === notes.length, { message: "profile notes must not contain duplicate entries" });
 const profileWeekdaysSchema = z.array(z.number().int().min(0).max(6)).min(1).max(7)
   .refine((days) => new Set(days).size === days.length, { message: "training rhythm days must be unique" })
   .meta({ uniqueItems: true });
@@ -55,14 +75,14 @@ export const trainingRhythmSchema = z.discriminatedUnion("kind", [
     .refine((value) => value.minDaysPerWeek <= value.targetDaysPerWeek && value.targetDaysPerWeek <= value.maxDaysPerWeek, { message: "expected minDaysPerWeek <= targetDaysPerWeek <= maxDaysPerWeek" }),
   z.object({ kind: z.literal("interval"), intervalDays: z.number().int().min(1).max(30) }).strict(),
 ]);
+export const genderSchema = z.enum(["female", "male", "non_binary", "prefer_not_to_say"]);
+export const birthDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => value <= new Date().toISOString().slice(0, 10), { message: "birth date must not be in the future" });
 export const athleteProfileSchema = z.object({
-  ownerId: z.string().default(OWNER_ID), displayName: z.string().min(1).max(100).default("Athlete"), timezone: z.string().min(1).default("Asia/Hong_Kong"), goals: z.array(z.string()).default(["general_fitness"]),
+  ownerId: z.string().default(OWNER_ID), preferredName: z.string().trim().min(1).max(100).default("Athlete"), gender: genderSchema.nullable().default(null), heightCm: z.number().min(50).max(250).nullable().default(null), birthDate: birthDateSchema.nullable().default(null), timezone: z.string().min(1).default("Asia/Hong_Kong"), goals: z.array(z.string()).default(["general_fitness"]),
   preference: z.string().trim().max(80).default(""), // keep in sync with apps/desktop/src/view-models.ts:PREFERENCE_MAX_LENGTH
   maxSessionMinutes: z.number().int().min(15).max(240).default(60), trainingRhythm: trainingRhythmSchema.default({ kind: "flexible_week", targetDaysPerWeek: 4, minDaysPerWeek: 3, maxDaysPerWeek: 5 }),
-  equipment: z.array(equipmentTypeSchema).default(["bodyweight", "dumbbell", "cable", "machine"]), strengthConstraints: z.array(strengthConstraintSchema).default([]), constraintNotes: z.array(z.string()).default([]), explicitRecoveryHours: z.number().int().min(0).max(168).nullable().default(null),
+  equipment: z.array(equipmentTypeSchema).default(equipmentTypeIds), injuries: profileNoteListSchema.default([]), constraintNotes: profileNoteListSchema.default([]), explicitRecoveryDays: z.number().int().min(1).max(7).nullable().default(null),
 }).strict();
-export const trainingPreferenceSchema = z.object({ ownerId: z.string().default(OWNER_ID), preferredExercises: z.array(z.string()).default([]), dislikedExercises: z.array(z.string()).default([]), preferredSessionMinutes: z.number().int().min(15).max(240).default(60), notes: z.string().max(2000).default("") }).strict();
-
 export const dataQualitySchema = z.object({ completeness: z.number().min(0).max(1), sources: z.array(z.string()), missingFields: z.array(z.string()), anomalies: z.array(z.string()) });
 export const metricResultSchema = <T extends z.ZodTypeAny>(value: T) => z.object({ value, unit: z.string(), method: z.string(), formulaVersion: z.string(), timeRange: z.object({ start: z.string().nullable(), end: z.string().nullable() }), dataQuality: dataQualitySchema, limitations: z.array(z.string()) });
 export const strengthSetSchema = z.object({
@@ -73,11 +93,21 @@ export const strengthSetSchema = z.object({
 export const enduranceDetailsSchema = z.object({ distanceMeters: z.number().min(0).nullable().default(null), averageHeartRate: z.number().min(0).nullable().default(null), maxHeartRate: z.number().min(0).nullable().default(null), averagePowerWatts: z.number().min(0).nullable().default(null), maxPowerWatts: z.number().min(0).nullable().default(null), heartRateZoneSeconds: z.record(z.string(), z.number().min(0)).default({}) }).strict();
 export const trainingSessionSchema = z.object({
   id: z.string().min(1), ownerId: z.string().default(OWNER_ID), source: z.string().min(1), externalId: z.string().min(1), modality: modalitySchema, domains: z.array(domainSchema).default([]), sport: z.string().nullable().default(null), name: z.string().min(1),
-  startAt: z.string().datetime({ offset: true }), endAt: z.string().datetime({ offset: true }), durationMinutes: z.number().int().min(0), status: z.enum(["completed", "planned"]).default("completed"), timezone: z.string().nullable().default(null),
+  startAt: z.string().datetime({ offset: true }), endAt: z.string().datetime({ offset: true }), durationMinutes: z.number().int().min(0), status: z.literal("completed").default("completed"), timezone: z.string().nullable().default(null), plannedSessionId: z.string().min(1).nullable().default(null),
   strengthSets: z.array(strengthSetSchema).default([]), endurance: enduranceDetailsSchema.nullable().default(null), missingFields: z.array(z.string()).default([]),
 }).strict();
+export const trainingSessionWriteSchema = trainingSessionSchema.omit({ ownerId: true, source: true, status: true }).extend({ id: z.string().min(1).optional(), externalId: z.string().min(1).optional() }).strict();
 
-export const exerciseDefinitionSchema = z.object({ key: z.string().min(1), name: z.string().min(1), movement: z.string().min(1), primaryMuscles: z.array(z.string()), secondaryMuscles: z.array(z.string()).default([]), equipment: z.array(z.string()), unilateral: z.boolean().default(false), tags: z.array(z.string()).default([]) }).strict();
+export const wellnessSourceSchema = z.enum(["intervals_icu", "user", "llm"]);
+export const wellnessFieldSchema = <T extends z.ZodTypeAny>(value: T) => z.object({ value: value.nullable(), source: wellnessSourceSchema, updatedAt: z.string().datetime({ offset: true }) }).strict();
+const wellnessFields = {
+  restingHeartRateBpm: wellnessFieldSchema(z.number().nonnegative()), hrvRmssdMs: wellnessFieldSchema(z.number().nonnegative()), sleepSeconds: wellnessFieldSchema(z.number().int().nonnegative()), sleepScore: wellnessFieldSchema(z.number().min(0).max(100)), weightKg: wellnessFieldSchema(z.number().positive()),
+  fatigue: wellnessFieldSchema(z.number().nonnegative()), soreness: wellnessFieldSchema(z.number().nonnegative()), stress: wellnessFieldSchema(z.number().nonnegative()), mood: wellnessFieldSchema(z.number().nonnegative()), motivation: wellnessFieldSchema(z.number().nonnegative()), readiness: wellnessFieldSchema(z.number().nonnegative()), notes: wellnessFieldSchema(z.string().max(2000)),
+};
+export const wellnessRecordSchema = z.object({ ownerId: z.string().default(OWNER_ID), day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), fields: z.object(wellnessFields).partial().strict(), updatedAt: z.string().datetime({ offset: true }) }).strict();
+export const wellnessPatchSchema = z.object({ expectedSnapshotHash: z.string().min(1), confirmed: z.literal(true), source: z.enum(["user", "llm"]), fields: z.record(z.string(), z.unknown().nullable()) }).strict();
+export const profileUpdateSchema = z.object({ patch: athleteProfileSchema.partial().omit({ ownerId: true }).strict(), expectedProfileHash: z.string().min(1), confirmed: z.literal(true) }).strict();
+export const personalInformationWriteSchema = z.object({ preferredName: z.string().trim().min(1).max(100), gender: genderSchema.nullable(), heightCm: z.number().min(50).max(250).nullable(), birthDate: birthDateSchema.nullable(), weightKg: z.number().min(20).max(500).nullable().optional(), expectedSnapshotHash: z.string().min(1) }).strict();
 export const planExerciseSchema = z.object({
   id: z.string().min(1), displayName: z.string().min(1), canonicalKey: z.string().min(1).nullable().default(null),
   classification: z.object({ primaryMovement: movementFactSchema, primaryMuscles: muscleFactSchema, secondaryMuscles: muscleFactSchema, equipment: equipmentFactSchema, impact: impactFactSchema, laterality: lateralityFactSchema }).strict(),
@@ -101,29 +131,43 @@ export const trainingComponentSchema = z.object({ id: z.string().min(1), name: z
   if (value.prescription.kind === "duration_only" && value.domain.value === "strength") context.addIssue({ code: "custom", path: ["prescription", "kind"], message: "strength domain requires strength prescription" });
   if (["endurance", "sport_skill", "recovery", "mind_body"].includes(value.prescription.kind) && value.domain.value !== value.prescription.kind) context.addIssue({ code: "custom", path: ["domain", "value"], message: `${value.prescription.kind} prescription requires matching domain` });
 });
-const templateRangeSchema = z.object({ min: z.number().optional(), max: z.number().optional(), unit: z.enum(["repetitions", "sets", "seconds", "minutes", "meters", "kilometers", "rpe", "watts", "bpm"]) }).strict().refine((value) => value.min !== undefined || value.max !== undefined, { message: "an identity constraint needs min or max" }).refine((value) => value.min === undefined || value.max === undefined || value.max >= value.min, { message: "identity constraint max must be >= min" });
-const variable = <T extends z.ZodEnum>(key: T) => z.object({ key, required: z.boolean().default(true), identityConstraint: templateRangeSchema.optional() }).strict();
 export const strengthTemplateVariableSchema = z.enum(["exercise_selection", "sets", "repetitions", "duration", "load", "rpe", "rir", "rest", "tempo", "alternatives"]);
 export const enduranceTemplateVariableSchema = z.enum(["repetitions", "duration", "distance", "pace", "heart_rate_zone", "power", "cadence", "rpe", "talk_test", "terrain", "strides", "recovery_mode"]);
 export const sportTemplateVariableSchema = z.enum(["drill", "participants", "position", "duration", "intensity", "instructions"]);
 export const recoveryTemplateVariableSchema = z.enum(["body_region", "movement", "duration", "intensity", "instructions"]);
 export const mindBodyTemplateVariableSchema = z.enum(["technique", "duration", "intensity", "instructions"]);
-const templateBase = { id: z.string().min(1), name: z.string().min(1).max(100), intent: z.string().min(1).max(240), commonUseCases: z.array(z.string().min(1).max(240)).max(20).default([]), notes: z.string().max(4000).default("") };
-const strengthTemplateSlotSchema = z.object({ id: z.string().min(1), name: z.string().min(1).max(100), role: z.enum(["primary", "secondary", "accessory", "trunk"]), required: z.boolean().default(true), movementPatternIds: z.array(movementPatternSchema).max(20).default([]), targetMuscleIds: z.array(muscleGroupSchema).max(30).default([]), matchPolicy: z.enum(["any", "all"]).default("any"), variables: z.array(variable(strengthTemplateVariableSchema)).min(1).max(20) }).strict().refine((value) => value.movementPatternIds.length > 0 || value.targetMuscleIds.length > 0, { message: "a strength slot needs a movement pattern or target muscle" });
-const abstractBlock = <T extends z.ZodEnum, R extends z.ZodEnum>(role: R, variables: T) => z.object({ id: z.string().min(1), name: z.string().min(1).max(100), role, required: z.boolean().default(true), variables: z.array(variable(variables)).min(1).max(20) }).strict();
+const templateBase = { id: z.string().min(1), name: z.string().min(1).max(100), intent: z.string().min(1).max(240) };
+const nodeShape = <T extends z.ZodEnum, R extends z.ZodEnum>(role: R, variables: T) => ({
+  name: z.string().min(1).max(100).optional(), role, optional: z.literal(true).optional(),
+  variables: z.array(variables).max(20), optionalVariables: z.array(variables).max(20).optional(),
+});
+const validateNodeVariables = (value: { variables: readonly unknown[]; optionalVariables?: readonly unknown[] | undefined }, context: z.RefinementCtx) => {
+  const optional = value.optionalVariables ?? [];
+  if (value.variables.length + optional.length === 0) context.addIssue({ code: "custom", path: ["variables"], message: "a template node needs at least one variable" });
+  if (new Set(value.variables).size !== value.variables.length || new Set(optional).size !== optional.length) context.addIssue({ code: "custom", path: ["variables"], message: "template variables must be unique" });
+  if (value.variables.some((key) => optional.includes(key))) context.addIssue({ code: "custom", path: ["optionalVariables"], message: "required and optional variables must not overlap" });
+};
+const strengthTemplateNodeSchema = z.object({
+  ...nodeShape(z.enum(["primary", "secondary", "accessory", "trunk"]), strengthTemplateVariableSchema),
+  movementPatternIds: z.array(movementPatternSchema).min(1).max(20).optional(), targetMuscleIds: z.array(muscleGroupSchema).min(1).max(30).optional(), matchPolicy: z.literal("all").optional(),
+}).strict().superRefine((value, context) => {
+  validateNodeVariables(value, context);
+  if (!value.movementPatternIds?.length && !value.targetMuscleIds?.length) context.addIssue({ code: "custom", path: ["movementPatternIds"], message: "a strength node needs a movement pattern or target muscle" });
+});
+const abstractNode = <T extends z.ZodEnum, R extends z.ZodEnum>(role: R, variables: T) => z.object(nodeShape(role, variables)).strict().superRefine(validateNodeVariables);
 export const sessionTemplateSchema = z.discriminatedUnion("domain", [
-  z.object({ ...templateBase, domain: z.literal("strength"), structure: z.object({ kind: z.literal("strength"), slots: z.array(strengthTemplateSlotSchema).min(1).max(30) }).strict() }).strict(),
-  z.object({ ...templateBase, domain: z.literal("endurance"), structure: z.object({ kind: z.literal("endurance"), blocks: z.array(abstractBlock(z.enum(["warm_up", "steady", "repeat_work_recovery", "cool_down"]), enduranceTemplateVariableSchema)).min(1).max(30) }).strict() }).strict(),
-  z.object({ ...templateBase, domain: z.literal("sport_skill"), structure: z.object({ kind: z.literal("sport_skill"), blocks: z.array(abstractBlock(z.enum(["preparation", "technical", "tactical", "small_sided_game", "match", "competition", "conditioning", "cool_down"]), sportTemplateVariableSchema)).min(1).max(30) }).strict() }).strict(),
-  z.object({ ...templateBase, domain: z.literal("recovery"), structure: z.object({ kind: z.literal("recovery"), blocks: z.array(abstractBlock(z.enum(["down_regulation", "mobility", "easy_movement"]), recoveryTemplateVariableSchema)).min(1).max(30) }).strict() }).strict(),
-  z.object({ ...templateBase, domain: z.literal("mind_body"), structure: z.object({ kind: z.literal("mind_body"), blocks: z.array(abstractBlock(z.enum(["centering", "practice_flow", "breathing", "down_regulation"]), mindBodyTemplateVariableSchema)).min(1).max(30) }).strict() }).strict(),
+  z.object({ ...templateBase, domain: z.literal("strength"), nodes: z.array(strengthTemplateNodeSchema).min(1).max(30) }).strict(),
+  z.object({ ...templateBase, domain: z.literal("endurance"), nodes: z.array(abstractNode(z.enum(["warm_up", "steady", "repeat_work_recovery", "cool_down"]), enduranceTemplateVariableSchema)).min(1).max(30) }).strict(),
+  z.object({ ...templateBase, domain: z.literal("sport_skill"), nodes: z.array(abstractNode(z.enum(["preparation", "technical", "tactical", "small_sided_game", "match", "competition", "conditioning", "cool_down"]), sportTemplateVariableSchema)).min(1).max(30) }).strict(),
+  z.object({ ...templateBase, domain: z.literal("recovery"), nodes: z.array(abstractNode(z.enum(["down_regulation", "mobility", "easy_movement"]), recoveryTemplateVariableSchema)).min(1).max(30) }).strict(),
+  z.object({ ...templateBase, domain: z.literal("mind_body"), nodes: z.array(abstractNode(z.enum(["centering", "practice_flow", "breathing", "down_regulation"]), mindBodyTemplateVariableSchema)).min(1).max(30) }).strict(),
 ]);
 export const scheduleSchema = trainingRhythmSchema;
 export const builtinTemplateRefSchema = z.object({ source: z.literal("builtin"), id: z.string().min(1), catalogVersion: z.string().min(1) }).strict();
 export const userTemplateRefSchema = z.object({ source: z.literal("user"), id: z.string().min(1), revision: z.number().int().positive() }).strict();
 export const templateRefSchema = z.discriminatedUnion("source", [builtinTemplateRefSchema, userTemplateRefSchema]);
 export const weeklySessionSchema = z.object({
-  id: z.string().min(1), scheduledDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), order: z.number().int().min(0).max(50), templateRef: templateRefSchema.nullable().default(null), name: z.string().min(1).max(100), intent: z.string().min(1).max(240), durationMinutes: z.number().int().min(1).max(240), recoveryDemand: recoveryDemandSchema.default("normal"), keySession: z.boolean().default(false), components: z.array(trainingComponentSchema).min(1).max(20), progressionNote: z.string().max(2000).nullable().default(null), schedulingRationale: z.string().max(2000).nullable().default(null), legacySnapshot: z.boolean().default(false),
+  id: z.string().min(1), scheduledDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), order: z.number().int().min(0).max(50), status: z.enum(["planned", "skipped"]).default("planned"), templateRef: templateRefSchema.nullable().default(null), name: z.string().min(1).max(100), intent: z.string().min(1).max(240), durationMinutes: z.number().int().min(1).max(240), recoveryDemand: recoveryDemandSchema.default("normal"), keySession: z.boolean().default(false), components: z.array(trainingComponentSchema).min(1).max(20), progressionNote: z.string().max(2000).nullable().default(null), schedulingRationale: z.string().max(2000).nullable().default(null), legacySnapshot: z.boolean().default(false),
 }).strict();
 export const planWeekSchema = z.object({ weekNumber: z.number().int().min(1).max(52), focus: z.string().max(300).nullable().default(null), sessions: z.array(weeklySessionSchema).max(50) }).strict().superRefine((value, context) => {
   const ids = value.sessions.map((session) => session.id);
@@ -159,7 +203,7 @@ export const mesocycleSchema = z.object({
   if (sessionDomains.size !== progressionDomains.length || progressionDomains.some((domain) => !sessionDomains.has(domain))) context.addIssue({ code: "custom", path: ["domainProgressions"], message: "domain progressions must exactly match resolved session domains" });
 });
 export const resolvedMesocycleSchema = mesocycleSchema;
-const storedTemplateMetadata = { origin: z.literal("user").default("user"), ownerId: z.string().default(OWNER_ID), revision: z.number().int().positive(), createdAt: z.string().datetime({ offset: true }), updatedAt: z.string().datetime({ offset: true }) };
+const storedTemplateMetadata = { origin: z.literal("user").default("user"), revision: z.number().int().positive() };
 const builtinTemplateMetadata = { origin: z.literal("builtin"), catalogVersion: z.string().min(1) };
 export const storedSessionTemplateSchema = z.discriminatedUnion("domain", sessionTemplateSchema.options.map((option) => option.extend(storedTemplateMetadata).strict()) as [z.ZodObject<any>, z.ZodObject<any>, ...z.ZodObject<any>[]]);
 export const builtinSessionTemplateSchema = z.discriminatedUnion("domain", sessionTemplateSchema.options.map((option) => option.extend(builtinTemplateMetadata).strict()) as [z.ZodObject<any>, z.ZodObject<any>, ...z.ZodObject<any>[]]);
@@ -168,7 +212,6 @@ export const planTargetSchema = z.object({
   primaryGoal: z.object({ label: z.string().min(1).max(200), baseline: z.string().max(200).nullable().optional(), testDate: z.string().max(40).nullable().optional() }).strict().optional(),
   supporting: z.array(z.object({ label: z.string().min(1).max(200), detail: z.string().max(400).optional() }).strict()).max(20).optional(),
   maintenance: z.array(z.object({ label: z.string().min(1).max(200), detail: z.string().max(400).optional() }).strict()).max(20).optional(),
-  constraints: z.array(z.string().min(1).max(300)).max(30).optional(),
   coordinationStrategy: z.string().max(2000).optional(),
 }).strict();
 export const currentPlanSchema = z.object({
@@ -218,9 +261,11 @@ export const validationCoverageSchema = z.object({ hardChecksResolved: z.number(
 export const planValidationSchema = z.object({ valid: z.boolean(), results: z.array(ruleResultSchema), dataGaps: z.array(dataGapSchema), validatedAt: z.string().datetime({ offset: true }), inputHash: z.string(), coverage: validationCoverageSchema });
 export const planVersionSchema = z.object({ id: z.string(), parentVersionId: z.string().nullable(), versionNumber: z.number().int().positive(), plan: planDraftSchema, validation: planValidationSchema, approvedAt: z.string().datetime({ offset: true }), approvedBy: z.string(), changeReason: z.string() });
 export type AthleteProfile = z.infer<typeof athleteProfileSchema>;
-export type TrainingPreference = z.infer<typeof trainingPreferenceSchema>;
 export type TrainingSession = z.infer<typeof trainingSessionSchema>;
-export type ExerciseDefinition = z.infer<typeof exerciseDefinitionSchema>;
+export type TrainingSessionWrite = z.infer<typeof trainingSessionWriteSchema>;
+export type WellnessRecord = z.infer<typeof wellnessRecordSchema>;
+export type WellnessPatch = z.infer<typeof wellnessPatchSchema>;
+export type PersonalInformationWrite = z.infer<typeof personalInformationWriteSchema>;
 export type Mesocycle = z.infer<typeof mesocycleSchema>;
 export type Schedule = z.infer<typeof scheduleSchema>;
 export type PlanWeek = z.infer<typeof planWeekSchema>;
@@ -229,7 +274,7 @@ export type DomainProgression = z.infer<typeof domainProgressionSchema>;
 export type PhaseRef = z.infer<typeof phaseRefSchema>;
 export type ResolvedMesocycle = z.infer<typeof resolvedMesocycleSchema>;
 export type SessionTemplate = z.infer<typeof sessionTemplateSchema>;
-export type StoredSessionTemplate = SessionTemplate & { origin: "user"; ownerId: string; revision: number; createdAt: string; updatedAt: string };
+export type StoredSessionTemplate = SessionTemplate & { origin: "user"; revision: number };
 export type BuiltinSessionTemplate = SessionTemplate & { origin: "builtin"; catalogVersion: string };
 export type TemplateRef = z.infer<typeof templateRefSchema>;
 export type PlanTarget = z.infer<typeof planTargetSchema>;
@@ -244,5 +289,4 @@ export type PlanVersion = z.infer<typeof planVersionSchema>;
 export type RuleResult = z.infer<typeof ruleResultSchema>;
 export type DataQuality = z.infer<typeof dataQualitySchema>;
 export function defaultProfile(): AthleteProfile { return athleteProfileSchema.parse({}); }
-export function defaultPreference(): TrainingPreference { return trainingPreferenceSchema.parse({}); }
-export const jsonSchemas = { athleteProfile: z.toJSONSchema(athleteProfileSchema), trainingPreference: z.toJSONSchema(trainingPreferenceSchema), trainingSession: z.toJSONSchema(trainingSessionSchema), sessionTemplate: z.toJSONSchema(sessionTemplateSchema), currentPlan: z.toJSONSchema(currentPlanSchema), planValidation: z.toJSONSchema(planValidationSchema) };
+export const jsonSchemas = { athleteProfile: z.toJSONSchema(athleteProfileSchema), personalInformation: z.toJSONSchema(personalInformationWriteSchema), trainingSession: z.toJSONSchema(trainingSessionSchema), wellness: z.toJSONSchema(wellnessRecordSchema), sessionTemplate: z.toJSONSchema(sessionTemplateSchema), currentPlan: z.toJSONSchema(currentPlanSchema), planValidation: z.toJSONSchema(planValidationSchema) };

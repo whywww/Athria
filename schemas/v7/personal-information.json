@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "preferredName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "gender": {
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "female",
+            "male",
+            "non_binary",
+            "prefer_not_to_say"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "heightCm": {
+      "anyOf": [
+        {
+          "type": "number",
+          "minimum": 50,
+          "maximum": 250
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "birthDate": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "weightKg": {
+      "anyOf": [
+        {
+          "type": "number",
+          "minimum": 20,
+          "maximum": 500
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "expectedSnapshotHash": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "preferredName",
+    "gender",
+    "heightCm",
+    "birthDate",
+    "expectedSnapshotHash"
+  ],
+  "additionalProperties": false
+}

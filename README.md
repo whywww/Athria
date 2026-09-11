@@ -16,7 +16,7 @@
 
 ## English
 
-Athria is a desktop training dashboard and MCP server that keeps an athlete's profile, preferences, training records, session templates, and current mesocycle on their own computer. External MCP clients such as Codex, Claude Desktop, Cursor, Qoder, or Trae can use Athria's structured tools to read training state, calculate metrics, validate plans, and make controlled updates.
+Athria is a desktop training dashboard and MCP server that keeps an athlete's profile, wellness, training history, session templates, and single current mesocycle on their own computer. External MCP clients such as Codex, Claude Desktop, Cursor, Qoder, or Trae can use Athria's structured tools to read training state, calculate metrics, validate plans, and make controlled updates.
 
 Athria's deterministic Core performs calculations and validation; the connected MCP client handles natural-language planning and explanation.
 
@@ -106,7 +106,7 @@ bun run release:native
 
 Keep the checkout in a directory named `Athria-repo`. Every generated file is written to its sibling `Athria` directory and separated by purpose and target triple; the build location is intentionally not configurable. Packaged apps include the service sidecar and do not require Bun, Rust, Node.js, Python, Docker, or an external database at runtime.
 
-On first launch, use the dashboard to complete the athlete profile and preferences, then import or synchronize any training records you want Athria to use.
+On first launch, use Settings to complete Personal Information and Profile to configure training preferences, then import or synchronize any training records you want Athria to use. Stable personal details live in Profile; dated weight entries live in Wellness.
 
 ## Connect an MCP client
 
@@ -155,14 +155,14 @@ I explicitly approve the plan.
 
 A typical planning flow is:
 
-1. Read the confirmed profile, preferences, current state, taxonomy, and relevant history.
+1. Read the confirmed profile, wellness, current state, taxonomy, and relevant history.
 2. Surface missing facts that matter to blocker rules.
 3. Create or update reusable session templates.
 4. Assemble a fixed-week, flexible-week, or interval mesocycle that references those templates.
 5. Validate, revise, and explain the result.
 6. Save only after the user confirms the proposed changes.
 
-Profile changes follow a stricter boundary: MCP can propose them, but the user must approve them in the dashboard.
+Profile changes from MCP require explicit user confirmation and a current profile hash, then write directly. Dashboard edits write directly as well.
 
 ## Development
 

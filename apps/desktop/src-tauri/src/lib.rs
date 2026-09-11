@@ -1,4 +1,5 @@
 use std::{
+    fs,
     net::{TcpListener, TcpStream},
     path::{Path, PathBuf},
     process::{Command, Stdio},
@@ -9,7 +10,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
-use tauri::{Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_shell::{process::CommandChild, ShellExt};
 use uuid::Uuid;
 
@@ -42,6 +44,95 @@ fn credential(name: &str) -> Result<keyring::Entry, String> {
 }
 
 fn new_runtime_token() -> String { Uuid::new_v4().simple().to_string() }
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AppConfig {
+    data_dir: Option<PathBuf>,
+}
+
+#[cfg(windows)]
+fn platform_config_root() -> Result<PathBuf, String> {
+    let base = std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("USERPROFILE").map(|profile| PathBuf::from(profile).join("AppData").join("Local")))
+        .ok_or_else(|| "Athria could not determine the local AppData folder.".to_string())?;
+    Ok(base.join("Athria"))
+}
+
+#[cfg(target_os = "macos")]
+fn platform_config_root() -> Result<PathBuf, String> {
+    let home = std::env::var_os("HOME").map(PathBuf::from).ok_or_else(|| "Athria could not determine the home folder.".to_string())?;
+    Ok(home.join("Library").join("Application Support").join("Athria"))
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+fn platform_config_root() -> Result<PathBuf, String> { Err("Unsupported Athria desktop host.".to_string()) }
+
+fn read_config_from(root: &Path) -> Option<PathBuf> {
+    let content = fs::read_to_string(root.join("athria.config.json")).ok()?;
+    let config: AppConfig = serde_json::from_str(&content).ok()?;
+    config.data_dir.filter(|dir| dir.is_absolute()).map(|dir| simplify_path(&dir))
+}
+
+// Windows fs::canonicalize returns verbatim paths (\\?\C:\...), which leak into
+// config files and the doctor API. Keep user-facing paths in normal form.
+fn simplify_path(path: &Path) -> PathBuf {
+    let text = path.as_os_str().to_string_lossy();
+    if let Some(stripped) = text.strip_prefix(r"\\?\UNC\") {
+        PathBuf::from(format!(r"\\{stripped}"))
+    } else if let Some(stripped) = text.strip_prefix(r"\\?\") {
+        PathBuf::from(stripped)
+    } else {
+        path.to_path_buf()
+    }
+}
+
+fn write_config_to(root: &Path, data_dir: &Path) -> Result<(), String> {
+    fs::create_dir_all(root).map_err(|error| error.to_string())?;
+    let config = AppConfig { data_dir: Some(data_dir.to_path_buf()) };
+    let content = serde_json::to_string_pretty(&config).map_err(|error| error.to_string())?;
+    fs::write(root.join("athria.config.json"), content).map_err(|error| error.to_string())
+}
+
+fn read_configured_data_dir() -> Option<PathBuf> {
+    platform_config_root().ok().and_then(|root| read_config_from(&root))
+}
+
+fn current_data_dir() -> PathBuf {
+    read_configured_data_dir().unwrap_or_else(|| platform_config_root().map(|root| root.join("data")).unwrap_or_else(|_| PathBuf::from("athria-data")))
+}
+
+fn copy_directory(source: &Path, destination: &Path) -> Result<(), String> {
+    fs::create_dir_all(destination).map_err(|error| error.to_string())?;
+    for entry in fs::read_dir(source).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let path = entry.path();
+        if path.is_dir() { copy_directory(&path, &destination.join(entry.file_name()))?; }
+        else { fs::copy(&path, &destination.join(entry.file_name())).map_err(|error| error.to_string())?; }
+    }
+    Ok(())
+}
+
+fn move_entry(source: &Path, destination: &Path) -> Result<(), String> {
+    if fs::rename(source, destination).is_ok() { return Ok(()); }
+    if source.is_dir() {
+        copy_directory(source, destination)?;
+        fs::remove_dir_all(source).map_err(|error| error.to_string())
+    } else {
+        fs::copy(source, destination).map_err(|error| error.to_string())?;
+        fs::remove_file(source).map_err(|error| error.to_string())
+    }
+}
+
+fn move_data_contents(from: &Path, to: &Path) -> Result<(), String> {
+    fs::create_dir_all(to).map_err(|error| error.to_string())?;
+    for entry in fs::read_dir(from).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        move_entry(&entry.path(), &to.join(entry.file_name()))?;
+    }
+    Ok(())
+}
 
 fn extract_xunji_api_key(skill_text: &str) -> Result<String, String> {
     if skill_text.len() > 65_536 { return Err("The Xunji Skill text is too large.".to_string()); }
@@ -121,6 +212,7 @@ fn run_mcp_passthrough() -> i32 {
     };
     let mut command = Command::new(sidecar);
     command.arg("mcp").stdin(Stdio::inherit()).stdout(Stdio::inherit()).stderr(Stdio::inherit());
+    command.env("ATHRIA_DATA_DIR", current_data_dir());
     #[cfg(windows)]
     command.creation_flags(0x08000000); // CREATE_NO_WINDOW
     match command.status() {
@@ -213,6 +305,45 @@ fn mcp_status() -> Result<Value, String> {
     }))
 }
 
+#[tauri::command]
+async fn pick_data_location(app: AppHandle) -> Option<String> {
+    app.dialog()
+        .file()
+        .blocking_pick_folder()
+        .and_then(|folder| folder.into_path().ok())
+        .map(|path| path.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+async fn change_data_location(app: AppHandle, state: State<'_, RuntimeState>, new_path: String) -> Result<Value, String> {
+    let selected = PathBuf::from(&new_path);
+    if !selected.is_absolute() { return Err("The selected folder must be an absolute path.".to_string()); }
+    let selected = fs::canonicalize(&selected).map_err(|error| format!("Athria could not open the selected folder: {error}"))?;
+    // Data always lives in a dedicated AthriaData folder inside the user's choice,
+    // so the selected folder itself does not need to be empty.
+    let new_dir = selected.join("AthriaData");
+    if new_dir.exists() && fs::read_dir(&new_dir).map(|mut entries| entries.next().is_some()).unwrap_or(false) {
+        return Err("An \"AthriaData\" folder inside the selected folder already contains files. Choose another folder or empty \"AthriaData\" first.".to_string());
+    }
+    let current_dir = current_data_dir();
+    if current_dir.is_dir() {
+        let current_canonical = fs::canonicalize(&current_dir).map_err(|error| format!("Athria could not open the current data folder: {error}"))?;
+        if new_dir == current_canonical { return Err("That folder already contains Athria's data location.".to_string()); }
+        if new_dir.starts_with(&current_canonical) || current_canonical.starts_with(&new_dir) {
+            return Err("The new data location cannot overlap the current data folder.".to_string());
+        }
+        // Stop the local service so the SQLite files are released before moving.
+        if let Some(child) = state.child.lock().expect("runtime state poisoned").take() {
+            let _ = child.kill();
+            std::thread::sleep(Duration::from_millis(600));
+        }
+        move_data_contents(&current_canonical, &new_dir)?;
+        let _ = fs::remove_dir(&current_dir); // Only succeeds when the old folder is now empty.
+    }
+    write_config_to(&platform_config_root()?, &simplify_path(&new_dir))?;
+    app.restart()
+}
+
 pub fn run() -> i32 {
     if std::env::args().nth(1).as_deref() == Some("mcp") { return run_mcp_passthrough(); }
 
@@ -230,9 +361,10 @@ pub fn run() -> i32 {
     let service_for_setup = service.clone();
 
     let result = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .manage(RuntimeState { service, child: Mutex::new(None) })
-        .invoke_handler(tauri::generate_handler![get_service_info, test_intervals_credentials, sync_intervals, intervals_status, import_xunji_skill, sync_xunji, xunji_status, mcp_status])
+        .invoke_handler(tauri::generate_handler![get_service_info, test_intervals_credentials, sync_intervals, intervals_status, import_xunji_skill, sync_xunji, xunji_status, mcp_status, pick_data_location, change_data_location])
         .setup(move |app| {
             #[cfg(feature = "dev-service")]
             let command = {
@@ -248,7 +380,8 @@ pub fn run() -> i32 {
                 .env("ATHRIA_PORT", port.to_string())
                 .env("ATHRIA_SESSION_TOKEN", token)
                 .env("ATHRIA_MCP_TOKEN", mcp_token)
-                .env("ATHRIA_PARENT_PID", std::process::id().to_string());
+                .env("ATHRIA_PARENT_PID", std::process::id().to_string())
+                .env("ATHRIA_DATA_DIR", current_data_dir());
             let (mut events, child) = command.spawn()?;
             *app.state::<RuntimeState>().child.lock().expect("runtime state poisoned") = Some(child);
             let address = format!("127.0.0.1:{port}").parse().map_err(|error| std::io::Error::other(format!("Invalid service address: {error}")))?;
@@ -287,7 +420,14 @@ pub fn run() -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_xunji_api_key, mcp_status, new_runtime_token};
+    use super::{copy_directory, extract_xunji_api_key, mcp_status, move_data_contents, new_runtime_token, read_config_from, simplify_path, write_config_to};
+    use uuid::Uuid;
+
+    fn temp_root(prefix: &str) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!("{prefix}-{}", Uuid::new_v4().simple()));
+        std::fs::create_dir_all(&root).unwrap();
+        root
+    }
 
     #[test]
     fn extracts_bearer_and_api_key_headers() {
@@ -325,5 +465,66 @@ mod tests {
         assert_eq!(first.len(), 32);
         assert!(first.chars().all(|character| character.is_ascii_hexdigit()));
         assert_ne!(first, second);
+    }
+
+    #[test]
+    fn round_trips_the_configured_data_dir() {
+        let root = temp_root("athria-config");
+        assert!(read_config_from(&root).is_none());
+        let target = root.join("custom-data");
+        write_config_to(&root, &target).unwrap();
+        assert_eq!(read_config_from(&root), Some(target));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn ignores_relative_paths_in_the_config() {
+        let root = temp_root("athria-config-relative");
+        write_config_to(&root, std::path::Path::new("relative/data")).unwrap();
+        assert!(read_config_from(&root).is_none());
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn strips_verbatim_prefixes_from_stored_paths() {
+        assert_eq!(simplify_path(std::path::Path::new(r"\\?\C:\Users\tclre\Fitness\data")), std::path::PathBuf::from(r"C:\Users\tclre\Fitness\data"));
+        assert_eq!(simplify_path(std::path::Path::new(r"\\?\UNC\server\share\data")), std::path::PathBuf::from(r"\\server\share\data"));
+        assert_eq!(simplify_path(std::path::Path::new(r"C:\Athria\data")), std::path::PathBuf::from(r"C:\Athria\data"));
+    }
+
+    #[test]
+    fn normalizes_verbatim_paths_when_reading_the_config() {
+        let root = temp_root("athria-config-verbatim");
+        let target = root.join("custom-data");
+        write_config_to(&root, std::path::Path::new(&format!(r"\\?\{}", target.display()))).unwrap();
+        assert_eq!(read_config_from(&root), Some(target));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn moves_files_and_directories_into_the_target_folder() {
+        let root = temp_root("athria-move");
+        let from = root.join("from");
+        let to = root.join("to");
+        std::fs::create_dir_all(from.join("imports")).unwrap();
+        std::fs::write(from.join("athria.sqlite3"), b"database").unwrap();
+        std::fs::write(from.join("imports").join("hevy.csv"), b"csv").unwrap();
+        move_data_contents(&from, &to).unwrap();
+        assert_eq!(std::fs::read(to.join("athria.sqlite3")).unwrap(), b"database");
+        assert_eq!(std::fs::read(to.join("imports").join("hevy.csv")).unwrap(), b"csv");
+        assert!(std::fs::read_dir(&from).unwrap().next().is_none());
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn copies_nested_directory_trees_for_the_fallback_path() {
+        let root = temp_root("athria-copy");
+        let from = root.join("from");
+        let to = root.join("to");
+        std::fs::create_dir_all(from.join("nested").join("deeper")).unwrap();
+        std::fs::write(from.join("nested").join("deeper").join("log.txt"), b"log").unwrap();
+        copy_directory(&from, &to).unwrap();
+        assert_eq!(std::fs::read(to.join("nested").join("deeper").join("log.txt")).unwrap(), b"log");
+        std::fs::remove_dir_all(&root).unwrap();
     }
 }

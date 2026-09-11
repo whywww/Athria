@@ -1,16 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { api, getIntervalsStatus, getMcpStatus, getXunjiStatus, importXunjiSkill, syncIntervals, syncXunji, testIntervals } from "./api";
+import { api, changeDataLocation, getIntervalsStatus, getMcpStatus, getXunjiStatus, importXunjiSkill, pickDataLocation, syncIntervals, syncXunji, testIntervals } from "./api";
 import { mcpConfig, mcpGuides } from "./mcp-guides";
 import {
-  dashboardPages, deviceTimezone, formatDateTime, formatDistance, formatDuration, formatTimezoneLabel, formatTrainingRhythm, friendlyLabel, isUntouchedDefaultProfile,
-  isPlanDraftApproved, primaryPlanDraft, profilePayload, proposalChanges, timezoneOptions, PREFERENCE_MAX_LENGTH,
-  type AthleteProfile, type CurrentPlan, type DoctorResult, type ExerciseDefinition, type HevyImportStatus, type ImportPreview,
-  type ImportResult, type NextTrainingDay, type PlanVersion, type ProfileProposal,
-  type StoredDraft, type StoredSessionTemplate, type TrainingSummary, type XunjiConnectionStatus,
+  dashboardPages, deviceTimezone, equipmentGroupState, formatDateTime, formatDistance, formatDuration, formatTimezoneLabel, formatTrainingRhythm, friendlyLabel, isUntouchedDefaultProfile,
+  profilePayload, timezoneOptions, PREFERENCE_MAX_LENGTH,
+  toggleEquipmentGroup,
+  type AthleteProfile, type CurrentPlan, type DoctorResult, type HevyImportStatus, type ImportPreview,
+  type EquipmentCategory, type ImportResult, type NextTrainingDay, type PersonalInformation, type TrainingTaxonomy, type TrainingSummary, type XunjiConnectionStatus,
 } from "./view-models";
-import { Card, ChoiceChip, Empty, ErrorBanner, Loading, ValidationSummary, formatRest, weekdays } from "./components";
+import { Card, Empty, ErrorBanner, Loading, weekdays } from "./components";
 import { CurrentPlanPage, NextTrainingDayCard } from "./plan/CurrentPlanPage";
 import { localDateForTimezone } from "./plan/view";
 
@@ -40,7 +40,6 @@ function Overview() {
   const today = profile.data ? localDateForTimezone(profile.data.timezone) : null;
   // P0-5: Today/Next surfaces the next training day on Overview (§3, §19).
   const nextDay = useQuery({ queryKey: ["next-training-day", today], queryFn: () => api<NextTrainingDay>(`/api/plans/next-training-day?onOrAfterDate=${today}`), enabled: today !== null });
-  const templates = useQuery({ queryKey: ["templates"], queryFn: () => api<StoredSessionTemplate[]>("/api/templates") });
   const plan = useQuery({ queryKey: ["current-plan"], queryFn: () => api<CurrentPlan | null>("/api/plans/current") });
   if (query.isPending) return <Loading/>;
   if (query.isError || profile.isError) return <ErrorBanner error={query.error ?? profile.error}/>;
@@ -54,9 +53,8 @@ function Overview() {
       <div className="stat"><span>Strength work</span><strong>{summary.metrics.strength.workingSets.value} sets</strong><small>{summary.byDomain.strength ?? 0} strength workouts</small></div>
       <div className="stat"><span>Endurance distance</span><strong>{formatDistance(summary.metrics.endurance.distanceMeters.value)}</strong><small>{summary.byDomain.endurance ?? 0} endurance workouts</small></div>
     </div>
-    {summary.sessionCount === 0 && <Empty>Import or sync a workout to see your weekly overview.</Empty>}
     {summary.sessionCount > 0 && incomplete && <div className="notice">Some workout details were unavailable, so one or more totals may be incomplete.</div>}
-    {plan.data && !nextDay.isPending && <NextTrainingDayCard value={nextDay.data} templates={templates.data ?? []} plan={plan.data} />}
+    {plan.data && !nextDay.isPending && <NextTrainingDayCard value={nextDay.data} />}
   </>;
 }
 
@@ -73,15 +71,13 @@ function GoalTag({ goal, selected = true, onClick, onDelete }: { goal: string; s
 function Profile() {
   const client = useQueryClient();
   const profileQuery = useQuery({ queryKey: ["profile"], queryFn: () => api<AthleteProfile>("/api/profile") });
-  const proposals = useQuery({ queryKey: ["profile-proposals"], queryFn: () => api<ProfileProposal[]>("/api/profile-proposals") });
-  const exercises = useQuery({ queryKey: ["exercises"], queryFn: () => api<ExerciseDefinition[]>("/api/exercises") });
+  const taxonomy = useQuery({ queryKey: ["training-taxonomy"], queryFn: () => api<TrainingTaxonomy>("/api/training-taxonomy") });
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<AthleteProfile | null>(null);
   const [customGoal, setCustomGoal] = useState("");
   const [availableGoals, setAvailableGoals] = useState<string[]>(commonGoals);
   const [saved, setSaved] = useState(false);
   const profile = profileQuery.data;
-  const equipmentOptions = useMemo(() => [...new Set([...(exercises.data ?? []).flatMap((item) => item.equipment), ...(form?.equipment ?? profile?.equipment ?? [])])].sort(), [exercises.data, form?.equipment, profile?.equipment]);
   const save = useMutation({
     mutationFn: (value: AthleteProfile) => api<AthleteProfile>("/api/profile", { method: "PUT", body: JSON.stringify(value) }),
     onSuccess: () => { setForm(null); setAvailableGoals(commonGoals); setEditing(false); setSaved(true); void client.invalidateQueries({ queryKey: ["profile"] }); },
@@ -91,40 +87,53 @@ function Profile() {
     const timeout = window.setTimeout(() => setSaved(false), 5000);
     return () => window.clearTimeout(timeout);
   }, [saved]);
-  const approve = useMutation({
-    mutationFn: (id: string) => api(`/api/profile-proposals/${encodeURIComponent(id)}/approve`, { method: "POST", body: JSON.stringify({ approvedBy: "local-user" }) }),
-    onSuccess: () => { setForm(null); setEditing(false); void client.invalidateQueries({ queryKey: ["profile"] }); void client.invalidateQueries({ queryKey: ["profile-proposals"] }); },
-  });
-
-  if (profileQuery.isPending) return <Loading/>;
-  if (profileQuery.isError) return <ErrorBanner error={profileQuery.error}/>;
-  if (!profile) return <Loading/>;
+  if (profileQuery.isPending || taxonomy.isPending) return <Loading/>;
+  if (profileQuery.isError || taxonomy.isError) return <ErrorBanner error={profileQuery.error ?? taxonomy.error}/>;
+  if (!profile || !taxonomy.data) return <Loading/>;
 
   const toggleList = (field: "goals" | "equipment", value: string) => setForm((current) => current ? { ...current, [field]: current[field].includes(value) ? current[field].filter((item) => item !== value) : [...current[field], value] } : current);
   const toggleTrainingDay = (weekday: number) => setForm((current) => current?.trainingRhythm.kind === "fixed_week" ? { ...current, trainingRhythm: { ...current.trainingRhythm, days: current.trainingRhythm.days.includes(weekday) ? current.trainingRhythm.days.filter((day) => day !== weekday) : [...current.trainingRhythm.days, weekday].sort((a, b) => a - b) } } : current);
   const beginEdit = () => { setSaved(false); setCustomGoal(""); setAvailableGoals([...new Set([...commonGoals, ...profile.goals])]); setForm({ ...profile, timezone: isUntouchedDefaultProfile(profile) ? deviceTimezone() : profile.timezone, goals: [...profile.goals], trainingRhythm: profile.trainingRhythm.kind === "fixed_week" ? { ...profile.trainingRhythm, days: [...profile.trainingRhythm.days] } : { ...profile.trainingRhythm }, equipment: [...profile.equipment] }); setEditing(true); };
   const cancelEdit = () => { setForm(null); setCustomGoal(""); setAvailableGoals(commonGoals); setEditing(false); save.reset(); };
-  const pending = proposals.data?.filter((item) => item.status === "pending") ?? [];
 
   const rhythmValid = !form || (form.trainingRhythm.kind === "fixed_week" ? form.trainingRhythm.days.length > 0 : form.trainingRhythm.kind === "flexible_week" ? form.trainingRhythm.minDaysPerWeek >= 1 && form.trainingRhythm.minDaysPerWeek <= form.trainingRhythm.targetDaysPerWeek && form.trainingRhythm.targetDaysPerWeek <= form.trainingRhythm.maxDaysPerWeek && form.trainingRhythm.maxDaysPerWeek <= 7 : form.trainingRhythm.intervalDays >= 1 && form.trainingRhythm.intervalDays <= 30);
   const profileActions = editing && form ? <div className="profile-actions"><select className="profile-timezone-select" aria-label="Time zone" value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })}>{timezoneOptions(form.timezone).map((zone) => <option key={zone} value={zone}>{zone}{zone === deviceTimezone() ? " (device)" : ""}</option>)}</select><button type="button" className="secondary compact" onClick={cancelEdit}>Cancel</button><button type="button" className="compact" disabled={save.isPending || form.goals.length === 0 || !rhythmValid} onClick={() => { setSaved(false); save.mutate(profilePayload(profile, form)); }}>{save.isPending ? "Saving…" : "Save"}</button></div> : <div className="profile-actions"><span className="profile-timezone-pill">{formatTimezoneLabel(profile.timezone)}</span><button type="button" className="secondary compact edit-button" onClick={beginEdit}><span aria-hidden="true">✎</span>Edit</button></div>;
 
   return <div className="profile-page">
     <Card title="Training Profile" className={`profile-board ${editing ? "is-editing" : ""}`} action={profileActions}>
-      {editing && form ? <EditableProfileBoard profile={profile} form={form} setForm={setForm} customGoal={customGoal} setCustomGoal={setCustomGoal} availableGoals={availableGoals} setAvailableGoals={setAvailableGoals} equipmentOptions={equipmentOptions} toggleList={toggleList} toggleTrainingDay={toggleTrainingDay}/> : <ProfileBoard profile={profile}/>} 
+      {editing && form ? <EditableProfileBoard profile={profile} form={form} setForm={setForm} customGoal={customGoal} setCustomGoal={setCustomGoal} availableGoals={availableGoals} setAvailableGoals={setAvailableGoals} equipmentCategories={taxonomy.data.equipmentCategories} toggleList={toggleList} toggleTrainingDay={toggleTrainingDay}/> : <ProfileBoard profile={profile} equipmentCategories={taxonomy.data.equipmentCategories}/>}
       <ErrorBanner error={save.error}/>
-      {saved && <div className="success">Profile saved!</div>}
+      {saved && <div className="success">Profile saved! Your current plan may be affected — ask your AI agent to review and update it to match your new profile.</div>}
     </Card>
-    <Card title="Agent Suggestions" className="profile-suggestions" action={pending.length > 0 ? <button disabled={approve.isPending} onClick={() => approve.mutate(pending[0]!.id)}>✓ Approve</button> : undefined}>
-      <p className="card-subtitle">Personalized recommendations to optimize your training.</p>
+    <Card title="Agent Suggestions" className="profile-suggestions">
       <AgentManagedDetails profile={profile}/>
-      {proposals.isPending ? <Loading/> : pending.length === 0 ? <Empty>No suggestions waiting for review.</Empty> : pending.map((proposal) => <article className="proposal" key={proposal.id}><div className="suggestion-type"><span aria-hidden="true">☆</span><strong>Suggested change</strong></div><div className="suggestion-content"><div><strong>Recommended profile update</strong><p>{proposal.rationale}</p></div><div className="change-list">{proposalChanges(profile, proposal.patch).map((change) => <div key={change.label}><strong>{change.label}</strong><span>Before　{change.before}</span><span className="arrow">→</span><span>After　{change.after}</span></div>)}</div>{pending.length > 1 && <button disabled={approve.isPending} onClick={() => approve.mutate(proposal.id)}>Approve changes</button>}</div></article>)}
-      <ErrorBanner error={proposals.error ?? approve.error}/>
+      <p className="profile-disclaimer">AI-generated planning suggestions only, not medical advice — consult a qualified professional for any injury, diagnosis, or treatment.</p>
     </Card>
   </div>;
 }
 
-function EditableProfileBoard({ profile, form, setForm, customGoal, setCustomGoal, availableGoals, setAvailableGoals, equipmentOptions, toggleList, toggleTrainingDay }: { profile: AthleteProfile; form: AthleteProfile; setForm: React.Dispatch<React.SetStateAction<AthleteProfile | null>>; customGoal: string; setCustomGoal: React.Dispatch<React.SetStateAction<string>>; availableGoals: string[]; setAvailableGoals: React.Dispatch<React.SetStateAction<string[]>>; equipmentOptions: string[]; toggleList: (field: "goals" | "equipment", value: string) => void; toggleTrainingDay: (weekday: number) => void }) {
+function GroupCheckbox({ state, label, onChange }: { state: "none" | "some" | "all"; label: string; onChange: () => void }) {
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (input.current) input.current.indeterminate = state === "some"; }, [state]);
+  return <label className="equipment-group-toggle"><input ref={input} type="checkbox" checked={state === "all"} onChange={onChange}/><span>{label}</span></label>;
+}
+
+function EquipmentSelector({ categories, selected, onToggleItem, onToggleGroup }: { categories: EquipmentCategory[]; selected: string[]; onToggleItem?: (id: string) => void; onToggleGroup?: (ids: string[]) => void }) {
+  const editable = Boolean(onToggleItem && onToggleGroup);
+  const visibleCategories = editable ? categories : categories.map((category) => ({ ...category, groups: category.groups.map((group) => ({ ...group, items: group.items.filter((item) => selected.includes(item.id)) })).filter((group) => group.items.length) })).filter((category) => category.groups.length);
+  return <section className="profile-section equipment-section"><strong>♧　Available equipment</strong>{visibleCategories.length ? <div className="equipment-categories">{visibleCategories.map((category) => <section className="equipment-category" key={category.id}><h3>{category.label}</h3><div className="equipment-groups">{category.groups.map((group) => {
+    const ids = group.items.map((item) => item.id);
+    return <div className="equipment-group" key={group.id}>{editable && onToggleGroup ? <GroupCheckbox state={equipmentGroupState(selected, ids)} label={group.label === category.label ? "Select all" : group.label} onChange={() => onToggleGroup(ids)}/> : <h4>{group.label === category.label ? "Equipment" : group.label}</h4>}<div className="equipment-items">{group.items.map((item) => {
+      const isSelected = selected.includes(item.id);
+      if (!editable) return <span className="equipment-item selected" key={item.id}>{item.label}</span>;
+      return isSelected
+        ? <span className="equipment-item selected" key={item.id}><span>{item.label}</span><button type="button" aria-label={`Remove ${item.label}`} onClick={() => onToggleItem?.(item.id)}>×</button></span>
+        : <button type="button" className="equipment-item available" key={item.id} onClick={() => onToggleItem?.(item.id)}>+ {item.label}</button>;
+    })}</div></div>;
+  })}</div></section>)}</div> : <span className="muted-tag">None</span>}</section>;
+}
+
+function EditableProfileBoard({ profile, form, setForm, customGoal, setCustomGoal, availableGoals, setAvailableGoals, equipmentCategories, toggleList, toggleTrainingDay }: { profile: AthleteProfile; form: AthleteProfile; setForm: React.Dispatch<React.SetStateAction<AthleteProfile | null>>; customGoal: string; setCustomGoal: React.Dispatch<React.SetStateAction<string>>; availableGoals: string[]; setAvailableGoals: React.Dispatch<React.SetStateAction<string[]>>; equipmentCategories: EquipmentCategory[]; toggleList: (field: "goals" | "equipment", value: string) => void; toggleTrainingDay: (weekday: number) => void }) {
   const deleteCustomGoal = (goal: string) => {
     setAvailableGoals((current) => current.filter((item) => item !== goal));
     setForm((current) => current ? { ...current, goals: current.goals.filter((item) => item !== goal) } : current);
@@ -150,7 +159,7 @@ function EditableProfileBoard({ profile, form, setForm, customGoal, setCustomGoa
       </div></div>
       <div className="profile-summary-item"><label>Max session length<select value={form.maxSessionMinutes} onChange={(event) => setForm({ ...form, maxSessionMinutes: Number(event.target.value) })}>{[15, 30, 45, 60, 75, 90, 120, 180, 240].map((value) => <option key={value} value={value}>{value} min</option>)}</select></label></div>
     </section>
-    <section className="profile-section"><strong>♧　Available equipment</strong><div className="chips">{equipmentOptions.map((item) => <ChoiceChip key={item} selected={form.equipment.includes(item)} onClick={() => toggleList("equipment", item)}>{friendlyLabel(item)}</ChoiceChip>)}</div></section>
+    <EquipmentSelector categories={equipmentCategories} selected={form.equipment} onToggleItem={(id) => toggleList("equipment", id)} onToggleGroup={(ids) => setForm((current) => current ? { ...current, equipment: toggleEquipmentGroup(current.equipment, ids) } : current)}/>
   </div>;
 }
 
@@ -159,19 +168,15 @@ function ReadonlyTags({ values, empty = "None" }: { values: string[]; empty?: st
 }
 
 function AgentManagedDetails({ profile }: { profile: AthleteProfile }) {
-  const prohibited = profile.strengthConstraints.filter((item) => item.type === "prohibit_movement_pattern").map((item) => item.movementPattern);
-  const excluded = profile.strengthConstraints.filter((item) => item.type === "exclude_exercise").map((item) => item.canonicalKey);
-  const items = [
-    { label: "Recovery interval", value: profile.explicitRecoveryHours === null ? "" : `${profile.explicitRecoveryHours} hours between hard sessions` },
-    { label: "Constraint notes", value: profile.constraintNotes.join(" · ") },
-    { label: "Prohibited movement patterns", value: prohibited.map(friendlyLabel).join(" · ") },
-    { label: "Excluded exercises", value: excluded.map(friendlyLabel).join(" · ") },
-  ].filter((item) => item.value.trim() !== "");
-  if (!items.length) return null;
-  return <ul className="agent-managed-list">{items.map((item) => <li key={item.label}><strong>{item.label}</strong> {item.value}</li>)}</ul>;
+  const rows: Array<{ label: string; value: string } | { label: string; notes: string[] }> = [];
+  if (profile.explicitRecoveryDays !== null) rows.push({ label: "Recovery interval", value: `${profile.explicitRecoveryDays} day${profile.explicitRecoveryDays === 1 ? "" : "s"} between hard sessions` });
+  if (profile.injuries.length) rows.push({ label: "Injuries", notes: profile.injuries });
+  if (profile.constraintNotes.length) rows.push({ label: "Constraint notes", notes: profile.constraintNotes });
+  if (!rows.length) return null;
+  return <ul className="agent-managed-list">{rows.map((row) => <li key={row.label}><strong>{row.label}</strong>{"notes" in row ? <ol className="agent-note-list">{row.notes.map((note, index) => <li key={index}>{note}</li>)}</ol> : <> {row.value}</>}</li>)}</ul>;
 }
 
-function ProfileBoard({ profile }: { profile: AthleteProfile }) {
+function ProfileBoard({ profile, equipmentCategories }: { profile: AthleteProfile; equipmentCategories: EquipmentCategory[] }) {
   return <div className="profile-content">
     <section className="profile-top-summary">
       <section className="profile-goals-panel"><span className="profile-icon coral" aria-hidden="true">◎</span><div><strong>Training Goals</strong>{profile.goals.length ? <div className="goal-tags">{profile.goals.map((goal) => <GoalTag key={goal} goal={goal}/>)}</div> : <p>No goals selected</p>}</div></section>
@@ -179,7 +184,7 @@ function ProfileBoard({ profile }: { profile: AthleteProfile }) {
       <div className="profile-summary-item"><span>Training rhythm</span><strong>{formatTrainingRhythm(profile.trainingRhythm)}</strong></div>
       <div className="profile-summary-item"><span>Max session length</span><strong>{profile.maxSessionMinutes} min</strong></div>
     </section>
-    <section className="profile-section"><strong>♧　Available equipment</strong><ReadonlyTags values={profile.equipment}/></section>
+    <EquipmentSelector categories={equipmentCategories} selected={profile.equipment}/>
   </div>;
 }
 
@@ -231,66 +236,87 @@ function Timeline() {
   return <Card title="Training timeline"><ErrorBanner error={query.error}/>{query.isPending ? <Loading/> : !query.data?.length ? <Empty>No workouts imported yet.</Empty> : <div className="timeline">{query.data.map((item) => <article key={item.id}><strong>{item.name}</strong><span>{formatDateTime(item.startAt)} · {item.domains.length ? item.domains.map(friendlyLabel).join(" + ") : "Unclassified"} · {formatDuration(item.durationMinutes)}</span></article>)}</div>}</Card>;
 }
 
-function MesocycleProposal({ item }: { item: StoredDraft }) {
-  const plan = item.draft;
-  const mesocycle = plan.mesocycle;
-  const [selectedTemplateId, setSelectedTemplateId] = useState(mesocycle?.sessionTemplates[0]?.id ?? "");
-  if (!mesocycle) return <section className="mesocycle-card legacy-plan"><div className="proposal-heading"><div><span className="proposal-mark" aria-hidden="true">◎</span><div><h2>{plan.title}</h2><p>No executable mesocycle structure is recorded.</p></div></div></div><ValidationSummary validation={item.validation}/></section>;
-  const templates = new Map(mesocycle.sessionTemplates.map((template) => [template.id, template]));
-  const selectedTemplate = templates.get(selectedTemplateId) ?? mesocycle.sessionTemplates[0]!;
-  const weeklySessions = mesocycle.weeklyStructure.reduce((total, day) => total + day.templateIds.length, 0);
-  const domainsFor = (template: typeof selectedTemplate) => [...new Set(template.components.map((component) => component.domain.value).filter((value): value is NonNullable<typeof value> => value !== null))];
-  const planDomains = [...new Set(mesocycle.sessionTemplates.flatMap(domainsFor))].map(friendlyLabel);
-  const hasUnclassified = mesocycle.sessionTemplates.some((template) => template.components.some((component) => component.domain.value === null));
-  const domainSummary = [...planDomains, ...(hasUnclassified ? ["Unclassified component"] : [])].join(" + ");
-  return <>
-    {plan.migration?.reviewRequired && <div className="notice">This plan was migrated to Schema v3. Review its inferred components and classifications before approving it again.</div>}
-    <section className="mesocycle-card">
-      <div className="proposal-heading"><div><span className="proposal-mark" aria-hidden="true">◎</span><div><h2>{plan.title}</h2>{plan.summary && <p>{plan.summary}</p>}</div></div><div className="proposal-facts"><span>▣　{mesocycle.durationWeeks} weeks</span><span>⌁　{weeklySessions} sessions / week</span><span>↔　{domainSummary || "Unclassified component"}</span></div></div>
-      <section className="proposal-section"><h3>Weekly Structure</h3><div className="weekly-structure">{weekdays.map((day, dayOfWeek) => { const entry = mesocycle.weeklyStructure.find((entry) => entry.dayOfWeek === dayOfWeek); const dayTemplates = (entry?.templateIds ?? []).map((id) => templates.get(id)).filter((entry) => entry !== undefined); return <div key={day}><strong>{day.slice(0, 3)}</strong>{dayTemplates.length ? dayTemplates.map((template, index) => <span key={template.id} className={`template-pill tone-${index % 4}`}>{template.name}</span>) : <span className="rest-pill">Rest</span>}</div>; })}</div></section>
-      <section className="proposal-section"><h3>Phase Progression</h3><div className="phase-progression">{[...mesocycle.phases].sort((a, b) => a.startWeek - b.startWeek).map((phase, index) => <div className="phase-step" key={phase.id}><span className={`phase-number tone-${index % 4}`}>{index + 1}</span><div><strong>{phase.name}</strong><span>{phase.startWeek === phase.endWeek ? `Week ${phase.startWeek}` : `Weeks ${phase.startWeek}–${phase.endWeek}`}</span><small>{phase.focus}</small></div>{index < mesocycle.phases.length - 1 && <i aria-hidden="true">→</i>}</div>)}</div></section>
-      <section className="proposal-section session-templates"><h3>Session Templates</h3><div className="template-tabs" role="tablist" aria-label="Session templates">{mesocycle.sessionTemplates.map((template, index) => <button key={template.id} type="button" role="tab" aria-selected={template.id === selectedTemplate.id} className={template.id === selectedTemplate.id ? "selected" : ""} onClick={() => setSelectedTemplateId(template.id)}><span className={`tone-${index % 4}`}>{String.fromCharCode(65 + index)}</span>{template.name}</button>)}</div>
-        <div className="template-summary"><span>{[...domainsFor(selectedTemplate).map(friendlyLabel), ...(selectedTemplate.components.some((component) => component.domain.value === null) ? ["Unclassified component"] : [])].join(" + ")}</span><span>{formatDuration(selectedTemplate.durationMinutes)}</span><span>{friendlyLabel(selectedTemplate.recoveryDemand)} recovery demand</span></div>
-        <div className="conditioning-template"><strong>{selectedTemplate.name}</strong>{selectedTemplate.components.map((component) => <div className="template-component" key={component.id}>{component.prescription.kind === "strength" ? <div className="exercise-table"><div className="exercise-row exercise-header"><span>Classification</span><span className="exercise-cell">Exercise</span><span>Prescription</span><span>Effort</span><span>Rest</span><span>Notes</span></div>{component.prescription.exercises.map((exercise, index) => { const movement = exercise.classification.primaryMovement?.value; return <div className="exercise-row" key={exercise.id}><span>{movement == null ? "-" : friendlyLabel(String(movement))}</span><span className="exercise-cell"><b>{index + 1}</b>{exercise.displayName}</span><span>{exercise.sets} × {exercise.repsMin === exercise.repsMax ? exercise.repsMin : `${exercise.repsMin}–${exercise.repsMax}`}</span><span>{exercise.targetRpe ? `RPE ${exercise.targetRpe}` : "Controlled"}</span><span>{formatRest(exercise.restSeconds)}</span><span className="exercise-notes">{exercise.notes || "—"}</span></div>; })}</div> : component.prescription.kind === "duration_only" ? <p>{component.prescription.notes || selectedTemplate.intent}</p> : <p>Structured {friendlyLabel(component.prescription.kind)} prescription</p>}</div>)}</div>
-      </section>
-    </section>
-    <details className="adjustment-card"><summary><span className="progression-icon" aria-hidden="true">↗</span><strong>How this plan progresses</strong><span className="progression-preview">{mesocycle.phases.slice(0, 2).map((phase) => phase.focus).join(" · ")}</span><span className="rules-link">View progression & adjustment rules</span></summary><div className="adjustment-content">{mesocycle.adjustmentRules.length ? mesocycle.adjustmentRules.map((rule, index) => <article key={`${rule.trigger}-${index}`}><strong>If {rule.trigger}</strong><span>{rule.action}</span><small>{rule.rationale}</small></article>) : <p>No adjustment rules were supplied.</p>}</div></details>
-    <ValidationSummary validation={item.validation}/>
-  </>;
-}
-
-function Plan() {
-  const client = useQueryClient();
-  const drafts = useQuery({ queryKey: ["drafts"], queryFn: () => api<StoredDraft[]>("/api/drafts") });
-  const versions = useQuery({ queryKey: ["versions"], queryFn: () => api<PlanVersion[]>("/api/plans/versions") });
-  const nextDay = useQuery({ queryKey: ["next-training-day"], queryFn: () => api<NextTrainingDay>("/api/plans/next-training-day") });
-  const profile = useQuery({ queryKey: ["profile"], queryFn: () => api<AthleteProfile>("/api/profile") });
-  const [approvedId, setApprovedId] = useState("");
-  const approve = useMutation({ mutationFn: (id: string) => api<PlanVersion>(`/api/drafts/${encodeURIComponent(id)}/approve`, { method: "POST", body: JSON.stringify({ approvedBy: "local-user", changeReason: "Approved in Dashboard" }) }), onSuccess: (version) => { setApprovedId(version.plan.id); void client.invalidateQueries({ queryKey: ["drafts"] }); void client.invalidateQueries({ queryKey: ["versions"] }); void client.invalidateQueries({ queryKey: ["current-plan"] }); } });
-  const selected = primaryPlanDraft(drafts.data ?? [], versions.data ?? []);
-  const approved = Boolean(selected && (approvedId === selected.draft.id || isPlanDraftApproved(selected.draft.id, versions.data ?? [])));
-  const loading = drafts.isPending || versions.isPending;
-  const error = drafts.error ?? versions.error ?? profile.error ?? nextDay.error ?? approve.error;
-  return <div className="plan-page">
-    <div className="plan-page-header"><div><h1>Mesocycle Planner</h1><p>Plan smarter. Train better.</p></div><button className={`approve-mesocycle ${approved ? "approved" : ""}`} disabled={!selected || approved || !selected.validation.valid || approve.isPending} onClick={() => selected && approve.mutate(selected.draft.id)}>{approve.isPending ? "Approving…" : approved ? "✓  Approved" : "✓  Approve Mesocycle"}</button></div>
-    <ErrorBanner error={error}/>{approvedId && approvedId === selected?.draft.id && <div className="success">Mesocycle approved and saved as the current version.</div>}
-    {loading ? <Loading/> : !selected ? <Empty>There is no Mesocycle Proposal yet. Ask your connected Agent to create and validate one for review.</Empty> : <MesocycleProposal key={selected.draft.id} item={selected}/>}
-    {versions.data?.length ? <NextTrainingDayCard value={nextDay.data}/> : null}
-  </div>;
-}
-
 function Backup() {
   const doctor = useQuery({ queryKey: ["backup-doctor"], queryFn: () => api<DoctorResult>("/api/system/doctor") });
   const dataDir = (doctor.data as DoctorResult | undefined)?.dataDir;
   const [message, setMessage] = useState(""); const [error, setError] = useState<unknown>();
   const [source, setSource] = useState(""); const [target, setTarget] = useState("");
+  const [pendingLocation, setPendingLocation] = useState(""); const [moving, setMoving] = useState(false);
+  const pendingTarget = pendingLocation ? `${pendingLocation.replace(/[\\/]+$/, "")}${pendingLocation.includes("\\") ? "\\" : "/"}AthriaData` : "";
   const createBackup = () => { setError(undefined); api<{ path: string }>("/api/system/backup", { method: "POST", body: "{}" }).then((result) => setMessage(`Backup created at ${result.path}`)).catch(setError); };
   const restore = () => { setError(undefined); api<{ status: string; target: string }>("/api/system/restore", { method: "POST", body: JSON.stringify({ path: source, target }) }).then((result) => setMessage(`Backup verified and restored to ${result.target}. Your active data was not replaced.`)).catch(setError); };
-  return <Card title="Backup and restore"><p>Backups include your training database and retained imports. Account credentials are never included.</p>{dataDir && <div className="data-location"><strong>Local data location</strong><span>{dataDir}</span><small>This folder contains Athria's local database, imports, backups, logs, and exports.</small></div>}<div className="section"><h3>Create a backup</h3><p>Save a timestamped backup ZIP inside your local Athria data folder.</p><button onClick={createBackup}>Create backup</button></div><div className="section"><h3>Verify and restore a backup</h3><p>Restore into an empty folder for review. Athria will not replace the active database automatically.</p><label>Backup ZIP path<input value={source} onChange={(event) => setSource(event.target.value)}/></label><label>Empty restore folder<input value={target} onChange={(event) => setTarget(event.target.value)}/></label><button className="secondary" disabled={!source || !target} onClick={restore}>Verify and restore</button></div>{message && <div className="success">{message}</div>}<ErrorBanner error={doctor.error ?? error}/></Card>;
+  const chooseLocation = async () => {
+    setError(undefined);
+    try {
+      const picked = await pickDataLocation();
+      if (picked) setPendingLocation(picked);
+    } catch (value) { setError(value); }
+  };
+  const confirmLocation = async () => {
+    try { setMoving(true); setError(undefined); await changeDataLocation(pendingLocation); }
+    catch (value) { setMoving(false); setError(value); }
+  };
+  return <Card title="Backup and restore">
+    <p>Backups include your training database and retained imports. Account credentials are never included.</p>
+    {dataDir && <div className="data-location">
+      <strong>Local data location</strong>
+      <span>{dataDir}</span>
+      <small>This folder contains Athria's local database, imports, backups, logs, and exports.</small>
+      {pendingLocation
+        ? <div className="data-location-confirm">
+          <p>Athria will create <b>{pendingTarget}</b>, move all local data there, and restart. The selected folder can contain other files.</p>
+          <div className="data-location-actions">
+            <button type="button" className="secondary compact" disabled={moving} onClick={() => setPendingLocation("")}>Cancel</button>
+            <button type="button" className="compact" disabled={moving} onClick={() => void confirmLocation()}>{moving ? "Moving data…" : "Move data and restart"}</button>
+          </div>
+        </div>
+        : <div className="data-location-actions"><button type="button" className="secondary compact" onClick={() => void chooseLocation()}>Change location</button></div>}
+    </div>}
+    <div className="section"><h3>Create a backup</h3><p>Save a timestamped backup ZIP inside your local Athria data folder.</p><button onClick={createBackup}>Create backup</button></div>
+    <div className="section"><h3>Verify and restore a backup</h3><p>Restore into an empty folder for review. Athria will not replace the active database automatically.</p><label>Backup ZIP path<input value={source} onChange={(event) => setSource(event.target.value)}/></label><label>Empty restore folder<input value={target} onChange={(event) => setTarget(event.target.value)}/></label><button className="secondary" disabled={!source || !target} onClick={restore}>Verify and restore</button></div>
+    {message && <div className="success">{message}</div>}
+    <ErrorBanner error={doctor.error ?? error}/>
+  </Card>;
+}
+
+function PersonalInformationCard() {
+  const client = useQueryClient();
+  const query = useQuery({ queryKey: ["personal-information"], queryFn: () => api<PersonalInformation>("/api/personal-information") });
+  const [form, setForm] = useState<PersonalInformation | null>(null);
+  const [weightText, setWeightText] = useState("");
+  const [weightChanged, setWeightChanged] = useState(false);
+  const save = useMutation({
+    mutationFn: (value: Record<string, unknown>) => api<PersonalInformation>("/api/personal-information", { method: "PUT", body: JSON.stringify(value) }),
+    onSuccess: async () => { setForm(null); setWeightChanged(false); await Promise.all(["personal-information", "profile", "state", "wellness"].map((key) => client.invalidateQueries({ queryKey: [key] }))); },
+  });
+  if (query.isPending) return <Card title="Personal Information"><Loading/></Card>;
+  if (query.isError || !query.data) return <Card title="Personal Information"><ErrorBanner error={query.error}/></Card>;
+  const value = query.data;
+  const begin = () => { setForm({ ...value }); setWeightText(value.weightKg?.toString() ?? ""); setWeightChanged(false); save.reset(); };
+  const cancel = () => { setForm(null); setWeightChanged(false); save.reset(); };
+  const submit = () => {
+    if (!form) return;
+    const payload: Record<string, unknown> = { preferredName: form.preferredName.trim(), gender: form.gender, heightCm: form.heightCm, birthDate: form.birthDate, expectedSnapshotHash: value.snapshotHash };
+    if (weightChanged) payload.weightKg = weightText.trim() ? Number(weightText) : null;
+    save.mutate(payload);
+  };
+  const genderLabel = value.gender ? friendlyLabel(value.gender) : "Not specified";
+  const validWeight = !weightChanged || !weightText.trim() || (Number(weightText) >= 20 && Number(weightText) <= 500);
+  const valid = Boolean(form?.preferredName.trim()) && (form?.heightCm === null || (form!.heightCm >= 50 && form!.heightCm <= 250)) && validWeight && (!form?.birthDate || form.birthDate <= new Date().toISOString().slice(0, 10));
+  return <Card title="Personal Information" className="personal-information-card" action={form ? <div className="actions"><button className="secondary compact" onClick={cancel}>Cancel</button><button className="compact" disabled={!valid || save.isPending} onClick={submit}>{save.isPending ? "Saving…" : "Save"}</button></div> : <button className="secondary compact" onClick={begin}><span aria-hidden="true">✎</span>Edit</button>}>
+    {form ? <div className="personal-information-form">
+      <label>Preferred name<input maxLength={100} value={form.preferredName} onChange={(event) => setForm({ ...form, preferredName: event.target.value })}/></label>
+      <label>Gender<select value={form.gender ?? ""} onChange={(event) => setForm({ ...form, gender: (event.target.value || null) as PersonalInformation["gender"] })}><option value="">Not specified</option><option value="female">Female</option><option value="male">Male</option><option value="non_binary">Non-binary</option><option value="prefer_not_to_say">Prefer not to say</option></select></label>
+      <label>Height <span>cm</span><input type="number" min="50" max="250" step="0.1" value={form.heightCm ?? ""} onChange={(event) => setForm({ ...form, heightCm: event.target.value ? Number(event.target.value) : null })}/></label>
+      <label>Current weight <span>kg</span><input type="number" min="20" max="500" step="0.1" value={weightText} onChange={(event) => { setWeightText(event.target.value); setWeightChanged(true); }}/><small>{value.weightDate ? `Latest entry: ${value.weightDate}` : "No weight recorded"}</small></label>
+      <label>Birth date<input type="date" max={new Date().toISOString().slice(0, 10)} value={form.birthDate ?? ""} onChange={(event) => setForm({ ...form, birthDate: event.target.value || null })}/></label>
+    </div> : <dl className="personal-information-summary"><div><dt>Preferred name</dt><dd>{value.preferredName}</dd></div><div><dt>Gender</dt><dd>{genderLabel}</dd></div><div><dt>Height</dt><dd>{value.heightCm == null ? "Not specified" : `${value.heightCm} cm`}</dd></div><div><dt>Current weight</dt><dd>{value.weightKg == null ? "Not recorded" : `${value.weightKg} kg`}{value.weightDate && <small>{value.weightDate}</small>}</dd></div><div><dt>Birth date</dt><dd>{value.birthDate ?? "Not specified"}</dd></div></dl>}
+    <ErrorBanner error={save.error}/>
+  </Card>;
 }
 
 function Settings() {
-  return <><Card title="System status" className="system-card"><p>Athria runs locally and keeps your training data on this device.</p><ServiceStatus/></Card><Backup/></>;
+  return <><PersonalInformationCard/><Card title="System status" className="system-card"><p>Athria runs locally and keeps your training data on this device.</p><ServiceStatus/></Card><Backup/></>;
 }
 
 function Copyable({ label, value, block = false }: { label: string; value: string; block?: boolean }) {
@@ -331,7 +357,7 @@ function McpSetup() {
 }
 
 function Help() {
-  return <><Card title="Help & Support"><p>Athria is your local-first training companion. Use Devices to connect data sources, Profile to confirm your preferences, and Plan to review Agent-created training plans.</p><div className="help-grid"><section><strong>Need to update your profile?</strong><span>Open Profile and choose Edit. Recovery interval, constraint notes, and prohibited/excluded exercises can only change through an approved Agent suggestion.</span></section><section><strong>Having trouble with a connection?</strong><span>Open Devices, re-enter the connection details, then test or sync again.</span></section><section><strong>Protect your data</strong><span>Create a local backup from Settings before troubleshooting or moving Athria to another device.</span></section></div></Card><Card title="Connect Athria to your AI agent" className="mcp-card"><McpSetup/></Card></>;
+  return <><Card title="Help & Support"><p>Athria is your local-first training companion. Use Devices to connect data sources, Profile to confirm your preferences, and Plan to review Agent-created training plans.</p><div className="help-grid"><section><strong>Need to update your profile?</strong><span>Open Profile and choose Edit, or explicitly confirm a profile change with your connected Agent.</span></section><section><strong>Having trouble with a connection?</strong><span>Open Devices, re-enter the connection details, then test or sync again.</span></section><section><strong>Protect your data</strong><span>Create a local backup from Settings before troubleshooting or moving Athria to another device.</span></section></div></Card><Card title="Connect Athria to your AI agent" className="mcp-card"><McpSetup/></Card></>;
 }
 
 const views: Record<Page, () => React.ReactElement> = { Overview, Training: Timeline, Profile, Plan: CurrentPlanPage, Devices: Connections, Settings, Help };
@@ -343,5 +369,5 @@ export function App() {
   const supportPages = dashboardPages.filter((item) => item.group === "support");
   useEffect(() => { let unlisten: UnlistenFn | undefined; void listen("athria-service-crashed", () => setServiceCrash(true)).then((dispose) => { unlisten = dispose; }); return () => unlisten?.(); }, []);
   const NavItems = ({ items }: { items: typeof dashboardPages[number][] }) => <>{items.map((item) => <button key={item.id} className={item.id === page ? "active" : ""} onClick={() => setPage(item.id)}><span aria-hidden="true">{item.icon}</span>{item.label}</button>)}</>;
-  return <div className="shell"><aside><div className="brand"><img src="/athria-logo.png" alt="Athria" /></div><nav aria-label="Main navigation"><NavItems items={primaryPages}/></nav><nav className="support-nav" aria-label="Support navigation"><NavItems items={supportPages}/></nav></aside><main>{page !== "Plan" && <header><div><h1>Hi, {profile.data?.displayName || "Athlete"} <span aria-hidden="true">👋</span></h1><p>Your AI fitness hub. Local-first. Data you own.</p></div></header>}{serviceCrash && <div className="error">The local service stopped unexpectedly. Close and reopen Athria. If the problem continues, create a backup before troubleshooting.</div>}<View/></main></div>;
+  return <div className="shell"><aside><div className="brand"><img src="/athria-logo.png" alt="Athria" /></div><nav aria-label="Main navigation"><NavItems items={primaryPages}/></nav><nav className="support-nav" aria-label="Support navigation"><NavItems items={supportPages}/></nav></aside><main>{page !== "Plan" && <header><div><h1>Hi, {profile.data?.preferredName || "Athlete"} <span aria-hidden="true">👋</span></h1><p>Your AI fitness hub. Local-first. Data you own.</p></div></header>}{serviceCrash && <div className="error">The local service stopped unexpectedly. Close and reopen Athria. If the problem continues, create a backup before troubleshooting.</div>}<View/></main></div>;
 }

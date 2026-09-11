@@ -116,15 +116,18 @@ async function main(): Promise<void> {
         if (url.pathname === "/mcp") return mcp(request);
         if (url.pathname === "/api/profile" && request.method === "GET") return json(application.getProfile());
         if (url.pathname === "/api/profile" && request.method === "PUT") return json(application.saveProfile(await body(request)));
-        if (url.pathname === "/api/preferences" && request.method === "GET") return json(application.getPreference());
-        if (url.pathname === "/api/preferences" && request.method === "PUT") return json(application.savePreference(await body(request)));
-        if (url.pathname === "/api/profile-proposals" && request.method === "GET") return json(repository.listProfileUpdateProposals());
-        const approveProfile = url.pathname.match(/^\/api\/profile-proposals\/([^/]+)\/approve$/);
-        if (approveProfile && request.method === "POST") { const value = await body(request); return json(application.approveProfileUpdate(decodeURIComponent(approveProfile[1]!), String(value.approvedBy ?? "local-user"))); }
+        if (url.pathname === "/api/personal-information" && request.method === "GET") return json(application.getPersonalInformation());
+        if (url.pathname === "/api/personal-information" && request.method === "PUT") return json(application.savePersonalInformation(await body(request)));
         if (url.pathname === "/api/state" && request.method === "GET") return json(application.getTrainingState());
         if (url.pathname === "/api/summary" && request.method === "GET") return json(application.getTrainingSummary(Number(url.searchParams.get("days") ?? "7")));
         if (url.pathname === "/api/sessions" && request.method === "GET") return json(application.listSessions(Number(url.searchParams.get("days") ?? "90")));
-        if (url.pathname === "/api/exercises" && request.method === "GET") return json(repository.listExercises());
+        if (url.pathname === "/api/training-sessions" && request.method === "POST") return json(application.recordTrainingSession(await body(request)), 201);
+        const trainingSession = url.pathname.match(/^\/api\/training-sessions\/([^/]+)$/);
+        if (trainingSession && request.method === "PUT") return json(application.recordTrainingSession({ ...(await body(request)), id: decodeURIComponent(trainingSession[1]!) }));
+        if (url.pathname === "/api/wellness" && request.method === "GET") return json(application.listWellness(Number(url.searchParams.get("days") ?? "42")));
+        const wellness = url.pathname.match(/^\/api\/wellness\/(\d{4}-\d{2}-\d{2})$/);
+        if (wellness && request.method === "GET") return json(application.getWellnessDay(wellness[1]!));
+        if (wellness && request.method === "PATCH") return json(application.updateWellness(wellness[1]!, await body(request)));
         if (url.pathname === "/api/training-taxonomy" && request.method === "GET") return json(application.getTrainingTaxonomy());
         if (url.pathname === "/api/templates" && request.method === "GET") return json(application.listTemplates());
         if (url.pathname === "/api/templates" && request.method === "POST") return json(application.createTemplate(await body(request)), 201);

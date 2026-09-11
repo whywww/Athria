@@ -105,13 +105,8 @@
 .mt-list strong { color: #2b3238; font-size: 13px; font-weight: 700; }
 .mt-list span { color: #777c81; font-size: 12px; line-height: 1.45; }
 
-/* Constraints (chip style) + Coordination Strategy. */
+/* Coordination Strategy. */
 .mt-block { display: grid; gap: 10px; }
-.mt-constraints { display: flex; flex-wrap: wrap; gap: 8px; }
-.mt-constraint {
-  padding: 6px 12px; border: 1px solid #e2ddd5; border-radius: 999px;
-  background: #f5f3ef; color: #4b5156; font-size: 12px; font-weight: 650; line-height: 1.3;
-}
 .mt-coordination {
   margin: 0; padding: 13px 16px; border-left: 3px solid var(--accent);
   border-radius: 0 9px 9px 0; background: #fbf7f5;

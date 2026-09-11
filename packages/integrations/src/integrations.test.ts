@@ -30,10 +30,10 @@ describe("data integrations", () => {
     const preview = parseHevyCsv(new TextEncoder().encode(csv));
     expect(preview.counts).toMatchObject({ sessions: 1, validRows: 1, invalidRows: 1 });
   });
-  it("normalizes supplied Intervals fields and planned events", () => {
+  it("normalizes supplied Intervals fields and ignores planned events", () => {
     const activity = normalizeIntervalsActivity({ id: "run", type: "Run", name: "Easy", start_date: "2026-09-01T10:00:00Z", moving_time: 1800, distance: 5000, average_heartrate: 150, average_watts: 220 }, "activities");
     expect(activity).toMatchObject({ modality: "endurance", durationMinutes: 30, status: "completed", endurance: { distanceMeters: 5000, averageHeartRate: 150, averagePowerWatts: 220 } });
-    expect(normalizeIntervalsActivity({ id: 44, type: "Ride", start_date_local: "2026-09-02T18:00:00Z", duration: 45 }, "events")).toMatchObject({ durationMinutes: 45, status: "planned" });
+    expect(normalizeIntervalsActivity({ id: 44, type: "Ride", start_date_local: "2026-09-02T18:00:00Z", duration: 45 }, "events")).toBeNull();
   });
   it("normalizes Xunji strength details with a stable localid", () => {
     const session = normalizeXunjiTraining({ localid: 42, datestr: "2026-09-03", title: "力量", start: 1_788_400_000_000, end: 1_788_403_600_000, movements: [{ name: "卧推", restTime: 90, sets: [{ done: true, weight: "60", unit: "kg", reps: "8", rpe: "8.5", leftWeight: "30", rightWeight: "30", restSeconds: 75 }, { done: false, weight: "60", reps: "8" }] }] });

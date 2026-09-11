@@ -1,26 +1,44 @@
 import { describe, expect, it } from "vitest";
-import { PLAN_SCHEMA_VERSION, sessionTemplateSchema, mesocycleSchema, currentPlanSchema } from "./index";
+import { PLAN_SCHEMA_VERSION, athleteProfileSchema, defaultProfile, equipmentCategories, equipmentTypeIds, equipmentTypeSchema, sessionTemplateSchema, mesocycleSchema, currentPlanSchema, planTargetSchema } from "./index";
 
-const block = (role: string, key: string) => ({ id: role, name: role, role, required: true, variables: [{ key, required: true }] });
+const node = (role: string, key: string) => ({ role, variables: [key] });
 const templates = [
-  { domain: "strength", structure: { kind: "strength", slots: [{ ...block("primary", "exercise_selection"), movementPatternIds: ["squat"], targetMuscleIds: ["quadriceps"], matchPolicy: "all" }] } },
-  { domain: "endurance", structure: { kind: "endurance", blocks: [block("steady", "duration")] } },
-  { domain: "sport_skill", structure: { kind: "sport_skill", blocks: [block("technical", "drill")] } },
-  { domain: "recovery", structure: { kind: "recovery", blocks: [block("mobility", "movement")] } },
-  { domain: "mind_body", structure: { kind: "mind_body", blocks: [block("centering", "technique")] } },
-].map((item, index) => ({ id: `template-${index}`, name: `Template ${index}`, intent: "Stable archetype", commonUseCases: [], notes: "", ...item }));
+  { domain: "strength", nodes: [{ ...node("primary", "exercise_selection"), movementPatternIds: ["squat"], targetMuscleIds: ["quadriceps"], matchPolicy: "all" }] },
+  { domain: "endurance", nodes: [node("steady", "duration")] },
+  { domain: "sport_skill", nodes: [node("technical", "drill")] },
+  { domain: "recovery", nodes: [node("mobility", "movement")] },
+  { domain: "mind_body", nodes: [node("centering", "technique")] },
+].map((item, index) => ({ id: `template-${index}`, name: `Template ${index}`, intent: "Stable archetype", ...item }));
+
+describe("equipment catalog", () => {
+  it("exposes the exact 30-item catalog and selects it by default", () => {
+    const catalogIds = equipmentCategories.flatMap((category) => category.groups.flatMap((group) => group.items.map((item) => item.id)));
+    expect(catalogIds).toEqual(equipmentTypeIds);
+    expect(catalogIds).toHaveLength(30);
+    expect(defaultProfile().equipment).toEqual(equipmentTypeIds);
+    for (const id of catalogIds) expect(equipmentTypeSchema.safeParse(id).success).toBe(true);
+    for (const id of ["bodyweight", "rings", "trap_bar", "ez_bar", "other", "band", "suspension"]) expect(equipmentTypeSchema.safeParse(id).success).toBe(false);
+  });
+});
 
 describe("schema v7 template boundary", () => {
   it("accepts each single-domain generic template", () => {
     for (const template of templates) expect(sessionTemplateSchema.parse(template).domain).toBe(template.domain);
   });
-  it("rejects concrete prescriptions, unknown taxonomy ids and invalid ranges", () => {
+  it("accepts optional nodes and names while rejecting obsolete or duplicate fields", () => {
+    expect(sessionTemplateSchema.safeParse({ ...templates[1], nodes: [{ role: "steady", optional: true, variables: [], optionalVariables: ["duration"] }] }).success).toBe(true);
+    expect(sessionTemplateSchema.safeParse({ ...templates[1], nodes: [{ role: "steady", variables: ["duration"], optionalVariables: ["duration"] }] }).success).toBe(false);
+    expect(sessionTemplateSchema.safeParse({ ...templates[1], commonUseCases: [] }).success).toBe(false);
+    expect(sessionTemplateSchema.safeParse({ ...templates[1], notes: "legacy" }).success).toBe(false);
+    expect(sessionTemplateSchema.safeParse({ ...templates[1], structure: { kind: "endurance", blocks: [] } }).success).toBe(false);
+  });
+  it("rejects concrete prescriptions and unknown taxonomy ids", () => {
     expect(sessionTemplateSchema.safeParse({ ...templates[0], durationMinutes: 45 }).success).toBe(false);
     const strength = structuredClone(templates[0]) as any;
-    strength.structure.slots[0].movementPatternIds = ["invented_pattern"];
+    strength.nodes[0].movementPatternIds = ["invented_pattern"];
     expect(sessionTemplateSchema.safeParse(strength).success).toBe(false);
-    strength.structure.slots[0].movementPatternIds = ["squat"];
-    strength.structure.slots[0].variables[0].identityConstraint = { min: 12, max: 5, unit: "reps" };
+    strength.nodes[0].movementPatternIds = ["squat"];
+    strength.nodes[0].identityConstraint = { min: 2, max: 4, unit: "rpe" };
     expect(sessionTemplateSchema.safeParse(strength).success).toBe(false);
   });
   it("requires complete weeks and rhythm-only schedules", () => {
@@ -45,5 +63,44 @@ describe("schema v7 template boundary", () => {
     expect(mesocycleSchema.safeParse({ ...valid, domainProgressions: valid.domainProgressions.slice(0, 1) }).success).toBe(false);
     expect(mesocycleSchema.safeParse({ ...valid, domainProgressions: [valid.domainProgressions[0], valid.domainProgressions[0], valid.domainProgressions[1]] }).success).toBe(false);
     expect(mesocycleSchema.safeParse({ ...valid, domainProgressions: [{ domain: "recovery", phases: [phase("one", 1, 1)] }, valid.domainProgressions[1]] }).success).toBe(false);
+  });
+});
+
+describe("profile note boundaries", () => {
+  it("validates Personal Information fields on Profile", () => {
+    expect(athleteProfileSchema.parse({ preferredName: "Taylor", gender: "female", heightCm: 172.5, birthDate: "1995-04-03" })).toMatchObject({ preferredName: "Taylor", gender: "female", heightCm: 172.5, birthDate: "1995-04-03" });
+    expect(athleteProfileSchema.safeParse({ preferredName: "" }).success).toBe(false);
+    expect(athleteProfileSchema.safeParse({ gender: "self_described" }).success).toBe(false);
+    expect(athleteProfileSchema.safeParse({ heightCm: 49 }).success).toBe(false);
+    expect(athleteProfileSchema.safeParse({ birthDate: "2999-01-01" }).success).toBe(false);
+    expect(athleteProfileSchema.safeParse({ displayName: "Legacy" }).success).toBe(false);
+  });
+  it("rejects the removed strengthConstraints field and the hour-based recovery field", () => {
+    expect(athleteProfileSchema.safeParse({ strengthConstraints: [{ type: "exclude_exercise", canonicalKey: "burpee" }] }).success).toBe(false);
+    expect(athleteProfileSchema.safeParse({ explicitRecoveryHours: 48 }).success).toBe(false);
+    expect(athleteProfileSchema.parse({}).injuries).toEqual([]);
+  });
+  it("bounds explicitRecoveryDays to whole days from 1 to 7 and defaults to null", () => {
+    expect(athleteProfileSchema.parse({}).explicitRecoveryDays).toBeNull();
+    for (const days of [1, 7]) expect(athleteProfileSchema.parse({ explicitRecoveryDays: days }).explicitRecoveryDays).toBe(days);
+    for (const days of [0, 8, 2.5]) expect(athleteProfileSchema.safeParse({ explicitRecoveryDays: days }).success).toBe(false);
+  });
+  it("caps injuries and constraintNotes and rejects normalized duplicates", () => {
+    const ten = Array.from({ length: 10 }, (_, index) => `Note ${index}`);
+    for (const field of ["injuries", "constraintNotes"] as const) {
+      expect(athleteProfileSchema.safeParse({ [field]: ten }).success).toBe(true);
+      expect(athleteProfileSchema.safeParse({ [field]: [...ten, "One more"] }).success).toBe(false);
+      expect(athleteProfileSchema.safeParse({ [field]: ["y".repeat(200)] }).success).toBe(true);
+      expect(athleteProfileSchema.safeParse({ [field]: ["y".repeat(201)] }).success).toBe(false);
+      expect(athleteProfileSchema.safeParse({ [field]: ["Left shoulder surgery", " left  shoulder SURGERY "] }).success).toBe(false);
+      expect(athleteProfileSchema.safeParse({ [field]: ["  "] }).success).toBe(false);
+    }
+  });
+});
+
+describe("plan target boundary", () => {
+  it("rejects the removed plan constraints field", () => {
+    expect(planTargetSchema.safeParse({}).success).toBe(true);
+    expect(planTargetSchema.safeParse({ constraints: ["Max 5 training days per week"] }).success).toBe(false);
   });
 });

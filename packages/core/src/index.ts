@@ -5,7 +5,6 @@ import {
   TAXONOMY_VERSION,
   type AthleteProfile,
   type DataQuality,
-  type ExerciseDefinition,
   type ResolvedMesocycle,
   type Schedule,
   type PlanValidation,
@@ -276,10 +275,9 @@ function ratioStatus(left: number, right: number): RuleStatus {
   return ratio > 2 || ratio < 0.5 ? "fail" : "pass";
 }
 
-export function validatePlan(profile: AthleteProfile, draft: { mesocycle: ResolvedMesocycle | null; effectiveStartDate?: string }, catalog: ExerciseDefinition[], now = new Date()): PlanValidation {
+export function validatePlan(profile: AthleteProfile, draft: { mesocycle: ResolvedMesocycle | null; effectiveStartDate?: string }, now = new Date()): PlanValidation {
   const results: RuleResult[] = [];
   const dataGaps: PlanValidation["dataGaps"] = [];
-  const known = new Map(catalog.map((item) => [item.key, item]));
   let movementFactsTotal = 0; let movementFactsResolved = 0; let muscleFactsTotal = 0; let muscleFactsResolved = 0; let equipmentFactsTotal = 0; let equipmentFactsResolved = 0;
   if (draft.mesocycle) {
     const mesocycle = draft.mesocycle;
@@ -345,15 +343,12 @@ export function validatePlan(profile: AthleteProfile, draft: { mesocycle: Resolv
         if (component.prescription.kind !== "strength" || component.domain.value !== "strength") continue;
         for (const exercise of component.prescription.exercises) {
           const subjectRefs = [template.id, component.id, exercise.id];
-          const definition = exercise.canonicalKey ? known.get(exercise.canonicalKey) : undefined;
           const movement = exercise.classification.primaryMovement;
           const muscles = exercise.classification.primaryMuscles;
           const equipment = exercise.classification.equipment;
           movementFactsTotal += 1; muscleFactsTotal += 1; equipmentFactsTotal += 1;
-          const movementConflict = Boolean(definition && movement.source !== "user_confirmed" && !sameValues(movement.value, definition.movement));
-          // Catalog equipment lists valid variants; a plan fact describes the concrete variant selected.
-          const equipmentConflict = Boolean(definition && equipment.source !== "user_confirmed" && equipment.value.some((item) => !definition.equipment.includes(item)));
-          const movementTrusted = factTrustedForBlocker(movement) && !movementConflict;
+          const equipmentConflict = false;
+          const movementTrusted = factTrustedForBlocker(movement);
           const muscleResolved = muscles.value.length > 0 && factTrustedForBlocker(muscles);
           const equipmentTrusted = equipment.value.length > 0 && factTrustedForBlocker(equipment) && !equipmentConflict;
           if (movementTrusted) movementFactsResolved += 1;
@@ -367,19 +362,6 @@ export function validatePlan(profile: AthleteProfile, draft: { mesocycle: Resolv
           const equipmentStatus: RuleStatus = equipmentTrusted ? (equipment.value.some((item) => profile.equipment.includes(item)) ? "pass" : "fail") : "unknown";
           results.push(rule("blocker", "EXERCISE_EQUIPMENT", equipmentStatus, subjectRefs, { required: equipment.value, available: profile.equipment, source: equipment.source, conflict: equipmentConflict }, equipmentStatus === "unknown" ? ["classification.equipment"] : [], { required: AI_HARD_CONFIDENCE, observed: equipment.confidence }, "constraints"));
           if (equipmentStatus === "unknown") dataGaps.push({ code: "EXERCISE_EQUIPMENT_UNKNOWN", subjectRef: exercise.id, factPath: "classification.equipment", requiredByRuleCodes: ["EXERCISE_EQUIPMENT"], blocking: true, resolution: equipment.source === "ai_inferred" ? "user_confirm" : "agent_infer" });
-
-          const exclusions = profile.strengthConstraints.filter((item) => item.type === "exclude_exercise");
-          const excluded = exercise.canonicalKey ? exclusions.some((item) => item.canonicalKey === exercise.canonicalKey) : false;
-          const identityStatus: RuleStatus = exclusions.length && !exercise.canonicalKey ? "unknown" : excluded ? "fail" : "pass";
-          results.push(rule("blocker", "EXERCISE_EXCLUSION", identityStatus, subjectRefs, { canonicalKey: exercise.canonicalKey, exclusions: exclusions.map((item) => item.canonicalKey) }, identityStatus === "unknown" ? ["canonicalKey"] : [], null, "constraints"));
-          if (identityStatus === "unknown") dataGaps.push({ code: "EXERCISE_IDENTITY_UNKNOWN", subjectRef: exercise.id, factPath: "canonicalKey", requiredByRuleCodes: ["EXERCISE_EXCLUSION"], blocking: true, resolution: "user_confirm" });
-
-          const prohibited = profile.strengthConstraints.filter((item) => item.type === "prohibit_movement_pattern");
-          if (prohibited.length) {
-            const movementStatus: RuleStatus = movementTrusted ? (prohibited.some((item) => item.movementPattern === movement.value) ? "fail" : "pass") : "unknown";
-            results.push(rule("blocker", "MOVEMENT_PATTERN_PROHIBITED", movementStatus, subjectRefs, { movement: movement.value, prohibited: prohibited.map((item) => item.movementPattern), source: movement.source, conflict: movementConflict }, movementStatus === "unknown" ? ["classification.primaryMovement"] : [], { required: AI_HARD_CONFIDENCE, observed: movement.confidence }, "constraints"));
-            if (movementStatus === "unknown") dataGaps.push({ code: "MOVEMENT_PATTERN_UNKNOWN", subjectRef: exercise.id, factPath: "classification.primaryMovement", requiredByRuleCodes: ["MOVEMENT_PATTERN_PROHIBITED"], blocking: true, resolution: movement.source === "ai_inferred" ? "user_confirm" : "agent_infer" });
-          }
         }
       }
     }
@@ -388,28 +370,16 @@ export function validatePlan(profile: AthleteProfile, draft: { mesocycle: Resolv
     results.push(rule("advisory", "STRENGTH_PUSH_PULL_BALANCE", ratioStatus(push, pull), [], { pushSets: push, pullSets: pull, boundary: 2 }, [], null, "strength"));
     const knee = (setsByPattern.squat ?? 0) + (setsByPattern.lunge ?? 0); const hinge = setsByPattern.hinge ?? 0;
     results.push(rule("advisory", "STRENGTH_KNEE_HINGE_BALANCE", ratioStatus(knee, hinge), [], { kneeDominantSets: knee, hingeSets: hinge, boundary: 2 }, [], null, "strength"));
-    const highDates = [...new Set(weeklyPrescriptions.filter((session) => session.recoveryDemand === "high").map((session) => session.scheduledDate))];
-    let closestHours = Infinity;
-    for (let index = 1; index < highDates.length; index += 1) closestHours = Math.min(closestHours, Math.round((Date.parse(`${highDates[index]}T12:00:00Z`) - Date.parse(`${highDates[index - 1]}T12:00:00Z`)) / 3_600_000));
+    const highDates = [...new Set(weeklyPrescriptions.filter((session) => session.recoveryDemand === "high").map((session) => session.scheduledDate))].sort();
+    let closestDays = Infinity;
+    for (let index = 1; index < highDates.length; index += 1) closestDays = Math.min(closestDays, Math.round((Date.parse(`${highDates[index]}T12:00:00Z`) - Date.parse(`${highDates[index - 1]}T12:00:00Z`)) / 86_400_000));
     if (highDates.length > 1) {
-      if (profile.explicitRecoveryHours !== null) results.push(rule("blocker", "EXPLICIT_RECOVERY_INTERVAL", closestHours >= profile.explicitRecoveryHours ? "pass" : "fail", [], { closestHours, requiredHours: profile.explicitRecoveryHours }, [], null, "constraints"));
-      else results.push(rule("advisory", "ADJACENT_HIGH_DEMAND_SESSIONS", closestHours > 24 ? "pass" : "fail", [], { closestHours }, [], null, "balance"));
+      if (profile.explicitRecoveryDays !== null) results.push(rule("blocker", "EXPLICIT_RECOVERY_INTERVAL", closestDays >= profile.explicitRecoveryDays ? "pass" : "fail", [], { closestDays, requiredDays: profile.explicitRecoveryDays }, [], null, "constraints"));
+      else results.push(rule("advisory", "ADJACENT_HIGH_DEMAND_SESSIONS", closestDays > 1 ? "pass" : "fail", [], { closestDays }, [], null, "balance"));
     }
   }
   const blockers = results.filter((item) => item.enforcement === "blocker");
   const coverage = { hardChecksResolved: blockers.filter((item) => item.status === "pass" || item.status === "fail").length, hardChecksTotal: blockers.length, movementFactsResolved, movementFactsTotal, muscleFactsResolved, muscleFactsTotal, equipmentFactsResolved, equipmentFactsTotal };
   const valid = !blockers.some((item) => item.status === "fail" || item.status === "unknown");
-  return { valid, results, dataGaps, validatedAt: now.toISOString(), inputHash: stableHash({ mesocycle: draft.mesocycle ?? null, profile, classificationSnapshot: catalog, taxonomyVersion: TAXONOMY_VERSION, rulePacks: { structure: RULE_VERSION, constraints: RULE_VERSION, strength: RULE_VERSION, balance: RULE_VERSION } }), coverage };
-}
-
-export function findExerciseCandidates(profile: AthleteProfile, catalog: ExerciseDefinition[], query: { movement?: string; muscles?: string[]; equipment?: string[] }) {
-  return catalog.map((exercise) => {
-    const reasons: string[] = [];
-    if (profile.strengthConstraints.some((item) => item.type === "exclude_exercise" && item.canonicalKey === exercise.key)) reasons.push("excluded_by_profile");
-    if (!exercise.equipment.some((item) => profile.equipment.includes(item as typeof profile.equipment[number]))) reasons.push("equipment_unavailable");
-    if (query.movement && exercise.movement !== query.movement) reasons.push("movement_mismatch");
-    if (query.muscles?.length && !query.muscles.some((item) => exercise.primaryMuscles.includes(item))) reasons.push("muscle_mismatch");
-    if (query.equipment?.length && !query.equipment.some((item) => exercise.equipment.includes(item))) reasons.push("requested_equipment_mismatch");
-    return { exercise, eligible: reasons.length === 0, exclusionReasons: reasons };
-  });
+  return { valid, results, dataGaps, validatedAt: now.toISOString(), inputHash: stableHash({ mesocycle: draft.mesocycle ?? null, profile, taxonomyVersion: TAXONOMY_VERSION, rulePacks: { structure: RULE_VERSION, constraints: RULE_VERSION, strength: RULE_VERSION, balance: RULE_VERSION } }), coverage };
 }

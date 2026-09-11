@@ -5,7 +5,6 @@ import {
   estimateOneRepMax,
   evaluateDoubleProgression,
   evaluateRpeAutoregulation,
-  findExerciseCandidates,
   stableHash,
   validatePlan,
 } from "@athria/core";
@@ -21,6 +20,7 @@ import {
   currentPlanWriteSchema,
   dateSchema,
   domainSchema,
+  equipmentCategories,
   equipmentTypeSchema,
   mesocycleSchema,
   movementPatternSchema,
@@ -30,22 +30,27 @@ import {
   nextTrainingDayWriteSchema,
   plannedSessionSchema,
   plannedSessionActionSchema,
+  personalInformationWriteSchema,
+  profileUpdateSchema,
   sessionTemplateSchema,
   sessionTemplateCreateSchema,
   sessionTemplateUpdateSchema,
-  trainingPreferenceSchema,
+  trainingSessionWriteSchema,
+  trainingSessionSchema,
+  wellnessPatchSchema,
+  wellnessRecordSchema,
   type AthleteProfile,
   type CurrentPlan,
   type CurrentPlanWrite,
-  type ExerciseDefinition,
   type PhaseRef,
   type PlanValidation,
   type NextTrainingDayWrite,
   type PlannedSession,
   type PlannedSessionAction,
+  type PersonalInformationWrite,
   type SessionTemplate,
-  type TrainingPreference,
   type TrainingSession,
+  type WellnessPatch,
 } from "@athria/schemas";
 import { builtinSessionTemplates } from "./template-catalog";
 export { builtinSessionTemplates } from "./template-catalog";
@@ -63,16 +68,18 @@ function phaseRefsForSession(plan: CurrentPlan, weekNumber: number, components: 
   });
 }
 
-export const exerciseCatalog: ExerciseDefinition[] = [
-  { key: "goblet_squat", name: "Goblet Squat", movement: "squat", primaryMuscles: ["quadriceps", "glutes"], secondaryMuscles: ["core"], equipment: ["dumbbell"], unilateral: false, tags: ["strength"] },
-  { key: "dumbbell_bench_press", name: "Dumbbell Bench Press", movement: "horizontal_push", primaryMuscles: ["chest"], secondaryMuscles: ["triceps", "shoulders"], equipment: ["dumbbell"], unilateral: false, tags: ["strength"] },
-  { key: "seated_row", name: "Seated Cable Row", movement: "horizontal_pull", primaryMuscles: ["back"], secondaryMuscles: ["biceps"], equipment: ["cable", "machine"], unilateral: false, tags: ["strength"] },
-  { key: "romanian_deadlift", name: "Romanian Deadlift", movement: "hinge", primaryMuscles: ["hamstrings", "glutes"], secondaryMuscles: ["back"], equipment: ["barbell", "dumbbell"], unilateral: false, tags: ["strength"] },
-  { key: "split_squat", name: "Split Squat", movement: "squat", primaryMuscles: ["quadriceps", "glutes"], secondaryMuscles: ["core"], equipment: ["bodyweight", "dumbbell"], unilateral: true, tags: ["strength"] },
-  { key: "lat_pulldown", name: "Lat Pulldown", movement: "vertical_pull", primaryMuscles: ["back"], secondaryMuscles: ["biceps"], equipment: ["cable", "machine"], unilateral: false, tags: ["strength"] },
-  { key: "dumbbell_shoulder_press", name: "Dumbbell Shoulder Press", movement: "vertical_push", primaryMuscles: ["shoulders"], secondaryMuscles: ["triceps"], equipment: ["dumbbell"], unilateral: false, tags: ["strength"] },
-  { key: "hip_thrust", name: "Hip Thrust", movement: "hinge", primaryMuscles: ["glutes"], secondaryMuscles: ["hamstrings"], equipment: ["bodyweight", "barbell", "dumbbell"], unilateral: false, tags: ["strength"] },
-];
+const blockerSummaryFor = (validation: PlanValidation) => ({
+  valid: validation.valid,
+  blockers: validation.results.filter((item) => item.enforcement === "blocker" && (item.status === "fail" || item.status === "unknown")).length,
+  advisories: validation.results.filter((item) => item.enforcement === "advisory").length,
+  blockingDataGaps: validation.dataGaps.filter((gap) => gap.blocking).length,
+});
+
+const blockerFailureMessage = (validation: PlanValidation): string => {
+  const failed = validation.results.filter((item) => item.enforcement === "blocker" && (item.status === "fail" || item.status === "unknown"));
+  const reasons = [...new Set(failed.map((item) => `${item.reasonCode}:${item.status}`))].slice(0, 5);
+  return `Plan has ${failed.length} blocking issue(s)${reasons.length ? ` (${reasons.join(", ")})` : ""}. Call validate_current_plan for the full report.`;
+};
 
 export interface AthriaTool {
   name: string;
@@ -120,22 +127,51 @@ const plannedDatesFollowProfile = (profile: AthleteProfile, plan: CurrentPlan, s
 export class AthriaApplication {
   private readonly previews = new Map<string, HevyPreview>();
 
-  constructor(readonly repository: AthriaRepository, readonly ownerId = "local-user", readonly now: () => Date = () => new Date()) {
-    repository.seedExercises(exerciseCatalog);
-    const current = repository.getCurrentPlan(ownerId);
-    if (current && repository.listCurrentPlannedSessions(ownerId).length === 0) repository.saveCurrentPlan(current, current.revision, [], this.sessionsForPlan(current, current.effectiveStartDate));
-  }
+  constructor(readonly repository: AthriaRepository, readonly ownerId = "local-user", readonly now: () => Date = () => new Date()) {}
 
   getProfile(): AthleteProfile { return this.repository.getProfile(this.ownerId); }
   saveProfile(value: unknown): AthleteProfile { return this.repository.saveProfile(athleteProfileSchema.parse(value)); }
-  getPreference(): TrainingPreference { return this.repository.getPreference(this.ownerId); }
-  savePreference(value: unknown): TrainingPreference { return this.repository.savePreference(trainingPreferenceSchema.parse(value)); }
   listSessions(days = 90) { return this.repository.listSessions(this.ownerId, new Date(this.now().getTime() - days * 86_400_000).toISOString()).map((session) => ({ ...session, domains: sessionDomains(session), missingFields: sessionDomains(session).length ? session.missingFields : [...new Set([...session.missingFields, "domains"])] })); }
-  snapshotHash(): string { return stableHash({ profile: this.getProfile(), preference: this.getPreference(), sessions: this.listSessions(90) }); }
+  snapshotHash(): string { return stableHash({ profile: this.getProfile(), sessions: this.listSessions(90), wellness: this.listWellness(42) }); }
+  profileHash(): string { return stableHash(this.getProfile()); }
+
+  updateProfile(value: unknown): AthleteProfile {
+    const input = profileUpdateSchema.parse(value);
+    if (input.expectedProfileHash !== this.profileHash()) throw new AthriaError("INPUT_SNAPSHOT_CHANGED", "The athlete profile changed. Refresh before applying the confirmed update.", 409);
+    return this.repository.saveProfile(athleteProfileSchema.parse({ ...this.getProfile(), ...input.patch, ownerId: this.ownerId }));
+  }
+
+  getPersonalInformation() {
+    const profile = this.getProfile();
+    const today = localDate(this.now(), profile.timezone);
+    const wellness = this.repository.listWellness(this.ownerId);
+    const latestWeight = wellness.find((record) => record.fields.weightKg?.value != null);
+    const state = { profile, latestWeight: latestWeight ? { weightKg: latestWeight.fields.weightKg!.value, weightDate: latestWeight.day } : { weightKg: null, weightDate: null }, todayWellness: this.repository.getWellness(this.ownerId, today) };
+    return { preferredName: profile.preferredName, gender: profile.gender, heightCm: profile.heightCm, birthDate: profile.birthDate, ...state.latestWeight, snapshotHash: stableHash(state) };
+  }
+
+  savePersonalInformation(value: unknown) {
+    const input = personalInformationWriteSchema.parse(value) as PersonalInformationWrite;
+    return this.repository.sqlite.transaction(() => {
+      if (input.expectedSnapshotHash !== this.getPersonalInformation().snapshotHash) throw new AthriaError("INPUT_SNAPSHOT_CHANGED", "Personal information changed. Refresh before saving.", 409);
+      const profile = this.getProfile();
+      this.repository.saveProfile(athleteProfileSchema.parse({ ...profile, preferredName: input.preferredName, gender: input.gender, heightCm: input.heightCm, birthDate: input.birthDate }));
+      if ("weightKg" in input) {
+        const day = localDate(this.now(), profile.timezone);
+        const current = this.repository.getWellness(this.ownerId, day);
+        const fields = { ...(current?.fields ?? {}) } as Record<string, unknown>;
+        if (input.weightKg === null) delete fields.weightKg;
+        else fields.weightKg = { value: input.weightKg, source: "user", updatedAt: this.now().toISOString() };
+        const updatedAt = this.now().toISOString();
+        this.repository.saveWellness(wellnessRecordSchema.parse({ ownerId: this.ownerId, day, fields, updatedAt }));
+      }
+      return this.getPersonalInformation();
+    }).immediate();
+  }
 
   getTrainingState() {
     const sessions = this.listSessions(90);
-    return { asOf: this.now().toISOString(), inputSnapshotHash: this.snapshotHash(), metrics: calculateTrainingMetrics(sessions), dataGaps: [] };
+    return { asOf: this.now().toISOString(), inputSnapshotHash: this.snapshotHash(), personalInformation: this.getPersonalInformation(), metrics: calculateTrainingMetrics(sessions), wellness: this.listWellness(42), dataGaps: [] };
   }
 
   getTrainingSummary(days = 7) {
@@ -161,13 +197,13 @@ export class AthriaApplication {
   }
 
   getTrainingTaxonomy() {
-    return { planSchemaVersion: PLAN_SCHEMA_VERSION, taxonomyVersion: TAXONOMY_VERSION, templateCatalogVersion: TEMPLATE_CATALOG_VERSION, domains: domainSchema.options, strength: { movementPatterns: movementPatternTaxonomy, muscleGroups: muscleTaxonomy, equipment: equipmentTypeSchema.options }, templateVariables: { strength: ["exercise_selection", "sets", "repetitions", "duration", "load", "rpe", "rir", "rest", "tempo", "alternatives"], endurance: ["repetitions", "duration", "distance", "pace", "heart_rate_zone", "power", "cadence", "rpe", "talk_test", "terrain", "strides", "recovery_mode"], sport_skill: ["drill", "participants", "position", "duration", "intensity", "instructions"], recovery: ["body_region", "movement", "duration", "intensity", "instructions"], mind_body: ["technique", "duration", "intensity", "instructions"] }, factSources: ["catalog", "structured_source", "exact_alias", "ai_inferred", "user_confirmed", "migration"], aiHardConfidence: AI_HARD_CONFIDENCE };
+    return { planSchemaVersion: PLAN_SCHEMA_VERSION, taxonomyVersion: TAXONOMY_VERSION, templateCatalogVersion: TEMPLATE_CATALOG_VERSION, domains: domainSchema.options, equipmentCategories, strength: { movementPatterns: movementPatternTaxonomy, muscleGroups: muscleTaxonomy, equipment: equipmentTypeSchema.options }, templateVariables: { strength: ["exercise_selection", "sets", "repetitions", "duration", "load", "rpe", "rir", "rest", "tempo", "alternatives"], endurance: ["repetitions", "duration", "distance", "pace", "heart_rate_zone", "power", "cadence", "rpe", "talk_test", "terrain", "strides", "recovery_mode"], sport_skill: ["drill", "participants", "position", "duration", "intensity", "instructions"], recovery: ["body_region", "movement", "duration", "intensity", "instructions"], mind_body: ["technique", "duration", "intensity", "instructions"] }, factSources: ["structured_source", "exact_alias", "ai_inferred", "user_confirmed"], aiHardConfidence: AI_HARD_CONFIDENCE };
   }
 
   validateCurrentPlan(value: unknown): PlanValidation {
     const input = currentPlanWriteSchema.parse(value);
     this.assertTemplateReferences(input.mesocycle);
-    return validatePlan(this.getProfile(), { mesocycle: input.mesocycle, effectiveStartDate: input.effectiveStartDate }, this.repository.listExercises(), this.now());
+    return validatePlan(this.getProfile(), { mesocycle: input.mesocycle, effectiveStartDate: input.effectiveStartDate }, this.now());
   }
 
   listTemplates() { return [...builtinSessionTemplates, ...this.repository.listTemplates(this.ownerId)]; }
@@ -207,7 +243,7 @@ export class AthriaApplication {
     return [...plan.mesocycle.weeks].sort((a, b) => a.weekNumber - b.weekNumber).flatMap((week) => [...week.sessions].sort((a, b) => a.scheduledDate.localeCompare(b.scheduledDate) || a.order - b.order).filter((session) => session.scheduledDate >= onOrAfterDate).map((session) => {
       const occurrenceId = occurrenceByDate.get(session.scheduledDate) ?? crypto.randomUUID();
       occurrenceByDate.set(session.scheduledDate, occurrenceId);
-      return plannedSessionSchema.parse({ ...session, occurrenceId, ownerId: this.ownerId, planRevision: plan.revision, weekNumber: week.weekNumber, phaseRefs: phaseRefsForSession(plan, week.weekNumber, session.components), exerciseOverrides: [], notes: "", overrideReason: null, status: "planned", completedTrainingSessionId: null, completedAt: null, completionSource: null, createdAt: timestamp, updatedAt: timestamp });
+      return plannedSessionSchema.parse({ ...session, occurrenceId, ownerId: this.ownerId, planRevision: plan.revision, weekNumber: week.weekNumber, phaseRefs: phaseRefsForSession(plan, week.weekNumber, session.components), exerciseOverrides: [], notes: "", overrideReason: null, completedTrainingSessionId: null, completedAt: null, completionSource: null, createdAt: timestamp, updatedAt: timestamp });
     }));
   }
 
@@ -216,8 +252,8 @@ export class AthriaApplication {
     if (input.ownerId !== this.ownerId) throw new AthriaError("OWNER_MISMATCH", "The plan owner does not match the local athlete.", 403);
     if (input.inputSnapshotHash && input.inputSnapshotHash !== this.snapshotHash()) throw new AthriaError("INPUT_SNAPSHOT_CHANGED", "Training state changed. Refresh and revise the plan.", 409);
     this.assertTemplateReferences(input.mesocycle);
-    const validation = validatePlan(this.getProfile(), { mesocycle: input.mesocycle, effectiveStartDate: input.effectiveStartDate }, this.repository.listExercises(), this.now());
-    if (!validation.valid) throw new AthriaError("PLAN_HAS_BLOCKERS", JSON.stringify(validation), 409);
+    const validation = validatePlan(this.getProfile(), { mesocycle: input.mesocycle, effectiveStartDate: input.effectiveStartDate }, this.now());
+    if (!validation.valid) throw new AthriaError("PLAN_HAS_BLOCKERS", blockerFailureMessage(validation), 409);
     const timestamp = this.now().toISOString();
     const { expectedRevision, ...candidate } = input;
     const plan = currentPlanSchema.parse({ ...candidate, revision: expectedRevision + 1, updatedAt: timestamp });
@@ -227,7 +263,7 @@ export class AthriaApplication {
     const desiredIds = new Set(desired.map((session) => session.id));
     const deleted = existing.filter((session) => session.status === "planned" && !desiredIds.has(session.id)).map((session) => session.id);
     try { return { plan: this.repository.saveCurrentPlan(plan, input.expectedRevision, deleted, desired), validation, impact: { affectedCount: existing.length, updatedCount: desired.length, deletedCount: deleted.length, legacySkippedCount: 0 } }; }
-    catch (error) { if (error instanceof Error && error.message === "REVISION_CONFLICT") throw new AthriaError(error.message, "The current plan changed. Refresh and try again.", 409); throw error; }
+    catch (error) { if (error instanceof Error && error.message === "REVISION_CONFLICT") throw new AthriaError(error.message, "The current plan changed. Refresh and try again.", 409); if (error instanceof Error && error.message === "WRITE_BUSY") throw new AthriaError(error.message, "The database is busy. Retry the save.", 503); throw error; }
   }
 
   getNextTrainingDay(value: { onOrAfterDate?: string } = {}) {
@@ -257,7 +293,7 @@ export class AthriaApplication {
     return this.repository.listCurrentPlannedSessions(this.ownerId)
       .filter((session) => (from === undefined || session.scheduledDate >= from) && (to === undefined || session.scheduledDate <= to))
       .sort((a, b) => a.scheduledDate.localeCompare(b.scheduledDate) || a.order - b.order)
-      .map((session) => ({ id: session.id, occurrenceId: session.occurrenceId, revision, scheduledDate: session.scheduledDate, order: session.order, weekNumber: session.weekNumber, phaseRefs: session.phaseRefs, templateRef: session.templateRef, name: session.name, intent: session.intent, durationMinutes: session.durationMinutes, recoveryDemand: session.recoveryDemand, keySession: session.keySession, progressionNote: session.progressionNote, schedulingRationale: session.schedulingRationale, status: session.status, components: session.components, legacySnapshot: session.legacySnapshot, overrideReason: session.overrideReason }));
+      .map((session) => ({ id: session.id, occurrenceId: session.occurrenceId, revision, scheduledDate: session.scheduledDate, order: session.order, weekNumber: session.weekNumber, phaseRefs: session.phaseRefs, templateRef: session.templateRef, name: session.name, intent: session.intent, durationMinutes: session.durationMinutes, recoveryDemand: session.recoveryDemand, keySession: session.keySession, progressionNote: session.progressionNote, schedulingRationale: session.schedulingRationale, status: session.status, components: session.components, legacySnapshot: session.legacySnapshot, overrideReason: session.overrideReason, completedTrainingSessionId: session.completedTrainingSessionId, completedAt: session.completedAt }));
   }
 
   updatePlannedSession(id: string, value: unknown) {
@@ -271,7 +307,9 @@ export class AthriaApplication {
     const timestamp = this.now().toISOString();
     let updates: PlannedSession[];
     if (input.action === "complete") {
-      updates = [{ ...current, status: "completed", completedAt: timestamp, completionSource: "manual", updatedAt: timestamp }];
+      const startAt = new Date(`${current.scheduledDate}T12:00:00.000Z`); const endAt = new Date(startAt.getTime() + current.durationMinutes * 60_000);
+      const session = this.recordTrainingSession({ name: current.name, modality: current.components.some((item) => item.domain.value === "strength") ? "strength" : current.components.some((item) => item.domain.value === "endurance") ? "endurance" : "recovery", domains: current.components.map((item) => item.domain.value).filter(Boolean), sport: null, startAt: startAt.toISOString(), endAt: endAt.toISOString(), durationMinutes: current.durationMinutes, timezone: this.getProfile().timezone, plannedSessionId: current.id, strengthSets: [], endurance: null, missingFields: ["exercise details"] });
+      return { sessions: [current], revision: plan.revision, trainingSession: session };
     } else if (input.action === "skip") {
       updates = [{ ...current, status: "skipped", updatedAt: timestamp }];
     } else {
@@ -290,8 +328,8 @@ export class AthriaApplication {
       const proposedSessions = sessions.map((session) => proposed.get(session.id) ?? session);
       if (!plannedDatesFollowProfile(this.getProfile(), plan, proposedSessions)) throw new AthriaError("PROFILE_TRAINING_RHYTHM", "The moved training day would break your Profile training rhythm.", 409);
       const highDates = [...new Set(proposedSessions.filter((session) => session.status !== "skipped" && session.recoveryDemand === "high").map((session) => session.scheduledDate))].sort();
-      const required = this.getProfile().explicitRecoveryHours;
-      if (required !== null) for (let index = 1; index < highDates.length; index += 1) if (Math.abs(dayDifference(highDates[index - 1]!, highDates[index]!)) * 24 < required) throw new AthriaError("EXPLICIT_RECOVERY_INTERVAL", "The moved training day is too close to another high-recovery-demand session.", 409);
+      const required = this.getProfile().explicitRecoveryDays;
+      if (required !== null) for (let index = 1; index < highDates.length; index += 1) if (Math.abs(dayDifference(highDates[index - 1]!, highDates[index]!)) < required) throw new AthriaError("EXPLICIT_RECOVERY_INTERVAL", "The moved training day is too close to another high-recovery-demand session.", 409);
     }
     try { return this.repository.updateCurrentPlannedSessions({ ownerId: this.ownerId, expectedRevision: input.expectedRevision, mode: input.action, sessions: updates }); }
     catch (error) { if (error instanceof Error && error.message === "PLANNED_SESSION_REVISION_CONFLICT") throw new AthriaError(error.message, "The planned sessions changed. Refresh and try again.", 409); throw error; }
@@ -316,10 +354,10 @@ export class AthriaApplication {
         status: "planned", completedTrainingSessionId: null, completedAt: null, completionSource: null, createdAt: timestamp, updatedAt: timestamp,
       });
     });
-    if (this.getProfile().explicitRecoveryHours !== null && sessions.some((session) => session.recoveryDemand === "high")) {
+    if (this.getProfile().explicitRecoveryDays !== null && sessions.some((session) => session.recoveryDemand === "high")) {
       const otherHighDates = this.repository.listCurrentPlannedSessions(this.ownerId).filter((session) => session.recoveryDemand === "high" && session.status !== "skipped" && session.scheduledDate !== input.scheduledDate).map((session) => session.scheduledDate);
-      const closestHours = otherHighDates.length ? Math.min(...otherHighDates.map((date) => Math.abs(dayDifference(date, input.scheduledDate)) * 24)) : Infinity;
-      if (closestHours < this.getProfile().explicitRecoveryHours!) throw new AthriaError("EXPLICIT_RECOVERY_INTERVAL", "The high-recovery-demand sessions are too close together.", 409);
+      const closestDays = otherHighDates.length ? Math.min(...otherHighDates.map((date) => Math.abs(dayDifference(date, input.scheduledDate)))) : Infinity;
+      if (closestDays < this.getProfile().explicitRecoveryDays!) throw new AthriaError("EXPLICIT_RECOVERY_INTERVAL", "The high-recovery-demand sessions are too close together.", 409);
     }
     return { input, sessions, next: next.nextTrainingDay };
   }
@@ -357,24 +395,25 @@ export class AthriaApplication {
       const target = planned[0]!;
       const targetDomains = target.components.map((component) => component.domain.value).filter((domain) => domain !== null);
       const compatible = targetDomains.some((domain) => sessionDomains(actual).includes(domain));
-      if (compatible) this.repository.completePlannedSession(target.id, actual.id, this.ownerId);
+      if (compatible) this.repository.linkTrainingSession(actual.id, target.id, this.ownerId);
     }
   }
 
-  proposeProfileUpdate(value: unknown) {
-    const input = z.object({ clientRequestId: z.string().min(1), patch: z.record(z.string(), z.unknown()), rationale: z.string().min(1).max(4000) }).strict().parse(value);
-    const patch = { ...input.patch };
-    for (const key of ["priority", "weeklyStrengthSessions", "weeklyEnduranceSessions", "trainingDays"]) delete patch[key];
-    athleteProfileSchema.partial().parse(patch);
-    return this.repository.saveProfileUpdateProposal({ id: crypto.randomUUID(), ownerId: this.ownerId, ...input, patch, baseSnapshotHash: stableHash(this.getProfile()), createdAt: this.now().toISOString() });
+  recordTrainingSession(value: unknown): TrainingSession {
+    const input = trainingSessionWriteSchema.parse(value); const id = input.id ?? crypto.randomUUID(); const externalId = input.externalId ?? id;
+    const session = trainingSessionSchema.parse({ ...input, id, externalId, ownerId: this.ownerId, source: "manual", status: "completed" });
+    this.repository.upsertSessions([session]); return session;
   }
 
-  approveProfileUpdate(proposalId: string, approvedBy: string) {
-    const proposal = this.repository.listProfileUpdateProposals(this.ownerId).find((item) => item.id === proposalId);
-    if (!proposal || proposal.status !== "pending") throw new AthriaError("PROFILE_PROPOSAL_NOT_PENDING", "The profile proposal is missing or is no longer pending.", 409);
-    if (proposal.baseSnapshotHash !== stableHash(this.getProfile())) throw new AthriaError("INPUT_SNAPSHOT_CHANGED", "The athlete profile changed after this proposal was created.", 409);
-    const profile = athleteProfileSchema.parse({ ...this.getProfile(), ...proposal.patch, ownerId: this.ownerId });
-    return this.repository.approveProfileUpdate({ proposalId, ownerId: this.ownerId, profile, approvedBy, snapshotHash: proposal.baseSnapshotHash });
+  listWellness(days = 42) { const since = new Date(this.now().getTime() - days * 86_400_000).toISOString().slice(0, 10); return this.repository.listWellness(this.ownerId, since).map((record) => ({ ...record, snapshotHash: stableHash(record) })); }
+  getWellnessDay(day: string) { const record = this.repository.getWellness(this.ownerId, dateSchema.parse(day)); return { record, snapshotHash: record ? stableHash(record) : "new" }; }
+
+  updateWellness(day: string, value: unknown) {
+    const input = wellnessPatchSchema.parse(value) as WellnessPatch; const current = this.repository.getWellness(this.ownerId, dateSchema.parse(day));
+    const currentHash = current ? stableHash(current) : "new"; if (currentHash !== input.expectedSnapshotHash) throw new AthriaError("INPUT_SNAPSHOT_CHANGED", "Wellness changed. Refresh before applying the confirmed update.", 409);
+    const updatedAt = this.now().toISOString(); const fields = { ...(current?.fields ?? {}) } as Record<string, unknown>;
+    for (const [key, fieldValue] of Object.entries(input.fields)) if (fieldValue === null) delete fields[key]; else fields[key] = { value: fieldValue, source: input.source, updatedAt };
+    return this.repository.saveWellness(wellnessRecordSchema.parse({ ownerId: this.ownerId, day, fields, updatedAt }));
   }
 
   previewHevy(content: Uint8Array, fileName: string) {
@@ -389,7 +428,6 @@ export class AthriaApplication {
     const counts = this.repository.upsertSessions(preview.sessions);
     this.reconcileImportedSessions(preview.sessions);
     this.repository.recordImportBatch({ ownerId: this.ownerId, source: "hevy", contentHash: preview.contentHash, fileName: preview.fileName, parserVersion: preview.parserVersion, status: preview.errors.length ? "partial" : "committed", data: { counts: preview.counts, errors: preview.errors, unknownColumns: preview.unknownColumns } });
-    this.repository.upsertRawRecords(this.ownerId, "hevy", preview.rawRows);
     this.previews.delete(previewToken);
     return counts;
   }
@@ -402,12 +440,11 @@ export class AthriaApplication {
   }
 
   commitIntervals(payload: Record<"activities" | "events" | "wellness", unknown[] | string>) {
-    const sessions = (["activities", "events"] as const).flatMap((resource) => Array.isArray(payload[resource]) ? payload[resource].map((item) => normalizeIntervalsActivity(item as Record<string, unknown>, resource)).filter((item) => item !== null) : []);
-    const rawCount = (["activities", "events", "wellness"] as const).reduce((count, resource) => count + (Array.isArray(payload[resource]) ? this.repository.upsertRawRecords(this.ownerId, `intervals:${resource}`, payload[resource] as unknown[]) : 0), 0);
+    const sessions = Array.isArray(payload.activities) ? payload.activities.map((item) => normalizeIntervalsActivity(item as Record<string, unknown>, "activities")).filter((item) => item !== null) : [];
     const wellnessCount = Array.isArray(payload.wellness) ? this.repository.upsertWellness(this.ownerId, payload.wellness) : 0;
     const counts = this.repository.upsertSessions(sessions);
     this.reconcileImportedSessions(sessions);
-    return { ...counts, rawCount, wellnessCount, errors: Object.fromEntries(Object.entries(payload).filter(([, value]) => typeof value === "string")) };
+    return { ...counts, wellnessCount, errors: Object.fromEntries(Object.entries(payload).filter(([, value]) => typeof value === "string")) };
   }
 
   getXunjiSyncStatus() { return this.repository.getConnectionSyncState("xunji", this.ownerId); }
@@ -431,7 +468,6 @@ export class AthriaApplication {
     }
     const counts = this.repository.upsertSessions(sessions);
     this.reconcileImportedSessions(sessions);
-    const rawCount = this.repository.upsertRawRecords(this.ownerId, "xunji", result.records);
     const errors = [...result.errors, ...normalizationErrors];
     const status = errors.length === 0 ? "success" : result.successfulDates.length > 0 ? "partial" : "failed";
     const previous = this.getXunjiSyncStatus();
@@ -440,24 +476,24 @@ export class AthriaApplication {
       rangeStart: result.rangeStart, rangeEnd: result.rangeEnd, status,
       data: { successfulDays: result.successfulDates.length, failedDays: result.errors.length, records: result.records.length, normalizationFailures: normalizationErrors.length, errors },
     });
-    this.repository.recordImportBatch({ ownerId: this.ownerId, source: "xunji", contentHash: stableHash({ rangeStart: result.rangeStart, rangeEnd: result.rangeEnd, records: result.records }), fileName: "Xunji Open API", parserVersion: XUNJI_PARSER_VERSION, status, data: { ...counts, rawCount, sync: state } });
-    return { ...counts, rawCount, sync: state };
+    this.repository.recordImportBatch({ ownerId: this.ownerId, source: "xunji", contentHash: stableHash({ rangeStart: result.rangeStart, rangeEnd: result.records.map((record) => record.localid ?? record.start) }), fileName: "Xunji Open API", parserVersion: XUNJI_PARSER_VERSION, status, data: { ...counts, sync: state } });
+    return { ...counts, sync: state };
   }
 
   toolRegistry(): AthriaTool[] {
     const read = (name: string, description: string, inputSchema: z.ZodTypeAny, handler: AthriaTool["handler"]): AthriaTool => ({ name, description, inputSchema, handler, readOnly: true, idempotent: true });
     return [
-      read("get_athlete_profile", "Get confirmed local athlete facts and constraints.", z.object({}), () => this.getProfile()),
-      read("get_training_preferences", "Get editable exercise and session preferences.", z.object({}), () => this.getPreference()),
+      read("get_athlete_profile", "Get confirmed local athlete facts, constraints, and the hash required for a confirmed update.", z.object({}), () => ({ ...this.getProfile(), profileHash: this.profileHash() })),
       read("get_training_state", "Get the current state snapshot, metrics, and snapshot hash.", z.object({}), () => this.getTrainingState()),
       read("list_training_sessions", "List normalized training sessions.", z.object({ days: z.number().int().min(1).max(365).default(30) }), (input) => this.listSessions((input as { days: number }).days)),
+      read("list_wellness", "List normalized daily wellness and per-field provenance.", z.object({ days: z.number().int().min(1).max(365).default(42) }), (input) => this.listWellness((input as { days: number }).days)),
+      read("get_wellness_day", "Get one wellness day and the hash required for a confirmed update; a missing day returns hash 'new'.", z.object({ day: dateSchema }), (input) => this.getWellnessDay((input as { day: string }).day)),
       read("list_xunji_training_sessions", "获取我的训记记录 / List locally synced Xunji training sessions with sync freshness. Credentials are never exposed.", z.object({ days: z.number().int().min(1).max(365).default(30) }), (input) => this.listXunjiSessions((input as { days: number }).days)),
       read("get_xunji_sync_status", "Get the local Athria Devices sync status for 训记/Xunji without exposing its API key.", z.object({}), () => this.getXunjiSyncStatus()),
       read("get_training_summary", "Get domain-separated recent training metrics.", z.object({ days: z.number().int().min(1).max(365).default(7) }), (input) => this.getTrainingSummary((input as { days: number }).days)),
       read("get_current_plan", "Get the user's single editable current mesocycle.", z.object({}), () => this.getCurrentPlan()),
       read("list_session_templates", "List built-in read-only and local user-owned single-domain training archetypes. Templates never contain an executable dose.", z.object({}), () => this.listTemplates()),
       read("get_session_template", "Get one stable single-domain training archetype by ID.", z.object({ id: z.string().min(1) }), (input) => this.getTemplate((input as { id: string }).id)),
-      read("get_exercise_catalog", "Get normalized exercise definitions.", z.object({}), () => this.repository.listExercises()),
       read("get_training_taxonomy", "Get the authoritative versioned template vocabularies. Read this before writing a template and use only returned movement and muscle IDs.", z.object({}), () => this.getTrainingTaxonomy()),
       read("calculate_training_metrics", "Calculate deterministic strength and endurance metrics.", z.object({ days: z.number().int().min(1).max(365).default(90) }), (input) => calculateTrainingMetrics(this.listSessions((input as { days: number }).days))),
       read("estimate_1rm", "Estimate 1RM with the versioned Epley formula.", z.object({ load: z.number().positive(), reps: z.number().int().min(1).max(12), unit: z.enum(["kg", "lb"]) }), (input) => { const value = input as { load: number; reps: number; unit: "kg" | "lb" }; return estimateOneRepMax(value.load, value.reps, value.unit); }),
@@ -465,7 +501,6 @@ export class AthriaApplication {
       read("evaluate_double_progression", "Evaluate a configured double-progression prescription.", z.object({ completedReps: z.array(z.number().int().min(0)).min(1), repMin: z.number().int().min(1), repMax: z.number().int().min(1), currentLoad: z.number().min(0), loadIncrement: z.number().positive(), unit: z.enum(["kg", "lb"]), rpeValues: z.array(z.number().min(0).max(10)).optional(), rpeCeiling: z.number().min(1).max(10).optional() }), (input) => evaluateDoubleProgression(input as Parameters<typeof evaluateDoubleProgression>[0])),
       read("evaluate_rpe_autoregulation", "Evaluate a load adjustment only when RPE is supplied.", z.object({ actualRpe: z.number().min(0).max(10).nullable(), targetRpe: z.number().min(1).max(10), load: z.number().min(0), increment: z.number().positive(), unit: z.enum(["kg", "lb"]) }), (input) => evaluateRpeAutoregulation(input as Parameters<typeof evaluateRpeAutoregulation>[0])),
       read("evaluate_progression", "Evaluate the MVP progression policy.", z.object({ completedReps: z.array(z.number().int().min(0)).min(1), repMin: z.number().int().min(1), repMax: z.number().int().min(1), currentLoad: z.number().min(0), loadIncrement: z.number().positive(), unit: z.enum(["kg", "lb"]) }), (input) => evaluateDoubleProgression(input as Parameters<typeof evaluateDoubleProgression>[0])),
-      read("find_exercise_candidates", "Filter exercises and return explicit exclusion reasons.", z.object({ movement: z.string().optional(), muscles: z.array(z.string()).optional(), equipment: z.array(z.string()).optional() }), (input) => findExerciseCandidates(this.getProfile(), this.repository.listExercises(), input as { movement?: string; muscles?: string[]; equipment?: string[] })),
       read("validate_current_plan", "Resolve template-library references and validate a candidate current mesocycle.", currentPlanWriteSchema, (input) => this.validateCurrentPlan(input)),
       read("check_training_constraints", "Return blocker, advisory, and informational results for a candidate current mesocycle.", currentPlanWriteSchema, (input) => this.validateCurrentPlan(input).results),
       read("get_next_training_day", "Get the first unfinished scheduled training day on or after a local date.", z.object({ onOrAfterDate: dateSchema.optional() }).strict(), (input) => this.getNextTrainingDay(input as { onOrAfterDate?: string })),
@@ -474,10 +509,12 @@ export class AthriaApplication {
       { name: "create_session_template", description: "Create a local reusable single-domain archetype. Read get_training_taxonomy first. Do not include exercises, sets, reps, distance, duration, load, or recovery demand.", inputSchema: sessionTemplateCreateSchema, readOnly: false, idempotent: true, handler: (input) => this.createTemplate(input) },
       { name: "update_session_template", description: "Update a local archetype. Built-ins are read-only and template edits never rewrite Weekly Sessions.", inputSchema: sessionTemplateUpdateSchema, readOnly: false, idempotent: false, handler: (input) => this.updateTemplate(input) },
       { name: "delete_session_template", description: "Delete an unreferenced template only after the user explicitly requests deletion.", inputSchema: z.object({ id: z.string().min(1), expectedRevision: z.number().int().positive(), confirmedExplicitRequest: z.literal(true) }), readOnly: false, idempotent: false, handler: (input) => { const value = input as { id: string; expectedRevision: number }; return this.deleteTemplate(value.id, value.expectedRevision); } },
-      { name: "save_current_plan", description: "Validate and directly replace the single current mesocycle. No approval step follows.", inputSchema: currentPlanWriteSchema, readOnly: false, idempotent: false, handler: (input) => this.saveCurrentPlan(input) },
+      { name: "save_current_plan", description: "Validate and directly replace the single current mesocycle. No approval step follows.", inputSchema: currentPlanWriteSchema, readOnly: false, idempotent: false, handler: (input) => { const saved = this.saveCurrentPlan(input); return { revision: saved.plan.revision, impact: saved.impact, blockerSummary: blockerSummaryFor(saved.validation) }; } },
       { name: "save_next_training_day_sessions", description: "After explicit confirmation, append or replace complete executable Session prescriptions on the next training day. A templateRef is optional provenance and never supplies missing fields.", inputSchema: nextTrainingDayWriteSchema, readOnly: false, idempotent: true, handler: (input) => this.saveNextTrainingDaySessions(input) },
       { name: "update_planned_session", description: "Complete, skip, or move the current planned training occurrence after explicit user confirmation.", inputSchema: z.object({ id: z.string().min(1), update: plannedSessionActionSchema }).strict(), readOnly: false, idempotent: false, handler: (input) => { const value = input as { id: string; update: PlannedSessionAction }; return this.updatePlannedSession(value.id, value.update); } },
-      { name: "propose_profile_update", description: "Create an idempotent profile update proposal for Dashboard approval.", inputSchema: z.object({ clientRequestId: z.string().min(1), patch: athleteProfileSchema.partial().loose(), rationale: z.string().min(1).max(4000) }), readOnly: false, idempotent: true, handler: (input) => this.proposeProfileUpdate(input) },
+      { name: "record_training_session", description: "Record an actual completed training session in Training History. Use plannedSessionId when it corresponds to a Current Plan session.", inputSchema: trainingSessionWriteSchema, readOnly: false, idempotent: true, handler: (input) => this.recordTrainingSession(input) },
+      { name: "update_wellness", description: "Directly update one wellness day only after the user explicitly confirms the values.", inputSchema: z.object({ day: dateSchema, update: wellnessPatchSchema }).strict(), readOnly: false, idempotent: false, handler: (input) => { const value = input as { day: string; update: WellnessPatch }; return this.updateWellness(value.day, value.update); } },
+      { name: "update_athlete_profile", description: "Directly apply a Profile patch only after the user explicitly confirms it. explicitRecoveryDays is the minimum day gap between high-recovery-demand sessions. injuries record known injuries or diagnoses (the factual why) and constraintNotes record movement-level restrictions (the what): notes may be derived from injuries but must never restate the diagnosis. Both are advisory context only: at most 10 entries of up to 200 characters each, one issue per entry, no duplicates.", inputSchema: profileUpdateSchema, readOnly: false, idempotent: false, handler: (input) => this.updateProfile(input) },
     ];
   }
 }

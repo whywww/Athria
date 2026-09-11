@@ -75,16 +75,25 @@
     "status": {
       "default": "completed",
       "type": "string",
-      "enum": [
-        "completed",
-        "planned"
-      ]
+      "const": "completed"
     },
     "timezone": {
       "default": null,
       "anyOf": [
         {
           "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "plannedSessionId": {
+      "default": null,
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
         },
         {
           "type": "null"
@@ -386,6 +395,7 @@
     "durationMinutes",
     "status",
     "timezone",
+    "plannedSessionId",
     "strengthSets",
     "endurance",
     "missingFields"

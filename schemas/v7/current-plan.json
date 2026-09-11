@@ -243,6 +243,14 @@
                       "minimum": 0,
                       "maximum": 50
                     },
+                    "status": {
+                      "default": "planned",
+                      "type": "string",
+                      "enum": [
+                        "planned",
+                        "skipped"
+                      ]
+                    },
                     "templateRef": {
                       "default": null,
                       "anyOf": [
@@ -841,24 +849,36 @@
                                                   "items": {
                                                     "type": "string",
                                                     "enum": [
-                                                      "bodyweight",
-                                                      "barbell",
                                                       "dumbbell",
+                                                      "barbell",
                                                       "kettlebell",
                                                       "cable",
-                                                      "machine",
-                                                      "band",
                                                       "smith_machine",
-                                                      "trap_bar",
-                                                      "ez_bar",
-                                                      "bench",
-                                                      "pull_up_bar",
-                                                      "rings",
-                                                      "suspension",
-                                                      "medicine_ball",
+                                                      "machine",
                                                       "landmine",
+                                                      "pull_up_bar",
+                                                      "trx",
+                                                      "bench",
+                                                      "plyo_box",
+                                                      "resistance_band",
+                                                      "medicine_ball",
+                                                      "sandbag",
                                                       "sled",
-                                                      "other"
+                                                      "treadmill",
+                                                      "exercise_bike",
+                                                      "rowing_machine",
+                                                      "elliptical",
+                                                      "stepper",
+                                                      "ski_erg",
+                                                      "jump_rope",
+                                                      "battle_rope",
+                                                      "yoga_mat",
+                                                      "foam_roller",
+                                                      "massage_ball",
+                                                      "reformer",
+                                                      "pilates_ring",
+                                                      "mini_stability_ball",
+                                                      "ball_machine"
                                                     ]
                                                   }
                                                 },
@@ -1720,6 +1740,7 @@
                     "id",
                     "scheduledDate",
                     "order",
+                    "status",
                     "templateRef",
                     "name",
                     "intent",
@@ -1918,15 +1939,6 @@
               "label"
             ],
             "additionalProperties": false
-          }
-        },
-        "constraints": {
-          "maxItems": 30,
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 300
           }
         },
         "coordinationStrategy": {

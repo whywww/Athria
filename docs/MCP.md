@@ -19,15 +19,17 @@ The Dashboard-managed service also exposes Streamable HTTP at `http://127.0.0.1:
 
 ## Write boundary
 
-MCP exposes read, calculation, validation, candidate-search, template-library, and current-plan tools. Plan-related state-changing tools are:
+MCP exposes read, calculation, validation, wellness, training-history, template-library, and current-plan tools. State-changing tools include:
 
 - `create_session_template`, `update_session_template`, `delete_session_template`
 - `save_current_plan`
-- `propose_profile_update`
+- `record_training_session`, `update_wellness`, `update_athlete_profile`
 
-Template and plan writes are immediate latest-state writes protected by `expectedRevision`. Templates are single-domain generic structures and never contain exercises, distance, duration, sets/reps, load, recovery demand, or another executable prescription. Core validates structure and constraints deterministically; it does not recommend dose. Built-ins are read-only and may be copied. Template deletion requires an explicit user request and is blocked while the Current Mesocycle references it. MCP still cannot directly change the confirmed Profile.
+Template and plan writes are immediate latest-state writes protected by `expectedRevision`. Templates contain a name, one concise intent, and ordered single-domain nodes with required and optional variable keys. They never contain extra notes, use cases, identity ranges, exercises, distance, duration, sets/reps, load, recovery demand, or another executable prescription. Core validates the structure deterministically; it does not recommend dose. Built-ins are read-only and may be copied. Confirmed Profile and Wellness updates write directly with snapshot-hash protection.
 
-Use the provider-neutral `packages/skills/athria-training-planner` Skill for the intended workflow. Read `get_training_taxonomy` before writing a template and submit catalog IDs only. Save a v7 Current Mesocycle whose schedule expresses rhythm, whose `domainProgressions[]` independently cover the full cycle for every resolved Session domain, and whose complete `weeks[].sessions` hold final dated prescriptions. `templateRef` is optional provenance and never fills a Session. Validate and resolve blocker-relevant gaps before saving.
+Profile stores stable Personal Information (`preferredName`, optional `gender`, `heightCm`, and `birthDate`). Weight remains dated Wellness data. The Dashboard's combined `/api/personal-information` read/write contract updates these surfaces atomically; MCP continues to update stable fields through `update_athlete_profile` and dated weight through `update_wellness`.
+
+Use the provider-neutral `packages/skills/athria-training-planner` Skill for the intended workflow. Read `get_training_taxonomy` before writing a template and submit taxonomy IDs only. Save a v7 Current Mesocycle whose schedule expresses rhythm, whose `domainProgressions[]` independently cover the full cycle for every resolved Session domain, and whose complete `weeks[].sessions` hold final dated prescriptions. `templateRef` is optional provenance and never fills a Session. Validate and resolve blocker-relevant gaps before saving. `save_current_plan` atomically replaces the whole mesocycle in one call and returns only `{ revision, impact, blockerSummary }`; MCP tool errors carry a machine-readable `code` (for example `REVISION_CONFLICT`, `INPUT_SNAPSHOT_CHANGED`, `PLAN_HAS_BLOCKERS`, `WRITE_BUSY`).
 
 ## Xunji records
 

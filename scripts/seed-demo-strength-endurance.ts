@@ -1,10 +1,10 @@
 // Demo seed: a 4-week Current Plan alternating Strength and Endurance sessions.
-// Skeleton follows scripts/seed-v7-development.ts and uses catalog-backed
+// Skeleton follows scripts/seed-v7-development.ts and uses self-contained
 // strength/endurance components without profile-specific assertions.
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
-import { AthriaApplication, exerciseCatalog } from "../packages/application/src/index.ts";
+import { AthriaApplication } from "../packages/application/src/index.ts";
 import { expandSchedule } from "../packages/core/src/index.ts";
 import { AthriaRepository } from "../packages/data/src/index.ts";
 import { PLAN_SCHEMA_VERSION, TAXONOMY_VERSION, TEMPLATE_CATALOG_VERSION } from "../packages/schemas/src/index.ts";
@@ -37,23 +37,31 @@ const today = new Date();
 const effectiveStartDate = addDays(today.toISOString().slice(0, 10), -((today.getUTCDay() + 6) % 7)); // Monday of the current week
 const occurrences = expandSchedule({ effectiveStartDate, durationWeeks, schedule: profile.trainingRhythm });
 
-// ---- exercise selection (catalog-driven, respects profile equipment) -------
-const fact = <T,>(value: T) => ({ value, source: "catalog" as const, confidence: 1, evidence: "Athria demo seed exercise catalog", taxonomyVersion: TAXONOMY_VERSION });
+// ---- self-contained exercise selection (respects profile equipment) --------
+const fact = <T,>(value: T) => ({ value, source: "structured_source" as const, confidence: 1, evidence: "Athria demo seed structured exercise definition", taxonomyVersion: TAXONOMY_VERSION });
 const builtinRef = (id: string) => ({ source: "builtin" as const, id, catalogVersion: TEMPLATE_CATALOG_VERSION });
-const exclusions = new Set(profile.strengthConstraints.filter((item) => item.type === "exclude_exercise").map((item) => item.canonicalKey));
-const prohibited = new Set(profile.strengthConstraints.filter((item) => item.type === "prohibit_movement_pattern").map((item) => item.movementPattern));
-const available = exerciseCatalog.filter((definition) => !exclusions.has(definition.key) && !prohibited.has(definition.movement) && definition.equipment.some((item) => profile.equipment.includes(item as never)));
+const exerciseDefinitions = [
+  { key: "goblet_squat", name: "Goblet Squat", movement: "squat", primaryMuscles: ["quadriceps", "glutes"], secondaryMuscles: ["core"], equipment: ["dumbbell", "kettlebell"], unilateral: false },
+  { key: "romanian_deadlift", name: "Romanian Deadlift", movement: "hinge", primaryMuscles: ["hamstrings", "glutes"], secondaryMuscles: ["back"], equipment: ["barbell", "dumbbell"], unilateral: false },
+  { key: "split_squat", name: "Split Squat", movement: "squat", primaryMuscles: ["quadriceps", "glutes"], secondaryMuscles: ["core"], equipment: ["bodyweight", "dumbbell"], unilateral: true },
+  { key: "hip_thrust", name: "Hip Thrust", movement: "hinge", primaryMuscles: ["glutes"], secondaryMuscles: ["hamstrings"], equipment: ["barbell", "bodyweight"], unilateral: false },
+  { key: "dumbbell_bench_press", name: "Dumbbell Bench Press", movement: "horizontal_push", primaryMuscles: ["chest"], secondaryMuscles: ["triceps", "shoulders"], equipment: ["dumbbell"], unilateral: false },
+  { key: "seated_row", name: "Seated Row", movement: "horizontal_pull", primaryMuscles: ["back"], secondaryMuscles: ["biceps"], equipment: ["cable", "machine"], unilateral: false },
+  { key: "dumbbell_shoulder_press", name: "Dumbbell Shoulder Press", movement: "vertical_push", primaryMuscles: ["shoulders"], secondaryMuscles: ["triceps"], equipment: ["dumbbell"], unilateral: false },
+  { key: "lat_pulldown", name: "Lat Pulldown", movement: "vertical_pull", primaryMuscles: ["back"], secondaryMuscles: ["biceps"], equipment: ["cable", "machine"], unilateral: false },
+] as const;
+const available = exerciseDefinitions.filter((definition) => definition.equipment.some((item) => profile.equipment.includes(item as never)));
 const pick = (keys: string[]) => keys.map((key) => available.find((definition) => definition.key === key)).filter((definition) => definition !== undefined);
 const lowerBodyPool = pick(["goblet_squat", "romanian_deadlift", "split_squat", "hip_thrust"]);
 const upperBodyPool = pick(["dumbbell_bench_press", "seated_row", "dumbbell_shoulder_press", "lat_pulldown"]);
 
-const exerciseFor = (week: number, definition: (typeof exerciseCatalog)[number], sets: number, targetRpe: number) => ({
+const exerciseFor = (week: number, definition: (typeof exerciseDefinitions)[number], sets: number, targetRpe: number) => ({
   id: `w${week}-${definition.key}`, displayName: definition.name, canonicalKey: definition.key,
   classification: {
     primaryMovement: fact(definition.movement),
     primaryMuscles: fact(definition.primaryMuscles),
     secondaryMuscles: fact(definition.secondaryMuscles),
-    // Pick one concrete equipment variant owned by the profile from the catalog variants.
+    // Pick one concrete equipment variant owned by the profile.
     equipment: fact([definition.equipment.find((item) => profile.equipment.includes(item as never))!]),
     impact: fact("low"),
     laterality: fact(definition.unilateral ? "unilateral" : "bilateral"),
@@ -168,7 +176,6 @@ try {
       target: {
         primaryGoal: { label: "Demonstrate combined strength and endurance planning" },
         supporting: [{ label: "Build general strength" }, { label: "Build aerobic endurance" }],
-        constraints: [`Sessions no longer than ${maxMinutes} minutes`],
         coordinationStrategy: "Strength and endurance sessions alternate across the training rhythm; interval days stay separated from the longest aerobic effort.",
       },
       sourceAgent: "demo-seed", model: null, skillVersion: "0.6.0",
@@ -179,7 +186,7 @@ try {
   const blockers = result.validation.results.filter((item) => item.enforcement === "blocker");
   console.log(JSON.stringify({
     databasePath, backupDirectory, replacedExistingPlan: Boolean(existingPlan),
-    profile: { trainingRhythm: profile.trainingRhythm, maxSessionMinutes: profile.maxSessionMinutes, equipment: profile.equipment, strengthConstraints: profile.strengthConstraints.length },
+    profile: { trainingRhythm: profile.trainingRhythm, maxSessionMinutes: profile.maxSessionMinutes, equipment: profile.equipment, injuries: profile.injuries.length, constraintNotes: profile.constraintNotes.length },
     plan: { title: "Strength & Endurance Demo Plan", revision: result.plan.revision, effectiveStartDate, planEnd: addDays(effectiveStartDate, durationWeeks * 7 - 1), durationWeeks, totalSessions: sessions.length, strengthSessions: strengthCount, enduranceSessions: enduranceCount },
     validation: { valid: result.validation.valid, blockerChecks: blockers.length, blockersPassed: blockers.filter((item) => item.status === "pass").length, failedOrUnknownBlockers: blockers.filter((item) => item.status !== "pass").map((item) => ({ reasonCode: item.reasonCode, status: item.status, evidence: item.evidence })), blockingDataGaps: result.validation.dataGaps.filter((gap) => gap.blocking).length },
     impact: result.impact,

@@ -8,8 +8,9 @@ mkdirSync(outputDirectory, { recursive: true });
 
 const names: Record<keyof typeof jsonSchemas, string> = {
   athleteProfile: "athlete-profile.json",
-  trainingPreference: "training-preference.json",
+  personalInformation: "personal-information.json",
   trainingSession: "training-session.json",
+  wellness: "wellness.json",
   sessionTemplate: "session-template.json",
   currentPlan: "current-plan.json",
   planValidation: "plan-validation.json",

@@ -9,3 +9,9 @@ Migration `0005_template_library_current_mesocycle.sql` is an append-only marker
 Migration `0008_schema_v7_planning_reset.sql` is implemented by `migratePlanningSchemaV7Reset()`. It backs up incompatible planning JSON, clears only planning state, and preserves profiles, preferences, completed training data, imports, and wellness.
 
 Migration `0009_domain_progression_v7_reset.sql` is implemented by `migrateDomainProgressionV7Reset()`. It repeats that backup-and-clear operation only for current plans, planned sessions, and their change history after the v7 domain progression contract changed; profiles, templates, and training history remain intact.
+
+Migration `0012_simplified_storage.sql` is implemented transactionally by `migrateSimplifiedStorageV12()`. It merges the latest legacy scheduling state into the sole Current Plan, migrates profile preferences and recognizable wellness fields, links completed training records to their planned sessions, and then drops the obsolete catalog, preference, proposal, approval, raw-record, planning-history, and migration-backup tables.
+
+Migration `0017_personal_information.sql` is implemented by `migratePersonalInformationV17()`. It renames Profile `displayName` to `preferredName` and initializes optional gender, height, and birth-date fields. Version 17 is used because version 16 already updates the equipment taxonomy.
+
+Migration 16 is implemented transactionally by `migrateEquipmentCatalogV16()`. It maps legacy bands and suspension trainers to the replacement equipment IDs and removes retired equipment IDs from profiles and current-plan classification facts.

@@ -6,11 +6,53 @@
       "default": "local-user",
       "type": "string"
     },
-    "displayName": {
+    "preferredName": {
       "default": "Athlete",
       "type": "string",
       "minLength": 1,
       "maxLength": 100
+    },
+    "gender": {
+      "default": null,
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "female",
+            "male",
+            "non_binary",
+            "prefer_not_to_say"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "heightCm": {
+      "default": null,
+      "anyOf": [
+        {
+          "type": "number",
+          "minimum": 50,
+          "maximum": 250
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "birthDate": {
+      "default": null,
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "timezone": {
       "default": "Asia/Hong_Kong",
@@ -124,138 +166,101 @@
     },
     "equipment": {
       "default": [
-        "bodyweight",
         "dumbbell",
+        "barbell",
+        "kettlebell",
         "cable",
-        "machine"
+        "smith_machine",
+        "machine",
+        "landmine",
+        "pull_up_bar",
+        "trx",
+        "bench",
+        "plyo_box",
+        "resistance_band",
+        "medicine_ball",
+        "sandbag",
+        "sled",
+        "treadmill",
+        "exercise_bike",
+        "rowing_machine",
+        "elliptical",
+        "stepper",
+        "ski_erg",
+        "jump_rope",
+        "battle_rope",
+        "yoga_mat",
+        "foam_roller",
+        "massage_ball",
+        "reformer",
+        "pilates_ring",
+        "mini_stability_ball",
+        "ball_machine"
       ],
       "type": "array",
       "items": {
         "type": "string",
         "enum": [
-          "bodyweight",
-          "barbell",
           "dumbbell",
+          "barbell",
           "kettlebell",
           "cable",
-          "machine",
-          "band",
           "smith_machine",
-          "trap_bar",
-          "ez_bar",
-          "bench",
-          "pull_up_bar",
-          "rings",
-          "suspension",
-          "medicine_ball",
+          "machine",
           "landmine",
+          "pull_up_bar",
+          "trx",
+          "bench",
+          "plyo_box",
+          "resistance_band",
+          "medicine_ball",
+          "sandbag",
           "sled",
-          "other"
+          "treadmill",
+          "exercise_bike",
+          "rowing_machine",
+          "elliptical",
+          "stepper",
+          "ski_erg",
+          "jump_rope",
+          "battle_rope",
+          "yoga_mat",
+          "foam_roller",
+          "massage_ball",
+          "reformer",
+          "pilates_ring",
+          "mini_stability_ball",
+          "ball_machine"
         ]
       }
     },
-    "strengthConstraints": {
+    "injuries": {
       "default": [],
+      "maxItems": 10,
       "type": "array",
       "items": {
-        "oneOf": [
-          {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string",
-                "minLength": 1
-              },
-              "type": {
-                "type": "string",
-                "const": "exclude_exercise"
-              },
-              "canonicalKey": {
-                "type": "string",
-                "minLength": 1
-              }
-            },
-            "required": [
-              "id",
-              "type",
-              "canonicalKey"
-            ],
-            "additionalProperties": false
-          },
-          {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string",
-                "minLength": 1
-              },
-              "type": {
-                "type": "string",
-                "const": "prohibit_movement_pattern"
-              },
-              "movementPattern": {
-                "type": "string",
-                "enum": [
-                  "squat",
-                  "hinge",
-                  "lunge",
-                  "step",
-                  "bridge_hip_thrust",
-                  "horizontal_push",
-                  "vertical_push",
-                  "horizontal_pull",
-                  "vertical_pull",
-                  "shoulder_abduction",
-                  "shoulder_external_rotation",
-                  "elbow_flexion",
-                  "elbow_extension",
-                  "knee_extension",
-                  "knee_flexion",
-                  "hip_abduction",
-                  "hip_adduction",
-                  "calf_raise",
-                  "dorsiflexion",
-                  "carry",
-                  "rotation",
-                  "anti_rotation",
-                  "trunk_flexion",
-                  "trunk_extension",
-                  "lateral_flexion",
-                  "anti_extension",
-                  "anti_lateral_flexion",
-                  "jump",
-                  "throw",
-                  "locomotion",
-                  "olympic_lift",
-                  "isolation",
-                  "other"
-                ]
-              }
-            },
-            "required": [
-              "id",
-              "type",
-              "movementPattern"
-            ],
-            "additionalProperties": false
-          }
-        ]
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
       }
     },
     "constraintNotes": {
       "default": [],
+      "maxItems": 10,
       "type": "array",
       "items": {
-        "type": "string"
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
       }
     },
-    "explicitRecoveryHours": {
+    "explicitRecoveryDays": {
       "default": null,
       "anyOf": [
         {
           "type": "integer",
-          "minimum": 0,
-          "maximum": 168
+          "minimum": 1,
+          "maximum": 7
         },
         {
           "type": "null"
@@ -265,16 +270,19 @@
   },
   "required": [
     "ownerId",
-    "displayName",
+    "preferredName",
+    "gender",
+    "heightCm",
+    "birthDate",
     "timezone",
     "goals",
     "preference",
     "maxSessionMinutes",
     "trainingRhythm",
     "equipment",
-    "strengthConstraints",
+    "injuries",
     "constraintNotes",
-    "explicitRecoveryHours"
+    "explicitRecoveryDays"
   ],
   "additionalProperties": false
 }
