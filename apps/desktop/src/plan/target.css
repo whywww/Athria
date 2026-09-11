@@ -1,0 +1,178 @@
+/*
+ * target.css — Mesocycle Target card (UNIFIED_MULTISPORT_MESOCYCLE_DESIGN §5)
+ *              + Phase Timeline (§6).
+ *
+ * These are scoped additions layered on top of the global design tokens and
+ * card chrome in ../styles.css. The Target card already reuses
+ * .mesocycle-card / .proposal-heading / .proposal-facts / .proposal-section,
+ * so this file only supplies the mt-* / pt-* specifics and never restyles the
+ * globals. Colours follow the existing palette (--ink, --line, --accent, the
+ * navy section headings and the tone-* phase palette) to stay visually
+ * consistent with the rest of the Plan page.
+ */
+
+/* =========================================================================
+   Mesocycle Target (§5)
+   ========================================================================= */
+
+/* Heading: title + date range stacked beside the ◎ mark. */
+.mt-heading-text { min-width: 0; display: grid; gap: 3px; }
+.mt-heading-text h2 { margin: 0; }
+.mt-range { margin: 0; color: #7b8085; font-size: 12px; letter-spacing: .01em; }
+
+/* Status badge (§5.5). Distinguishable without colour: a dot + text label,
+   plus a distinct tint per state so it never relies on hue alone (§16.4). */
+.mt-facts { align-items: center; }
+.mt-facts .mt-status { display: inline-flex; align-items: center; gap: 7px; }
+.mt-status i { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.mt-facts .mt-status-current { color: #2c6842; background: #e8f3e9; border-color: #d3e6d6; }
+.mt-facts .mt-status-upcoming { color: #245ba7; background: #eaf1fb; border-color: #d4e2f4; }
+.mt-facts .mt-status-updated { color: #245ba7; background: #eaf1fb; border-color: #d4e2f4; }
+.mt-facts .mt-status-review { color: #7a5c16; background: #fff2cf; border-color: #efe0b4; }
+.mt-facts .mt-status-completed { color: #555b60; background: #f0eeea; border-color: #e2ddd5; }
+.mt-status-current i { animation: mt-pulse 2.4s ease-in-out infinite; }
+@keyframes mt-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .mt-status-current i { animation: none; } }
+
+/* Progress strip: Week X of Y · phase · as-of date. */
+.mt-progress {
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 12px;
+  padding: 12px 24px; border-top: 1px solid #ebe8e3; background: #fbfaf8;
+}
+.mt-progress-week { color: var(--ink); font-size: 13px; font-weight: 750; letter-spacing: -.01em; }
+.mt-progress-week em { color: #9a9da1; font-style: normal; font-weight: 500; }
+.mt-progress-phase {
+  display: inline-flex; align-items: center; padding: 3px 11px;
+  border-radius: 999px; background: #eef1f5; color: #33465e; font-size: 11px; font-weight: 700;
+}
+.mt-progress-asof { margin-left: auto; color: #8a8d90; font-size: 11px; white-space: nowrap; }
+
+/* Eyebrow labels (PRIMARY GOAL / SUPPORTING / … / PLAN DETAILS). Scoped to
+   .mt-card so it outranks `.proposal-section h3`. */
+.mt-card .mt-eyebrow {
+  margin: 0 0 10px; color: #8a9099; font-size: 10.5px; font-weight: 800;
+  letter-spacing: .12em; text-transform: uppercase; line-height: 1.2;
+}
+.mt-card .mt-eyebrow-primary { color: var(--accent); }
+
+/* Primary Goal — highest visual weight (§5.3). */
+.mt-primary-section { padding-block: 20px; }
+.mt-primary { display: grid; gap: 9px; }
+.mt-primary-label {
+  margin: 0; color: var(--ink); font-size: 27px; font-weight: 800;
+  line-height: 1.18; letter-spacing: -.025em; overflow-wrap: anywhere;
+}
+.mt-primary-meta { display: flex; flex-wrap: wrap; gap: 6px 20px; }
+.mt-baseline, .mt-testdate {
+  display: inline-flex; align-items: center; gap: 7px;
+  color: #6b7278; font-size: 12.5px; line-height: 1.4;
+}
+.mt-baseline::before, .mt-testdate::before {
+  content: ""; flex: 0 0 auto; width: 5px; height: 5px; border-radius: 50%; background: #c9c3ba;
+}
+.mt-testdate::before { background: var(--accent); opacity: .7; }
+.mt-fallback { margin: 0; color: #5c636a; font-size: 14px; line-height: 1.55; }
+
+/* Plan details disclosure (§5.4). Reset the global pill-button chrome so it
+   reads as a section header with a +/- affordance. */
+.mt-details-toggle {
+  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 0; border: 0; border-radius: 0; background: transparent; color: inherit;
+  font-weight: 400; text-align: left; cursor: pointer;
+}
+.mt-details-toggle .mt-eyebrow { margin: 0; }
+.mt-details-toggle:hover .mt-eyebrow { color: #5c636a; }
+.mt-toggle-icon {
+  flex: 0 0 auto; width: 24px; height: 24px; display: grid; place-items: center;
+  border: 1px solid var(--line); border-radius: 50%; background: #fff;
+  color: #536171; font-size: 16px; line-height: 1; transition: border-color .15s, color .15s;
+}
+.mt-details-toggle:hover .mt-toggle-icon { border-color: #cfc9c0; color: var(--ink); }
+.mt-details-toggle:focus-visible { outline: 2px solid #567fb8; outline-offset: 4px; border-radius: 6px; }
+.mt-details { display: grid; gap: 18px; margin-top: 16px; }
+
+/* Supporting / Maintenance two-column layout. */
+.mt-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 26px; }
+.mt-column { min-width: 0; }
+.mt-column .mt-eyebrow { margin-bottom: 11px; }
+.mt-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.mt-list li { position: relative; display: grid; gap: 2px; padding-left: 16px; }
+.mt-list li::before {
+  content: ""; position: absolute; left: 0; top: 7px; width: 6px; height: 6px;
+  border-radius: 50%; background: #c9c3ba;
+}
+.mt-list-maintenance li::before { background: #dcc79a; }
+.mt-list strong { color: #2b3238; font-size: 13px; font-weight: 700; }
+.mt-list span { color: #777c81; font-size: 12px; line-height: 1.45; }
+
+/* Constraints (chip style) + Coordination Strategy. */
+.mt-block { display: grid; gap: 10px; }
+.mt-constraints { display: flex; flex-wrap: wrap; gap: 8px; }
+.mt-constraint {
+  padding: 6px 12px; border: 1px solid #e2ddd5; border-radius: 999px;
+  background: #f5f3ef; color: #4b5156; font-size: 12px; font-weight: 650; line-height: 1.3;
+}
+.mt-coordination {
+  margin: 0; padding: 13px 16px; border-left: 3px solid var(--accent);
+  border-radius: 0 9px 9px 0; background: #fbf7f5;
+  color: #5c534b; font-size: 12.5px; line-height: 1.6;
+}
+
+/* =========================================================================
+   Progression by Domain (§6)
+   ========================================================================= */
+
+.pdb-card { margin-bottom: 14px; }
+.pdb-heading { margin: 0 0 15px; color: #203653; font-size: 14px; }
+.pdb-domains { display: grid; gap: 20px; }
+.pdb-domain { min-width: 0; }
+.pdb-domain h4 { display: flex; align-items: center; gap: 8px; margin: 0 0 9px; color: #263955; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+.pdb-track { display: flex; align-items: stretch; min-width: 640px; gap: 9px; }
+.pdb-domain { overflow-x: auto; padding-bottom: 3px; }
+.pdb-phase {
+  position: relative; flex-basis: 0; min-width: 150px; overflow: hidden;
+  display: grid; align-content: start; gap: 5px;
+  padding: 15px 15px 14px; border: 1px solid #e8e5e0; border-radius: 12px;
+  background: #fff; color: inherit; font: inherit; font-weight: 400;
+  text-align: left; cursor: pointer;
+  transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+}
+.pdb-phase::before { content: ""; position: absolute; inset: 0 0 auto; height: 3px; background: var(--pt-tone, #c9c3ba); }
+.pt-tone-0 { --pt-tone: #4aa65d; }
+.pt-tone-1 { --pt-tone: #ff6a38; }
+.pt-tone-2 { --pt-tone: #f2a600; }
+.pt-tone-3 { --pt-tone: #567fb8; }
+.pdb-phase-name { color: #223650; font-size: 13px; font-weight: 750; letter-spacing: -.01em; }
+.pdb-phase-range { color: #687487; font-size: 11px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.pdb-phase-focus {
+  color: #7b828c; font-size: 11px; line-height: 1.45;
+  display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.pdb-phase ul { margin: 4px 0 0; padding-left: 17px; color: #4a4f55; font-size: 11px; line-height: 1.45; }
+.pdb-current {
+  display: inline-flex; align-items: center; gap: 5px; width: fit-content; margin-top: 5px;
+  padding: 3px 9px; border-radius: 999px; background: var(--ink); color: #fff;
+  font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase;
+}
+.pdb-phase[aria-current="true"] {
+  border-color: var(--pt-tone, #4aa65d);
+  box-shadow: inset 0 0 0 1px var(--pt-tone, #4aa65d), 0 4px 14px rgba(25, 27, 29, .05);
+  background: #fcfdff;
+}
+.pdb-phase:hover { border-color: #d3cdc4; transform: translateY(-1px); box-shadow: 0 5px 16px rgba(25, 27, 29, .06); }
+.pdb-phase[aria-current="true"]:hover { border-color: var(--pt-tone, #4aa65d); box-shadow: inset 0 0 0 1px var(--pt-tone, #4aa65d), 0 5px 16px rgba(25, 27, 29, .07); }
+.pdb-phase:focus-visible { outline: 2px solid #567fb8; outline-offset: 2px; }
+
+/* =========================================================================
+   Narrow-window responsiveness (§5.4, §6, §17)
+   ========================================================================= */
+@media (max-width: 1080px) {
+  .mt-columns { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .mt-primary-label { font-size: 23px; }
+}
+@media (max-width: 720px) {
+  .mt-primary-label { font-size: 20px; }
+  .mt-progress { gap: 6px 10px; }
+  .mt-progress-asof { margin-left: 0; width: 100%; }
+  .pdb-track { min-width: 540px; }
+}

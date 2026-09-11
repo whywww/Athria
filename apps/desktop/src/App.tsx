@@ -1,21 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { expandSchedule } from "@athria/core";
 import { api, getIntervalsStatus, getMcpStatus, getXunjiStatus, importXunjiSkill, syncIntervals, syncXunji, testIntervals } from "./api";
 import { mcpConfig, mcpGuides } from "./mcp-guides";
 import {
-  dashboardPages, deviceTimezone, formatDateTime, formatDistance, formatDuration, friendlyLabel, isUntouchedDefaultProfile,
-  isPlanDraftApproved, primaryPlanDraft, profilePayload, proposalChanges, referencedTemplates, resolveSelectedTemplate, timezoneOptions, validationMessage,
-  catalogExercise, customExercise, editableTemplate, templateComponent, templateEditorErrors,
+  dashboardPages, deviceTimezone, formatDateTime, formatDistance, formatDuration, formatTimezoneLabel, formatTrainingRhythm, friendlyLabel, isUntouchedDefaultProfile,
+  isPlanDraftApproved, primaryPlanDraft, profilePayload, proposalChanges, timezoneOptions, PREFERENCE_MAX_LENGTH,
   type AthleteProfile, type CurrentPlan, type DoctorResult, type ExerciseDefinition, type HevyImportStatus, type ImportPreview,
-  type ImportResult, type NextTrainingDay, type PlanComponent, type PlanExercise, type PlanValidation, type PlanVersion, type ProfileProposal,
-  type SessionTemplate, type StoredDraft, type StoredSessionTemplate, type TrainingSummary, type XunjiConnectionStatus,
-  type Mesocycle, type TemplateComponentDomain,
+  type ImportResult, type NextTrainingDay, type PlanVersion, type ProfileProposal,
+  type StoredDraft, type StoredSessionTemplate, type TrainingSummary, type XunjiConnectionStatus,
 } from "./view-models";
+import { Card, ChoiceChip, Empty, ErrorBanner, Loading, ValidationSummary, formatRest, weekdays } from "./components";
+import { CurrentPlanPage, NextTrainingDayCard } from "./plan/CurrentPlanPage";
+import { localDateForTimezone } from "./plan/view";
 
 type Page = (typeof dashboardPages)[number]["id"];
-const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const commonGoals = ["general_fitness", "build_strength", "build_muscle", "improve_endurance", "fat_loss"];
 
 function goalTone(goal: string) {
@@ -29,11 +28,6 @@ function goalTone(goal: string) {
   }
 }
 
-const Card = ({ title, children, className = "", action }: { title: string; children: React.ReactNode; className?: string; action?: React.ReactNode }) => <section className={`card ${className}`}><div className="card-heading"><h2>{title}</h2>{action}</div>{children}</section>;
-const ErrorBanner = ({ error }: { error: unknown }) => error ? <div className="error" role="alert">{error instanceof Error ? error.message : String(error)}</div> : null;
-const Loading = () => <p className="muted">Loading…</p>;
-const Empty = ({ children }: { children: React.ReactNode }) => <div className="empty">{children}</div>;
-
 function ServiceStatus() {
   const health = useQuery({ queryKey: ["doctor"], queryFn: () => api<DoctorResult>("/api/system/doctor"), retry: 3, retryDelay: 500 });
   const label = health.isPending ? "Starting…" : health.isError ? "Service unavailable" : "Local service";
@@ -42,8 +36,14 @@ function ServiceStatus() {
 
 function Overview() {
   const query = useQuery({ queryKey: ["summary", 7], queryFn: () => api<TrainingSummary>("/api/summary?days=7") });
+  const profile = useQuery({ queryKey: ["profile"], queryFn: () => api<AthleteProfile>("/api/profile") });
+  const today = profile.data ? localDateForTimezone(profile.data.timezone) : null;
+  // P0-5: Today/Next surfaces the next training day on Overview (§3, §19).
+  const nextDay = useQuery({ queryKey: ["next-training-day", today], queryFn: () => api<NextTrainingDay>(`/api/plans/next-training-day?onOrAfterDate=${today}`), enabled: today !== null });
+  const templates = useQuery({ queryKey: ["templates"], queryFn: () => api<StoredSessionTemplate[]>("/api/templates") });
+  const plan = useQuery({ queryKey: ["current-plan"], queryFn: () => api<CurrentPlan | null>("/api/plans/current") });
   if (query.isPending) return <Loading/>;
-  if (query.isError) return <ErrorBanner error={query.error}/>;
+  if (query.isError || profile.isError) return <ErrorBanner error={query.error ?? profile.error}/>;
   const summary = query.data;
   const incomplete = summary.metrics.strength.workingSets.dataQuality.completeness < 1 || summary.metrics.endurance.distanceMeters.dataQuality.completeness < 1;
   return <>
@@ -56,11 +56,8 @@ function Overview() {
     </div>
     {summary.sessionCount === 0 && <Empty>Import or sync a workout to see your weekly overview.</Empty>}
     {summary.sessionCount > 0 && incomplete && <div className="notice">Some workout details were unavailable, so one or more totals may be incomplete.</div>}
+    {plan.data && !nextDay.isPending && <NextTrainingDayCard value={nextDay.data} templates={templates.data ?? []} plan={plan.data} />}
   </>;
-}
-
-function ChoiceChip({ selected, onClick, children }: { selected: boolean; onClick: () => void; children: React.ReactNode }) {
-  return <button type="button" className={`chip ${selected ? "selected" : ""}`} aria-pressed={selected} onClick={onClick}>{children}</button>;
 }
 
 function GoalTag({ goal, selected = true, onClick, onDelete }: { goal: string; selected?: boolean; onClick?: () => void; onDelete?: () => void }) {
@@ -104,12 +101,13 @@ function Profile() {
   if (!profile) return <Loading/>;
 
   const toggleList = (field: "goals" | "equipment", value: string) => setForm((current) => current ? { ...current, [field]: current[field].includes(value) ? current[field].filter((item) => item !== value) : [...current[field], value] } : current);
-  const toggleTrainingDay = (weekday: number) => setForm((current) => current ? { ...current, trainingDays: current.trainingDays.includes(weekday) ? current.trainingDays.filter((day) => day !== weekday) : [...current.trainingDays, weekday].sort((a, b) => a - b) } : current);
-  const beginEdit = () => { setSaved(false); setCustomGoal(""); setAvailableGoals([...new Set([...commonGoals, ...profile.goals])]); setForm({ ...profile, timezone: isUntouchedDefaultProfile(profile) ? deviceTimezone() : profile.timezone, goals: [...profile.goals], trainingDays: [...profile.trainingDays], equipment: [...profile.equipment] }); setEditing(true); };
+  const toggleTrainingDay = (weekday: number) => setForm((current) => current?.trainingRhythm.kind === "fixed_week" ? { ...current, trainingRhythm: { ...current.trainingRhythm, days: current.trainingRhythm.days.includes(weekday) ? current.trainingRhythm.days.filter((day) => day !== weekday) : [...current.trainingRhythm.days, weekday].sort((a, b) => a - b) } } : current);
+  const beginEdit = () => { setSaved(false); setCustomGoal(""); setAvailableGoals([...new Set([...commonGoals, ...profile.goals])]); setForm({ ...profile, timezone: isUntouchedDefaultProfile(profile) ? deviceTimezone() : profile.timezone, goals: [...profile.goals], trainingRhythm: profile.trainingRhythm.kind === "fixed_week" ? { ...profile.trainingRhythm, days: [...profile.trainingRhythm.days] } : { ...profile.trainingRhythm }, equipment: [...profile.equipment] }); setEditing(true); };
   const cancelEdit = () => { setForm(null); setCustomGoal(""); setAvailableGoals(commonGoals); setEditing(false); save.reset(); };
   const pending = proposals.data?.filter((item) => item.status === "pending") ?? [];
 
-  const profileActions = editing && form ? <div className="profile-actions"><button type="button" className="secondary compact" onClick={cancelEdit}>Cancel</button><button type="button" className="compact" disabled={save.isPending || form.goals.length === 0} onClick={() => { setSaved(false); save.mutate(profilePayload(profile, form)); }}>{save.isPending ? "Saving…" : "Save"}</button></div> : <button type="button" className="secondary compact edit-button" onClick={beginEdit}><span aria-hidden="true">✎</span>Edit</button>;
+  const rhythmValid = !form || (form.trainingRhythm.kind === "fixed_week" ? form.trainingRhythm.days.length > 0 : form.trainingRhythm.kind === "flexible_week" ? form.trainingRhythm.minDaysPerWeek >= 1 && form.trainingRhythm.minDaysPerWeek <= form.trainingRhythm.targetDaysPerWeek && form.trainingRhythm.targetDaysPerWeek <= form.trainingRhythm.maxDaysPerWeek && form.trainingRhythm.maxDaysPerWeek <= 7 : form.trainingRhythm.intervalDays >= 1 && form.trainingRhythm.intervalDays <= 30);
+  const profileActions = editing && form ? <div className="profile-actions"><select className="profile-timezone-select" aria-label="Time zone" value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })}>{timezoneOptions(form.timezone).map((zone) => <option key={zone} value={zone}>{zone}{zone === deviceTimezone() ? " (device)" : ""}</option>)}</select><button type="button" className="secondary compact" onClick={cancelEdit}>Cancel</button><button type="button" className="compact" disabled={save.isPending || form.goals.length === 0 || !rhythmValid} onClick={() => { setSaved(false); save.mutate(profilePayload(profile, form)); }}>{save.isPending ? "Saving…" : "Save"}</button></div> : <div className="profile-actions"><span className="profile-timezone-pill">{formatTimezoneLabel(profile.timezone)}</span><button type="button" className="secondary compact edit-button" onClick={beginEdit}><span aria-hidden="true">✎</span>Edit</button></div>;
 
   return <div className="profile-page">
     <Card title="Training Profile" className={`profile-board ${editing ? "is-editing" : ""}`} action={profileActions}>
@@ -119,6 +117,7 @@ function Profile() {
     </Card>
     <Card title="Agent Suggestions" className="profile-suggestions" action={pending.length > 0 ? <button disabled={approve.isPending} onClick={() => approve.mutate(pending[0]!.id)}>✓ Approve</button> : undefined}>
       <p className="card-subtitle">Personalized recommendations to optimize your training.</p>
+      <AgentManagedDetails profile={profile}/>
       {proposals.isPending ? <Loading/> : pending.length === 0 ? <Empty>No suggestions waiting for review.</Empty> : pending.map((proposal) => <article className="proposal" key={proposal.id}><div className="suggestion-type"><span aria-hidden="true">☆</span><strong>Suggested change</strong></div><div className="suggestion-content"><div><strong>Recommended profile update</strong><p>{proposal.rationale}</p></div><div className="change-list">{proposalChanges(profile, proposal.patch).map((change) => <div key={change.label}><strong>{change.label}</strong><span>Before　{change.before}</span><span className="arrow">→</span><span>After　{change.after}</span></div>)}</div>{pending.length > 1 && <button disabled={approve.isPending} onClick={() => approve.mutate(proposal.id)}>Approve changes</button>}</div></article>)}
       <ErrorBanner error={proposals.error ?? approve.error}/>
     </Card>
@@ -130,23 +129,28 @@ function EditableProfileBoard({ profile, form, setForm, customGoal, setCustomGoa
     setAvailableGoals((current) => current.filter((item) => item !== goal));
     setForm((current) => current ? { ...current, goals: current.goals.filter((item) => item !== goal) } : current);
   };
+  const changeRhythm = (kind: AthleteProfile["trainingRhythm"]["kind"]) => setForm((current) => current ? { ...current, trainingRhythm: kind === "fixed_week" ? { kind, days: [0, 2, 4] } : kind === "flexible_week" ? { kind, targetDaysPerWeek: 4, minDaysPerWeek: 3, maxDaysPerWeek: 5 } : { kind, intervalDays: 2 } } : current);
+  const updateFlexibleRhythm = (field: "targetDaysPerWeek" | "minDaysPerWeek" | "maxDaysPerWeek", value: number) => setForm((current) => {
+    if (current?.trainingRhythm.kind !== "flexible_week") return current;
+    const rhythm = { ...current.trainingRhythm, [field]: value };
+    if (field === "targetDaysPerWeek") { rhythm.minDaysPerWeek = Math.min(rhythm.minDaysPerWeek, value); rhythm.maxDaysPerWeek = Math.max(rhythm.maxDaysPerWeek, value); }
+    if (field === "minDaysPerWeek") { rhythm.targetDaysPerWeek = Math.max(rhythm.targetDaysPerWeek, value); rhythm.maxDaysPerWeek = Math.max(rhythm.maxDaysPerWeek, value); }
+    if (field === "maxDaysPerWeek") { rhythm.targetDaysPerWeek = Math.min(rhythm.targetDaysPerWeek, value); rhythm.minDaysPerWeek = Math.min(rhythm.minDaysPerWeek, value); }
+    return { ...current, trainingRhythm: rhythm };
+  });
+  const updateIntervalRhythm = (intervalDays: number) => setForm((current) => current?.trainingRhythm.kind === "interval" ? { ...current, trainingRhythm: { ...current.trainingRhythm, intervalDays } } : current);
   return <div className="profile-content profile-editor">
-    <section className="profile-goals-panel"><span className="profile-icon coral" aria-hidden="true">◎</span><div className="editable-panel-content"><strong>Training Goals</strong><div className="goal-tags">{availableGoals.map((goal) => commonGoals.includes(goal) ? <GoalTag key={goal} goal={goal} selected={form.goals.includes(goal)} onClick={() => toggleList("goals", goal)}/> : <GoalTag key={goal} goal={goal} selected={form.goals.includes(goal)} onClick={() => toggleList("goals", goal)} onDelete={() => deleteCustomGoal(goal)}/>)}</div><div className="inline-input"><input aria-label="Custom training goal" placeholder="Add another goal" value={customGoal} onChange={(event) => setCustomGoal(event.target.value)}/><button type="button" className="secondary" disabled={!customGoal.trim()} onClick={() => { const goal = customGoal.trim(); setAvailableGoals((current) => current.includes(goal) ? current : [...current, goal]); setForm((current) => current && !current.goals.includes(goal) ? { ...current, goals: [...current.goals, goal] } : current); setCustomGoal(""); }}>Add</button></div></div></section>
-    <div className="profile-metrics">
-      <div><span className="profile-icon coral" aria-hidden="true">🏋️</span><label>Strength / week<select value={form.weeklyStrengthSessions} onChange={(event) => setForm({ ...form, weeklyStrengthSessions: Number(event.target.value) })}>{Array.from({ length: 8 }, (_, value) => <option key={value} value={value}>{value} sessions</option>)}</select></label></div>
-      <div><span className="profile-icon yellow" aria-hidden="true">🏃</span><label>Endurance / week<select value={form.weeklyEnduranceSessions} onChange={(event) => setForm({ ...form, weeklyEnduranceSessions: Number(event.target.value) })}>{Array.from({ length: 8 }, (_, value) => <option key={value} value={value}>{value} sessions</option>)}</select></label></div>
-      <div><span className="profile-icon green" aria-hidden="true">◷</span><label>Max session length<select value={form.maxSessionMinutes} onChange={(event) => setForm({ ...form, maxSessionMinutes: Number(event.target.value) })}>{[15, 30, 45, 60, 75, 90, 120, 180, 240].map((value) => <option key={value} value={value}>{value} min</option>)}</select></label></div>
-    </div>
-    <div className="profile-detail-layout">
-      <div className="profile-detail-column">
-        <section className="profile-section"><strong>♧　Available equipment</strong><div className="chips">{equipmentOptions.map((item) => <ChoiceChip key={item} selected={form.equipment.includes(item)} onClick={() => toggleList("equipment", item)}>{friendlyLabel(item)}</ChoiceChip>)}</div></section>
-        <section className="profile-section timezone-section"><label>◉　Time zone<select value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })}>{timezoneOptions(form.timezone).map((zone) => <option key={zone} value={zone}>{zone}{zone === deviceTimezone() ? " (device)" : ""}</option>)}</select></label><label>Training priority<select value={form.priority} onChange={(event) => setForm({ ...form, priority: event.target.value as AthleteProfile["priority"] })}><option value="balanced">Balanced</option><option value="strength">Strength</option><option value="endurance">Endurance</option></select></label></section>
-      </div>
-      <div className="profile-detail-column">
-        <section className="profile-section training-days"><strong>▣　Training days <small>(Optional)</small></strong><div className="day-list">{weekdays.map((day, index) => <button type="button" key={day} className={form.trainingDays.includes(index) ? "selected" : ""} aria-pressed={form.trainingDays.includes(index)} onClick={() => toggleTrainingDay(index)}>{day.slice(0, 3)}{form.trainingDays.includes(index) ? " ✓" : ""}</button>)}</div></section>
-        <AgentManagedDetails profile={profile}/>
-      </div>
-    </div>
+    <section className="profile-top-summary">
+      <section className="profile-goals-panel"><span className="profile-icon coral" aria-hidden="true">◎</span><div className="editable-panel-content"><strong>Training Goals</strong><div className="goal-tags">{availableGoals.map((goal) => commonGoals.includes(goal) ? <GoalTag key={goal} goal={goal} selected={form.goals.includes(goal)} onClick={() => toggleList("goals", goal)}/> : <GoalTag key={goal} goal={goal} selected={form.goals.includes(goal)} onClick={() => toggleList("goals", goal)} onDelete={() => deleteCustomGoal(goal)}/>)}</div><div className="inline-input"><input aria-label="Custom training goal" placeholder="Add another goal" value={customGoal} onChange={(event) => setCustomGoal(event.target.value)}/><button type="button" className="secondary" disabled={!customGoal.trim()} onClick={() => { const goal = customGoal.trim(); setAvailableGoals((current) => current.includes(goal) ? current : [...current, goal]); setForm((current) => current && !current.goals.includes(goal) ? { ...current, goals: [...current.goals, goal] } : current); setCustomGoal(""); }}>Add</button></div></div></section>
+      <div className="profile-summary-item"><label>Preferences<span className="preference-input"><input type="text" maxLength={PREFERENCE_MAX_LENGTH} value={form.preference} onChange={(event) => setForm({ ...form, preference: event.target.value })} placeholder="用一句话描述你的训练偏好"/><small>{form.preference.length}/{PREFERENCE_MAX_LENGTH}</small></span></label></div>
+      <div className="profile-summary-item"><span>▣　Training rhythm</span><div className="profile-rhythm-options">
+        <div className="profile-rhythm-option"><label><input type="radio" name="training-rhythm" checked={form.trainingRhythm.kind === "fixed_week"} onChange={() => changeRhythm("fixed_week")}/><span>Fixed week</span></label>{form.trainingRhythm.kind === "fixed_week" && <div className="day-list">{weekdays.map((day, index) => <button type="button" key={day} className={form.trainingRhythm.kind === "fixed_week" && form.trainingRhythm.days.includes(index) ? "selected" : ""} aria-pressed={form.trainingRhythm.kind === "fixed_week" && form.trainingRhythm.days.includes(index)} onClick={() => toggleTrainingDay(index)}>{day.slice(0, 3)}{form.trainingRhythm.kind === "fixed_week" && form.trainingRhythm.days.includes(index) ? " ✓" : ""}</button>)}</div>}</div>
+        <div className="profile-rhythm-option"><label><input type="radio" name="training-rhythm" checked={form.trainingRhythm.kind === "flexible_week"} onChange={() => changeRhythm("flexible_week")}/><span>Flexible week</span></label>{form.trainingRhythm.kind === "flexible_week" && <div className="rhythm-parameters"><label>Target days<input type="number" min="1" max="7" value={form.trainingRhythm.targetDaysPerWeek} onChange={(event) => updateFlexibleRhythm("targetDaysPerWeek", Number(event.target.value))}/></label><label>Min<input type="number" min="1" max="7" value={form.trainingRhythm.minDaysPerWeek} onChange={(event) => updateFlexibleRhythm("minDaysPerWeek", Number(event.target.value))}/></label><label>Max<input type="number" min="1" max="7" value={form.trainingRhythm.maxDaysPerWeek} onChange={(event) => updateFlexibleRhythm("maxDaysPerWeek", Number(event.target.value))}/></label></div>}</div>
+        <div className="profile-rhythm-option"><label><input type="radio" name="training-rhythm" checked={form.trainingRhythm.kind === "interval"} onChange={() => changeRhythm("interval")}/><span>Intervals</span></label>{form.trainingRhythm.kind === "interval" && <span className="interval-parameter">Every <input aria-label="Interval days" type="number" min="1" max="30" value={form.trainingRhythm.intervalDays} onChange={(event) => updateIntervalRhythm(Number(event.target.value))}/> days</span>}</div>
+      </div></div>
+      <div className="profile-summary-item"><label>Max session length<select value={form.maxSessionMinutes} onChange={(event) => setForm({ ...form, maxSessionMinutes: Number(event.target.value) })}>{[15, 30, 45, 60, 75, 90, 120, 180, 240].map((value) => <option key={value} value={value}>{value} min</option>)}</select></label></div>
+    </section>
+    <section className="profile-section"><strong>♧　Available equipment</strong><div className="chips">{equipmentOptions.map((item) => <ChoiceChip key={item} selected={form.equipment.includes(item)} onClick={() => toggleList("equipment", item)}>{friendlyLabel(item)}</ChoiceChip>)}</div></section>
   </div>;
 }
 
@@ -157,28 +161,25 @@ function ReadonlyTags({ values, empty = "None" }: { values: string[]; empty?: st
 function AgentManagedDetails({ profile }: { profile: AthleteProfile }) {
   const prohibited = profile.strengthConstraints.filter((item) => item.type === "prohibit_movement_pattern").map((item) => item.movementPattern);
   const excluded = profile.strengthConstraints.filter((item) => item.type === "exclude_exercise").map((item) => item.canonicalKey);
-  return <div className="agent-managed"><div className="detail-heading"><strong><span aria-hidden="true">♢</span> Agent-managed</strong></div><div className="detail-grid"><div><small>◌　Recovery interval</small><span>{profile.explicitRecoveryHours === null ? "Not set" : `${profile.explicitRecoveryHours} hours between hard sessions`}</span></div><div><small>☷　Constraint notes (not Core-enforced)</small><span>{profile.constraintNotes.length ? profile.constraintNotes.join(" · ") : "None"}</span></div><div><small>⊘　Prohibited movement patterns</small><span>{prohibited.length ? prohibited.map(friendlyLabel).join(" · ") : "None"}</span></div><div><small>⊖　Excluded canonical exercises</small><span>{excluded.length ? excluded.map(friendlyLabel).join(" · ") : "None"}</span></div></div></div>;
+  const items = [
+    { label: "Recovery interval", value: profile.explicitRecoveryHours === null ? "" : `${profile.explicitRecoveryHours} hours between hard sessions` },
+    { label: "Constraint notes", value: profile.constraintNotes.join(" · ") },
+    { label: "Prohibited movement patterns", value: prohibited.map(friendlyLabel).join(" · ") },
+    { label: "Excluded exercises", value: excluded.map(friendlyLabel).join(" · ") },
+  ].filter((item) => item.value.trim() !== "");
+  if (!items.length) return null;
+  return <ul className="agent-managed-list">{items.map((item) => <li key={item.label}><strong>{item.label}</strong> {item.value}</li>)}</ul>;
 }
 
 function ProfileBoard({ profile }: { profile: AthleteProfile }) {
-  const selectedDays = new Set(profile.trainingDays);
   return <div className="profile-content">
-    <section className="profile-goals-panel"><span className="profile-icon coral" aria-hidden="true">◎</span><div><strong>Training Goals</strong>{profile.goals.length ? <div className="goal-tags">{profile.goals.map((goal) => <GoalTag key={goal} goal={goal}/>)}</div> : <p>No goals selected</p>}</div></section>
-    <div className="profile-metrics">
-      <div><span className="profile-icon coral" aria-hidden="true">🏋️</span><div><span>Strength / week</span><strong>{profile.weeklyStrengthSessions}</strong><small>sessions</small></div></div>
-      <div><span className="profile-icon yellow" aria-hidden="true">🏃</span><div><span>Endurance / week</span><strong>{profile.weeklyEnduranceSessions}</strong><small>sessions</small></div></div>
-      <div><span className="profile-icon green" aria-hidden="true">◷</span><div><span>Max session length</span><strong>{profile.maxSessionMinutes}</strong><small>min</small></div></div>
-    </div>
-    <div className="profile-detail-layout">
-      <div className="profile-detail-column">
-        <section className="profile-section"><strong>♧　Available equipment</strong><ReadonlyTags values={profile.equipment}/></section>
-        <section className="profile-section timezone-section"><strong>◉　Time zone</strong><span>{profile.timezone}</span></section>
-      </div>
-      <div className="profile-detail-column">
-        <section className="profile-section training-days"><strong>▣　Training days <small>(Optional)</small></strong><div className="day-list">{weekdays.map((day, index) => <span key={day} className={selectedDays.has(index) ? "selected" : ""}>{day.slice(0, 3)}{selectedDays.has(index) ? " ✓" : ""}</span>)}</div></section>
-        <AgentManagedDetails profile={profile}/>
-      </div>
-    </div>
+    <section className="profile-top-summary">
+      <section className="profile-goals-panel"><span className="profile-icon coral" aria-hidden="true">◎</span><div><strong>Training Goals</strong>{profile.goals.length ? <div className="goal-tags">{profile.goals.map((goal) => <GoalTag key={goal} goal={goal}/>)}</div> : <p>No goals selected</p>}</div></section>
+      <div className="profile-summary-item"><span>Preferences</span><strong>{profile.preference || "Not set"}</strong></div>
+      <div className="profile-summary-item"><span>Training rhythm</span><strong>{formatTrainingRhythm(profile.trainingRhythm)}</strong></div>
+      <div className="profile-summary-item"><span>Max session length</span><strong>{profile.maxSessionMinutes} min</strong></div>
+    </section>
+    <section className="profile-section"><strong>♧　Available equipment</strong><ReadonlyTags values={profile.equipment}/></section>
   </div>;
 }
 
@@ -230,21 +231,6 @@ function Timeline() {
   return <Card title="Training timeline"><ErrorBanner error={query.error}/>{query.isPending ? <Loading/> : !query.data?.length ? <Empty>No workouts imported yet.</Empty> : <div className="timeline">{query.data.map((item) => <article key={item.id}><strong>{item.name}</strong><span>{formatDateTime(item.startAt)} · {item.domains.length ? item.domains.map(friendlyLabel).join(" + ") : "Unclassified"} · {formatDuration(item.durationMinutes)}</span></article>)}</div>}</Card>;
 }
 
-function ValidationSummary({ validation }: { validation: PlanValidation }) {
-  const blockers = validation.results.filter((item) => item.enforcement === "blocker" && (item.status === "fail" || item.status === "unknown"));
-  const advisories = validation.results.filter((item) => item.enforcement === "advisory" && item.status !== "pass" && item.status !== "not_applicable");
-  const unknown = validation.results.filter((item) => item.status === "unknown");
-  const coverage = validation.coverage;
-  const percent = (resolved: number, total: number) => total ? Math.round(resolved / total * 100) : 100;
-  return <div className={`validation ${blockers.length ? "blocked" : advisories.length ? "warning" : "valid"}`}><strong>{blockers.length ? "Changes required before approval" : advisories.length ? "Ready with recommendations" : "Plan checks passed"}</strong>{coverage && <span>Hard checks resolved: {coverage.hardChecksResolved}/{coverage.hardChecksTotal} · Classification coverage: movement {percent(coverage.movementFactsResolved, coverage.movementFactsTotal)}%, muscle {percent(coverage.muscleFactsResolved, coverage.muscleFactsTotal)}%, equipment {percent(coverage.equipmentFactsResolved, coverage.equipmentFactsTotal)}%</span>}{blockers.map((item, index) => <span key={`blocker-${item.reasonCode}-${index}`}>Blocker · {validationMessage(item)}</span>)}{advisories.map((item, index) => <span key={`advisory-${item.reasonCode}-${index}`}>Advisory · {validationMessage(item)}</span>)}{unknown.filter((item) => item.enforcement !== "blocker").map((item, index) => <span key={`unknown-${item.reasonCode}-${index}`}>Unknown · {validationMessage(item)}</span>)}{validation.dataGaps.length > 0 && <span>Missing information: {validation.dataGaps.map((gap) => `${friendlyLabel(gap.factPath)} (${friendlyLabel(gap.resolution)})`).join(", ")}</span>}</div>;
-}
-
-function formatRest(seconds: number): string {
-  if (seconds < 60) return `${seconds} sec`;
-  const minutes = seconds / 60;
-  return Number.isInteger(minutes) ? `${minutes} min` : `${seconds} sec`;
-}
-
 function MesocycleProposal({ item }: { item: StoredDraft }) {
   const plan = item.draft;
   const mesocycle = plan.mesocycle;
@@ -265,34 +251,12 @@ function MesocycleProposal({ item }: { item: StoredDraft }) {
       <section className="proposal-section"><h3>Phase Progression</h3><div className="phase-progression">{[...mesocycle.phases].sort((a, b) => a.startWeek - b.startWeek).map((phase, index) => <div className="phase-step" key={phase.id}><span className={`phase-number tone-${index % 4}`}>{index + 1}</span><div><strong>{phase.name}</strong><span>{phase.startWeek === phase.endWeek ? `Week ${phase.startWeek}` : `Weeks ${phase.startWeek}–${phase.endWeek}`}</span><small>{phase.focus}</small></div>{index < mesocycle.phases.length - 1 && <i aria-hidden="true">→</i>}</div>)}</div></section>
       <section className="proposal-section session-templates"><h3>Session Templates</h3><div className="template-tabs" role="tablist" aria-label="Session templates">{mesocycle.sessionTemplates.map((template, index) => <button key={template.id} type="button" role="tab" aria-selected={template.id === selectedTemplate.id} className={template.id === selectedTemplate.id ? "selected" : ""} onClick={() => setSelectedTemplateId(template.id)}><span className={`tone-${index % 4}`}>{String.fromCharCode(65 + index)}</span>{template.name}</button>)}</div>
         <div className="template-summary"><span>{[...domainsFor(selectedTemplate).map(friendlyLabel), ...(selectedTemplate.components.some((component) => component.domain.value === null) ? ["Unclassified component"] : [])].join(" + ")}</span><span>{formatDuration(selectedTemplate.durationMinutes)}</span><span>{friendlyLabel(selectedTemplate.recoveryDemand)} recovery demand</span></div>
-        <div className="conditioning-template"><strong>{selectedTemplate.name}</strong>{selectedTemplate.components.map((component) => <div className="template-component" key={component.id}>{component.prescription.kind === "strength" ? <div className="exercise-table"><div className="exercise-row exercise-header"><span>Classification</span><span className="exercise-cell">Exercise</span><span>Prescription</span><span>Effort</span><span>Rest</span><span>Notes</span></div>{component.prescription.exercises.map((exercise, index) => { const movement = exercise.classification.primaryMovement?.value; return <div className="exercise-row" key={exercise.id}><span>{movement == null ? "-" : friendlyLabel(String(movement))}</span><span className="exercise-cell"><b>{index + 1}</b>{exercise.displayName}</span><span>{exercise.sets} × {exercise.repsMin === exercise.repsMax ? exercise.repsMin : `${exercise.repsMin}–${exercise.repsMax}`}</span><span>{exercise.targetRpe ? `RPE ${exercise.targetRpe}` : "Controlled"}</span><span>{formatRest(exercise.restSeconds)}</span><span className="exercise-notes">{exercise.notes || "—"}</span></div>; })}</div> : <p>{component.prescription.notes || selectedTemplate.intent}</p>}</div>)}</div>
+        <div className="conditioning-template"><strong>{selectedTemplate.name}</strong>{selectedTemplate.components.map((component) => <div className="template-component" key={component.id}>{component.prescription.kind === "strength" ? <div className="exercise-table"><div className="exercise-row exercise-header"><span>Classification</span><span className="exercise-cell">Exercise</span><span>Prescription</span><span>Effort</span><span>Rest</span><span>Notes</span></div>{component.prescription.exercises.map((exercise, index) => { const movement = exercise.classification.primaryMovement?.value; return <div className="exercise-row" key={exercise.id}><span>{movement == null ? "-" : friendlyLabel(String(movement))}</span><span className="exercise-cell"><b>{index + 1}</b>{exercise.displayName}</span><span>{exercise.sets} × {exercise.repsMin === exercise.repsMax ? exercise.repsMin : `${exercise.repsMin}–${exercise.repsMax}`}</span><span>{exercise.targetRpe ? `RPE ${exercise.targetRpe}` : "Controlled"}</span><span>{formatRest(exercise.restSeconds)}</span><span className="exercise-notes">{exercise.notes || "—"}</span></div>; })}</div> : component.prescription.kind === "duration_only" ? <p>{component.prescription.notes || selectedTemplate.intent}</p> : <p>Structured {friendlyLabel(component.prescription.kind)} prescription</p>}</div>)}</div>
       </section>
     </section>
     <details className="adjustment-card"><summary><span className="progression-icon" aria-hidden="true">↗</span><strong>How this plan progresses</strong><span className="progression-preview">{mesocycle.phases.slice(0, 2).map((phase) => phase.focus).join(" · ")}</span><span className="rules-link">View progression & adjustment rules</span></summary><div className="adjustment-content">{mesocycle.adjustmentRules.length ? mesocycle.adjustmentRules.map((rule, index) => <article key={`${rule.trigger}-${index}`}><strong>If {rule.trigger}</strong><span>{rule.action}</span><small>{rule.rationale}</small></article>) : <p>No adjustment rules were supplied.</p>}</div></details>
     <ValidationSummary validation={item.validation}/>
   </>;
-}
-
-function NextTrainingDayCard({ value, templates = [], plan }: { value: NextTrainingDay | undefined; templates?: StoredSessionTemplate[]; plan?: CurrentPlan | null }) {
-  const client = useQueryClient();
-  const day = value?.nextTrainingDay;
-  const [error, setError] = useState<unknown>(); const [busy, setBusy] = useState(false); const [extraTemplateId, setExtraTemplateId] = useState("");
-  const tomorrow = day ? new Date(`${day.scheduledDate}T12:00:00Z`) : null;
-  if (tomorrow) tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-  const [moveDate, setMoveDate] = useState(tomorrow?.toISOString().slice(0, 10) ?? "");
-  useEffect(() => { if (!day) return; const date = new Date(`${day.scheduledDate}T12:00:00Z`); date.setUTCDate(date.getUTCDate() + 1); setMoveDate(date.toISOString().slice(0, 10)); }, [day?.occurrenceId, day?.scheduledDate]);
-  const refresh = async () => { await client.invalidateQueries({ queryKey: ["next-training-day"] }); await client.invalidateQueries({ queryKey: ["current-plan"] }); };
-  const act = async (id: string, update: Record<string, unknown>) => { setBusy(true); setError(undefined); try { await api(`/api/planned-sessions/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ ...update, expectedRevision: day!.revision }) }); await refresh(); } catch (value) { setError(value); } finally { setBusy(false); } };
-  const addSession = async () => {
-    if (!day || !extraTemplateId) return;
-    if (plan?.mesocycle.schedule.kind === "flexible_week" && day.existingSessions.filter((item) => item.status === "planned").length >= plan.mesocycle.schedule.maxSessionsPerWeek && !window.confirm("This adds training beyond the plan's flexible maximum. Add it anyway?")) return;
-    setBusy(true); setError(undefined);
-    try { await api("/api/planned-sessions", { method: "POST", body: JSON.stringify({ clientRequestId: crypto.randomUUID(), scheduledDate: day.scheduledDate, expectedRevision: day.revision, mode: "append", sessions: [{ id: crypto.randomUUID(), templateId: extraTemplateId, overrideReason: "One-off session added in Next Training Day" }] }) }); setExtraTemplateId(""); await refresh(); }
-    catch (value) { setError(value); } finally { setBusy(false); }
-  };
-  if (!day) return <section className="success next-day-complete"><strong>Plan up to date</strong><span>{value?.reasonCode === "PLAN_ENDED" ? "There are no unfinished training sessions remaining in this mesocycle." : "No upcoming training day is currently available."}</span></section>;
-  const pending = day.existingSessions.filter((session) => session.status === "planned");
-  return <section className="mesocycle-card next-training-day"><div className="proposal-heading"><div><span className="proposal-mark" aria-hidden="true">›</span><div><h2>Next Training Day</h2><p>{weekdays[day.dayOfWeek]} · {day.scheduledDate} · Week {day.weekNumber} · {friendlyLabel(day.phaseType)}</p></div></div><span>{day.timezone}</span></div><ErrorBanner error={error}/><div className="session-list">{day.existingSessions.map((session) => <article className={`session-card ${session.status}`} key={session.id}><div className="session-heading"><div><span className="badge">{friendlyLabel(session.status)}</span><h3>{session.name}</h3></div><span>{formatDuration(session.durationMinutes)}</span></div><p>{session.intent}</p>{session.components.map((component) => <div className="next-component" key={component.id}><strong>{component.name}</strong>{component.prescription.kind === "strength" ? <ul>{component.prescription.exercises.map((exercise) => <li key={exercise.id}>{exercise.displayName}<span>{exercise.sets} × {exercise.repsMin === exercise.repsMax ? exercise.repsMin : `${exercise.repsMin}–${exercise.repsMax}`}</span></li>)}</ul> : <span>{component.prescription.notes}</span>}</div>)}{session.status === "planned" && <div className="actions"><button disabled={busy} onClick={() => void act(session.id, { action: "complete" })}>✓ Complete</button><button className="secondary" disabled={busy} onClick={() => void act(session.id, { action: "skip" })}>Skip</button></div>}</article>)}</div>{pending.length > 0 && <div className="next-day-actions"><div><label>Move this training day<input type="date" min={day.scheduledDate} value={moveDate} onChange={(event) => setMoveDate(event.target.value)}/></label><button className="secondary" disabled={busy || !moveDate || moveDate <= day.scheduledDate} onClick={() => void act(pending[0]!.id, { action: "move_occurrence", scheduledDate: moveDate })}>Move day</button></div><div className="next-extra-session"><span>{extraTemplateId ? templates.find((template) => template.id === extraTemplateId)?.name : "Add a one-off session"}</span><TemplatePicker label="Choose template" templates={templates} selected={day.existingSessions.map((session) => session.templateId)} onSelect={setExtraTemplateId}/><button className="secondary" disabled={busy || !extraTemplateId} onClick={() => void addSession()}>Add session</button></div></div>}</section>;
 }
 
 function Plan() {
@@ -313,183 +277,6 @@ function Plan() {
     {loading ? <Loading/> : !selected ? <Empty>There is no Mesocycle Proposal yet. Ask your connected Agent to create and validate one for review.</Empty> : <MesocycleProposal key={selected.draft.id} item={selected}/>}
     {versions.data?.length ? <NextTrainingDayCard value={nextDay.data}/> : null}
   </div>;
-}
-
-const componentDomains: TemplateComponentDomain[] = ["strength", "endurance", "sport_skill", "mind_body", "recovery"];
-const movementPatterns = ["squat", "hinge", "lunge", "horizontal_push", "vertical_push", "horizontal_pull", "vertical_pull", "carry", "rotation", "anti_rotation", "flexion", "extension", "abduction", "adduction", "calf_raise", "isolation", "other"];
-const muscleGroups = ["chest", "upper_back", "back", "lats", "shoulders", "biceps", "triceps", "forearms", "quadriceps", "hamstrings", "glutes", "calves", "core", "spinal_erectors", "hip_flexors", "adductors", "abductors", "full_body", "other"];
-const equipmentTypes = ["bodyweight", "barbell", "dumbbell", "kettlebell", "cable", "machine", "band", "smith_machine", "trap_bar", "ez_bar", "bench", "pull_up_bar", "rings", "suspension", "medicine_ball", "landmine", "sled", "other"];
-
-const emptyTemplate = (): SessionTemplate => ({ id: crypto.randomUUID(), name: "", intent: "", durationMinutes: 45, recoveryDemand: "normal", notes: "", components: [templateComponent("strength")] });
-
-function StrengthComponentEditor({ component, catalog, onChange }: { component: PlanComponent & { prescription: { kind: "strength"; exercises: PlanExercise[] } }; catalog: ExerciseDefinition[]; onChange: (value: PlanComponent) => void }) {
-  const [catalogSearch, setCatalogSearch] = useState("");
-  const catalogBySelection = (value: string) => catalog.find((item) => item.key === value || item.name.toLocaleLowerCase() === value.trim().toLocaleLowerCase());
-  const changeExercises = (exercises: PlanExercise[]) => onChange({ ...component, prescription: { kind: "strength", exercises } });
-  const updateExercise = (id: string, update: (value: PlanExercise) => PlanExercise) => changeExercises(component.prescription.exercises.map((item) => item.id === id ? update(item) : item));
-  const moveExercise = (index: number, direction: -1 | 1) => {
-    const destination = index + direction;
-    if (destination < 0 || destination >= component.prescription.exercises.length) return;
-    const exercises = [...component.prescription.exercises];
-    const [exercise] = exercises.splice(index, 1); exercises.splice(destination, 0, exercise!); changeExercises(exercises);
-  };
-  const selectedCatalogExercise = catalogBySelection(catalogSearch);
-  return <>
-    <div className="exercise-add-row"><label>Find an exercise<input list={`exercise-catalog-${component.id}`} placeholder="Search the exercise catalog" value={catalogSearch} onChange={(event) => setCatalogSearch(event.target.value)}/><datalist id={`exercise-catalog-${component.id}`}>{catalog.map((item) => <option key={item.key} value={item.name}>{friendlyLabel(item.movement)} · {item.equipment.map(friendlyLabel).join(", ")}</option>)}</datalist></label><button type="button" className="secondary compact" disabled={!selectedCatalogExercise} onClick={() => { if (!selectedCatalogExercise) return; changeExercises([...component.prescription.exercises, catalogExercise(selectedCatalogExercise)]); setCatalogSearch(""); }}>Add exercise</button><button type="button" className="secondary compact" onClick={() => changeExercises([...component.prescription.exercises, customExercise()])}>+ Custom exercise</button></div>
-    {!component.prescription.exercises.length ? <div className="empty compact-empty">Add at least one exercise.</div> : <div className="template-exercise-table"><div className="template-exercise-row template-exercise-header"><span>Exercise</span><span>Sets</span><span>Reps</span><span>Actions</span></div>{component.prescription.exercises.map((exercise, index) => {
-      const custom = exercise.canonicalKey === null;
-      const movement = exercise.classification.primaryMovement.value;
-      const primaryMuscles = Array.isArray(exercise.classification.primaryMuscles.value) ? exercise.classification.primaryMuscles.value.map(String) : [];
-      const equipment = Array.isArray(exercise.classification.equipment.value) ? exercise.classification.equipment.value.map(String) : [];
-      return <div className="template-exercise-item" key={exercise.id}><div className="template-exercise-row"><div className="exercise-name-input"><b>{index + 1}</b>{custom ? <input aria-label={`Exercise ${index + 1} name`} placeholder="Exercise name" value={exercise.displayName} onChange={(event) => updateExercise(exercise.id, (value) => ({ ...value, displayName: event.target.value }))}/> : <div><strong>{exercise.displayName}</strong><small>{movement ? friendlyLabel(String(movement)) : "Unclassified"}</small></div>}</div><input aria-label={`${exercise.displayName || `Exercise ${index + 1}`} sets`} type="number" min="1" max="20" value={exercise.sets} onChange={(event) => updateExercise(exercise.id, (value) => ({ ...value, sets: Number(event.target.value) }))}/><div className="reps-inputs"><input aria-label={`${exercise.displayName || `Exercise ${index + 1}`} minimum reps`} type="number" min="1" max="100" value={exercise.repsMin} onChange={(event) => updateExercise(exercise.id, (value) => ({ ...value, repsMin: Number(event.target.value) }))}/><span>–</span><input aria-label={`${exercise.displayName || `Exercise ${index + 1}`} maximum reps`} type="number" min="1" max="100" value={exercise.repsMax} onChange={(event) => updateExercise(exercise.id, (value) => ({ ...value, repsMax: Number(event.target.value) }))}/></div><div className="row-actions"><button type="button" className="icon-button" aria-label="Move exercise up" disabled={index === 0} onClick={() => moveExercise(index, -1)}>↑</button><button type="button" className="icon-button" aria-label="Move exercise down" disabled={index === component.prescription.exercises.length - 1} onClick={() => moveExercise(index, 1)}>↓</button><button type="button" className="icon-button remove-button" aria-label="Delete exercise" disabled={component.prescription.exercises.length === 1} onClick={() => changeExercises(component.prescription.exercises.filter((item) => item.id !== exercise.id))}>×</button></div></div>
-        {custom && <div className="custom-classification"><label>Movement pattern<select value={String(movement ?? "")} onChange={(event) => updateExercise(exercise.id, (value) => ({ ...value, classification: { ...value.classification, primaryMovement: { ...value.classification.primaryMovement, value: event.target.value || null } } }))}><option value="">Select movement</option>{movementPatterns.map((item) => <option key={item} value={item}>{friendlyLabel(item)}</option>)}</select></label><label>Primary muscle<select value={primaryMuscles[0] ?? ""} onChange={(event) => updateExercise(exercise.id, (value) => ({ ...value, classification: { ...value.classification, primaryMuscles: { ...value.classification.primaryMuscles, value: event.target.value ? [event.target.value] : [] } } }))}><option value="">Select muscle</option>{muscleGroups.map((item) => <option key={item} value={item}>{friendlyLabel(item)}</option>)}</select></label><label>Equipment<select value={equipment[0] ?? ""} onChange={(event) => updateExercise(exercise.id, (value) => ({ ...value, classification: { ...value.classification, equipment: { ...value.classification.equipment, value: event.target.value ? [event.target.value] : [] } } }))}><option value="">Select equipment</option>{equipmentTypes.map((item) => <option key={item} value={item}>{friendlyLabel(item)}</option>)}</select></label></div>}
-        <details className="exercise-advanced"><summary>Advanced settings</summary><div><label>Target RPE<input type="number" min="1" max="10" step="0.5" placeholder="Optional" value={exercise.targetRpe ?? ""} onChange={(event) => updateExercise(exercise.id, (value) => ({ ...value, targetRpe: event.target.value === "" ? null : Number(event.target.value) }))}/></label><label>Rest (seconds)<input type="number" min="0" max="600" value={exercise.restSeconds} onChange={(event) => updateExercise(exercise.id, (value) => ({ ...value, restSeconds: Number(event.target.value) }))}/></label><label>Reference load<input type="number" min="0" placeholder="Optional" value={exercise.referenceLoad ?? ""} onChange={(event) => updateExercise(exercise.id, (value) => ({ ...value, referenceLoad: event.target.value === "" ? null : Number(event.target.value), referenceLoadUnit: event.target.value === "" ? null : value.referenceLoadUnit ?? "kg" }))}/></label><label>Unit<select disabled={exercise.referenceLoad === null} value={exercise.referenceLoadUnit ?? "kg"} onChange={(event) => updateExercise(exercise.id, (value) => ({ ...value, referenceLoadUnit: event.target.value as "kg" | "lb" }))}><option value="kg">kg</option><option value="lb">lb</option></select></label><label className="wide-field">Notes<input placeholder="Optional coaching cue" value={exercise.notes} onChange={(event) => updateExercise(exercise.id, (value) => ({ ...value, notes: event.target.value }))}/></label></div></details>
-      </div>;
-    })}</div>}
-  </>;
-}
-
-function TemplateEditor({ template, catalog, onChange }: { template: SessionTemplate; catalog: ExerciseDefinition[]; onChange: (value: SessionTemplate) => void }) {
-  const [newDomain, setNewDomain] = useState<TemplateComponentDomain>("strength");
-  const errors = templateEditorErrors(template);
-  const updateComponent = (id: string, update: (value: PlanComponent) => PlanComponent) => onChange({ ...template, components: template.components.map((item) => item.id === id ? update(item) : item) });
-  return <Card title="Template details" className="template-editor">
-    <div className="template-basics"><label>Name<input required placeholder="e.g. Full Body A" value={template.name} onChange={(event) => { const name = event.target.value; onChange({ ...template, name, intent: !template.intent.trim() || template.intent === template.name ? name : template.intent }); }}/></label><label>Duration (minutes)<input required type="number" min="1" max="240" value={template.durationMinutes} onChange={(event) => onChange({ ...template, durationMinutes: Number(event.target.value) })}/></label></div>
-    <details className="template-options"><summary>Optional settings</summary><div><label>Recovery demand<select value={template.recoveryDemand} onChange={(event) => onChange({ ...template, recoveryDemand: event.target.value as SessionTemplate["recoveryDemand"] })}><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option></select></label><label>Template notes<textarea rows={2} placeholder="Optional notes" value={template.notes} onChange={(event) => onChange({ ...template, notes: event.target.value })}/></label></div></details>
-    <div className="component-heading"><div><h3>Session components</h3><p>Add the sections that make up this training session.</p></div><div className="component-add"><select aria-label="New component type" value={newDomain} onChange={(event) => setNewDomain(event.target.value as TemplateComponentDomain)}>{componentDomains.map((domain) => <option key={domain} value={domain}>{friendlyLabel(domain)}</option>)}</select><button type="button" className="secondary compact" onClick={() => onChange({ ...template, components: [...template.components, templateComponent(newDomain)] })}>+ Add component</button></div></div>
-    <div className="template-components">{template.components.map((component, index) => <section className="template-component-editor" key={component.id}><div className="component-title"><span className={`phase-number tone-${index % 4}`}>{index + 1}</span><label>Component name<input value={component.name} onChange={(event) => updateComponent(component.id, (value) => ({ ...value, name: event.target.value }))}/></label><span className="component-domain">{component.domain.value ? friendlyLabel(component.domain.value) : "Unclassified"}</span><button type="button" className="icon-button remove-button" aria-label={`Delete ${component.name || `component ${index + 1}`}`} disabled={template.components.length === 1} onClick={() => onChange({ ...template, components: template.components.filter((item) => item.id !== component.id) })}>×</button></div>{component.prescription.kind === "strength" ? <StrengthComponentEditor component={component as PlanComponent & { prescription: { kind: "strength"; exercises: PlanExercise[] } }} catalog={catalog} onChange={(value) => updateComponent(component.id, () => value)}/> : <label>Session instructions<textarea rows={3} placeholder={`Describe the ${friendlyLabel(String(component.domain.value ?? "session"))} work`} value={component.prescription.notes} onChange={(event) => updateComponent(component.id, (value) => ({ ...value, prescription: { kind: "duration_only", notes: event.target.value } }))}/></label>}</section>)}</div>
-    {errors.length > 0 && <div className="editor-errors" role="alert"><strong>Complete these template details</strong><ul>{errors.map((message) => <li key={message}>{message}</li>)}</ul></div>}
-  </Card>;
-}
-
-function TemplateLibrary({ onBack }: { onBack: () => void }) {
-  const client = useQueryClient();
-  const query = useQuery({ queryKey: ["templates"], queryFn: () => api<StoredSessionTemplate[]>("/api/templates") });
-  const exercises = useQuery({ queryKey: ["exercises"], queryFn: () => api<ExerciseDefinition[]>("/api/exercises") });
-  const [editing, setEditing] = useState<{ template: SessionTemplate; revision?: number } | null>(null);
-  const [error, setError] = useState<unknown>();
-  const begin = (value: StoredSessionTemplate | SessionTemplate) => { const template = editableTemplate(value); setEditing("revision" in value ? { template, revision: value.revision } : { template }); setError(undefined); };
-  const save = async () => {
-    if (!editing) return;
-    try {
-      const payload = editing.template;
-      const revision = editing.revision;
-      if (!revision) await api("/api/templates", { method: "POST", body: JSON.stringify(payload) });
-      else {
-        const impact = await api<{ affectedCount: number }>(`/api/templates/${encodeURIComponent(payload.id)}/impact`, { method: "POST", body: "{}" });
-        const futureSessionPolicy = impact.affectedCount ? (window.confirm(`${impact.affectedCount} future planned session(s) use this template. Update them to the new template? Choose Cancel to keep their current snapshots.`) ? "update" : "keep") : undefined;
-        await api(`/api/templates/${encodeURIComponent(payload.id)}`, { method: "PUT", body: JSON.stringify({ template: payload, expectedRevision: revision, futureSessionPolicy }) });
-      }
-      setEditing(null); await client.invalidateQueries({ queryKey: ["templates"] }); await client.invalidateQueries({ queryKey: ["current-plan"] });
-    } catch (value) { setError(value); }
-  };
-  const remove = async (item: StoredSessionTemplate) => {
-    if (!window.confirm(`Delete “${item.name}”? This cannot be undone.`)) return;
-    try { await api(`/api/templates/${encodeURIComponent(item.id)}`, { method: "DELETE", body: JSON.stringify({ expectedRevision: item.revision }) }); await client.invalidateQueries({ queryKey: ["templates"] }); }
-    catch (value) { setError(value); }
-  };
-  if (editing) { const errors = templateEditorErrors(editing.template); return <div className="plan-page"><div className="plan-page-header"><div><h1>{editing.revision ? "Edit template" : "Create template"}</h1><p>Build the session with simple components and exercise rows.</p></div><div className="actions"><button className="secondary" onClick={() => setEditing(null)}>Cancel</button><button disabled={errors.length > 0 || exercises.isPending} onClick={() => void save()}>Save template</button></div></div><ErrorBanner error={error ?? exercises.error}/>{exercises.isPending ? <Loading/> : <TemplateEditor template={editing.template} catalog={exercises.data ?? []} onChange={(template) => setEditing((current) => current ? { ...current, template } : current)}/>}</div>; }
-  return <div className="plan-page"><div className="plan-page-header"><div><button className="text-button" onClick={onBack}>← Back to plan</button><h1>Template Library</h1><p>Create and maintain reusable session templates.</p></div><button onClick={() => begin(emptyTemplate())}>Create template</button></div><ErrorBanner error={query.error ?? error}/>{query.isPending ? <Loading/> : !query.data?.length ? <Empty>No templates yet. Create one before building a Mesocycle.</Empty> : <div className="template-library-grid">{query.data.map((item) => <article className="card template-library-card" key={item.id}><div><h2>{item.name}</h2><p>{item.intent}</p><div className="template-summary"><span>{formatDuration(item.durationMinutes)}</span><span>{friendlyLabel(item.recoveryDemand)} recovery</span><span>{item.components.length} components</span></div></div><div className="actions"><button className="secondary compact" onClick={() => begin(item)}>Edit</button><button className="danger compact" onClick={() => void remove(item)}>Delete</button></div></article>)}</div>}</div>;
-}
-
-function ScheduleOverview({ mesocycle, templates }: { mesocycle: Mesocycle; templates: Map<string, StoredSessionTemplate> }) {
-  const schedule = mesocycle.schedule;
-  if (schedule.kind === "fixed_week") return <div className="weekly-structure">{weekdays.map((day, dayOfWeek) => { const ids = schedule.days.find((item) => item.dayOfWeek === dayOfWeek)?.templateIds ?? []; return <div key={day}><strong>{day.slice(0, 3)}</strong>{ids.length ? ids.map((id) => <span className="template-pill" key={id}>{templates.get(id)?.name ?? id}</span>) : <span className="rest-pill">Rest</span>}</div>; })}</div>;
-  const rotation = schedule.rotation;
-  return <div className="rhythm-overview"><div className="rhythm-summary"><strong>{schedule.kind === "flexible_week" ? `${schedule.targetSessionsPerWeek} sessions / week` : `Every ${schedule.intervalDays} day${schedule.intervalDays === 1 ? "" : "s"}`}</strong>{schedule.kind === "flexible_week" && <span>Allowed range {schedule.minSessionsPerWeek}–{schedule.maxSessionsPerWeek}</span>}</div><div className="rotation-list">{rotation.map((slot, index) => <div key={slot.id}><b>{String.fromCharCode(65 + index)}</b><span>{slot.templateIds.map((id) => templates.get(id)?.name ?? id).join(" + ")}</span></div>)}</div></div>;
-}
-
-function CurrentPlanView({ plan, templates, onViewAllTemplates }: { plan: CurrentPlan; templates: StoredSessionTemplate[]; onViewAllTemplates: () => void }) {
-  const byId = new Map(templates.map((item) => [item.id, item]));
-  const { templates: referenced, missingIds } = referencedTemplates(plan.mesocycle, templates);
-  const [selectedTemplateId, setSelectedTemplateId] = useState(referenced[0]?.id ?? "");
-  const selected = resolveSelectedTemplate(referenced, selectedTemplateId);
-  const domainsFor = (template: SessionTemplate) => [...new Set(template.components.map((component) => component.domain.value).filter((value): value is NonNullable<typeof value> => value !== null))];
-  return <><section className="mesocycle-card"><div className="proposal-heading"><div><span className="proposal-mark">◎</span><div><h2>{plan.title}</h2><p>{plan.summary}</p></div></div><div className="proposal-facts"><span>▣　{plan.mesocycle.durationWeeks} weeks</span><span>Starts {plan.effectiveStartDate}</span></div></div><section className="proposal-section"><h3>Training Rhythm</h3><ScheduleOverview mesocycle={plan.mesocycle} templates={byId}/></section><section className="proposal-section"><h3>Phase Progression</h3><div className="phase-progression">{plan.mesocycle.phases.map((phase, index) => <div className="phase-step" key={phase.id}><span className={`phase-number tone-${index % 4}`}>{index + 1}</span><div><strong>{phase.name}</strong><span>Weeks {phase.startWeek}–{phase.endWeek}</span><small>{phase.focus}</small></div></div>)}</div></section>
-      <section className="proposal-section session-templates"><div className="session-templates-heading"><h3>Session Templates</h3><button type="button" className="session-templates-link" onClick={onViewAllTemplates}>View all templates</button></div>
-        {referenced.length > 0 && <div className="template-tabs" role="tablist" aria-label="Session templates">{referenced.map((template, index) => <button key={template.id} type="button" role="tab" aria-selected={template.id === selected?.id} className={template.id === selected?.id ? "selected" : ""} onClick={() => setSelectedTemplateId(template.id)}><span className={`tone-${index % 4}`}>{String.fromCharCode(65 + index)}</span>{template.name}</button>)}</div>}
-        {selected && <>
-          <div className="template-summary"><span>{[...domainsFor(selected).map(friendlyLabel), ...(selected.components.some((component) => component.domain.value === null) ? ["Unclassified component"] : [])].join(" + ")}</span><span>{formatDuration(selected.durationMinutes)}</span><span>{friendlyLabel(selected.recoveryDemand)} recovery demand</span></div>
-          <div className="conditioning-template"><strong>{selected.name}</strong>{selected.components.map((component) => <div className="template-component" key={component.id}>{component.prescription.kind === "strength" ? <div className="exercise-table"><div className="exercise-row exercise-header"><span>Classification</span><span className="exercise-cell">Exercise</span><span>Prescription</span><span>Effort</span><span>Rest</span><span>Notes</span></div>{component.prescription.exercises.map((exercise, index) => { const movement = exercise.classification.primaryMovement?.value; return <div className="exercise-row" key={exercise.id}><span>{movement == null ? "-" : friendlyLabel(String(movement))}</span><span className="exercise-cell"><b>{index + 1}</b>{exercise.displayName}</span><span>{exercise.sets} × {exercise.repsMin === exercise.repsMax ? exercise.repsMin : `${exercise.repsMin}–${exercise.repsMax}`}</span><span>{exercise.targetRpe ? `RPE ${exercise.targetRpe}` : "Controlled"}</span><span>{formatRest(exercise.restSeconds)}</span><span className="exercise-notes">{exercise.notes || "—"}</span></div>; })}</div> : <><strong>{component.name}</strong><p>{component.prescription.notes || selected.intent}</p></>}</div>)}</div>
-        </>}
-        {missingIds.length > 0 && <div className="notice">Referenced but missing from the library: {missingIds.join(", ")}.</div>}
-        {!referenced.length && !missingIds.length && <p className="muted">No session templates are referenced by this mesocycle yet.</p>}
-      </section></section></>;
-}
-
-function TemplatePicker({ templates, selected, onSelect, label = "+ Add training" }: { templates: StoredSessionTemplate[]; selected: string[]; onSelect: (id: string) => void; label?: string }) {
-  const [search, setSearch] = useState(""); const [domain, setDomain] = useState(""); const [recovery, setRecovery] = useState(""); const [maxDuration, setMaxDuration] = useState("");
-  const matches = templates.filter((template) => {
-    const domains = template.components.map((component) => component.domain.value).filter(Boolean);
-    return !selected.includes(template.id) && (!search || `${template.name} ${template.intent}`.toLowerCase().includes(search.toLowerCase())) && (!domain || domains.includes(domain as never)) && (!recovery || template.recoveryDemand === recovery) && (!maxDuration || template.durationMinutes <= Number(maxDuration));
-  });
-  return <details className="template-picker"><summary>{label}</summary><div><input aria-label="Search templates" autoComplete="off" placeholder="Search templates…" value={search} onChange={(event) => setSearch(event.target.value)}/><div className="picker-filters"><select aria-label="Filter by domain" value={domain} onChange={(event) => setDomain(event.target.value)}><option value="">All domains</option>{componentDomains.map((item) => <option key={item} value={item}>{friendlyLabel(item)}</option>)}</select><select aria-label="Filter by recovery demand" value={recovery} onChange={(event) => setRecovery(event.target.value)}><option value="">Any recovery</option><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option></select><select aria-label="Filter by duration" value={maxDuration} onChange={(event) => setMaxDuration(event.target.value)}><option value="">Any duration</option><option value="30">≤ 30 min</option><option value="45">≤ 45 min</option><option value="60">≤ 60 min</option><option value="90">≤ 90 min</option></select></div><div className="picker-results">{matches.map((template) => <button type="button" key={template.id} onClick={(event) => { onSelect(template.id); (event.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open"); }}><strong>{template.name}</strong><span>{template.intent}</span><small>{formatDuration(template.durationMinutes)} · {friendlyLabel(template.recoveryDemand)}</small></button>)}{!matches.length && <span className="muted">No matching templates.</span>}</div></div></details>;
-}
-
-function TrainingSlotEditor({ slot, templates, label, onChange, onRemove, onMove, onDuplicate }: { slot: { id: string; templateIds: string[] }; templates: StoredSessionTemplate[]; label: string; onChange: (ids: string[]) => void; onRemove?: () => void; onMove?: (direction: -1 | 1) => void; onDuplicate?: () => void }) {
-  const byId = new Map(templates.map((template) => [template.id, template]));
-  const moveTemplate = (index: number, direction: -1 | 1) => { const destination = index + direction; if (destination < 0 || destination >= slot.templateIds.length) return; const ids = [...slot.templateIds]; const [id] = ids.splice(index, 1); ids.splice(destination, 0, id!); onChange(ids); };
-  return <section className="rhythm-slot"><strong>{label}</strong><div className="selected-templates">{slot.templateIds.map((id, index) => <div key={id}><span>{byId.get(id)?.name ?? id}</span><button type="button" aria-label={`Move ${byId.get(id)?.name ?? id} earlier`} disabled={index === 0} onClick={() => moveTemplate(index, -1)}>↑</button><button type="button" aria-label={`Move ${byId.get(id)?.name ?? id} later`} disabled={index === slot.templateIds.length - 1} onClick={() => moveTemplate(index, 1)}>↓</button><button type="button" aria-label={`Remove ${byId.get(id)?.name ?? id}`} onClick={() => onChange(slot.templateIds.filter((item) => item !== id))}>×</button></div>)}</div><TemplatePicker templates={templates} selected={slot.templateIds} onSelect={(id) => onChange([...slot.templateIds, id])}/>{(onRemove || onMove || onDuplicate) && <div className="slot-actions">{onMove && <><button type="button" className="icon-button" aria-label={`Move ${label} earlier`} onClick={() => onMove(-1)}>↑</button><button type="button" className="icon-button" aria-label={`Move ${label} later`} onClick={() => onMove(1)}>↓</button></>}{onDuplicate && <button type="button" className="secondary compact" onClick={onDuplicate}>Duplicate</button>}{onRemove && <button type="button" className="icon-button remove-button" aria-label={`Remove ${label}`} onClick={onRemove}>×</button>}</div>}</section>;
-}
-
-function TrainingRhythmEditor({ plan, templates, profile, onChange }: { plan: CurrentPlan; templates: StoredSessionTemplate[]; profile: AthleteProfile | undefined; onChange: (mesocycle: Mesocycle) => void }) {
-  const schedule = plan.mesocycle.schedule;
-  const slots = schedule.kind === "fixed_week" ? schedule.days : schedule.rotation;
-  const changeKind = (kind: Mesocycle["schedule"]["kind"]) => {
-    if (kind === schedule.kind) return;
-    const reusable = slots.length ? slots.map((slot) => ({ id: slot.id, templateIds: [...slot.templateIds] })) : templates[0] ? [{ id: crypto.randomUUID(), templateIds: [templates[0].id] }] : [];
-    const next: Mesocycle["schedule"] = kind === "fixed_week" ? { kind, days: reusable.slice(0, 7).map((slot, dayOfWeek) => ({ ...slot, dayOfWeek })) } : kind === "flexible_week" ? { kind, targetSessionsPerWeek: Math.min(3, Math.max(1, reusable.length)), minSessionsPerWeek: 1, maxSessionsPerWeek: Math.min(7, Math.max(3, reusable.length)), rotation: reusable } : { kind, intervalDays: 2, rotation: reusable };
-    onChange({ ...plan.mesocycle, schedule: next });
-  };
-  const updateRotation = (rotation: Array<{ id: string; templateIds: string[] }>) => { if (schedule.kind !== "fixed_week") onChange({ ...plan.mesocycle, schedule: { ...schedule, rotation } }); };
-  const previewStart = [new Date().toISOString().slice(0, 10), plan.effectiveStartDate].sort().at(-1)!;
-  const previewEnd = new Date(`${previewStart}T12:00:00Z`); previewEnd.setUTCDate(previewEnd.getUTCDate() + 13);
-  const preview = expandSchedule({ effectiveStartDate: plan.effectiveStartDate, durationWeeks: plan.mesocycle.durationWeeks, schedule, trainingDays: profile?.trainingDays ?? [], recoveryDemandByTemplate: Object.fromEntries(templates.map((template) => [template.id, template.recoveryDemand])), ...(profile ? { explicitRecoveryHours: profile.explicitRecoveryHours } : {}) }).filter((item) => item.scheduledDate >= previewStart && item.scheduledDate <= previewEnd.toISOString().slice(0, 10));
-  const byId = new Map(templates.map((template) => [template.id, template]));
-  return <fieldset className="rhythm-editor"><legend>Training rhythm</legend><div className="rhythm-kinds"><ChoiceChip selected={schedule.kind === "fixed_week"} onClick={() => changeKind("fixed_week")}>Fixed weekdays</ChoiceChip><ChoiceChip selected={schedule.kind === "flexible_week"} onClick={() => changeKind("flexible_week")}>Flexible week</ChoiceChip><ChoiceChip selected={schedule.kind === "interval"} onClick={() => changeKind("interval")}>Interval</ChoiceChip></div>
-    {schedule.kind === "fixed_week" && <div className="rhythm-slots">{weekdays.map((day, dayOfWeek) => { const slot = schedule.days.find((item) => item.dayOfWeek === dayOfWeek) ?? { id: `weekday-${dayOfWeek}`, dayOfWeek, templateIds: [] }; return <TrainingSlotEditor key={day} slot={slot} templates={templates} label={day} onChange={(templateIds) => onChange({ ...plan.mesocycle, schedule: { ...schedule, days: [...schedule.days.filter((item) => item.dayOfWeek !== dayOfWeek), ...(templateIds.length ? [{ ...slot, templateIds }] : [])].sort((a, b) => a.dayOfWeek - b.dayOfWeek) } })}/>; })}</div>}
-    {schedule.kind === "flexible_week" && <div className="rhythm-settings"><label>Target / week<input type="number" min="1" max="7" value={schedule.targetSessionsPerWeek} onChange={(event) => onChange({ ...plan.mesocycle, schedule: { ...schedule, targetSessionsPerWeek: Number(event.target.value) } })}/></label><label>Minimum<input type="number" min="1" max="7" value={schedule.minSessionsPerWeek} onChange={(event) => onChange({ ...plan.mesocycle, schedule: { ...schedule, minSessionsPerWeek: Number(event.target.value) } })}/></label><label>Maximum<input type="number" min="1" max="7" value={schedule.maxSessionsPerWeek} onChange={(event) => onChange({ ...plan.mesocycle, schedule: { ...schedule, maxSessionsPerWeek: Number(event.target.value) } })}/></label></div>}
-    {schedule.kind === "interval" && <div className="rhythm-settings"><label>Train every<input type="number" min="1" max="30" value={schedule.intervalDays} onChange={(event) => onChange({ ...plan.mesocycle, schedule: { ...schedule, intervalDays: Number(event.target.value) } })}/><span>days</span></label></div>}
-    {schedule.kind !== "fixed_week" && <div className="rhythm-slots">{schedule.rotation.map((slot, index) => <TrainingSlotEditor key={slot.id} slot={slot} templates={templates} label={`Training day ${String.fromCharCode(65 + index)}`} onChange={(templateIds) => updateRotation(templateIds.length ? schedule.rotation.map((item) => item.id === slot.id ? { ...item, templateIds } : item) : schedule.rotation.filter((item) => item.id !== slot.id))} onRemove={() => updateRotation(schedule.rotation.filter((item) => item.id !== slot.id))} onDuplicate={() => updateRotation([...schedule.rotation.slice(0, index + 1), { id: crypto.randomUUID(), templateIds: [...slot.templateIds] }, ...schedule.rotation.slice(index + 1)])} onMove={(direction) => { const destination = index + direction; if (destination < 0 || destination >= schedule.rotation.length) return; const rotation = [...schedule.rotation]; const [item] = rotation.splice(index, 1); rotation.splice(destination, 0, item!); updateRotation(rotation); }}/>) }<TemplatePicker label="+ Add rotation day" templates={templates} selected={[]} onSelect={(id) => updateRotation([...schedule.rotation, { id: crypto.randomUUID(), templateIds: [id] }])}/></div>}
-    <div className="rhythm-preview"><h3>Next 14 days</h3>{Array.from({ length: 14 }, (_, offset) => { const date = new Date(`${previewStart}T12:00:00Z`); date.setUTCDate(date.getUTCDate() + offset); const key = date.toISOString().slice(0, 10); const occurrence = preview.find((item) => item.scheduledDate === key); return <div key={key}><strong>{key}</strong><span>{occurrence ? occurrence.templateIds.map((id) => byId.get(id)?.name ?? id).join(" + ") : "Rest"}</span></div>; })}</div>
-  </fieldset>;
-}
-
-function CurrentPlanPage() {
-  const client = useQueryClient();
-  const [library, setLibrary] = useState(false);
-  const planQuery = useQuery({ queryKey: ["current-plan"], queryFn: () => api<CurrentPlan | null>("/api/plans/current") });
-  const templatesQuery = useQuery({ queryKey: ["templates"], queryFn: () => api<StoredSessionTemplate[]>("/api/templates") });
-  const profileQuery = useQuery({ queryKey: ["profile"], queryFn: () => api<AthleteProfile>("/api/profile") });
-  const nextDay = useQuery({ queryKey: ["next-training-day"], queryFn: () => api<NextTrainingDay>("/api/plans/next-training-day") });
-  const [editing, setEditing] = useState<CurrentPlan | null>(null);
-  const [error, setError] = useState<unknown>(); const [validation, setValidation] = useState<PlanValidation | null>(null);
-  if (library) return <TemplateLibrary onBack={() => setLibrary(false)}/>;
-  const templates = templatesQuery.data ?? [];
-  const begin = () => {
-    const today = new Date().toISOString().slice(0, 10);
-    const value = planQuery.data ?? { planSchemaVersion: "5.0" as const, ownerId: "local-user", title: "My Mesocycle", summary: "", effectiveStartDate: today, mesocycle: { durationWeeks: 4, schedule: { kind: "fixed_week" as const, days: templates[0] ? [{ id: crypto.randomUUID(), dayOfWeek: 0, templateIds: [templates[0].id] }] : [] }, phases: [{ id: crypto.randomUUID(), phaseType: "foundation" as const, name: "Base", startWeek: 1, endWeek: 4, focus: "Build capacity", progression: [] }], adjustmentRules: [] }, revision: 0, sourceAgent: null, model: null, skillVersion: null, inputSnapshotHash: null, updatedAt: new Date().toISOString() };
-    setEditing(structuredClone(value)); setError(undefined); setValidation(null);
-  };
-  const payload = () => { if (!editing) throw new Error("No plan is being edited."); return { ...editing, expectedRevision: editing.revision, revision: undefined, updatedAt: undefined }; };
-  const save = async () => {
-    try {
-      const candidate = payload();
-      let result;
-      try { result = await api<{ plan: CurrentPlan; validation: PlanValidation }>("/api/plans/current", { method: "PUT", body: JSON.stringify(candidate) }); }
-      catch (value) {
-        if (!(value instanceof Error) || !value.message.includes("future planned session")) throw value;
-        const futureSessionPolicy = window.confirm(`${value.message} Update compatible sessions? Choose Cancel to keep their snapshots.`) ? "update" : "keep";
-        result = await api<{ plan: CurrentPlan; validation: PlanValidation }>("/api/plans/current", { method: "PUT", body: JSON.stringify({ ...candidate, futureSessionPolicy }) });
-      }
-      setValidation(result.validation); setEditing(null); await client.invalidateQueries({ queryKey: ["current-plan"] }); await client.invalidateQueries({ queryKey: ["next-training-day"] });
-    } catch (value) { setError(value); }
-  };
-  const scheduleSlots = editing ? (editing.mesocycle.schedule.kind === "fixed_week" ? editing.mesocycle.schedule.days : editing.mesocycle.schedule.rotation) : [];
-  const invalidRhythm = !scheduleSlots.length || (editing?.mesocycle.schedule.kind === "flexible_week" && !(editing.mesocycle.schedule.minSessionsPerWeek <= editing.mesocycle.schedule.targetSessionsPerWeek && editing.mesocycle.schedule.targetSessionsPerWeek <= editing.mesocycle.schedule.maxSessionsPerWeek));
-  if (editing) return <div className="plan-page"><div className="plan-page-header"><div><h1>Edit Mesocycle</h1><p>Choose the rhythm; Athria will create the actual training dates.</p></div><div className="actions"><button className="secondary" onClick={() => setEditing(null)}>Cancel</button><button disabled={!templates.length || invalidRhythm} onClick={() => void save()}>Save plan</button></div></div><ErrorBanner error={error ?? profileQuery.error}/><Card title="Plan details" className="plan-editor"><div className="grid"><label>Title<input value={editing.title} onChange={(event) => setEditing({ ...editing, title: event.target.value })}/></label><label>Effective start date<input type="date" value={editing.effectiveStartDate} onChange={(event) => setEditing({ ...editing, effectiveStartDate: event.target.value })}/></label><label>Plan length (weeks)<input type="number" min="1" max="52" value={editing.mesocycle.durationWeeks} onChange={(event) => setEditing({ ...editing, mesocycle: { ...editing.mesocycle, durationWeeks: Number(event.target.value) } })}/><small className="helper">Total calendar weeks in this mesocycle.</small></label></div><label>Summary<textarea value={editing.summary} onChange={(event) => setEditing({ ...editing, summary: event.target.value })}/></label><TrainingRhythmEditor plan={editing} templates={templates} profile={profileQuery.data} onChange={(mesocycle) => setEditing({ ...editing, mesocycle })}/>{invalidRhythm && <div className="notice">Add at least one training day and keep minimum ≤ target ≤ maximum.</div>}{!templates.length && <div className="notice">Create at least one template before saving a plan.</div>}</Card></div>;
-  const loading = planQuery.isPending || templatesQuery.isPending || profileQuery.isPending;
-  return <div className="plan-page"><div className="plan-page-header"><div><h1>Mesocycle Planner</h1><p>Your saved plan is always the current plan.</p></div><div className="actions">{!planQuery.data && <button className="secondary" onClick={() => setLibrary(true)}>View all templates</button>}<button disabled={!templates.length} onClick={begin}>{planQuery.data ? "Edit plan" : "Create plan"}</button></div></div><ErrorBanner error={planQuery.error ?? templatesQuery.error ?? profileQuery.error ?? nextDay.error ?? error}/>{loading ? <Loading/> : !planQuery.data ? <Empty>No current Mesocycle. Create templates, then build your plan.</Empty> : <CurrentPlanView plan={planQuery.data} templates={templates} onViewAllTemplates={() => setLibrary(true)}/>} {validation && <ValidationSummary validation={validation}/>} {planQuery.data && <NextTrainingDayCard value={nextDay.data} templates={templates} plan={planQuery.data}/>}</div>;
 }
 
 function Backup() {
@@ -544,7 +331,7 @@ function McpSetup() {
 }
 
 function Help() {
-  return <><Card title="Help & Support"><p>Athria is your local-first training companion. Use Devices to connect data sources, Profile to confirm your preferences, and Plan to review Agent-created training plans.</p><div className="help-grid"><section><strong>Need to update your profile?</strong><span>Open Profile and choose Edit. Agent-managed details can only change through an approved suggestion.</span></section><section><strong>Having trouble with a connection?</strong><span>Open Devices, re-enter the connection details, then test or sync again.</span></section><section><strong>Protect your data</strong><span>Create a local backup from Settings before troubleshooting or moving Athria to another device.</span></section></div></Card><Card title="Connect Athria to your AI agent" className="mcp-card"><McpSetup/></Card></>;
+  return <><Card title="Help & Support"><p>Athria is your local-first training companion. Use Devices to connect data sources, Profile to confirm your preferences, and Plan to review Agent-created training plans.</p><div className="help-grid"><section><strong>Need to update your profile?</strong><span>Open Profile and choose Edit. Recovery interval, constraint notes, and prohibited/excluded exercises can only change through an approved Agent suggestion.</span></section><section><strong>Having trouble with a connection?</strong><span>Open Devices, re-enter the connection details, then test or sync again.</span></section><section><strong>Protect your data</strong><span>Create a local backup from Settings before troubleshooting or moving Athria to another device.</span></section></div></Card><Card title="Connect Athria to your AI agent" className="mcp-card"><McpSetup/></Card></>;
 }
 
 const views: Record<Page, () => React.ReactElement> = { Overview, Training: Timeline, Profile, Plan: CurrentPlanPage, Devices: Connections, Settings, Help };

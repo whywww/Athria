@@ -1,3 +1,5 @@
+export const PREFERENCE_MAX_LENGTH = 80;
+
 export interface Metric<T> {
   value: T;
   unit: string;
@@ -20,11 +22,12 @@ export interface AthleteProfile {
   displayName: string;
   timezone: string;
   goals: string[];
-  priority: "strength" | "endurance" | "balanced";
-  weeklyStrengthSessions: number;
-  weeklyEnduranceSessions: number;
+  preference: string;
   maxSessionMinutes: number;
-  trainingDays: number[];
+  trainingRhythm:
+    | { kind: "fixed_week"; days: number[] }
+    | { kind: "flexible_week"; targetDaysPerWeek: number; minDaysPerWeek: number; maxDaysPerWeek: number }
+    | { kind: "interval"; intervalDays: number };
   equipment: string[];
   strengthConstraints: Array<{ id: string; type: "exclude_exercise"; canonicalKey: string } | { id: string; type: "prohibit_movement_pattern"; movementPattern: string }>;
   constraintNotes: string[];
@@ -57,9 +60,12 @@ export interface PlanExercise {
   repsMin: number;
   repsMax: number;
   targetRpe: number | null;
+  targetRir?: number | null;
   restSeconds: number;
   referenceLoad: number | null;
   referenceLoadUnit: "kg" | "lb" | null;
+  tempo?: string | null;
+  alternatives?: string[];
   notes: string;
   classification: {
     primaryMovement: ClassificationFact<string | null>;
@@ -73,49 +79,103 @@ export interface PlanExercise {
 
 export interface ClassificationFact<T> { value: T; source: string; confidence: number; evidence: string; taxonomyVersion: string }
 
+export interface EnduranceStep { type: "step"; name: string; role: "warm_up" | "steady" | "work" | "recovery" | "cool_down"; durationSeconds?: number; distanceMeters?: number; pace?: string; heartRateZone?: string; powerWatts?: string; cadence?: string; rpe?: string; talkTest?: string; notes?: string }
+export interface EnduranceRepeat { type: "repeat"; name: string; repetitions: number; work: EnduranceStep; recovery?: EnduranceStep; notes?: string }
+export interface SportBlock { name: string; role: "preparation" | "technical" | "tactical" | "small_sided_game" | "match" | "competition" | "conditioning" | "cool_down"; durationMinutes?: number; intensity?: string; instructions?: string }
+export interface RecoveryBlock { name: string; durationMinutes?: number; instructions?: string }
+
 export interface PlanComponent {
   id: string;
   name: string;
   domain: { value: "strength" | "endurance" | "sport_skill" | "mind_body" | "recovery" | null; source: string; confidence: number; evidence: string; taxonomyVersion: string };
-  prescription: { kind: "strength"; exercises: PlanExercise[] } | { kind: "duration_only"; notes: string };
+  prescription: { kind: "strength"; exercises: PlanExercise[] }
+    | { kind: "endurance"; segments: Array<EnduranceStep | EnduranceRepeat> }
+    | { kind: "sport_skill"; sessionType: "practice" | "match" | "competition"; blocks: SportBlock[] }
+    | { kind: "recovery" | "mind_body"; blocks: RecoveryBlock[] }
+    | { kind: "duration_only"; notes: string };
 }
 
 export interface Mesocycle {
   durationWeeks: number;
-  schedule:
-    | { kind: "fixed_week"; days: Array<{ id: string; dayOfWeek: number; templateIds: string[] }> }
-    | { kind: "flexible_week"; targetSessionsPerWeek: number; minSessionsPerWeek: number; maxSessionsPerWeek: number; rotation: Array<{ id: string; templateIds: string[] }> }
-    | { kind: "interval"; intervalDays: number; rotation: Array<{ id: string; templateIds: string[] }> };
-  phases: Array<{ id: string; phaseType: "foundation" | "progression" | "deload" | "peak" | "test" | "recovery"; name: string; startWeek: number; endWeek: number; focus: string; progression: string[] }>;
+  schedule: AthleteProfile["trainingRhythm"];
+  domainProgressions: Array<{ domain: TemplateComponentDomain; phases: DomainPhase[] }>;
+  weeks: Array<{ weekNumber: number; focus: string | null; sessions: Array<{ id: string; scheduledDate: string; order: number; templateRef: TemplateRef | null; name: string; intent: string; durationMinutes: number; recoveryDemand: "low" | "normal" | "high"; keySession: boolean; components: PlanComponent[]; progressionNote: string | null; schedulingRationale: string | null; legacySnapshot: boolean }> }>;
   adjustmentRules: Array<{ trigger: string; action: string; rationale: string }>;
 }
+export interface DomainPhase { id: string; phaseType: "foundation" | "progression" | "deload" | "peak" | "test" | "recovery"; name: string; startWeek: number; endWeek: number; focus: string; progression: string[] }
+export interface PhaseRef { domain: TemplateComponentDomain; phaseId: string }
 
-export interface SessionTemplate { id: string; name: string; intent: string; durationMinutes: number; recoveryDemand: "low" | "normal" | "high"; notes: string; components: PlanComponent[] }
-export interface StoredSessionTemplate extends SessionTemplate { ownerId: string; revision: number; createdAt: string; updatedAt: string }
-export interface CurrentPlan { planSchemaVersion: "5.0"; ownerId: string; title: string; summary: string; effectiveStartDate: string; mesocycle: Mesocycle; revision: number; sourceAgent: string | null; model: string | null; skillVersion: string | null; inputSnapshotHash: string | null; updatedAt: string }
-export interface PlanDraft { planSchemaVersion: "3.0"; id: string; title: string; summary: string; mesocycle: ({ durationWeeks: number; weeklyStructure: Array<{ dayOfWeek: number; templateIds: string[] }>; phases: Mesocycle["phases"]; adjustmentRules: Mesocycle["adjustmentRules"]; sessionTemplates: SessionTemplate[] }) | null; migration?: { reviewRequired: boolean; sourceSchema: string; sourceSessions: unknown[] } | null; updatedAt?: string }
+export interface TemplateVariable { key: string; required: boolean; identityConstraint?: { min?: number; max?: number; unit: string } }
+export interface TemplateBlock { id: string; name: string; role: string; required: boolean; variables: TemplateVariable[] }
+export interface StrengthTemplateSlot extends TemplateBlock { movementPatternIds: string[]; targetMuscleIds: string[]; matchPolicy: "any" | "all" }
+export interface SessionTemplate { id: string; name: string; intent: string; domain: TemplateComponentDomain; commonUseCases: string[]; notes: string; structure: { kind: "strength"; slots: StrengthTemplateSlot[] } | { kind: "endurance" | "sport_skill" | "recovery" | "mind_body"; blocks: TemplateBlock[] } }
+export type StoredSessionTemplate = SessionTemplate & ({ origin: "builtin"; catalogVersion: string } | { origin: "user"; ownerId: string; revision: number; createdAt: string; updatedAt: string });
+export type TemplateRef = { source: "builtin"; id: string; catalogVersion: string } | { source: "user"; id: string; revision: number };
+export interface TaxonomyEntry { id: string; label: string; parentId: string | null; selectable: boolean }
+export interface TrainingTaxonomy { taxonomyVersion: string; templateCatalogVersion: string; strength: { movementPatterns: TaxonomyEntry[]; muscleGroups: TaxonomyEntry[]; equipment: string[] }; templateVariables: Record<TemplateComponentDomain, string[]> }
+// Optional Plan Target layer mirroring planTargetSchema (see UNIFIED_MULTISPORT_MESOCYCLE_DESIGN §5). Absent on legacy plans.
+export interface PlanTarget {
+  primaryGoal?: { label: string; baseline?: string | null; testDate?: string | null };
+  supporting?: Array<{ label: string; detail?: string }>;
+  maintenance?: Array<{ label: string; detail?: string }>;
+  constraints?: string[];
+  coordinationStrategy?: string;
+}
+export interface CurrentPlan { planSchemaVersion: "7.0"; ownerId: string; title: string; summary: string; effectiveStartDate: string; mesocycle: Mesocycle; revision: number; sourceAgent: string | null; model: string | null; skillVersion: string | null; inputSnapshotHash: string | null; updatedAt: string; target?: PlanTarget }
+export interface LegacySessionTemplate { id: string; name: string; intent: string; durationMinutes: number; recoveryDemand: "low" | "normal" | "high"; notes: string; components: PlanComponent[] }
+export interface PlanDraft { planSchemaVersion: "3.0"; id: string; title: string; summary: string; mesocycle: ({ durationWeeks: number; weeklyStructure: Array<{ dayOfWeek: number; templateIds: string[] }>; phases: DomainPhase[]; adjustmentRules: Mesocycle["adjustmentRules"]; sessionTemplates: LegacySessionTemplate[] }) | null; migration?: { reviewRequired: boolean; sourceSchema: string; sourceSessions: unknown[] } | null; updatedAt?: string }
 export interface StoredDraft { draft: PlanDraft; validation: PlanValidation }
 export interface PlanVersion { id: string; versionNumber: number; plan: PlanDraft; validation: PlanValidation; approvedAt: string; changeReason: string }
 
 export interface PlannedSession {
   id: string;
   occurrenceId: string;
+  weekNumber: number;
   name: string;
   intent: string;
   scheduledDate: string;
+  order: number;
   durationMinutes: number;
-  templateId: string;
-  phaseId: string;
+  templateRef: TemplateRef | null;
+  phaseRefs: PhaseRef[];
   recoveryDemand: "low" | "normal" | "high";
+  keySession?: boolean;
+  progressionNote?: string | null;
+  schedulingRationale?: string | null;
   status: "planned" | "completed" | "skipped";
   components: PlanComponent[];
   notes: string;
+  legacySnapshot: boolean;
+  overrideReason: string | null;
+}
+
+// Calendar entry returned by GET /api/plans/calendar (AthriaApplication.getCalendar).
+export interface CalendarSession {
+  id: string;
+  occurrenceId: string;
+  revision: number;
+  scheduledDate: string;
+  order: number;
+  weekNumber: number;
+  phaseRefs: PhaseRef[];
+  templateRef: TemplateRef | null;
+  name: string;
+  intent: string;
+  durationMinutes: number;
+  recoveryDemand: "low" | "normal" | "high";
+  keySession: boolean;
+  progressionNote: string | null;
+  schedulingRationale: string | null;
+  status: "planned" | "completed" | "skipped";
+  components: PlanComponent[];
+  legacySnapshot: boolean;
+  overrideReason: string | null;
 }
 
 export interface ValidationResult { status: "pass" | "fail" | "unknown" | "not_applicable"; enforcement: "blocker" | "advisory" | "info"; reasonCode: string; evidence: Record<string, unknown>; missingFacts: string[]; subjectRefs: string[] }
 export interface DataGap { code: string; subjectRef: string; factPath: string; requiredByRuleCodes: string[]; blocking: boolean; resolution: "agent_infer" | "user_confirm" | "add_profile_data" }
 export interface PlanValidation { valid: boolean; results: ValidationResult[]; dataGaps: DataGap[]; coverage?: { hardChecksResolved: number; hardChecksTotal: number; movementFactsResolved: number; movementFactsTotal: number; muscleFactsResolved: number; muscleFactsTotal: number; equipmentFactsResolved: number; equipmentFactsTotal: number } }
-export interface NextTrainingDay { nextTrainingDay: null | { occurrenceId: string; scheduledDate: string; dayOfWeek: number; weekNumber: number; phaseId: string; phaseType: string; expectedTemplateIds: string[]; existingSessions: PlannedSession[]; revision: number; timezone: string }; reasonCode: string | null }
+export interface NextTrainingDay { nextTrainingDay: null | { occurrenceId: string; scheduledDate: string; dayOfWeek: number; weekNumber: number; domainPhases: Array<{ domain: TemplateComponentDomain; phaseId: string; phaseType: DomainPhase["phaseType"]; name: string }>; existingSessions: PlannedSession[]; revision: number; timezone: string }; reasonCode: string | null }
 
 export interface ImportPreview { previewToken?: string; fileName?: string; counts?: { sessions?: number; sets?: number; rows?: number }; errors?: string[]; unknownColumns?: string[] }
 export interface ImportResult { added?: number; updated?: number; rawCount?: number; wellnessCount?: number; errors?: Record<string, string> }
@@ -144,9 +204,8 @@ export const dashboardPages = [
 ] as const;
 
 const fieldLabels: Record<string, string> = {
-  displayName: "Display name", timezone: "Time zone", goals: "Training goals", priority: "Training priority",
-  weeklyStrengthSessions: "Strength sessions per week", weeklyEnduranceSessions: "Endurance sessions per week",
-  maxSessionMinutes: "Maximum session length", trainingDays: "Training days", equipment: "Available equipment",
+  displayName: "Display name", timezone: "Time zone", goals: "Training goals", preference: "Preferences",
+  maxSessionMinutes: "Maximum session length", trainingRhythm: "Training rhythm", equipment: "Available equipment",
   strengthConstraints: "Strength constraints", constraintNotes: "Training limitations",
   explicitRecoveryHours: "Recovery time between hard sessions",
 };
@@ -186,12 +245,18 @@ export function formatProposalValue(value: unknown): string {
   return friendlyLabel(String(value));
 }
 
+export function formatTrainingRhythm(rhythm: AthleteProfile["trainingRhythm"]): string {
+  if (rhythm.kind === "fixed_week") return `Fixed · ${rhythm.days.map((day) => ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][day]).join(" / ")}`;
+  if (rhythm.kind === "flexible_week") return `Flexible · Target ${rhythm.targetDaysPerWeek} days (${rhythm.minDaysPerWeek}–${rhythm.maxDaysPerWeek})`;
+  return `Every ${rhythm.intervalDays} ${rhythm.intervalDays === 1 ? "day" : "days"}`;
+}
+
 export function proposalChanges(profile: AthleteProfile, patch: Partial<AthleteProfile>) {
   return Object.entries(patch)
     .filter(([key]) => key !== "ownerId" && key in fieldLabels)
     .map(([key, value]) => {
-      const format = (entry: unknown) => key === "trainingDays" && Array.isArray(entry)
-        ? (entry.length ? [...entry].sort().map((day) => ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][Number(day)]).join(", ") : "Flexible days")
+      const format = (entry: unknown) => key === "trainingRhythm" && entry && typeof entry === "object" && "kind" in entry
+        ? formatTrainingRhythm(entry as AthleteProfile["trainingRhythm"])
         : formatProposalValue(entry);
       return { label: fieldLabels[key]!, before: format(profile[key as keyof AthleteProfile]), after: format(value) };
     });
@@ -207,6 +272,20 @@ export function deviceTimezone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 }
 
+// Formats an IANA zone as "Hong Kong (GMT+08:00)"; falls back to the raw zone string when Intl cannot resolve it.
+export function formatTimezoneLabel(zone: string): string {
+  try {
+    const city = (zone.split("/").pop() || zone).replaceAll("_", " ");
+    const parts = new Intl.DateTimeFormat("en", { timeZone: zone, timeZoneName: "longOffset" }).formatToParts();
+    const name = parts.find((part) => part.type === "timeZoneName")?.value ?? "";
+    const match = name.match(/GMT([+-])(\d{1,2})(?::(\d{2}))?/);
+    const offset = match ? `GMT${match[1]}${match[2]!.padStart(2, "0")}:${match[3] ?? "00"}` : name;
+    return `${city} (${offset})`;
+  } catch {
+    return zone;
+  }
+}
+
 export function timezoneOptions(current: string): string[] {
   const intl = Intl as typeof Intl & { supportedValuesOf?: (key: "timeZone") => string[] };
   const supported = intl.supportedValuesOf?.("timeZone") ?? [];
@@ -215,7 +294,7 @@ export function timezoneOptions(current: string): string[] {
 
 export function isUntouchedDefaultProfile(profile: AthleteProfile): boolean {
   return profile.displayName === "Athlete" && profile.timezone === "Asia/Hong_Kong" && profile.goals.length === 1 && profile.goals[0] === "general_fitness"
-    && profile.weeklyStrengthSessions === 2 && profile.weeklyEnduranceSessions === 2 && profile.trainingDays.length === 0
+    && profile.trainingRhythm.kind === "flexible_week" && profile.trainingRhythm.targetDaysPerWeek === 4 && profile.trainingRhythm.minDaysPerWeek === 3 && profile.trainingRhythm.maxDaysPerWeek === 5
     && profile.equipment.join("|") === "bodyweight|dumbbell|cable|machine" && profile.constraintNotes.length === 0 && profile.strengthConstraints.length === 0;
 }
 
@@ -225,11 +304,11 @@ export function profilePayload(current: AthleteProfile, edits: AthleteProfile = 
     ownerId: "local-user",
     timezone: edits.timezone,
     goals: edits.goals,
-    priority: edits.priority,
-    weeklyStrengthSessions: edits.weeklyStrengthSessions,
-    weeklyEnduranceSessions: edits.weeklyEnduranceSessions,
+    preference: edits.preference.trim().slice(0, PREFERENCE_MAX_LENGTH),
     maxSessionMinutes: edits.maxSessionMinutes,
-    trainingDays: [...new Set(edits.trainingDays)].sort((a, b) => a - b),
+    trainingRhythm: edits.trainingRhythm.kind === "fixed_week"
+      ? { ...edits.trainingRhythm, days: [...new Set(edits.trainingRhythm.days)].sort((a, b) => a - b) }
+      : { ...edits.trainingRhythm },
     equipment: edits.equipment,
   };
 }
@@ -274,47 +353,23 @@ export function customExercise(input: CustomExerciseInput = { name: "", movement
   };
 }
 
-export function templateComponent(domain: TemplateComponentDomain, id: string = crypto.randomUUID()): PlanComponent {
-  const name = friendlyLabel(domain);
-  return {
-    id, name,
-    domain: classifiedFact(domain, "user_confirmed", "Selected in Dashboard"),
-    prescription: domain === "strength" ? { kind: "strength", exercises: [] } : { kind: "duration_only", notes: "" },
-  };
-}
-
 export function editableTemplate(value: SessionTemplate): SessionTemplate {
-  return structuredClone({ id: value.id, name: value.name, intent: value.intent, durationMinutes: value.durationMinutes, recoveryDemand: value.recoveryDemand, notes: value.notes, components: value.components });
+  return structuredClone({ id: value.id, name: value.name, intent: value.intent, domain: value.domain, commonUseCases: value.commonUseCases, notes: value.notes, structure: value.structure });
 }
 
 export function templateEditorErrors(template: SessionTemplate): string[] {
   const errors: string[] = [];
   if (!template.name.trim()) errors.push("Enter a template name.");
   if (!template.intent.trim()) errors.push("Enter the training goal.");
-  if (!Number.isInteger(template.durationMinutes) || template.durationMinutes < 1 || template.durationMinutes > 240) errors.push("Duration must be between 1 and 240 minutes.");
-  if (template.components.length === 0) errors.push("Add at least one component.");
-  template.components.forEach((component, componentIndex) => {
-    const componentLabel = `Component ${componentIndex + 1}`;
-    if (!component.name.trim()) errors.push(`${componentLabel} needs a name.`);
-    if (component.prescription.kind === "duration_only") {
-      if (!component.prescription.notes.trim()) errors.push(`${componentLabel} needs session instructions.`);
-      return;
+  const nodes = template.structure.kind === "strength" ? template.structure.slots : template.structure.blocks;
+  if (!nodes.length) errors.push("Add at least one structure node.");
+  nodes.forEach((node, index) => {
+    if (!node.name.trim()) errors.push(`Node ${index + 1} needs a name.`);
+    if (!node.variables.length) errors.push(`Node ${index + 1} needs at least one variable.`);
+    if (template.structure.kind === "strength") {
+      const slot = node as StrengthTemplateSlot;
+      if (!slot.movementPatternIds.length && !slot.targetMuscleIds.length) errors.push(`Node ${index + 1} needs a movement pattern or target muscle.`);
     }
-    if (component.prescription.exercises.length === 0) errors.push(`${componentLabel} needs at least one exercise.`);
-    component.prescription.exercises.forEach((exercise, exerciseIndex) => {
-      const label = `${componentLabel}, exercise ${exerciseIndex + 1}`;
-      if (!exercise.displayName.trim()) errors.push(`${label} needs a name.`);
-      if (!Number.isInteger(exercise.sets) || exercise.sets < 1 || exercise.sets > 20) errors.push(`${label} sets must be between 1 and 20.`);
-      if (!Number.isInteger(exercise.repsMin) || exercise.repsMin < 1 || exercise.repsMin > 100 || !Number.isInteger(exercise.repsMax) || exercise.repsMax < exercise.repsMin || exercise.repsMax > 100) errors.push(`${label} reps must be between 1 and 100, with max at least min.`);
-      if (exercise.targetRpe !== null && (exercise.targetRpe < 1 || exercise.targetRpe > 10)) errors.push(`${label} RPE must be between 1 and 10.`);
-      if (!Number.isInteger(exercise.restSeconds) || exercise.restSeconds < 0 || exercise.restSeconds > 600) errors.push(`${label} rest must be between 0 and 600 seconds.`);
-      if (exercise.referenceLoad !== null && exercise.referenceLoad < 0) errors.push(`${label} reference load cannot be negative.`);
-      if (exercise.canonicalKey === null) {
-        if (!exercise.classification.primaryMovement.value) errors.push(`${label} needs a movement pattern.`);
-        if (!Array.isArray(exercise.classification.primaryMuscles.value) || exercise.classification.primaryMuscles.value.length === 0) errors.push(`${label} needs a primary muscle.`);
-        if (!Array.isArray(exercise.classification.equipment.value) || exercise.classification.equipment.value.length === 0) errors.push(`${label} needs equipment.`);
-      }
-    });
   });
   return errors;
 }
@@ -324,16 +379,7 @@ export function isPlanDraftApproved(draftId: string, versions: PlanVersion[]): b
 export function primaryPlanDraft(drafts: StoredDraft[], versions: PlanVersion[]): StoredDraft | null { return pendingPlanDrafts(drafts, versions)[0] ?? drafts[0] ?? null; }
 
 export function referencedTemplates(mesocycle: Mesocycle, templates: SessionTemplate[]): { templates: SessionTemplate[]; missingIds: string[] } {
-  const byId = new Map(templates.map((item) => [item.id, item]));
-  const resolved: SessionTemplate[] = []; const missingIds: string[] = []; const seen = new Set<string>();
-  const slots = mesocycle.schedule.kind === "fixed_week" ? [...mesocycle.schedule.days].sort((a, b) => a.dayOfWeek - b.dayOfWeek) : mesocycle.schedule.rotation;
-  for (const slot of slots) {
-    for (const id of slot.templateIds) {
-      if (seen.has(id)) continue; seen.add(id);
-      const template = byId.get(id);
-      if (template) resolved.push(template); else missingIds.push(id);
-    }
-  }
-  return { templates: resolved, missingIds };
+  const byId = new Map(templates.map((item) => [item.id, item])); const ids = [...new Set(mesocycle.weeks.flatMap((week) => week.sessions.map((session) => session.templateRef?.id).filter((id): id is string => Boolean(id))))];
+  return { templates: ids.map((id) => byId.get(id)).filter((item): item is SessionTemplate => Boolean(item)), missingIds: ids.filter((id) => !byId.has(id)) };
 }
 export function resolveSelectedTemplate(referenced: SessionTemplate[], selectedId: string): SessionTemplate | undefined { return referenced.find((item) => item.id === selectedId) ?? referenced[0]; }

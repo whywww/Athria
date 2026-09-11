@@ -20,7 +20,7 @@ const bunExecutable = process.execPath;
 const buildRoot = resolve(projectRoot, "..", "Athria");
 const binariesRoot = join(buildRoot, "binaries");
 const frontendDist = join(buildRoot, "frontend");
-const cargoTargetRoot = join(buildRoot, "target");
+const cargoTargetRoot = resolve(process.env.ATHRIA_CARGO_TARGET_DIR ?? join(buildRoot, "target"));
 const temporaryRoot = join(buildRoot, "tmp");
 const bunWorkingRoot = join(temporaryRoot, "bun-work");
 
@@ -69,10 +69,12 @@ function environment(host: HostBuild): Record<string, string> {
   const rustCandidates = [join(homedir(), ".cargo", "bin"), "/opt/homebrew/opt/rustup/bin"];
   const rustBin = rustCandidates.find((directory) => existsSync(join(directory, host.platform === "windows" ? "cargo.exe" : "cargo")));
   const pathEntries = [dirname(bunExecutable), ...(rustBin ? [rustBin] : []), process.env.PATH ?? ""];
+  const executablePath = pathEntries.join(delimiter);
   return {
     ATHRIA_BUN: bunExecutable,
     CARGO_TARGET_DIR: cargoTargetRoot,
-    PATH: pathEntries.join(delimiter),
+    PATH: executablePath,
+    ...(host.platform === "windows" ? { Path: executablePath } : {}),
     TEMP: temporaryRoot,
     TMP: temporaryRoot,
     TMPDIR: temporaryRoot,

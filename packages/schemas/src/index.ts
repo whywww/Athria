@@ -3,8 +3,9 @@ import * as z from "zod";
 export const OWNER_ID = "local-user";
 export const FORMULA_VERSION = "0.2.0";
 export const RULE_VERSION = "0.2.0";
-export const PLAN_SCHEMA_VERSION = "5.0";
-export const TAXONOMY_VERSION = "strength-1.0";
+export const PLAN_SCHEMA_VERSION = "7.0";
+export const TAXONOMY_VERSION = "strength-2.0";
+export const TEMPLATE_CATALOG_VERSION = "1.0";
 export const AI_HARD_CONFIDENCE = 0.9;
 
 // Kept only as source metadata for imported records. Plans use components.
@@ -14,8 +15,20 @@ export const phaseTypeSchema = z.enum(["foundation", "progression", "deload", "p
 export const recoveryDemandSchema = z.enum(["low", "normal", "high"]);
 export const weightUnitSchema = z.enum(["kg", "lb"]);
 export const factSourceSchema = z.enum(["catalog", "structured_source", "exact_alias", "ai_inferred", "user_confirmed", "migration"]);
-export const movementPatternSchema = z.enum(["squat", "hinge", "lunge", "horizontal_push", "vertical_push", "horizontal_pull", "vertical_pull", "carry", "rotation", "anti_rotation", "flexion", "extension", "abduction", "adduction", "calf_raise", "isolation", "other"]);
-export const muscleGroupSchema = z.enum(["chest", "upper_back", "back", "lats", "shoulders", "biceps", "triceps", "forearms", "quadriceps", "hamstrings", "glutes", "calves", "core", "spinal_erectors", "hip_flexors", "adductors", "abductors", "full_body", "other"]);
+export const movementPatternIds = ["squat", "hinge", "lunge", "step", "bridge_hip_thrust", "horizontal_push", "vertical_push", "horizontal_pull", "vertical_pull", "shoulder_abduction", "shoulder_external_rotation", "elbow_flexion", "elbow_extension", "knee_extension", "knee_flexion", "hip_abduction", "hip_adduction", "calf_raise", "dorsiflexion", "carry", "rotation", "anti_rotation", "trunk_flexion", "trunk_extension", "lateral_flexion", "anti_extension", "anti_lateral_flexion", "jump", "throw", "locomotion", "olympic_lift", "isolation", "other"] as const;
+export const muscleGroupIds = ["chest", "upper_back", "back", "lats", "shoulders", "arms", "biceps", "triceps", "forearms", "quadriceps", "hamstrings", "thighs", "hips", "glutes", "calves", "lower_legs", "core", "spinal_erectors", "hip_flexors", "adductors", "abductors", "full_body", "other", "pectoralis_major_clavicular", "pectoralis_major_sternal", "latissimus_dorsi", "trapezius_upper", "trapezius_middle_lower", "rhomboids", "anterior_deltoid", "lateral_deltoid", "posterior_deltoid", "rotator_cuff", "biceps_brachii", "brachialis", "triceps_brachii", "forearm_flexors", "forearm_extensors", "gluteus_maximus", "gluteus_medius", "gluteus_minimus", "gastrocnemius", "soleus", "tibialis_anterior", "rectus_abdominis", "obliques", "transverse_abdominis"] as const;
+export const movementPatternSchema = z.enum(movementPatternIds);
+export const muscleGroupSchema = z.enum(muscleGroupIds);
+export interface TaxonomyEntry { id: string; label: string; parentId: string | null; selectable: boolean }
+const title = (id: string) => id.split("_").map((part) => part[0]!.toUpperCase() + part.slice(1)).join(" ");
+const muscleParents: Record<string, string> = {
+  pectoralis_major_clavicular: "chest", pectoralis_major_sternal: "chest", latissimus_dorsi: "back", trapezius_upper: "back", trapezius_middle_lower: "back", rhomboids: "back", spinal_erectors: "back",
+  anterior_deltoid: "shoulders", lateral_deltoid: "shoulders", posterior_deltoid: "shoulders", rotator_cuff: "shoulders", biceps_brachii: "arms", brachialis: "arms", triceps_brachii: "arms", forearm_flexors: "arms", forearm_extensors: "arms",
+  gluteus_maximus: "glutes", gluteus_medius: "glutes", gluteus_minimus: "glutes", quadriceps: "thighs", hamstrings: "thighs", adductors: "thighs", hip_flexors: "hips", gastrocnemius: "lower_legs", soleus: "lower_legs", tibialis_anterior: "lower_legs",
+  rectus_abdominis: "core", obliques: "core", transverse_abdominis: "core",
+};
+export const muscleTaxonomy: TaxonomyEntry[] = muscleGroupIds.map((id) => ({ id, label: title(id), parentId: muscleParents[id] ?? null, selectable: true }));
+export const movementPatternTaxonomy: TaxonomyEntry[] = movementPatternIds.map((id) => ({ id, label: title(id), parentId: null, selectable: true }));
 export const equipmentTypeSchema = z.enum(["bodyweight", "barbell", "dumbbell", "kettlebell", "cable", "machine", "band", "smith_machine", "trap_bar", "ez_bar", "bench", "pull_up_bar", "rings", "suspension", "medicine_ball", "landmine", "sled", "other"]);
 
 const classifiedFact = <T extends z.ZodTypeAny>(value: T) => z.object({
@@ -33,10 +46,19 @@ export const strengthConstraintSchema = z.discriminatedUnion("type", [
   z.object({ id: z.string().min(1), type: z.literal("exclude_exercise"), canonicalKey: z.string().min(1) }).strict(),
   z.object({ id: z.string().min(1), type: z.literal("prohibit_movement_pattern"), movementPattern: movementPatternSchema }).strict(),
 ]);
+const profileWeekdaysSchema = z.array(z.number().int().min(0).max(6)).min(1).max(7)
+  .refine((days) => new Set(days).size === days.length, { message: "training rhythm days must be unique" })
+  .meta({ uniqueItems: true });
+export const trainingRhythmSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("fixed_week"), days: profileWeekdaysSchema }).strict(),
+  z.object({ kind: z.literal("flexible_week"), targetDaysPerWeek: z.number().int().min(1).max(7), minDaysPerWeek: z.number().int().min(1).max(7), maxDaysPerWeek: z.number().int().min(1).max(7) }).strict()
+    .refine((value) => value.minDaysPerWeek <= value.targetDaysPerWeek && value.targetDaysPerWeek <= value.maxDaysPerWeek, { message: "expected minDaysPerWeek <= targetDaysPerWeek <= maxDaysPerWeek" }),
+  z.object({ kind: z.literal("interval"), intervalDays: z.number().int().min(1).max(30) }).strict(),
+]);
 export const athleteProfileSchema = z.object({
   ownerId: z.string().default(OWNER_ID), displayName: z.string().min(1).max(100).default("Athlete"), timezone: z.string().min(1).default("Asia/Hong_Kong"), goals: z.array(z.string()).default(["general_fitness"]),
-  priority: z.enum(["strength", "endurance", "balanced"]).default("balanced"), weeklyStrengthSessions: z.number().int().min(0).max(7).default(2), weeklyEnduranceSessions: z.number().int().min(0).max(7).default(2),
-  maxSessionMinutes: z.number().int().min(15).max(240).default(60), trainingDays: z.array(z.number().int().min(0).max(6)).max(7).refine((days) => new Set(days).size === days.length, { message: "training days must be unique" }).meta({ uniqueItems: true }).default([]),
+  preference: z.string().trim().max(80).default(""), // keep in sync with apps/desktop/src/view-models.ts:PREFERENCE_MAX_LENGTH
+  maxSessionMinutes: z.number().int().min(15).max(240).default(60), trainingRhythm: trainingRhythmSchema.default({ kind: "flexible_week", targetDaysPerWeek: 4, minDaysPerWeek: 3, maxDaysPerWeek: 5 }),
   equipment: z.array(equipmentTypeSchema).default(["bodyweight", "dumbbell", "cable", "machine"]), strengthConstraints: z.array(strengthConstraintSchema).default([]), constraintNotes: z.array(z.string()).default([]), explicitRecoveryHours: z.number().int().min(0).max(168).nullable().default(null),
 }).strict();
 export const trainingPreferenceSchema = z.object({ ownerId: z.string().default(OWNER_ID), preferredExercises: z.array(z.string()).default([]), dislikedExercises: z.array(z.string()).default([]), preferredSessionMinutes: z.number().int().min(15).max(240).default(60), notes: z.string().max(2000).default("") }).strict();
@@ -59,38 +81,116 @@ export const exerciseDefinitionSchema = z.object({ key: z.string().min(1), name:
 export const planExerciseSchema = z.object({
   id: z.string().min(1), displayName: z.string().min(1), canonicalKey: z.string().min(1).nullable().default(null),
   classification: z.object({ primaryMovement: movementFactSchema, primaryMuscles: muscleFactSchema, secondaryMuscles: muscleFactSchema, equipment: equipmentFactSchema, impact: impactFactSchema, laterality: lateralityFactSchema }).strict(),
-  sets: z.number().int().min(1).max(20), repsMin: z.number().int().min(1).max(100), repsMax: z.number().int().min(1).max(100), targetRpe: z.number().min(1).max(10).nullable().default(null), restSeconds: z.number().int().min(0).max(600).default(90), referenceLoad: z.number().min(0).nullable().default(null), referenceLoadUnit: weightUnitSchema.nullable().default(null), notes: z.string().max(1000).default(""),
+  sets: z.number().int().min(1).max(20), repsMin: z.number().int().min(1).max(100), repsMax: z.number().int().min(1).max(100), targetRpe: z.number().min(1).max(10).nullable().default(null), targetRir: z.number().min(0).max(10).nullable().optional(), restSeconds: z.number().int().min(0).max(600).default(90), referenceLoad: z.number().min(0).nullable().default(null), referenceLoadUnit: weightUnitSchema.nullable().default(null), tempo: z.string().max(40).nullable().optional(), alternatives: z.array(z.string().min(1).max(100)).max(10).optional(), notes: z.string().max(1000).default(""),
 }).strict().refine((value) => value.repsMax >= value.repsMin, { message: "repsMax must be >= repsMin" });
 export const strengthPrescriptionSchema = z.object({ kind: z.literal("strength"), exercises: z.array(planExerciseSchema).min(1).max(30) }).strict();
 export const durationOnlyPrescriptionSchema = z.object({ kind: z.literal("duration_only"), notes: z.string().max(4000).default("") }).strict();
-export const trainingComponentSchema = z.object({ id: z.string().min(1), name: z.string().min(1).max(100), domain: domainFactSchema, prescription: z.discriminatedUnion("kind", [strengthPrescriptionSchema, durationOnlyPrescriptionSchema]) }).strict().superRefine((value, context) => {
+const effortTargetShape = {
+  durationSeconds: z.number().int().positive().optional(), distanceMeters: z.number().positive().optional(), pace: z.string().min(1).max(80).optional(), heartRateZone: z.string().min(1).max(40).optional(), powerWatts: z.string().min(1).max(40).optional(), cadence: z.string().min(1).max(40).optional(), rpe: z.string().min(1).max(40).optional(), talkTest: z.string().min(1).max(120).optional(), notes: z.string().max(1000).optional(),
+};
+export const enduranceStepSchema = z.object({ type: z.literal("step"), name: z.string().min(1).max(100), role: z.enum(["warm_up", "steady", "work", "recovery", "cool_down"]), ...effortTargetShape }).strict();
+export const enduranceRepeatSchema = z.object({ type: z.literal("repeat"), name: z.string().min(1).max(100), repetitions: z.number().int().min(1).max(100), work: enduranceStepSchema, recovery: enduranceStepSchema.optional(), notes: z.string().max(1000).optional() }).strict();
+export const endurancePrescriptionSchema = z.object({ kind: z.literal("endurance"), segments: z.array(z.discriminatedUnion("type", [enduranceStepSchema, enduranceRepeatSchema])).min(1).max(50) }).strict();
+export const sportBlockSchema = z.object({ name: z.string().min(1).max(100), role: z.enum(["preparation", "technical", "tactical", "small_sided_game", "match", "competition", "conditioning", "cool_down"]), durationMinutes: z.number().int().positive().optional(), intensity: z.string().min(1).max(80).optional(), instructions: z.string().max(2000).optional() }).strict();
+export const sportPrescriptionSchema = z.object({ kind: z.literal("sport_skill"), sessionType: z.enum(["practice", "match", "competition"]), blocks: z.array(sportBlockSchema).min(1).max(30) }).strict();
+export const recoveryBlockSchema = z.object({ name: z.string().min(1).max(100), durationMinutes: z.number().int().positive().optional(), instructions: z.string().max(2000).optional() }).strict();
+export const recoveryPrescriptionSchema = z.object({ kind: z.literal("recovery"), blocks: z.array(recoveryBlockSchema).min(1).max(30) }).strict();
+export const mindBodyPrescriptionSchema = z.object({ kind: z.literal("mind_body"), blocks: z.array(recoveryBlockSchema).min(1).max(30) }).strict();
+export const trainingComponentSchema = z.object({ id: z.string().min(1), name: z.string().min(1).max(100), domain: domainFactSchema, prescription: z.discriminatedUnion("kind", [strengthPrescriptionSchema, endurancePrescriptionSchema, sportPrescriptionSchema, recoveryPrescriptionSchema, mindBodyPrescriptionSchema, durationOnlyPrescriptionSchema]) }).strict().superRefine((value, context) => {
   if (value.prescription.kind === "strength" && value.domain.value !== "strength") context.addIssue({ code: "custom", path: ["domain", "value"], message: "strength prescription requires strength domain" });
   if (value.prescription.kind === "duration_only" && value.domain.value === "strength") context.addIssue({ code: "custom", path: ["prescription", "kind"], message: "strength domain requires strength prescription" });
+  if (["endurance", "sport_skill", "recovery", "mind_body"].includes(value.prescription.kind) && value.domain.value !== value.prescription.kind) context.addIssue({ code: "custom", path: ["domain", "value"], message: `${value.prescription.kind} prescription requires matching domain` });
 });
-export const sessionTemplateSchema = z.object({ id: z.string().min(1), name: z.string().min(1).max(100), intent: z.string().min(1).max(240), durationMinutes: z.number().int().min(1).max(240), recoveryDemand: recoveryDemandSchema, notes: z.string().max(4000).default(""), components: z.array(trainingComponentSchema).min(1).max(20) }).strict();
-export const trainingDaySlotSchema = z.object({ id: z.string().min(1), templateIds: z.array(z.string().min(1)).min(1).max(26) }).strict();
-export const scheduleSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("fixed_week"), days: z.array(trainingDaySlotSchema.extend({ dayOfWeek: z.number().int().min(0).max(6) }).strict()).min(1).max(7) }).strict(),
-  z.object({ kind: z.literal("flexible_week"), targetSessionsPerWeek: z.number().int().min(1).max(7), minSessionsPerWeek: z.number().int().min(1).max(7), maxSessionsPerWeek: z.number().int().min(1).max(7), rotation: z.array(trainingDaySlotSchema).min(1).max(26) }).strict().refine((value) => value.minSessionsPerWeek <= value.targetSessionsPerWeek && value.targetSessionsPerWeek <= value.maxSessionsPerWeek, { message: "expected minSessionsPerWeek <= targetSessionsPerWeek <= maxSessionsPerWeek" }),
-  z.object({ kind: z.literal("interval"), intervalDays: z.number().int().min(1).max(30), rotation: z.array(trainingDaySlotSchema).min(1).max(26) }).strict(),
+const templateRangeSchema = z.object({ min: z.number().optional(), max: z.number().optional(), unit: z.enum(["repetitions", "sets", "seconds", "minutes", "meters", "kilometers", "rpe", "watts", "bpm"]) }).strict().refine((value) => value.min !== undefined || value.max !== undefined, { message: "an identity constraint needs min or max" }).refine((value) => value.min === undefined || value.max === undefined || value.max >= value.min, { message: "identity constraint max must be >= min" });
+const variable = <T extends z.ZodEnum>(key: T) => z.object({ key, required: z.boolean().default(true), identityConstraint: templateRangeSchema.optional() }).strict();
+export const strengthTemplateVariableSchema = z.enum(["exercise_selection", "sets", "repetitions", "duration", "load", "rpe", "rir", "rest", "tempo", "alternatives"]);
+export const enduranceTemplateVariableSchema = z.enum(["repetitions", "duration", "distance", "pace", "heart_rate_zone", "power", "cadence", "rpe", "talk_test", "terrain", "strides", "recovery_mode"]);
+export const sportTemplateVariableSchema = z.enum(["drill", "participants", "position", "duration", "intensity", "instructions"]);
+export const recoveryTemplateVariableSchema = z.enum(["body_region", "movement", "duration", "intensity", "instructions"]);
+export const mindBodyTemplateVariableSchema = z.enum(["technique", "duration", "intensity", "instructions"]);
+const templateBase = { id: z.string().min(1), name: z.string().min(1).max(100), intent: z.string().min(1).max(240), commonUseCases: z.array(z.string().min(1).max(240)).max(20).default([]), notes: z.string().max(4000).default("") };
+const strengthTemplateSlotSchema = z.object({ id: z.string().min(1), name: z.string().min(1).max(100), role: z.enum(["primary", "secondary", "accessory", "trunk"]), required: z.boolean().default(true), movementPatternIds: z.array(movementPatternSchema).max(20).default([]), targetMuscleIds: z.array(muscleGroupSchema).max(30).default([]), matchPolicy: z.enum(["any", "all"]).default("any"), variables: z.array(variable(strengthTemplateVariableSchema)).min(1).max(20) }).strict().refine((value) => value.movementPatternIds.length > 0 || value.targetMuscleIds.length > 0, { message: "a strength slot needs a movement pattern or target muscle" });
+const abstractBlock = <T extends z.ZodEnum, R extends z.ZodEnum>(role: R, variables: T) => z.object({ id: z.string().min(1), name: z.string().min(1).max(100), role, required: z.boolean().default(true), variables: z.array(variable(variables)).min(1).max(20) }).strict();
+export const sessionTemplateSchema = z.discriminatedUnion("domain", [
+  z.object({ ...templateBase, domain: z.literal("strength"), structure: z.object({ kind: z.literal("strength"), slots: z.array(strengthTemplateSlotSchema).min(1).max(30) }).strict() }).strict(),
+  z.object({ ...templateBase, domain: z.literal("endurance"), structure: z.object({ kind: z.literal("endurance"), blocks: z.array(abstractBlock(z.enum(["warm_up", "steady", "repeat_work_recovery", "cool_down"]), enduranceTemplateVariableSchema)).min(1).max(30) }).strict() }).strict(),
+  z.object({ ...templateBase, domain: z.literal("sport_skill"), structure: z.object({ kind: z.literal("sport_skill"), blocks: z.array(abstractBlock(z.enum(["preparation", "technical", "tactical", "small_sided_game", "match", "competition", "conditioning", "cool_down"]), sportTemplateVariableSchema)).min(1).max(30) }).strict() }).strict(),
+  z.object({ ...templateBase, domain: z.literal("recovery"), structure: z.object({ kind: z.literal("recovery"), blocks: z.array(abstractBlock(z.enum(["down_regulation", "mobility", "easy_movement"]), recoveryTemplateVariableSchema)).min(1).max(30) }).strict() }).strict(),
+  z.object({ ...templateBase, domain: z.literal("mind_body"), structure: z.object({ kind: z.literal("mind_body"), blocks: z.array(abstractBlock(z.enum(["centering", "practice_flow", "breathing", "down_regulation"]), mindBodyTemplateVariableSchema)).min(1).max(30) }).strict() }).strict(),
 ]);
+export const scheduleSchema = trainingRhythmSchema;
+export const builtinTemplateRefSchema = z.object({ source: z.literal("builtin"), id: z.string().min(1), catalogVersion: z.string().min(1) }).strict();
+export const userTemplateRefSchema = z.object({ source: z.literal("user"), id: z.string().min(1), revision: z.number().int().positive() }).strict();
+export const templateRefSchema = z.discriminatedUnion("source", [builtinTemplateRefSchema, userTemplateRefSchema]);
+export const weeklySessionSchema = z.object({
+  id: z.string().min(1), scheduledDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), order: z.number().int().min(0).max(50), templateRef: templateRefSchema.nullable().default(null), name: z.string().min(1).max(100), intent: z.string().min(1).max(240), durationMinutes: z.number().int().min(1).max(240), recoveryDemand: recoveryDemandSchema.default("normal"), keySession: z.boolean().default(false), components: z.array(trainingComponentSchema).min(1).max(20), progressionNote: z.string().max(2000).nullable().default(null), schedulingRationale: z.string().max(2000).nullable().default(null), legacySnapshot: z.boolean().default(false),
+}).strict();
+export const planWeekSchema = z.object({ weekNumber: z.number().int().min(1).max(52), focus: z.string().max(300).nullable().default(null), sessions: z.array(weeklySessionSchema).max(50) }).strict().superRefine((value, context) => {
+  const ids = value.sessions.map((session) => session.id);
+  if (new Set(ids).size !== ids.length) context.addIssue({ code: "custom", path: ["sessions"], message: "session ids must be unique within a week" });
+  const orderKeys = value.sessions.map((session) => `${session.scheduledDate}:${session.order}`);
+  if (new Set(orderKeys).size !== orderKeys.length) context.addIssue({ code: "custom", path: ["sessions"], message: "session order must be unique within a date" });
+});
+export const domainPhaseSchema = z.object({ id: z.string().min(1), phaseType: phaseTypeSchema, name: z.string().min(1).max(40), startWeek: z.number().int().min(1).max(52), endWeek: z.number().int().min(1).max(52), focus: z.string().min(1).max(300), progression: z.array(z.string().min(1).max(1000)).default([]) }).strict();
+export const domainProgressionSchema = z.object({ domain: domainSchema, phases: z.array(domainPhaseSchema).min(1).max(52) }).strict();
 export const mesocycleSchema = z.object({
   durationWeeks: z.number().int().min(1).max(52), schedule: scheduleSchema,
-  phases: z.array(z.object({ id: z.string().min(1), phaseType: phaseTypeSchema, name: z.string().min(1).max(40), startWeek: z.number().int().min(1).max(52), endWeek: z.number().int().min(1).max(52), focus: z.string().min(1).max(300), progression: z.array(z.string().min(1).max(1000)).default([]) }).strict()).min(1).max(52),
+  domainProgressions: z.array(domainProgressionSchema).max(5).default([]),
+  weeks: z.array(planWeekSchema).min(1).max(52),
   adjustmentRules: z.array(z.object({ trigger: z.string().min(1).max(1000), action: z.string().min(1).max(1000), rationale: z.string().min(1).max(2000) }).strict()).default([]),
+}).strict().superRefine((value, context) => {
+  const progressionDomains = value.domainProgressions.map((progression) => progression.domain);
+  if (new Set(progressionDomains).size !== progressionDomains.length) context.addIssue({ code: "custom", path: ["domainProgressions"], message: "progression domains must be unique" });
+  value.domainProgressions.forEach((progression, progressionIndex) => {
+    const phases = [...progression.phases].sort((left, right) => left.startWeek - right.startWeek);
+    const phaseIds = phases.map((phase) => phase.id);
+    const phasesAreContiguous = new Set(phaseIds).size === phaseIds.length
+      && phases[0]?.startWeek === 1
+      && phases.at(-1)?.endWeek === value.durationWeeks
+      && phases.every((phase, index) => phase.startWeek <= phase.endWeek
+        && phase.endWeek <= value.durationWeeks
+        && (index === 0 || phase.startWeek === phases[index - 1]!.endWeek + 1));
+    if (!phasesAreContiguous) context.addIssue({ code: "custom", path: ["domainProgressions", progressionIndex, "phases"], message: "domain phases must uniquely and contiguously cover the mesocycle" });
+  });
+  const weekNumbers = value.weeks.map((week) => week.weekNumber);
+  if (new Set(weekNumbers).size !== weekNumbers.length) context.addIssue({ code: "custom", path: ["weeks"], message: "week numbers must be unique" });
+  if (value.weeks.length !== value.durationWeeks || [...weekNumbers].sort((a, b) => a - b).some((week, index) => week !== index + 1)) context.addIssue({ code: "custom", path: ["weeks"], message: "weeks must cover the complete mesocycle" });
+  const sessionDomains = new Set(value.weeks.flatMap((week) => week.sessions.flatMap((session) => session.components.map((component) => component.domain.value).filter((domain): domain is z.infer<typeof domainSchema> => domain !== null))));
+  if (sessionDomains.size !== progressionDomains.length || progressionDomains.some((domain) => !sessionDomains.has(domain))) context.addIssue({ code: "custom", path: ["domainProgressions"], message: "domain progressions must exactly match resolved session domains" });
+});
+export const resolvedMesocycleSchema = mesocycleSchema;
+const storedTemplateMetadata = { origin: z.literal("user").default("user"), ownerId: z.string().default(OWNER_ID), revision: z.number().int().positive(), createdAt: z.string().datetime({ offset: true }), updatedAt: z.string().datetime({ offset: true }) };
+const builtinTemplateMetadata = { origin: z.literal("builtin"), catalogVersion: z.string().min(1) };
+export const storedSessionTemplateSchema = z.discriminatedUnion("domain", sessionTemplateSchema.options.map((option) => option.extend(storedTemplateMetadata).strict()) as [z.ZodObject<any>, z.ZodObject<any>, ...z.ZodObject<any>[]]);
+export const builtinSessionTemplateSchema = z.discriminatedUnion("domain", sessionTemplateSchema.options.map((option) => option.extend(builtinTemplateMetadata).strict()) as [z.ZodObject<any>, z.ZodObject<any>, ...z.ZodObject<any>[]]);
+// Optional, additive Plan Target layer (see UNIFIED_MULTISPORT_MESOCYCLE_DESIGN §5). Absent on legacy plans; every field optional so a plan without `target` still parses.
+export const planTargetSchema = z.object({
+  primaryGoal: z.object({ label: z.string().min(1).max(200), baseline: z.string().max(200).nullable().optional(), testDate: z.string().max(40).nullable().optional() }).strict().optional(),
+  supporting: z.array(z.object({ label: z.string().min(1).max(200), detail: z.string().max(400).optional() }).strict()).max(20).optional(),
+  maintenance: z.array(z.object({ label: z.string().min(1).max(200), detail: z.string().max(400).optional() }).strict()).max(20).optional(),
+  constraints: z.array(z.string().min(1).max(300)).max(30).optional(),
+  coordinationStrategy: z.string().max(2000).optional(),
 }).strict();
-export const resolvedMesocycleSchema = mesocycleSchema.extend({ sessionTemplates: z.array(sessionTemplateSchema).min(1).max(52) }).strict();
-export const storedSessionTemplateSchema = sessionTemplateSchema.extend({ ownerId: z.string().default(OWNER_ID), revision: z.number().int().positive(), createdAt: z.string().datetime({ offset: true }), updatedAt: z.string().datetime({ offset: true }) }).strict();
 export const currentPlanSchema = z.object({
   planSchemaVersion: z.literal(PLAN_SCHEMA_VERSION), ownerId: z.string().default(OWNER_ID), title: z.string().min(1).max(200), summary: z.string().max(4000).default(""), effectiveStartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), mesocycle: mesocycleSchema,
   revision: z.number().int().positive(), sourceAgent: z.string().nullable().default(null), model: z.string().nullable().default(null), skillVersion: z.string().nullable().default(null), inputSnapshotHash: z.string().nullable().default(null), updatedAt: z.string().datetime({ offset: true }),
-}).strict();
-export const currentPlanWriteSchema = currentPlanSchema.omit({ revision: true, updatedAt: true }).extend({ expectedRevision: z.number().int().min(0), futureSessionPolicy: z.enum(["keep", "update"]).optional() }).strict();
-export const sessionTemplateCreateSchema = sessionTemplateSchema.extend({ clientRequestId: z.string().min(1).optional() }).strict();
-export const sessionTemplateUpdateSchema = z.object({ template: sessionTemplateSchema, expectedRevision: z.number().int().positive(), futureSessionPolicy: z.enum(["keep", "update"]).optional() }).strict();
+  target: planTargetSchema.optional(),
+}).strict().superRefine((value, context) => {
+  const start = new Date(`${value.effectiveStartDate}T12:00:00Z`).getTime();
+  const ids = value.mesocycle.weeks.flatMap((week) => week.sessions.map((session) => session.id));
+  if (new Set(ids).size !== ids.length) context.addIssue({ code: "custom", path: ["mesocycle", "weeks"], message: "session ids must be unique across the mesocycle" });
+  for (const week of value.mesocycle.weeks) for (const session of week.sessions) {
+    const elapsed = Math.round((new Date(`${session.scheduledDate}T12:00:00Z`).getTime() - start) / 86_400_000);
+    if (elapsed < 0 || elapsed >= value.mesocycle.durationWeeks * 7 || Math.floor(elapsed / 7) + 1 !== week.weekNumber) context.addIssue({ code: "custom", path: ["mesocycle", "weeks", week.weekNumber - 1, "sessions"], message: "session date must fall inside its plan week" });
+  }
+});
+export const currentPlanWriteSchema = currentPlanSchema.omit({ revision: true, updatedAt: true }).extend({ expectedRevision: z.number().int().min(0) }).strict();
+export const sessionTemplateCreateSchema = z.discriminatedUnion("domain", sessionTemplateSchema.options.map((option) => option.extend({ clientRequestId: z.string().min(1).optional() }).strict()) as [z.ZodObject<any>, z.ZodObject<any>, ...z.ZodObject<any>[]]);
+export const sessionTemplateUpdateSchema = z.object({ template: sessionTemplateSchema, expectedRevision: z.number().int().positive() }).strict();
 // Read-only legacy contracts used solely by the v3-to-v4 database migration.
+const legacySessionTemplateSchema = z.object({ id: z.string().min(1), name: z.string().min(1), intent: z.string().min(1), durationMinutes: z.number().int().positive(), recoveryDemand: recoveryDemandSchema, notes: z.string().default(""), components: z.array(trainingComponentSchema).min(1) }).strict();
 const legacyWeeklyStructureSchema = z.array(z.object({ dayOfWeek: z.number().int().min(0).max(6), templateIds: z.array(z.string().min(1)).min(1).max(26) }).strict()).min(1).max(7);
-const legacyResolvedMesocycleSchema = z.object({ durationWeeks: z.number().int().min(1).max(52), weeklyStructure: legacyWeeklyStructureSchema, sessionTemplates: z.array(sessionTemplateSchema).min(1).max(52), phases: mesocycleSchema.shape.phases, adjustmentRules: mesocycleSchema.shape.adjustmentRules }).strict();
+const legacyResolvedMesocycleSchema = z.object({ durationWeeks: z.number().int().min(1).max(52), weeklyStructure: legacyWeeklyStructureSchema, sessionTemplates: z.array(legacySessionTemplateSchema).min(1).max(52), phases: z.array(domainPhaseSchema).min(1).max(52), adjustmentRules: mesocycleSchema.shape.adjustmentRules }).strict();
 const legacyMigrationSchema = z.object({ reviewRequired: z.boolean(), sourceSchema: z.string(), sourceSessions: z.array(z.unknown()).default([]) }).strict().nullable().default(null);
 const legacyPlanDraftShape = { planSchemaVersion: z.literal("3.0"), id: z.string().min(1), ownerId: z.string().default(OWNER_ID), clientRequestId: z.string().min(1), title: z.string().min(1).max(200), summary: z.string().max(4000).default(""), mesocycle: legacyResolvedMesocycleSchema.nullable().default(null), migration: legacyMigrationSchema, sourceAgent: z.string().nullable().default(null), model: z.string().nullable().default(null), skillVersion: z.string().nullable().default(null), inputSnapshotHash: z.string().min(1), createdAt: z.string().datetime({ offset: true }), updatedAt: z.string().datetime({ offset: true }) };
 export const planDraftSchema = z.object(legacyPlanDraftShape).strict();
@@ -98,9 +198,14 @@ export const agentPlanDraftSchema = z.object({ ...legacyPlanDraftShape, mesocycl
 
 export const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "expected YYYY-MM-DD");
 export const exerciseOverrideSchema = z.object({ exerciseId: z.string().min(1), sets: z.number().int().min(1).max(20).optional(), repsMin: z.number().int().min(1).max(100).optional(), repsMax: z.number().int().min(1).max(100).optional(), targetRpe: z.number().min(1).max(10).nullable().optional(), restSeconds: z.number().int().min(0).max(600).optional(), referenceLoad: z.number().min(0).nullable().optional(), referenceLoadUnit: weightUnitSchema.nullable().optional() }).strict().refine((value) => value.repsMin === undefined || value.repsMax === undefined || value.repsMax >= value.repsMin, { message: "repsMax must be >= repsMin" });
-export const plannedSessionInputSchema = z.object({ id: z.string().min(1), templateId: z.string().min(1), notes: z.string().max(4000).default(""), overrideReason: z.string().min(1).max(1000).optional(), exerciseOverrides: z.array(exerciseOverrideSchema).max(30).default([]) }).strict();
+export const plannedSessionInputSchema = weeklySessionSchema.omit({ scheduledDate: true, order: true }).extend({ notes: z.string().max(4000).default(""), overrideReason: z.string().min(1).max(1000).optional() }).strict();
 export const nextTrainingDayWriteSchema = z.object({ clientRequestId: z.string().min(1), scheduledDate: dateSchema, expectedRevision: z.number().int().min(0), mode: z.enum(["append", "replace"]), sessions: z.array(plannedSessionInputSchema).min(1).max(15) }).strict();
-export const plannedSessionSchema = z.object({ id: z.string().min(1), occurrenceId: z.string().min(1), ownerId: z.string().min(1), planRevision: z.number().int().positive(), scheduledDate: dateSchema, weekNumber: z.number().int().min(1).max(52), phaseId: z.string().min(1), templateId: z.string().min(1), name: z.string().min(1).max(100), intent: z.string().min(1).max(240), recoveryDemand: recoveryDemandSchema, durationMinutes: z.number().int().min(1).max(240), components: z.array(trainingComponentSchema).min(1), exerciseOverrides: z.array(exerciseOverrideSchema).default([]), legacySnapshot: z.boolean().default(false), notes: z.string().max(4000).default(""), overrideReason: z.string().max(1000).nullable().default(null), status: z.enum(["planned", "completed", "skipped"]).default("planned"), completedTrainingSessionId: z.string().nullable().default(null), completedAt: z.string().datetime({ offset: true }).nullable().default(null), completionSource: z.enum(["manual", "import"]).nullable().default(null), createdAt: z.string().datetime({ offset: true }), updatedAt: z.string().datetime({ offset: true }) }).strict();
+export const phaseRefSchema = z.object({ domain: domainSchema, phaseId: z.string().min(1) }).strict();
+export const plannedSessionSchema = z.object({ id: z.string().min(1), occurrenceId: z.string().min(1), ownerId: z.string().min(1), planRevision: z.number().int().positive(), scheduledDate: dateSchema, order: z.number().int().min(0).max(50).default(0), weekNumber: z.number().int().min(1).max(52), phaseRefs: z.array(phaseRefSchema).max(5), templateRef: templateRefSchema.nullable().default(null), name: z.string().min(1).max(100), intent: z.string().min(1).max(240), recoveryDemand: recoveryDemandSchema, durationMinutes: z.number().int().min(1).max(240), keySession: z.boolean().default(false), components: z.array(trainingComponentSchema).min(1), progressionNote: z.string().max(2000).nullable().default(null), schedulingRationale: z.string().max(2000).nullable().default(null), exerciseOverrides: z.array(exerciseOverrideSchema).default([]), legacySnapshot: z.boolean().default(false), notes: z.string().max(4000).default(""), overrideReason: z.string().max(1000).nullable().default(null), status: z.enum(["planned", "completed", "skipped"]).default("planned"), completedTrainingSessionId: z.string().nullable().default(null), completedAt: z.string().datetime({ offset: true }).nullable().default(null), completionSource: z.enum(["manual", "import"]).nullable().default(null), createdAt: z.string().datetime({ offset: true }), updatedAt: z.string().datetime({ offset: true }) }).strict().superRefine((value, context) => {
+  const componentDomains = [...new Set(value.components.map((component) => component.domain.value).filter((domain): domain is z.infer<typeof domainSchema> => domain !== null))];
+  const refDomains = value.phaseRefs.map((ref) => ref.domain);
+  if (new Set(refDomains).size !== refDomains.length || componentDomains.length !== refDomains.length || refDomains.some((domain) => !componentDomains.includes(domain))) context.addIssue({ code: "custom", path: ["phaseRefs"], message: "phase references must exactly match resolved component domains" });
+});
 export const plannedSessionActionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("complete"), expectedRevision: z.number().int().min(0) }).strict(),
   z.object({ action: z.literal("skip"), expectedRevision: z.number().int().min(0) }).strict(),
@@ -118,10 +223,16 @@ export type TrainingSession = z.infer<typeof trainingSessionSchema>;
 export type ExerciseDefinition = z.infer<typeof exerciseDefinitionSchema>;
 export type Mesocycle = z.infer<typeof mesocycleSchema>;
 export type Schedule = z.infer<typeof scheduleSchema>;
-export type TrainingDaySlot = z.infer<typeof trainingDaySlotSchema>;
+export type PlanWeek = z.infer<typeof planWeekSchema>;
+export type WeeklySession = z.infer<typeof weeklySessionSchema>;
+export type DomainProgression = z.infer<typeof domainProgressionSchema>;
+export type PhaseRef = z.infer<typeof phaseRefSchema>;
 export type ResolvedMesocycle = z.infer<typeof resolvedMesocycleSchema>;
 export type SessionTemplate = z.infer<typeof sessionTemplateSchema>;
-export type StoredSessionTemplate = z.infer<typeof storedSessionTemplateSchema>;
+export type StoredSessionTemplate = SessionTemplate & { origin: "user"; ownerId: string; revision: number; createdAt: string; updatedAt: string };
+export type BuiltinSessionTemplate = SessionTemplate & { origin: "builtin"; catalogVersion: string };
+export type TemplateRef = z.infer<typeof templateRefSchema>;
+export type PlanTarget = z.infer<typeof planTargetSchema>;
 export type CurrentPlan = z.infer<typeof currentPlanSchema>;
 export type CurrentPlanWrite = z.infer<typeof currentPlanWriteSchema>;
 export type PlanDraft = z.infer<typeof planDraftSchema>;

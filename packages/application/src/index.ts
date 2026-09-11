@@ -5,7 +5,6 @@ import {
   estimateOneRepMax,
   evaluateDoubleProgression,
   evaluateRpeAutoregulation,
-  expandSchedule,
   findExerciseCandidates,
   stableHash,
   validatePlan,
@@ -15,6 +14,7 @@ import { XUNJI_PARSER_VERSION, normalizeIntervalsActivity, normalizeXunjiTrainin
 import {
   AI_HARD_CONFIDENCE,
   PLAN_SCHEMA_VERSION,
+  TEMPLATE_CATALOG_VERSION,
   TAXONOMY_VERSION,
   athleteProfileSchema,
   currentPlanSchema,
@@ -24,30 +24,43 @@ import {
   equipmentTypeSchema,
   mesocycleSchema,
   movementPatternSchema,
+  movementPatternTaxonomy,
   muscleGroupSchema,
+  muscleTaxonomy,
   nextTrainingDayWriteSchema,
   plannedSessionSchema,
   plannedSessionActionSchema,
-  sessionTemplateCreateSchema,
   sessionTemplateSchema,
+  sessionTemplateCreateSchema,
   sessionTemplateUpdateSchema,
   trainingPreferenceSchema,
   type AthleteProfile,
   type CurrentPlan,
   type CurrentPlanWrite,
   type ExerciseDefinition,
+  type PhaseRef,
   type PlanValidation,
   type NextTrainingDayWrite,
   type PlannedSession,
   type PlannedSessionAction,
-  type ResolvedMesocycle,
   type SessionTemplate,
   type TrainingPreference,
   type TrainingSession,
 } from "@athria/schemas";
+import { builtinSessionTemplates } from "./template-catalog";
+export { builtinSessionTemplates } from "./template-catalog";
 
 export class AthriaError extends Error {
   constructor(readonly code: string, message: string, readonly status = 400) { super(message); }
+}
+
+function phaseRefsForSession(plan: CurrentPlan, weekNumber: number, components: CurrentPlan["mesocycle"]["weeks"][number]["sessions"][number]["components"]): PhaseRef[] {
+  const domains = [...new Set(components.map((component) => component.domain.value).filter((domain): domain is NonNullable<typeof domain> => domain !== null))];
+  return domains.map((domain) => {
+    const progression = plan.mesocycle.domainProgressions.find((item) => item.domain === domain)!;
+    const phase = progression.phases.find((item) => weekNumber >= item.startWeek && weekNumber <= item.endWeek)!;
+    return { domain, phaseId: phase.id };
+  });
 }
 
 export const exerciseCatalog: ExerciseDefinition[] = [
@@ -87,6 +100,23 @@ const sessionDomains = (session: TrainingSession) => session.domains.length ? se
   ...(session.endurance ? ["endurance" as const] : []),
 ];
 
+const plannedDatesFollowProfile = (profile: AthleteProfile, plan: CurrentPlan, sessions: PlannedSession[]): boolean => {
+  const dates = [...new Set(sessions.map((session) => session.scheduledDate))].sort();
+  const rhythm = profile.trainingRhythm;
+  if (rhythm.kind === "fixed_week") {
+    const expected = [...rhythm.days].sort((left, right) => left - right).join(",");
+    return Array.from({ length: plan.mesocycle.durationWeeks }, (_, index) => index + 1).every((weekNumber) => {
+      const actual = [...new Set(sessions.filter((session) => session.weekNumber === weekNumber).map((session) => mondayWeekday(session.scheduledDate)))].sort((left, right) => left - right).join(",");
+      return actual === expected;
+    });
+  }
+  if (rhythm.kind === "flexible_week") return Array.from({ length: plan.mesocycle.durationWeeks }, (_, index) => index + 1).every((weekNumber) => {
+    const count = new Set(sessions.filter((session) => session.weekNumber === weekNumber).map((session) => session.scheduledDate)).size;
+    return count >= rhythm.minDaysPerWeek && count <= rhythm.maxDaysPerWeek;
+  });
+  return dates[0] === plan.effectiveStartDate && dates.every((date, index) => index === 0 || dayDifference(dates[index - 1]!, date) === rhythm.intervalDays);
+};
+
 export class AthriaApplication {
   private readonly previews = new Map<string, HevyPreview>();
 
@@ -119,75 +149,52 @@ export class AthriaApplication {
     };
   }
 
-  private resolvedMesocycle(mesocycle: CurrentPlanWrite["mesocycle"], replacement?: SessionTemplate): ResolvedMesocycle {
-    const templates = new Map(this.repository.listTemplates(this.ownerId).map((item) => [item.id, replacement?.id === item.id ? replacement : item]));
-    if (replacement && !templates.has(replacement.id)) templates.set(replacement.id, replacement);
-    const slots = mesocycle.schedule.kind === "fixed_week" ? mesocycle.schedule.days : mesocycle.schedule.rotation;
-    const ids = [...new Set(slots.flatMap((day) => day.templateIds))];
-    const missing = ids.filter((id) => !templates.has(id));
-    if (missing.length) throw new AthriaError("TEMPLATE_NOT_FOUND", `Missing template references: ${missing.join(", ")}.`, 409);
-    return { ...mesocycle, sessionTemplates: ids.map((id) => {
-      const template = templates.get(id)!;
-      return sessionTemplateSchema.parse({
-        id: template.id,
-        name: template.name,
-        intent: template.intent,
-        durationMinutes: template.durationMinutes,
-        recoveryDemand: template.recoveryDemand,
-        notes: template.notes,
-        components: template.components,
-      });
-    }) };
+  private assertTemplateReferences(mesocycle: CurrentPlanWrite["mesocycle"]): void {
+    const user = new Map(this.repository.listTemplates(this.ownerId).map((item) => [item.id, item]));
+    const builtin = new Map(builtinSessionTemplates.map((item) => [item.id, item]));
+    for (const session of mesocycle.weeks.flatMap((week) => week.sessions)) {
+      const ref = session.templateRef;
+      if (!ref) continue;
+      const valid = ref.source === "builtin" ? builtin.get(ref.id)?.catalogVersion === ref.catalogVersion : user.get(ref.id)?.revision === ref.revision;
+      if (!valid) throw new AthriaError("TEMPLATE_NOT_FOUND", `Template reference ${ref.id} does not resolve to the requested version.`, 409);
+    }
+  }
+
+  getTrainingTaxonomy() {
+    return { planSchemaVersion: PLAN_SCHEMA_VERSION, taxonomyVersion: TAXONOMY_VERSION, templateCatalogVersion: TEMPLATE_CATALOG_VERSION, domains: domainSchema.options, strength: { movementPatterns: movementPatternTaxonomy, muscleGroups: muscleTaxonomy, equipment: equipmentTypeSchema.options }, templateVariables: { strength: ["exercise_selection", "sets", "repetitions", "duration", "load", "rpe", "rir", "rest", "tempo", "alternatives"], endurance: ["repetitions", "duration", "distance", "pace", "heart_rate_zone", "power", "cadence", "rpe", "talk_test", "terrain", "strides", "recovery_mode"], sport_skill: ["drill", "participants", "position", "duration", "intensity", "instructions"], recovery: ["body_region", "movement", "duration", "intensity", "instructions"], mind_body: ["technique", "duration", "intensity", "instructions"] }, factSources: ["catalog", "structured_source", "exact_alias", "ai_inferred", "user_confirmed", "migration"], aiHardConfidence: AI_HARD_CONFIDENCE };
   }
 
   validateCurrentPlan(value: unknown): PlanValidation {
     const input = currentPlanWriteSchema.parse(value);
-    return validatePlan(this.getProfile(), { mesocycle: this.resolvedMesocycle(input.mesocycle), effectiveStartDate: input.effectiveStartDate }, this.repository.listExercises(), this.now());
+    this.assertTemplateReferences(input.mesocycle);
+    return validatePlan(this.getProfile(), { mesocycle: input.mesocycle, effectiveStartDate: input.effectiveStartDate }, this.repository.listExercises(), this.now());
   }
 
-  listTemplates() { return this.repository.listTemplates(this.ownerId); }
+  listTemplates() { return [...builtinSessionTemplates, ...this.repository.listTemplates(this.ownerId)]; }
   getTemplate(id: string) {
-    const template = this.repository.getTemplate(id, this.ownerId);
+    const template = builtinSessionTemplates.find((item) => item.id === id) ?? this.repository.getTemplate(id, this.ownerId);
     if (!template) throw new AthriaError("TEMPLATE_NOT_FOUND", "The session template was not found.", 404);
     return template;
   }
   createTemplate(value: unknown) {
-    const { clientRequestId: _request, ...template } = sessionTemplateCreateSchema.parse(value);
+    const parsed = sessionTemplateCreateSchema.parse(value);
+    const { clientRequestId: _request, ...candidate } = parsed;
+    const template = sessionTemplateSchema.parse(candidate);
+    if (builtinSessionTemplates.some((item) => item.id === template.id)) throw new AthriaError("TEMPLATE_ALREADY_EXISTS", "That ID belongs to a built-in template.", 409);
     try { return this.repository.createTemplate(template, this.ownerId); }
     catch (error) { if (error instanceof Error && error.message === "TEMPLATE_ALREADY_EXISTS") throw new AthriaError(error.message, "A template with this ID already exists.", 409); throw error; }
   }
-  templateImpact(id: string) {
-    const today = localDate(this.now(), this.getProfile().timezone);
-    const sessions = this.repository.listCurrentPlannedSessions(this.ownerId).filter((item) => item.templateId === id && item.status === "planned" && item.scheduledDate >= today);
-    return { templateId: id, affectedCount: sessions.length, sessionIds: sessions.map((item) => item.id), legacySkippedCount: sessions.filter((item) => item.legacySnapshot).length };
-  }
-  private materialize(template: SessionTemplate, session: PlannedSession, planRevision: number, weekNumber = session.weekNumber, phaseId = session.phaseId): PlannedSession {
-    const overrides = new Map(session.exerciseOverrides.map((item) => [item.exerciseId, item]));
-    const components = template.components.map((component) => component.prescription.kind !== "strength" ? component : ({ ...component, prescription: { ...component.prescription, exercises: component.prescription.exercises.map((exercise) => {
-      const override = overrides.get(exercise.id); if (!override) return exercise;
-      const { exerciseId: _id, ...patch } = override; return { ...exercise, ...patch };
-    }) } }));
-    return plannedSessionSchema.parse({ ...session, planRevision, weekNumber, phaseId, name: template.name, intent: template.intent, recoveryDemand: template.recoveryDemand, durationMinutes: template.durationMinutes, components, updatedAt: this.now().toISOString() });
-  }
   updateTemplate(value: unknown) {
     const input = sessionTemplateUpdateSchema.parse(value);
-    const impact = this.templateImpact(input.template.id);
-    if (impact.affectedCount && !input.futureSessionPolicy) throw new AthriaError("FUTURE_SESSION_POLICY_REQUIRED", `${impact.affectedCount} future planned session(s) are affected; choose keep or update.`, 409);
-    const currentPlan = this.repository.getCurrentPlan(this.ownerId);
-    const currentSlots = currentPlan ? (currentPlan.mesocycle.schedule.kind === "fixed_week" ? currentPlan.mesocycle.schedule.days : currentPlan.mesocycle.schedule.rotation) : [];
-    if (currentSlots.some((day) => day.templateIds.includes(input.template.id))) {
-      const validation = validatePlan(this.getProfile(), { mesocycle: this.resolvedMesocycle(currentPlan!.mesocycle, input.template), effectiveStartDate: currentPlan!.effectiveStartDate }, this.repository.listExercises(), this.now());
-      if (!validation.valid) throw new AthriaError("PLAN_HAS_BLOCKERS", JSON.stringify(validation), 409);
-    }
-    const sessions = input.futureSessionPolicy === "update" ? this.repository.listCurrentPlannedSessions(this.ownerId).filter((item) => impact.sessionIds.includes(item.id) && !item.legacySnapshot).map((item) => this.materialize(input.template, item, currentPlan?.revision ?? item.planRevision)) : [];
-    try { return { template: this.repository.updateTemplate(input.template, input.expectedRevision, this.ownerId, sessions), impact: { ...impact, updatedCount: sessions.length } }; }
+    if (builtinSessionTemplates.some((item) => item.id === input.template.id)) throw new AthriaError("TEMPLATE_READ_ONLY", "Built-in templates are read-only; copy one to create a user template.", 409);
+    try { return { template: this.repository.updateTemplate(input.template, input.expectedRevision, this.ownerId), impact: { affectedCount: 0, updatedCount: 0 } }; }
     catch (error) { if (error instanceof Error && ["TEMPLATE_NOT_FOUND", "REVISION_CONFLICT"].includes(error.message)) throw new AthriaError(error.message, error.message === "REVISION_CONFLICT" ? "The template changed. Refresh and try again." : "The session template was not found.", error.message === "REVISION_CONFLICT" ? 409 : 404); throw error; }
   }
   deleteTemplate(id: string, expectedRevision: number) {
+    if (builtinSessionTemplates.some((item) => item.id === id)) throw new AthriaError("TEMPLATE_READ_ONLY", "Built-in templates cannot be deleted.", 409);
     const current = this.repository.getCurrentPlan(this.ownerId);
-    const slots = current ? (current.mesocycle.schedule.kind === "fixed_week" ? current.mesocycle.schedule.days : current.mesocycle.schedule.rotation) : [];
-    const references = slots.filter((day) => day.templateIds.includes(id)).map((day) => day.id);
-    if (references.length) throw new AthriaError("TEMPLATE_IN_USE", `Remove this template from the training rhythm before deleting it.`, 409);
+    const references = current?.mesocycle.weeks.flatMap((week) => week.sessions.filter((session) => session.templateRef?.source === "user" && session.templateRef.id === id).map((session) => session.id)) ?? [];
+    if (references.length) throw new AthriaError("TEMPLATE_IN_USE", "Remove this template reference from the current plan before deleting it.", 409);
     try { this.repository.deleteTemplate(id, expectedRevision, this.ownerId); return { deleted: true, id }; }
     catch (error) { if (error instanceof Error && ["TEMPLATE_NOT_FOUND", "REVISION_CONFLICT"].includes(error.message)) throw new AthriaError(error.message, error.message === "REVISION_CONFLICT" ? "The template changed. Refresh and try again." : "The session template was not found.", error.message === "REVISION_CONFLICT" ? 409 : 404); throw error; }
   }
@@ -195,59 +202,31 @@ export class AthriaApplication {
   getCurrentPlan() { return this.repository.getCurrentPlan(this.ownerId); }
 
   private sessionsForPlan(plan: CurrentPlan, onOrAfterDate: string): PlannedSession[] {
-    const templates = new Map(this.repository.listTemplates(this.ownerId).map((item) => [item.id, item]));
-    const profile = this.getProfile();
     const timestamp = this.now().toISOString();
-    return expandSchedule({ effectiveStartDate: plan.effectiveStartDate, durationWeeks: plan.mesocycle.durationWeeks, schedule: plan.mesocycle.schedule, trainingDays: profile.trainingDays, recoveryDemandByTemplate: Object.fromEntries([...templates].map(([id, template]) => [id, template.recoveryDemand])), explicitRecoveryHours: profile.explicitRecoveryHours })
-      .filter((occurrence) => occurrence.scheduledDate >= onOrAfterDate)
-      .flatMap((occurrence) => {
-        const occurrenceId = crypto.randomUUID();
-        const phase = plan.mesocycle.phases.find((item) => occurrence.weekNumber >= item.startWeek && occurrence.weekNumber <= item.endWeek)!;
-        return occurrence.templateIds.map((templateId) => {
-          const template = templates.get(templateId)!;
-          return plannedSessionSchema.parse({
-            id: crypto.randomUUID(), occurrenceId, ownerId: this.ownerId, planRevision: plan.revision,
-            scheduledDate: occurrence.scheduledDate, weekNumber: occurrence.weekNumber, phaseId: phase.id, templateId,
-            name: template.name, intent: template.intent, recoveryDemand: template.recoveryDemand, durationMinutes: template.durationMinutes,
-            components: template.components, exerciseOverrides: [], legacySnapshot: false, notes: "", overrideReason: null,
-            status: "planned", completedTrainingSessionId: null, completedAt: null, completionSource: null, createdAt: timestamp, updatedAt: timestamp,
-          });
-        });
-      });
+    const occurrenceByDate = new Map<string, string>();
+    return [...plan.mesocycle.weeks].sort((a, b) => a.weekNumber - b.weekNumber).flatMap((week) => [...week.sessions].sort((a, b) => a.scheduledDate.localeCompare(b.scheduledDate) || a.order - b.order).filter((session) => session.scheduledDate >= onOrAfterDate).map((session) => {
+      const occurrenceId = occurrenceByDate.get(session.scheduledDate) ?? crypto.randomUUID();
+      occurrenceByDate.set(session.scheduledDate, occurrenceId);
+      return plannedSessionSchema.parse({ ...session, occurrenceId, ownerId: this.ownerId, planRevision: plan.revision, weekNumber: week.weekNumber, phaseRefs: phaseRefsForSession(plan, week.weekNumber, session.components), exerciseOverrides: [], notes: "", overrideReason: null, status: "planned", completedTrainingSessionId: null, completedAt: null, completionSource: null, createdAt: timestamp, updatedAt: timestamp });
+    }));
   }
 
   saveCurrentPlan(value: unknown) {
     const input = currentPlanWriteSchema.parse(value);
     if (input.ownerId !== this.ownerId) throw new AthriaError("OWNER_MISMATCH", "The plan owner does not match the local athlete.", 403);
     if (input.inputSnapshotHash && input.inputSnapshotHash !== this.snapshotHash()) throw new AthriaError("INPUT_SNAPSHOT_CHANGED", "Training state changed. Refresh and revise the plan.", 409);
-    const validation = validatePlan(this.getProfile(), { mesocycle: this.resolvedMesocycle(input.mesocycle), effectiveStartDate: input.effectiveStartDate }, this.repository.listExercises(), this.now());
+    this.assertTemplateReferences(input.mesocycle);
+    const validation = validatePlan(this.getProfile(), { mesocycle: input.mesocycle, effectiveStartDate: input.effectiveStartDate }, this.repository.listExercises(), this.now());
     if (!validation.valid) throw new AthriaError("PLAN_HAS_BLOCKERS", JSON.stringify(validation), 409);
-    const current = this.repository.getCurrentPlan(this.ownerId);
-    const future = this.repository.listCurrentPlannedSessions(this.ownerId).filter((item) => item.status === "planned" && item.scheduledDate >= localDate(this.now(), this.getProfile().timezone));
-    const planContent = (value: Pick<CurrentPlan, "title" | "summary" | "effectiveStartDate" | "mesocycle" | "sourceAgent" | "model" | "skillVersion" | "inputSnapshotHash">) => ({
-      title: value.title,
-      summary: value.summary,
-      effectiveStartDate: value.effectiveStartDate,
-      mesocycle: value.mesocycle,
-      sourceAgent: value.sourceAgent,
-      model: value.model,
-      skillVersion: value.skillVersion,
-      inputSnapshotHash: value.inputSnapshotHash,
-    });
-    const changed = !current || stableHash(planContent(current)) !== stableHash(planContent(input));
-    if (current && changed && future.length && !input.futureSessionPolicy) throw new AthriaError("FUTURE_SESSION_POLICY_REQUIRED", `${future.length} future planned session(s) are affected; choose keep or update.`, 409);
     const timestamp = this.now().toISOString();
-    const { expectedRevision, futureSessionPolicy: _policy, ...candidate } = input;
+    const { expectedRevision, ...candidate } = input;
     const plan = currentPlanSchema.parse({ ...candidate, revision: expectedRevision + 1, updatedAt: timestamp });
-    const terminalOccurrenceIds = new Set(this.repository.listCurrentPlannedSessions(this.ownerId).filter((session) => session.status !== "planned").map((session) => session.occurrenceId));
-    const deleted = input.futureSessionPolicy === "update" ? future.filter((session) => !session.legacySnapshot && !terminalOccurrenceIds.has(session.occurrenceId)).map((session) => session.id) : [];
-    let updated: PlannedSession[] = [];
-    if (!current || input.futureSessionPolicy === "update") {
-      const terminalDates = new Set(this.repository.listCurrentPlannedSessions(this.ownerId).filter((session) => session.status !== "planned").map((session) => session.scheduledDate));
-      const generationStart = current ? localDate(this.now(), this.getProfile().timezone) : plan.effectiveStartDate;
-      updated = this.sessionsForPlan(plan, generationStart).filter((session) => !terminalDates.has(session.scheduledDate));
-    }
-    try { return { plan: this.repository.saveCurrentPlan(plan, input.expectedRevision, deleted, updated), validation, impact: { affectedCount: future.length, updatedCount: updated.length, deletedCount: deleted.length, legacySkippedCount: future.filter((item) => item.legacySnapshot).length } }; }
+    const existing = this.repository.listCurrentPlannedSessions(this.ownerId);
+    const terminalIds = new Set(existing.filter((session) => session.status !== "planned").map((session) => session.id));
+    const desired = this.sessionsForPlan(plan, plan.effectiveStartDate).filter((session) => !terminalIds.has(session.id));
+    const desiredIds = new Set(desired.map((session) => session.id));
+    const deleted = existing.filter((session) => session.status === "planned" && !desiredIds.has(session.id)).map((session) => session.id);
+    try { return { plan: this.repository.saveCurrentPlan(plan, input.expectedRevision, deleted, desired), validation, impact: { affectedCount: existing.length, updatedCount: desired.length, deletedCount: deleted.length, legacySkippedCount: 0 } }; }
     catch (error) { if (error instanceof Error && error.message === "REVISION_CONFLICT") throw new AthriaError(error.message, "The current plan changed. Refresh and try again.", 409); throw error; }
   }
 
@@ -260,10 +239,25 @@ export class AthriaApplication {
     const next = all.find((session) => session.status === "planned");
     if (next) {
       const existingSessions = all.filter((session) => session.occurrenceId === next.occurrenceId);
-      const phase = plan.mesocycle.phases.find((item) => item.id === next.phaseId)!;
-      return { nextTrainingDay: { occurrenceId: next.occurrenceId, scheduledDate: next.scheduledDate, dayOfWeek: mondayWeekday(next.scheduledDate), weekNumber: next.weekNumber, phaseId: phase.id, phaseType: phase.phaseType, expectedTemplateIds: existingSessions.map((session) => session.templateId), existingSessions, revision: this.repository.scheduleRevision(this.ownerId), timezone: profile.timezone }, reasonCode: null };
+      const refs = new Map(existingSessions.flatMap((session) => session.phaseRefs).map((ref) => [`${ref.domain}:${ref.phaseId}`, ref]));
+      const domainPhases = [...refs.values()].map((ref) => {
+        const phase = plan.mesocycle.domainProgressions.find((item) => item.domain === ref.domain)!.phases.find((item) => item.id === ref.phaseId)!;
+        return { domain: ref.domain, phaseId: ref.phaseId, phaseType: phase.phaseType, name: phase.name };
+      });
+      return { nextTrainingDay: { occurrenceId: next.occurrenceId, scheduledDate: next.scheduledDate, dayOfWeek: mondayWeekday(next.scheduledDate), weekNumber: next.weekNumber, domainPhases, existingSessions, revision: this.repository.scheduleRevision(this.ownerId), timezone: profile.timezone }, reasonCode: null };
     }
     return { nextTrainingDay: null, reasonCode: "PLAN_ENDED" };
+  }
+
+  getCalendar(value: { from?: string; to?: string } = {}) {
+    const from = value.from === undefined ? undefined : dateSchema.parse(value.from);
+    const to = value.to === undefined ? undefined : dateSchema.parse(value.to);
+    if (from !== undefined && to !== undefined && from > to) throw new AthriaError("INVALID_CALENDAR_WINDOW", "The calendar start date must not be after the end date.");
+    const revision = this.repository.scheduleRevision(this.ownerId);
+    return this.repository.listCurrentPlannedSessions(this.ownerId)
+      .filter((session) => (from === undefined || session.scheduledDate >= from) && (to === undefined || session.scheduledDate <= to))
+      .sort((a, b) => a.scheduledDate.localeCompare(b.scheduledDate) || a.order - b.order)
+      .map((session) => ({ id: session.id, occurrenceId: session.occurrenceId, revision, scheduledDate: session.scheduledDate, order: session.order, weekNumber: session.weekNumber, phaseRefs: session.phaseRefs, templateRef: session.templateRef, name: session.name, intent: session.intent, durationMinutes: session.durationMinutes, recoveryDemand: session.recoveryDemand, keySession: session.keySession, progressionNote: session.progressionNote, schedulingRationale: session.schedulingRationale, status: session.status, components: session.components, legacySnapshot: session.legacySnapshot, overrideReason: session.overrideReason }));
   }
 
   updatePlannedSession(id: string, value: unknown) {
@@ -284,32 +278,18 @@ export class AthriaApplication {
       const sourceDate = current.scheduledDate;
       const delta = dayDifference(sourceDate, input.scheduledDate);
       if (delta <= 0) throw new AthriaError("INVALID_MOVE_DATE", "Move the training day to a later date.");
-      const allowedDays = this.getProfile().trainingDays;
-      if (allowedDays.length && !allowedDays.includes(mondayWeekday(input.scheduledDate))) throw new AthriaError("TRAINING_DAY_UNAVAILABLE", "The selected date is not one of your available training days.", 409);
       if (plan.mesocycle.schedule.kind !== "interval" && sessions.some((session) => session.status === "planned" && session.occurrenceId !== current.occurrenceId && session.scheduledDate === input.scheduledDate)) throw new AthriaError("TRAINING_DAY_CONFLICT", "Another planned training day already uses that date.", 409);
       const planEnd = addDays(plan.effectiveStartDate, plan.mesocycle.durationWeeks * 7 - 1);
-      const occurrenceIds = new Map<string, string>();
-      if (plan.mesocycle.schedule.kind === "interval") {
-        for (const session of sessions.filter((item) => item.status === "planned" && item.scheduledDate >= sourceDate)) occurrenceIds.set(session.occurrenceId, addDays(session.scheduledDate, delta));
-      } else {
-        occurrenceIds.set(current.occurrenceId, input.scheduledDate);
-        if (plan.mesocycle.schedule.kind === "flexible_week") {
-          const profile = this.getProfile(); const templates = this.repository.listTemplates(this.ownerId);
-          const generatedDates = expandSchedule({ effectiveStartDate: plan.effectiveStartDate, durationWeeks: plan.mesocycle.durationWeeks, schedule: plan.mesocycle.schedule, trainingDays: profile.trainingDays, recoveryDemandByTemplate: Object.fromEntries(templates.map((template) => [template.id, template.recoveryDemand])), explicitRecoveryHours: profile.explicitRecoveryHours }).filter((item) => item.weekNumber === current.weekNumber).map((item) => item.scheduledDate).filter((date) => date !== input.scheduledDate);
-          const otherIds = [...new Set(sessions.filter((item) => item.status === "planned" && item.weekNumber === current.weekNumber && item.occurrenceId !== current.occurrenceId).map((item) => item.occurrenceId))];
-          otherIds.forEach((occurrenceId, index) => { if (generatedDates[index]) occurrenceIds.set(occurrenceId, generatedDates[index]!); });
-        }
-      }
-      updates = sessions.filter((session) => session.status === "planned" && occurrenceIds.has(session.occurrenceId)).map((session) => {
-        const scheduledDate = occurrenceIds.get(session.occurrenceId)!;
+      updates = [current].map((session) => {
+        const scheduledDate = input.scheduledDate;
         if (scheduledDate > planEnd) throw new AthriaError("MOVE_OUTSIDE_PLAN", "The moved training day falls after the plan ends.", 409);
         const elapsed = dayDifference(plan.effectiveStartDate, scheduledDate); const weekNumber = Math.floor(elapsed / 7) + 1;
-        const phase = plan.mesocycle.phases.find((item) => weekNumber >= item.startWeek && weekNumber <= item.endWeek);
-        if (!phase) throw new AthriaError("MOVE_OUTSIDE_PLAN", "The moved training day falls outside a plan phase.", 409);
-        return { ...session, scheduledDate, weekNumber, phaseId: phase.id, updatedAt: timestamp };
+        return { ...session, occurrenceId: crypto.randomUUID(), scheduledDate, weekNumber, phaseRefs: phaseRefsForSession(plan, weekNumber, session.components), updatedAt: timestamp };
       });
       const proposed = new Map(updates.map((session) => [session.id, session]));
-      const highDates = [...new Set(sessions.map((session) => proposed.get(session.id) ?? session).filter((session) => session.status !== "skipped" && session.recoveryDemand === "high").map((session) => session.scheduledDate))].sort();
+      const proposedSessions = sessions.map((session) => proposed.get(session.id) ?? session);
+      if (!plannedDatesFollowProfile(this.getProfile(), plan, proposedSessions)) throw new AthriaError("PROFILE_TRAINING_RHYTHM", "The moved training day would break your Profile training rhythm.", 409);
+      const highDates = [...new Set(proposedSessions.filter((session) => session.status !== "skipped" && session.recoveryDemand === "high").map((session) => session.scheduledDate))].sort();
       const required = this.getProfile().explicitRecoveryHours;
       if (required !== null) for (let index = 1; index < highDates.length; index += 1) if (Math.abs(dayDifference(highDates[index - 1]!, highDates[index]!)) * 24 < required) throw new AthriaError("EXPLICIT_RECOVERY_INTERVAL", "The moved training day is too close to another high-recovery-demand session.", 409);
     }
@@ -324,30 +304,15 @@ export class AthriaApplication {
     if (next.nextTrainingDay.scheduledDate !== input.scheduledDate) throw new AthriaError("NEXT_TRAINING_DAY_CHANGED", "Refresh the next training day before saving sessions.", 409);
     if (next.nextTrainingDay.revision !== input.expectedRevision) throw new AthriaError("PLANNED_SESSION_REVISION_CONFLICT", "The planned sessions changed. Refresh and confirm the update again.", 409);
     const plan = this.repository.getCurrentPlan(this.ownerId)!;
-    const templates = new Map(this.repository.listTemplates(this.ownerId).map((item) => [item.id, item]));
     const timestamp = this.now().toISOString();
     const ids = new Set<string>();
-    const sessions = input.sessions.map((item): PlannedSession => {
+    const sessions = input.sessions.map((item, order): PlannedSession => {
       if (ids.has(item.id)) throw new AthriaError("DUPLICATE_PLANNED_SESSION_ID", "Session IDs must be unique.");
       ids.add(item.id);
-      const template = templates.get(item.templateId);
-      if (!template) throw new AthriaError("TEMPLATE_NOT_IN_PLAN", `Template ${item.templateId} is not part of the approved plan.`);
-      const expected = next.nextTrainingDay!.expectedTemplateIds.includes(item.templateId);
-      if (!expected && !item.overrideReason) throw new AthriaError("OVERRIDE_REASON_REQUIRED", "An extra session outside the training rhythm requires an override reason.");
-      const overrides = new Map(item.exerciseOverrides.map((override) => [override.exerciseId, override]));
-      const strengthExercises = template.components.flatMap((component) => component.prescription.kind === "strength" ? component.prescription.exercises : []);
-      for (const key of overrides.keys()) if (!strengthExercises.some((exercise) => exercise.id === key)) throw new AthriaError("EXERCISE_NOT_IN_TEMPLATE", `Exercise ${key} is not part of template ${template.id}.`);
-      const components = template.components.map((component) => component.prescription.kind !== "strength" ? component : ({ ...component, prescription: { ...component.prescription, exercises: component.prescription.exercises.map((exercise) => {
-        const override = overrides.get(exercise.id);
-        if (!override) return exercise;
-        const { exerciseId: _exerciseId, ...patch } = override;
-        return { ...exercise, ...patch };
-      }) } }));
+      this.assertTemplateReferences({ ...plan.mesocycle, weeks: [{ weekNumber: next.nextTrainingDay!.weekNumber, focus: null, sessions: [{ ...item, scheduledDate: input.scheduledDate, order }] }] });
       return plannedSessionSchema.parse({
-        id: item.id, occurrenceId: next.nextTrainingDay!.occurrenceId, ownerId: this.ownerId, planRevision: plan.revision, scheduledDate: input.scheduledDate,
-        weekNumber: next.nextTrainingDay!.weekNumber, phaseId: next.nextTrainingDay!.phaseId, templateId: template.id,
-        name: template.name, intent: template.intent, recoveryDemand: template.recoveryDemand,
-        durationMinutes: template.durationMinutes, components, exerciseOverrides: item.exerciseOverrides, legacySnapshot: false, notes: item.notes, overrideReason: item.overrideReason ?? null,
+        ...item, occurrenceId: next.nextTrainingDay!.occurrenceId, ownerId: this.ownerId, planRevision: plan.revision, scheduledDate: input.scheduledDate, order,
+        weekNumber: next.nextTrainingDay!.weekNumber, phaseRefs: phaseRefsForSession(plan, next.nextTrainingDay!.weekNumber, item.components), exerciseOverrides: [], notes: item.notes, overrideReason: item.overrideReason ?? null,
         status: "planned", completedTrainingSessionId: null, completedAt: null, completionSource: null, createdAt: timestamp, updatedAt: timestamp,
       });
     });
@@ -398,8 +363,10 @@ export class AthriaApplication {
 
   proposeProfileUpdate(value: unknown) {
     const input = z.object({ clientRequestId: z.string().min(1), patch: z.record(z.string(), z.unknown()), rationale: z.string().min(1).max(4000) }).strict().parse(value);
-    athleteProfileSchema.partial().parse(input.patch);
-    return this.repository.saveProfileUpdateProposal({ id: crypto.randomUUID(), ownerId: this.ownerId, ...input, baseSnapshotHash: stableHash(this.getProfile()), createdAt: this.now().toISOString() });
+    const patch = { ...input.patch };
+    for (const key of ["priority", "weeklyStrengthSessions", "weeklyEnduranceSessions", "trainingDays"]) delete patch[key];
+    athleteProfileSchema.partial().parse(patch);
+    return this.repository.saveProfileUpdateProposal({ id: crypto.randomUUID(), ownerId: this.ownerId, ...input, patch, baseSnapshotHash: stableHash(this.getProfile()), createdAt: this.now().toISOString() });
   }
 
   approveProfileUpdate(proposalId: string, approvedBy: string) {
@@ -488,10 +455,10 @@ export class AthriaApplication {
       read("get_xunji_sync_status", "Get the local Athria Devices sync status for 训记/Xunji without exposing its API key.", z.object({}), () => this.getXunjiSyncStatus()),
       read("get_training_summary", "Get domain-separated recent training metrics.", z.object({ days: z.number().int().min(1).max(365).default(7) }), (input) => this.getTrainingSummary((input as { days: number }).days)),
       read("get_current_plan", "Get the user's single editable current mesocycle.", z.object({}), () => this.getCurrentPlan()),
-      read("list_session_templates", "List the user's reusable latest session templates.", z.object({}), () => this.listTemplates()),
-      read("get_session_template", "Get one reusable session template.", z.object({ id: z.string().min(1) }), (input) => this.getTemplate((input as { id: string }).id)),
+      read("list_session_templates", "List built-in read-only and local user-owned single-domain training archetypes. Templates never contain an executable dose.", z.object({}), () => this.listTemplates()),
+      read("get_session_template", "Get one stable single-domain training archetype by ID.", z.object({ id: z.string().min(1) }), (input) => this.getTemplate((input as { id: string }).id)),
       read("get_exercise_catalog", "Get normalized exercise definitions.", z.object({}), () => this.repository.listExercises()),
-      read("get_training_taxonomy", "Get the versioned open-action classification vocabulary and hard-rule confidence policy.", z.object({}), () => ({ planSchemaVersion: PLAN_SCHEMA_VERSION, taxonomyVersion: TAXONOMY_VERSION, domains: domainSchema.options, strength: { movementPatterns: movementPatternSchema.options, muscleGroups: muscleGroupSchema.options, equipment: equipmentTypeSchema.options }, factSources: ["catalog", "structured_source", "exact_alias", "ai_inferred", "user_confirmed", "migration"], aiHardConfidence: AI_HARD_CONFIDENCE })),
+      read("get_training_taxonomy", "Get the authoritative versioned template vocabularies. Read this before writing a template and use only returned movement and muscle IDs.", z.object({}), () => this.getTrainingTaxonomy()),
       read("calculate_training_metrics", "Calculate deterministic strength and endurance metrics.", z.object({ days: z.number().int().min(1).max(365).default(90) }), (input) => calculateTrainingMetrics(this.listSessions((input as { days: number }).days))),
       read("estimate_1rm", "Estimate 1RM with the versioned Epley formula.", z.object({ load: z.number().positive(), reps: z.number().int().min(1).max(12), unit: z.enum(["kg", "lb"]) }), (input) => { const value = input as { load: number; reps: number; unit: "kg" | "lb" }; return estimateOneRepMax(value.load, value.reps, value.unit); }),
       read("calculate_heart_rate_zones", "Calculate five zones from an explicit maximum heart rate.", z.object({ maxHeartRate: z.number().int().min(80).max(240) }), (input) => calculateHeartRateZones((input as { maxHeartRate: number }).maxHeartRate)),
@@ -501,16 +468,16 @@ export class AthriaApplication {
       read("find_exercise_candidates", "Filter exercises and return explicit exclusion reasons.", z.object({ movement: z.string().optional(), muscles: z.array(z.string()).optional(), equipment: z.array(z.string()).optional() }), (input) => findExerciseCandidates(this.getProfile(), this.repository.listExercises(), input as { movement?: string; muscles?: string[]; equipment?: string[] })),
       read("validate_current_plan", "Resolve template-library references and validate a candidate current mesocycle.", currentPlanWriteSchema, (input) => this.validateCurrentPlan(input)),
       read("check_training_constraints", "Return blocker, advisory, and informational results for a candidate current mesocycle.", currentPlanWriteSchema, (input) => this.validateCurrentPlan(input).results),
-      read("preview_session_template_change", "List future planned sessions affected by editing a template.", z.object({ id: z.string().min(1) }), (input) => this.templateImpact((input as { id: string }).id)),
       read("get_next_training_day", "Get the first unfinished scheduled training day on or after a local date.", z.object({ onOrAfterDate: dateSchema.optional() }).strict(), (input) => this.getNextTrainingDay(input as { onOrAfterDate?: string })),
+      read("list_planned_sessions", "List planned sessions across the current plan, optionally filtered by an inclusive scheduledDate window.", z.object({ from: dateSchema.optional(), to: dateSchema.optional() }).strict(), (input) => this.getCalendar(input as { from?: string; to?: string })),
       read("validate_next_training_day_sessions", "Validate one or more sessions for the current next training day without saving them.", nextTrainingDayWriteSchema, (input) => this.validateNextTrainingDaySessions(input)),
-      { name: "create_session_template", description: "Create a reusable session template before referencing it from a plan.", inputSchema: sessionTemplateCreateSchema, readOnly: false, idempotent: true, handler: (input) => this.createTemplate(input) },
-      { name: "update_session_template", description: "Update a template. If future sessions are affected, pass the user's keep or update choice.", inputSchema: sessionTemplateUpdateSchema, readOnly: false, idempotent: false, handler: (input) => this.updateTemplate(input) },
+      { name: "create_session_template", description: "Create a local reusable single-domain archetype. Read get_training_taxonomy first. Do not include exercises, sets, reps, distance, duration, load, or recovery demand.", inputSchema: sessionTemplateCreateSchema, readOnly: false, idempotent: true, handler: (input) => this.createTemplate(input) },
+      { name: "update_session_template", description: "Update a local archetype. Built-ins are read-only and template edits never rewrite Weekly Sessions.", inputSchema: sessionTemplateUpdateSchema, readOnly: false, idempotent: false, handler: (input) => this.updateTemplate(input) },
       { name: "delete_session_template", description: "Delete an unreferenced template only after the user explicitly requests deletion.", inputSchema: z.object({ id: z.string().min(1), expectedRevision: z.number().int().positive(), confirmedExplicitRequest: z.literal(true) }), readOnly: false, idempotent: false, handler: (input) => { const value = input as { id: string; expectedRevision: number }; return this.deleteTemplate(value.id, value.expectedRevision); } },
       { name: "save_current_plan", description: "Validate and directly replace the single current mesocycle. No approval step follows.", inputSchema: currentPlanWriteSchema, readOnly: false, idempotent: false, handler: (input) => this.saveCurrentPlan(input) },
-      { name: "save_next_training_day_sessions", description: "After explicit conversational confirmation, append or replace planned sessions on the current next training day.", inputSchema: nextTrainingDayWriteSchema, readOnly: false, idempotent: true, handler: (input) => this.saveNextTrainingDaySessions(input) },
+      { name: "save_next_training_day_sessions", description: "After explicit confirmation, append or replace complete executable Session prescriptions on the next training day. A templateRef is optional provenance and never supplies missing fields.", inputSchema: nextTrainingDayWriteSchema, readOnly: false, idempotent: true, handler: (input) => this.saveNextTrainingDaySessions(input) },
       { name: "update_planned_session", description: "Complete, skip, or move the current planned training occurrence after explicit user confirmation.", inputSchema: z.object({ id: z.string().min(1), update: plannedSessionActionSchema }).strict(), readOnly: false, idempotent: false, handler: (input) => { const value = input as { id: string; update: PlannedSessionAction }; return this.updatePlannedSession(value.id, value.update); } },
-      { name: "propose_profile_update", description: "Create an idempotent profile update proposal for Dashboard approval.", inputSchema: z.object({ clientRequestId: z.string().min(1), patch: athleteProfileSchema.partial(), rationale: z.string().min(1).max(4000) }), readOnly: false, idempotent: true, handler: (input) => this.proposeProfileUpdate(input) },
+      { name: "propose_profile_update", description: "Create an idempotent profile update proposal for Dashboard approval.", inputSchema: z.object({ clientRequestId: z.string().min(1), patch: athleteProfileSchema.partial().loose(), rationale: z.string().min(1).max(4000) }), readOnly: false, idempotent: true, handler: (input) => this.proposeProfileUpdate(input) },
     ];
   }
 }

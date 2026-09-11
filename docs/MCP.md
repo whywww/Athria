@@ -25,9 +25,9 @@ MCP exposes read, calculation, validation, candidate-search, template-library, a
 - `save_current_plan`
 - `propose_profile_update`
 
-Template and plan writes are immediate latest-state writes protected by `expectedRevision`. A template or plan edit that affects future planned snapshots requires `futureSessionPolicy: keep | update`. Core blocker failures and unknowns, missing/cross-owner templates, and stale LLM snapshots are rejected. Template deletion additionally requires an explicit user request and is blocked while the Current Mesocycle references it. MCP still cannot directly change the confirmed Profile.
+Template and plan writes are immediate latest-state writes protected by `expectedRevision`. Templates are single-domain generic structures and never contain exercises, distance, duration, sets/reps, load, recovery demand, or another executable prescription. Core validates structure and constraints deterministically; it does not recommend dose. Built-ins are read-only and may be copied. Template deletion requires an explicit user request and is blocked while the Current Mesocycle references it. MCP still cannot directly change the confirmed Profile.
 
-Use the provider-neutral `packages/skills/athria-training-planner` Skill for the intended workflow. Save templates first, then save a v5 Current Mesocycle that references their IDs through a fixed-week, flexible-week, or interval schedule. Validate and resolve blocker-relevant gaps before saving. Plans never accept or emit `mixed`.
+Use the provider-neutral `packages/skills/athria-training-planner` Skill for the intended workflow. Read `get_training_taxonomy` before writing a template and submit catalog IDs only. Save a v7 Current Mesocycle whose schedule expresses rhythm, whose `domainProgressions[]` independently cover the full cycle for every resolved Session domain, and whose complete `weeks[].sessions` hold final dated prescriptions. `templateRef` is optional provenance and never fills a Session. Validate and resolve blocker-relevant gaps before saving.
 
 ## Xunji records
 

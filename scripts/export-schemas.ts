@@ -1,9 +1,9 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { jsonSchemas } from "../packages/schemas/src/index.ts";
+import { PLAN_SCHEMA_VERSION, jsonSchemas } from "../packages/schemas/src/index.ts";
 
-const outputDirectory = join(dirname(fileURLToPath(import.meta.url)), "..", "schemas", "v5");
+const outputDirectory = join(dirname(fileURLToPath(import.meta.url)), "..", "schemas", `v${PLAN_SCHEMA_VERSION.split(".")[0]}`);
 mkdirSync(outputDirectory, { recursive: true });
 
 const names: Record<keyof typeof jsonSchemas, string> = {

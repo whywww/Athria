@@ -43,7 +43,7 @@ The current MCP MVP provides:
 - Local SQLite persistence with migrations, WAL, backup, and restore.
 - MCP v2 over stdio, plus authenticated Streamable HTTP on a loopback-only address.
 - Deterministic strength and endurance metrics with formula versions and explicit data-quality indicators.
-- Plan Schema v5 validation with fixed-week, flexible-week, and interval rhythms plus blocker, advisory, informational, and unknown outcomes.
+- Plan Schema v7 validation with fixed-week, flexible-week, and interval rhythms, authoritative Weekly Sessions, structured multi-sport prescriptions, and independent phase timelines by domain.
 - A reusable Session Template Library and one editable Current Mesocycle per athlete.
 - Optimistic revision checks and validation gates for MCP writes.
 - Hevy CSV import with preview-before-commit, plus read-only Intervals.icu and Xunji synchronization.
@@ -285,7 +285,7 @@ Athria 的确定性 Core 负责计算和校验；连接的 MCP 客户端负责�
 - 使用 SQLite、migration 和 WAL 的本地数据持久化，以及备份与恢复能力。
 - 基于 stdio 的 MCP v2，以及仅在本机回环地址提供、需要身份验证的 Streamable HTTP。
 - 可复现的力量与耐力训练指标，并明确标记公式版本和数据质量。
-- 基于 Plan Schema v5 的计划校验，支持固定周、灵活周和间隔节奏，结果分为阻断、建议、信息和未知。
+- 基于 Plan Schema v7 的计划校验，支持固定周、灵活周和间隔节奏、权威周处方、结构化多运动内容和各领域独立 phase timeline。
 - 可复用的 Session Template Library，以及每位运动者一个可编辑的 Current Mesocycle。
 - 使用 revision 乐观锁和校验门禁保护 MCP 写入。
 - 提交前可预览的 Hevy CSV 导入，以及只读的 Intervals.icu 和训记同步。

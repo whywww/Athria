@@ -125,20 +125,24 @@ async function main(): Promise<void> {
         if (url.pathname === "/api/summary" && request.method === "GET") return json(application.getTrainingSummary(Number(url.searchParams.get("days") ?? "7")));
         if (url.pathname === "/api/sessions" && request.method === "GET") return json(application.listSessions(Number(url.searchParams.get("days") ?? "90")));
         if (url.pathname === "/api/exercises" && request.method === "GET") return json(repository.listExercises());
+        if (url.pathname === "/api/training-taxonomy" && request.method === "GET") return json(application.getTrainingTaxonomy());
         if (url.pathname === "/api/templates" && request.method === "GET") return json(application.listTemplates());
         if (url.pathname === "/api/templates" && request.method === "POST") return json(application.createTemplate(await body(request)), 201);
         const template = url.pathname.match(/^\/api\/templates\/([^/]+)$/);
         if (template && request.method === "GET") return json(application.getTemplate(decodeURIComponent(template[1]!)));
         if (template && request.method === "PUT") return json(application.updateTemplate(await body(request)));
         if (template && request.method === "DELETE") { const value = await body(request); return json(application.deleteTemplate(decodeURIComponent(template[1]!), Number(value.expectedRevision))); }
-        const templateImpact = url.pathname.match(/^\/api\/templates\/([^/]+)\/impact$/);
-        if (templateImpact && request.method === "POST") return json(application.templateImpact(decodeURIComponent(templateImpact[1]!)));
         if (url.pathname === "/api/plans/current" && request.method === "GET") return json(application.getCurrentPlan());
         if (url.pathname === "/api/plans/current" && request.method === "PUT") return json(application.saveCurrentPlan(await body(request)));
         if (url.pathname === "/api/plans/current/validate" && request.method === "POST") return json(application.validateCurrentPlan(await body(request)));
         if (url.pathname === "/api/plans/next-training-day" && request.method === "GET") {
           const onOrAfterDate = url.searchParams.get("onOrAfterDate");
           return json(application.getNextTrainingDay({ ...(onOrAfterDate ? { onOrAfterDate } : {}) }));
+        }
+        if (url.pathname === "/api/plans/calendar" && request.method === "GET") {
+          const from = url.searchParams.get("from");
+          const to = url.searchParams.get("to");
+          return json(application.getCalendar({ ...(from ? { from } : {}), ...(to ? { to } : {}) }));
         }
         if (url.pathname === "/api/planned-sessions/validate" && request.method === "POST") return json(application.validateNextTrainingDaySessions(await body(request)));
         if (url.pathname === "/api/planned-sessions" && request.method === "POST") return json(application.saveNextTrainingDaySessions(await body(request)), 201);

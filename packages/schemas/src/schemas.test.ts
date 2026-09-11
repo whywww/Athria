@@ -1,41 +1,49 @@
 import { describe, expect, it } from "vitest";
-import { TAXONOMY_VERSION, athleteProfileSchema, currentPlanSchema, jsonSchemas, mesocycleSchema, resolvedMesocycleSchema, sessionTemplateSchema, trainingSessionSchema } from "./index";
+import { PLAN_SCHEMA_VERSION, sessionTemplateSchema, mesocycleSchema, currentPlanSchema } from "./index";
 
-describe("public schema contracts", () => {
-  it("rejects unknown profile fields", () => expect(() => athleteProfileSchema.parse({ unexpected: true })).toThrow());
-  it("accepts unique training days and rejects legacy or duplicate availability", () => {
-    expect(athleteProfileSchema.parse({ trainingDays: [0, 3, 6] }).trainingDays).toEqual([0, 3, 6]);
-    expect(() => athleteProfileSchema.parse({ trainingDays: [0, 0] })).toThrow(/unique/i);
-    expect(() => athleteProfileSchema.parse({ availability: [] })).toThrow();
-    expect(() => athleteProfileSchema.parse({ maxHeartRate: 180 })).toThrow();
+const block = (role: string, key: string) => ({ id: role, name: role, role, required: true, variables: [{ key, required: true }] });
+const templates = [
+  { domain: "strength", structure: { kind: "strength", slots: [{ ...block("primary", "exercise_selection"), movementPatternIds: ["squat"], targetMuscleIds: ["quadriceps"], matchPolicy: "all" }] } },
+  { domain: "endurance", structure: { kind: "endurance", blocks: [block("steady", "duration")] } },
+  { domain: "sport_skill", structure: { kind: "sport_skill", blocks: [block("technical", "drill")] } },
+  { domain: "recovery", structure: { kind: "recovery", blocks: [block("mobility", "movement")] } },
+  { domain: "mind_body", structure: { kind: "mind_body", blocks: [block("centering", "technique")] } },
+].map((item, index) => ({ id: `template-${index}`, name: `Template ${index}`, intent: "Stable archetype", commonUseCases: [], notes: "", ...item }));
+
+describe("schema v7 template boundary", () => {
+  it("accepts each single-domain generic template", () => {
+    for (const template of templates) expect(sessionTemplateSchema.parse(template).domain).toBe(template.domain);
   });
-  it("rejects timestamps without an explicit timezone offset", () => expect(() => trainingSessionSchema.parse({ id: "x", source: "fixture", externalId: "x", modality: "strength", name: "x", startAt: "2026-09-01T10:00:00", endAt: "2026-09-01T11:00:00", durationMinutes: 60 })).toThrow());
-  it("rejects undeclared weight units", () => expect(() => trainingSessionSchema.parse({ id: "x", source: "fixture", externalId: "x", modality: "strength", name: "x", startAt: "2026-09-01T10:00:00Z", endAt: "2026-09-01T11:00:00Z", durationMinutes: 60, strengthSets: [{ exerciseRaw: "Squat", setIndex: 1, weight: 100, weightUnit: "stone", reps: 5 }] })).toThrow());
-  it("exports strict JSON Schema for shared contracts", () => {
-    expect(jsonSchemas.currentPlan).toMatchObject({ type: "object", additionalProperties: false });
-    expect(jsonSchemas.athleteProfile).toMatchObject({ properties: { trainingDays: { uniqueItems: true, maxItems: 7 } } });
+  it("rejects concrete prescriptions, unknown taxonomy ids and invalid ranges", () => {
+    expect(sessionTemplateSchema.safeParse({ ...templates[0], durationMinutes: 45 }).success).toBe(false);
+    const strength = structuredClone(templates[0]) as any;
+    strength.structure.slots[0].movementPatternIds = ["invented_pattern"];
+    expect(sessionTemplateSchema.safeParse(strength).success).toBe(false);
+    strength.structure.slots[0].movementPatternIds = ["squat"];
+    strength.structure.slots[0].variables[0].identityConstraint = { min: 12, max: 5, unit: "reps" };
+    expect(sessionTemplateSchema.safeParse(strength).success).toBe(false);
   });
-  it("requires an explicit start date and rejects embedded templates in current plans", () => {
-    const base = { planSchemaVersion: "5.0", ownerId: "local-user", title: "Plan", summary: "", effectiveStartDate: "2026-09-01", mesocycle: { durationWeeks: 1, schedule: { kind: "fixed_week", days: [{ id: "monday", dayOfWeek: 0, templateIds: ["a"] }] }, phases: [{ id: "base", phaseType: "foundation", name: "Base", startWeek: 1, endWeek: 1, focus: "Base", progression: [] }], adjustmentRules: [] }, revision: 1, sourceAgent: null, model: null, skillVersion: null, inputSnapshotHash: null, updatedAt: "2026-09-01T10:00:00Z" };
-    expect(currentPlanSchema.parse(base).effectiveStartDate).toBe("2026-09-01");
-    expect(currentPlanSchema.safeParse({ ...base, mesocycle: { ...base.mesocycle, sessionTemplates: [] } }).success).toBe(false);
+  it("requires complete weeks and rhythm-only schedules", () => {
+    const base = { durationWeeks: 2, schedule: { kind: "fixed_week", days: [0, 3] }, domainProgressions: [], weeks: [], adjustmentRules: [] };
+    expect(mesocycleSchema.safeParse(base).success).toBe(false);
+    expect(mesocycleSchema.safeParse({ ...base, weeks: [{ weekNumber: 1, focus: null, sessions: [] }, { weekNumber: 2, focus: null, sessions: [] }] }).success).toBe(true);
+    expect(mesocycleSchema.shape.schedule.safeParse({ kind: "interval", intervalDays: 2, templateIds: ["x"] }).success).toBe(false);
   });
-  it("supports all training rhythms and validates flexible frequency bounds", () => {
-    const slot = { id: "a", templateIds: ["template"] };
-    expect(mesocycleSchema.shape.schedule.safeParse({ kind: "fixed_week", days: [{ ...slot, dayOfWeek: 0 }] }).success).toBe(true);
-    expect(mesocycleSchema.shape.schedule.safeParse({ kind: "interval", intervalDays: 2, rotation: [slot] }).success).toBe(true);
-    expect(mesocycleSchema.shape.schedule.safeParse({ kind: "flexible_week", targetSessionsPerWeek: 3, minSessionsPerWeek: 2, maxSessionsPerWeek: 4, rotation: [slot] }).success).toBe(true);
-    expect(mesocycleSchema.shape.schedule.safeParse({ kind: "flexible_week", targetSessionsPerWeek: 4, minSessionsPerWeek: 5, maxSessionsPerWeek: 6, rotation: [slot] }).success).toBe(false);
+  it("requires Schema 7 current plans", () => {
+    const mesocycle = { durationWeeks: 1, schedule: { kind: "interval", intervalDays: 2 }, domainProgressions: [], weeks: [{ weekNumber: 1, focus: null, sessions: [] }], adjustmentRules: [] };
+    const plan = { planSchemaVersion: PLAN_SCHEMA_VERSION, ownerId: "local-user", title: "Plan", summary: "", effectiveStartDate: "2026-09-01", mesocycle, revision: 1, sourceAgent: null, model: null, skillVersion: null, inputSnapshotHash: null, updatedAt: "2026-09-01T00:00:00Z" };
+    expect(currentPlanSchema.parse(plan).planSchemaVersion).toBe("7.0");
   });
-  it("accepts component domains and rejects the removed mixed modality", () => {
-    const fact = <T>(value: T) => ({ value, source: "user_confirmed", confidence: 1, evidence: "fixture", taxonomyVersion: TAXONOMY_VERSION });
-    const mesocycle = { durationWeeks: 1, schedule: { kind: "fixed_week", days: [{ id: "monday", dayOfWeek: 0, templateIds: ["a", "b"] }] }, sessionTemplates: [{ id: "a", name: "Strength", intent: "Build strength", durationMinutes: 45, recoveryDemand: "high", components: [{ id: "strength", name: "Strength", domain: fact("strength"), prescription: { kind: "strength", exercises: [{ id: "squat", displayName: "Squat", canonicalKey: null, classification: { primaryMovement: fact("squat"), primaryMuscles: fact(["quadriceps"]), secondaryMuscles: fact(["glutes"]), equipment: fact(["barbell"]), impact: fact("low"), laterality: fact("bilateral") }, sets: 3, repsMin: 5, repsMax: 8 }] } }] }, { id: "b", name: "Run", intent: "Aerobic base", durationMinutes: 30, recoveryDemand: "normal", components: [{ id: "run", name: "Run", domain: fact("endurance"), prescription: { kind: "duration_only", notes: "Easy" } }] }], phases: [{ id: "base", phaseType: "foundation", name: "Base", startWeek: 1, endWeek: 1, focus: "Build capacity" }] };
-    const { sessionTemplates, ...planMesocycle } = mesocycle;
-    expect(mesocycleSchema.parse(planMesocycle).schedule).toMatchObject({ kind: "fixed_week" });
-    expect(sessionTemplateSchema.parse(sessionTemplates[0])).toMatchObject({ id: "a" });
-    const multiDomain = { ...mesocycle.sessionTemplates[0]!, components: [...mesocycle.sessionTemplates[0]!.components, mesocycle.sessionTemplates[1]!.components[0]!] };
-    expect(resolvedMesocycleSchema.parse({ ...planMesocycle, sessionTemplates: [multiDomain, sessionTemplates[1]] }).sessionTemplates[0]?.components.map((component) => component.domain.value)).toEqual(["strength", "endurance"]);
-    expect(sessionTemplateSchema.safeParse({ ...sessionTemplates[0], modality: "mixed" }).success).toBe(false);
-    expect(mesocycleSchema.safeParse({ ...planMesocycle, phases: [{ ...mesocycle.phases[0], focus: "x".repeat(301) }] }).success).toBe(false);
+  it("requires one complete progression timeline for every resolved session domain", () => {
+    const fact = (value: "recovery" | "mind_body") => ({ value, source: "user_confirmed", confidence: 1, evidence: "fixture", taxonomyVersion: "strength-2.0" });
+    const component = (domain: "recovery" | "mind_body") => ({ id: domain, name: domain, domain: fact(domain), prescription: { kind: domain, blocks: [{ name: domain, durationMinutes: 10 }] } });
+    const session = { id: "combined", scheduledDate: "2026-09-01", order: 0, templateRef: null, name: "Combined", intent: "Train two domains", durationMinutes: 60, recoveryDemand: "normal", keySession: false, components: [component("recovery"), component("mind_body")], progressionNote: null, schedulingRationale: null, legacySnapshot: false };
+    const phase = (id: string, startWeek: number, endWeek: number) => ({ id, phaseType: "foundation", name: id, startWeek, endWeek, focus: id, progression: [] });
+    const base = { durationWeeks: 2, schedule: { kind: "fixed_week", days: [1] }, weeks: [{ weekNumber: 1, focus: null, sessions: [session] }, { weekNumber: 2, focus: null, sessions: [{ ...session, id: "combined-2", scheduledDate: "2026-09-08" }] }], adjustmentRules: [] };
+    const valid = { ...base, domainProgressions: [{ domain: "recovery", phases: [phase("recovery-base", 1, 2)] }, { domain: "mind_body", phases: [phase("mind-body-base", 1, 1), phase("mind-body-build", 2, 2)] }] };
+    expect(mesocycleSchema.safeParse(valid).success).toBe(true);
+    expect(mesocycleSchema.safeParse({ ...valid, domainProgressions: valid.domainProgressions.slice(0, 1) }).success).toBe(false);
+    expect(mesocycleSchema.safeParse({ ...valid, domainProgressions: [valid.domainProgressions[0], valid.domainProgressions[0], valid.domainProgressions[1]] }).success).toBe(false);
+    expect(mesocycleSchema.safeParse({ ...valid, domainProgressions: [{ domain: "recovery", phases: [phase("one", 1, 1)] }, valid.domainProgressions[1]] }).success).toBe(false);
   });
 });

@@ -20,7 +20,9 @@
     "build:desktop": "bun run release:native",
     "perf:smoke": "bun run scripts/performance-smoke.ts",
     "schema:export": "bun run scripts/export-schemas.ts",
-    "validate:skill": "bun run scripts/validate-skills.ts"
+    "validate:skill": "bun run scripts/validate-skills.ts",
+    "seed:v7": "bun run scripts/seed-v7-development.ts",
+    "seed:demo": "bun run scripts/seed-demo-strength-endurance.ts"
   },
   "devDependencies": {
     "@types/bun": "1.4.2",

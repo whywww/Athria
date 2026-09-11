@@ -19,7 +19,6 @@ export interface ScheduleOccurrence {
   scheduledDate: string;
   dayOfWeek: number;
   weekNumber: number;
-  templateIds: string[];
 }
 
 const scheduleAddDays = (date: string, days: number): string => {
@@ -48,45 +47,29 @@ function evenlySpacedOffsets(candidates: number[], count: number, acceptable: (c
   })[0] ?? [];
 }
 
-export function expandSchedule(input: { effectiveStartDate: string; durationWeeks: number; schedule: Schedule; trainingDays?: number[]; recoveryDemandByTemplate?: Record<string, "low" | "normal" | "high">; explicitRecoveryHours?: number | null }): ScheduleOccurrence[] {
+export function expandSchedule(input: { effectiveStartDate: string; durationWeeks: number; schedule: Schedule }): ScheduleOccurrence[] {
   const { effectiveStartDate, durationWeeks, schedule } = input;
-  const allowed = new Set(input.trainingDays?.length ? input.trainingDays : [0, 1, 2, 3, 4, 5, 6]);
   const endOffset = durationWeeks * 7;
   const occurrences: ScheduleOccurrence[] = [];
-  let lastHighDate: string | null = null;
-  const isHigh = (slot: { templateIds: string[] }) => slot.templateIds.some((id) => input.recoveryDemandByTemplate?.[id] === "high");
-  const recoverySatisfied = (date: string) => lastHighDate === null || input.explicitRecoveryHours == null || Math.round((Date.parse(`${date}T12:00:00Z`) - Date.parse(`${lastHighDate}T12:00:00Z`)) / 3_600_000) >= input.explicitRecoveryHours;
-  const add = (scheduledDate: string, slot: { id: string; templateIds: string[] }) => {
+  const add = (scheduledDate: string, slotId: string) => {
     const elapsed = Math.round((Date.parse(`${scheduledDate}T12:00:00Z`) - Date.parse(`${effectiveStartDate}T12:00:00Z`)) / 86_400_000);
     if (elapsed < 0 || elapsed >= endOffset) return;
-    occurrences.push({ ordinal: occurrences.length, slotId: slot.id, scheduledDate, dayOfWeek: scheduleWeekday(scheduledDate), weekNumber: Math.floor(elapsed / 7) + 1, templateIds: slot.templateIds });
-    if (isHigh(slot)) lastHighDate = scheduledDate;
+    occurrences.push({ ordinal: occurrences.length, slotId, scheduledDate, dayOfWeek: scheduleWeekday(scheduledDate), weekNumber: Math.floor(elapsed / 7) + 1 });
   };
   if (schedule.kind === "fixed_week") {
     for (let offset = 0; offset < endOffset; offset += 1) {
       const date = scheduleAddDays(effectiveStartDate, offset);
-      const slot = schedule.days.find((day) => day.dayOfWeek === scheduleWeekday(date));
-      if (slot) add(date, slot);
+      if (schedule.days.includes(scheduleWeekday(date))) add(date, `weekday-${scheduleWeekday(date)}`);
     }
   } else if (schedule.kind === "flexible_week") {
-    let rotationIndex = 0;
     for (let week = 0; week < durationWeeks; week += 1) {
-      const candidates = Array.from({ length: 7 }, (_, offset) => offset).filter((offset) => allowed.has(scheduleWeekday(scheduleAddDays(effectiveStartDate, week * 7 + offset))));
-      const startRotationIndex = rotationIndex;
-      const acceptable = (choice: number[]) => { let prior = lastHighDate; return choice.every((offset, index) => { const slot = schedule.rotation[(startRotationIndex + index) % schedule.rotation.length]!; if (!isHigh(slot)) return true; const date = scheduleAddDays(effectiveStartDate, week * 7 + offset); const okay = prior === null || input.explicitRecoveryHours == null || Math.round((Date.parse(`${date}T12:00:00Z`) - Date.parse(`${prior}T12:00:00Z`)) / 3_600_000) >= input.explicitRecoveryHours; prior = date; return okay; }); };
-      for (const offset of evenlySpacedOffsets(candidates, schedule.targetSessionsPerWeek, acceptable)) {
-        const slot = schedule.rotation[rotationIndex % schedule.rotation.length]!;
-        add(scheduleAddDays(effectiveStartDate, week * 7 + offset), slot);
-        rotationIndex += 1;
-      }
+      const candidates = Array.from({ length: 7 }, (_, offset) => offset);
+      for (const [index, offset] of evenlySpacedOffsets(candidates, schedule.targetDaysPerWeek).entries()) add(scheduleAddDays(effectiveStartDate, week * 7 + offset), `flex-${week + 1}-${index + 1}`);
     }
   } else {
-    let date = effectiveStartDate; let rotationIndex = 0;
+    let date = effectiveStartDate; let index = 0;
     while (Math.round((Date.parse(`${date}T12:00:00Z`) - Date.parse(`${effectiveStartDate}T12:00:00Z`)) / 86_400_000) < endOffset) {
-      const slot = schedule.rotation[rotationIndex % schedule.rotation.length]!;
-      while (!allowed.has(scheduleWeekday(date)) || (isHigh(slot) && !recoverySatisfied(date))) date = scheduleAddDays(date, 1);
-      if (Math.round((Date.parse(`${date}T12:00:00Z`) - Date.parse(`${effectiveStartDate}T12:00:00Z`)) / 86_400_000) >= endOffset) break;
-      add(date, slot); rotationIndex += 1; date = scheduleAddDays(date, schedule.intervalDays);
+      add(date, `interval-${index + 1}`); index += 1; date = scheduleAddDays(date, schedule.intervalDays);
     }
   }
   return occurrences;
@@ -300,48 +283,60 @@ export function validatePlan(profile: AthleteProfile, draft: { mesocycle: Resolv
   let movementFactsTotal = 0; let movementFactsResolved = 0; let muscleFactsTotal = 0; let muscleFactsResolved = 0; let equipmentFactsTotal = 0; let equipmentFactsResolved = 0;
   if (draft.mesocycle) {
     const mesocycle = draft.mesocycle;
-    const templateIds = mesocycle.sessionTemplates.map((item) => item.id);
-    const templateIdSet = new Set(templateIds);
-    const phaseIds = mesocycle.phases.map((item) => item.id);
-    const phaseIdSet = new Set(phaseIds);
-    const scheduleSlots = mesocycle.schedule.kind === "fixed_week" ? mesocycle.schedule.days : mesocycle.schedule.rotation;
-    const weekdays = mesocycle.schedule.kind === "fixed_week" ? mesocycle.schedule.days.map((item) => item.dayOfWeek) : [];
-    const slotsValid = new Set(scheduleSlots.map((item) => item.id)).size === scheduleSlots.length
-      && (mesocycle.schedule.kind !== "fixed_week" || new Set(weekdays).size === weekdays.length)
-      && scheduleSlots.every((item) => new Set(item.templateIds).size === item.templateIds.length && item.templateIds.every((id) => templateIdSet.has(id)));
-    const recoveryDemandByTemplate = Object.fromEntries(mesocycle.sessionTemplates.map((template) => [template.id, template.recoveryDemand]));
-    const scheduleOccurrences = expandSchedule({ effectiveStartDate: draft.effectiveStartDate ?? "2026-01-05", durationWeeks: mesocycle.durationWeeks, schedule: mesocycle.schedule, trainingDays: profile.trainingDays, recoveryDemandByTemplate, explicitRecoveryHours: profile.explicitRecoveryHours });
-    const scheduleFeasible = mesocycle.schedule.kind !== "flexible_week" || scheduleOccurrences.length === mesocycle.schedule.targetSessionsPerWeek * mesocycle.durationWeeks;
-    const componentIds = mesocycle.sessionTemplates.flatMap((item) => item.components.map((component) => component.id));
-    const exerciseIds = mesocycle.sessionTemplates.flatMap((item) => item.components.flatMap((component) => component.prescription.kind === "strength" ? component.prescription.exercises.map((exercise) => exercise.id) : []));
+    const weekdays = mesocycle.schedule.kind === "fixed_week" ? mesocycle.schedule.days : [];
+    const scheduleOccurrences = expandSchedule({ effectiveStartDate: draft.effectiveStartDate ?? "2026-01-05", durationWeeks: mesocycle.durationWeeks, schedule: mesocycle.schedule });
+    const weeklyPrescriptions = mesocycle.weeks.flatMap((week) => week.sessions.map((session) => ({ ...session, weekNumber: week.weekNumber })));
+    const scheduledDates = [...new Set(weeklyPrescriptions.map((session) => session.scheduledDate))].sort();
+    const expectedDates = scheduleOccurrences.map((occurrence) => occurrence.scheduledDate).sort();
+    const sameDates = scheduledDates.length === expectedDates.length && scheduledDates.every((date, index) => date === expectedDates[index]);
+    const rhythm = profile.trainingRhythm;
+    const rhythmParametersMatch = rhythm.kind === "fixed_week"
+      ? mesocycle.schedule.kind === "fixed_week" && [...rhythm.days].sort().join(",") === [...weekdays].sort().join(",")
+      : rhythm.kind === "flexible_week"
+        ? mesocycle.schedule.kind === "flexible_week" && mesocycle.schedule.targetDaysPerWeek === rhythm.targetDaysPerWeek && mesocycle.schedule.minDaysPerWeek === rhythm.minDaysPerWeek && mesocycle.schedule.maxDaysPerWeek === rhythm.maxDaysPerWeek
+        : mesocycle.schedule.kind === "interval" && mesocycle.schedule.intervalDays === rhythm.intervalDays;
+    const rhythmDates = scheduledDates;
+    const weeklyRhythmMatches = rhythm.kind === "flexible_week"
+      ? mesocycle.weeks.every((week) => {
+        const trainingDays = new Set(week.sessions.map((session) => session.scheduledDate)).size;
+        return trainingDays >= rhythm.minDaysPerWeek && trainingDays <= rhythm.maxDaysPerWeek;
+      })
+      : rhythm.kind === "interval"
+        ? rhythmDates[0] === (draft.effectiveStartDate ?? "2026-01-05") && rhythmDates.every((date, index) => index === 0 || Math.round((Date.parse(`${date}T12:00:00Z`) - Date.parse(`${rhythmDates[index - 1]}T12:00:00Z`)) / 86_400_000) === rhythm.intervalDays)
+        : sameDates;
+    const prescriptions = weeklyPrescriptions;
+    const componentIds = prescriptions.flatMap((item) => item.components.map((component) => component.id));
+    const exerciseIds = prescriptions.flatMap((item) => item.components.flatMap((component) => component.prescription.kind === "strength" ? component.prescription.exercises.map((exercise) => exercise.id) : []));
     const uniqueWithinTemplate = (ids: string[]) => ids.length === new Set(ids).size;
-    const componentIdsUnique = mesocycle.sessionTemplates.every((item) => uniqueWithinTemplate(item.components.map((component) => component.id)));
-    const exerciseIdsUnique = mesocycle.sessionTemplates.every((item) => uniqueWithinTemplate(item.components.flatMap((component) => component.prescription.kind === "strength" ? component.prescription.exercises.map((exercise) => exercise.id) : [])));
-    results.push(rule("blocker", "MESOCYCLE_TEMPLATE_IDS", templateIds.length === templateIdSet.size ? "pass" : "fail", [], { templateIds }));
+    const componentIdsUnique = prescriptions.every((item) => uniqueWithinTemplate(item.components.map((component) => component.id)));
+    const exerciseIdsUnique = prescriptions.every((item) => uniqueWithinTemplate(item.components.flatMap((component) => component.prescription.kind === "strength" ? component.prescription.exercises.map((exercise) => exercise.id) : [])));
     results.push(rule("blocker", "COMPONENT_IDS", componentIdsUnique ? "pass" : "fail", [], { componentIds }));
     results.push(rule("blocker", "EXERCISE_IDS", exerciseIdsUnique ? "pass" : "fail", [], { exerciseIds }));
-    results.push(rule("blocker", "MESOCYCLE_SCHEDULE", slotsValid && scheduleFeasible ? "pass" : "fail", [], { kind: mesocycle.schedule.kind, weekdays, templateIds: scheduleSlots.flatMap((item) => item.templateIds), occurrenceCount: scheduleOccurrences.length }));
-    const phases = [...mesocycle.phases].sort((a, b) => a.startWeek - b.startWeek);
-    const phasesCoverDuration = phaseIds.length === phaseIdSet.size
-      && phases[0]?.startWeek === 1
-      && phases.at(-1)?.endWeek === mesocycle.durationWeeks
-      && phases.every((phase, index) => phase.startWeek <= phase.endWeek
-        && phase.endWeek <= mesocycle.durationWeeks
-        && (index === 0 || phase.startWeek === phases[index - 1]!.endWeek + 1));
-    results.push(rule("blocker", "MESOCYCLE_PHASE_PROGRESSION", phasesCoverDuration ? "pass" : "fail", [], { durationWeeks: mesocycle.durationWeeks, phases: phases.map(({ id, startWeek, endWeek }) => ({ id, startWeek, endWeek })) }));
-    const scheduled = new Map<string, number>();
-    for (const occurrence of scheduleOccurrences) for (const id of occurrence.templateIds) scheduled.set(id, (scheduled.get(id) ?? 0) + (1 / mesocycle.durationWeeks));
+    results.push(rule("blocker", "MESOCYCLE_SCHEDULE", "pass", [], { kind: mesocycle.schedule.kind, weekdays, occurrenceCount: scheduleOccurrences.length }));
+    results.push(rule("blocker", "PROFILE_TRAINING_RHYTHM", rhythmParametersMatch && weeklyRhythmMatches ? "pass" : "fail", [], { profileRhythm: rhythm, planSchedule: mesocycle.schedule, scheduledDates }));
+    const progressionDomains = mesocycle.domainProgressions.map((item) => item.domain);
+    const sessionDomains = [...new Set(weeklyPrescriptions.flatMap((session) => session.components.map((component) => component.domain.value).filter((domain) => domain !== null)))];
+    const domainsMatch = progressionDomains.length === new Set(progressionDomains).size
+      && sessionDomains.length === progressionDomains.length
+      && progressionDomains.every((domain) => sessionDomains.includes(domain));
+    const progressionsCoverDuration = mesocycle.domainProgressions.every((progression) => {
+      const phases = [...progression.phases].sort((a, b) => a.startWeek - b.startWeek);
+      return phases.length === new Set(phases.map((phase) => phase.id)).size
+        && phases[0]?.startWeek === 1
+        && phases.at(-1)?.endWeek === mesocycle.durationWeeks
+        && phases.every((phase, index) => phase.startWeek <= phase.endWeek
+          && phase.endWeek <= mesocycle.durationWeeks
+          && (index === 0 || phase.startWeek === phases[index - 1]!.endWeek + 1));
+    });
+    results.push(rule("blocker", "DOMAIN_PROGRESSION", domainsMatch && progressionsCoverDuration ? "pass" : "fail", [], { durationWeeks: mesocycle.durationWeeks, sessionDomains, progressions: mesocycle.domainProgressions }));
     const directByMuscle: Record<string, number> = {}; const indirectByMuscle: Record<string, number> = {}; const setsByPattern: Record<string, number> = {};
-    let strengthFrequency = 0;
-    for (const template of mesocycle.sessionTemplates) {
-      const occurrences = scheduled.get(template.id) ?? 0;
-      const onAllowedDays = profile.trainingDays.length === 0 || scheduleOccurrences.filter((day) => day.templateIds.includes(template.id)).every((day) => profile.trainingDays.includes(day.dayOfWeek));
+    for (const template of prescriptions) {
+      const occurrences = 1 / mesocycle.durationWeeks;
       results.push(rule("blocker", "MAX_SESSION_DURATION", template.durationMinutes <= profile.maxSessionMinutes ? "pass" : "fail", [template.id], { durationMinutes: template.durationMinutes, maximum: profile.maxSessionMinutes }));
-      results.push(rule("blocker", "TRAINING_DAYS", onAllowedDays ? "pass" : "fail", [template.id], { allowed: profile.trainingDays }));
-      if (template.components.some((component) => component.domain.value === "strength")) strengthFrequency += occurrences;
       for (const component of template.components) {
-        const prescriptionConsistent = (component.prescription.kind === "strength" && component.domain.value === "strength")
-          || (component.prescription.kind === "duration_only" && component.domain.value !== "strength");
+        const prescriptionConsistent = component.prescription.kind === "duration_only"
+          ? component.domain.value !== "strength"
+          : component.prescription.kind === component.domain.value;
         results.push(rule("blocker", "COMPONENT_PRESCRIPTION", prescriptionConsistent ? "pass" : "fail", [template.id, component.id], { domain: component.domain.value, prescription: component.prescription.kind }));
         if (component.domain.value === null) {
           results.push(rule("info", "COMPONENT_DOMAIN_MISSING", "unknown", [component.id], {}, ["domain"]));
@@ -393,9 +388,7 @@ export function validatePlan(profile: AthleteProfile, draft: { mesocycle: Resolv
     results.push(rule("advisory", "STRENGTH_PUSH_PULL_BALANCE", ratioStatus(push, pull), [], { pushSets: push, pullSets: pull, boundary: 2 }, [], null, "strength"));
     const knee = (setsByPattern.squat ?? 0) + (setsByPattern.lunge ?? 0); const hinge = setsByPattern.hinge ?? 0;
     results.push(rule("advisory", "STRENGTH_KNEE_HINGE_BALANCE", ratioStatus(knee, hinge), [], { kneeDominantSets: knee, hingeSets: hinge, boundary: 2 }, [], null, "strength"));
-    results.push(rule("advisory", "STRENGTH_WEEKLY_FREQUENCY", strengthFrequency === profile.weeklyStrengthSessions ? "pass" : "fail", [], { planned: strengthFrequency, preferred: profile.weeklyStrengthSessions }, [], null, "strength"));
-
-    const highDates = [...new Set(scheduleOccurrences.filter((day) => day.templateIds.some((id) => mesocycle.sessionTemplates.find((template) => template.id === id)?.recoveryDemand === "high")).map((day) => day.scheduledDate))];
+    const highDates = [...new Set(weeklyPrescriptions.filter((session) => session.recoveryDemand === "high").map((session) => session.scheduledDate))];
     let closestHours = Infinity;
     for (let index = 1; index < highDates.length; index += 1) closestHours = Math.min(closestHours, Math.round((Date.parse(`${highDates[index]}T12:00:00Z`) - Date.parse(`${highDates[index - 1]}T12:00:00Z`)) / 3_600_000));
     if (highDates.length > 1) {
