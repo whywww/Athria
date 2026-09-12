@@ -222,7 +222,7 @@ Rest      Easy Run     Upper A      Intervals    Rest      Lower A      Long Run
 
 ### 7.3 默认展开方式
 
-首次加载时只展开一个定位周，并自动滚动到可见位置：
+首次加载时只展开一个定位周，页面从顶部开始（不自动滚动到该周）；离开后再次进入同一计划时恢复上次离开时的滚动位置。定位周的选择：
 
 - 活跃计划展开当前周。
 - 尚未开始的计划展开 Week 1。
@@ -260,7 +260,7 @@ Rest      Easy Run     Upper A      Intervals    Rest      Lower A      Long Run
 - Today 使用清晰但不抢夺 Primary Goal 的高亮。
 - 已完成 session 使用 check 状态，但标题保持可读。
 - 部分完成的组合日，在各 session 级别分别展示状态。
-- 过去但未完成、也未被跳过的 session 显示 `Unresolved`，并提示用户处理，不自动当作 skipped。
+- 过去但没有匹配 actual workout、也未被跳过的 session 显示 `Unrecorded`，并提示用户补录、跳过或移动，不自动当作 skipped。
 - 未来 session 正常显示计划状态。
 - 距离当前日期较远的周可以显示 `May change after review`，但不降低处方完整度。
 
@@ -390,7 +390,7 @@ Repeat group 应以视觉嵌套表达：
 
 根据 session 状态显示：
 
-- `Mark complete`
+- `Add as a completed workout`
 - `Skip`
 - `Move`
 - `Adjust this session`
@@ -733,7 +733,7 @@ Plan 页提供次级入口 `View change history`，以时间线展示重要变�
 → 查看 Today 的全部 session
 → 打开一个 session
 → 按处方训练
-→ Mark complete
+→ Add as a completed workout
 → 记录 actual / RPE（若可用）
 → 返回 Overview，其他同日 session 保持 planned
 ```

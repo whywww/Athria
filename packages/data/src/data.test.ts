@@ -3,7 +3,7 @@ import { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PLAN_SCHEMA_VERSION, TAXONOMY_VERSION, defaultProfile } from "@athria/schemas";
+import { PLAN_SCHEMA_VERSION, TAXONOMY_VERSION, defaultProfile, trainingSessionSchema } from "@athria/schemas";
 import { AthriaRepository } from "./index";
 
 let repository: AthriaRepository | undefined; let directory: string | undefined;
@@ -21,12 +21,14 @@ describe("v7 planning resets", () => {
     expect(repository.sqlite.query("SELECT version FROM athria_migrations WHERE version=15").get()).toEqual({ version: 15 });
     expect(repository.sqlite.query("SELECT version FROM athria_migrations WHERE version=16").get()).toEqual({ version: 16 });
     expect(repository.sqlite.query("SELECT version FROM athria_migrations WHERE version=17").get()).toEqual({ version: 17 });
+    expect(repository.sqlite.query("SELECT version FROM athria_migrations WHERE version=18").get()).toEqual({ version: 18 });
+    expect(repository.sqlite.query("SELECT version FROM athria_migrations WHERE version=19").get()).toEqual({ version: 19 });
     expect(repository.counts()).toMatchObject({ session_templates: 0, current_mesocycles: 0 });
   });
   it("removes duplicate, history, approval, proposal, raw and catalog tables", () => {
     repository = new AthriaRepository(":memory:");
     const names = repository.sqlite.query("SELECT name FROM sqlite_master WHERE type='table'").all().map((row) => String((row as { name: string }).name));
-    expect(names).toEqual(expect.arrayContaining(["profiles", "training_sessions", "wellness", "session_templates", "current_mesocycles"]));
+    expect(names).toEqual(expect.arrayContaining(["profiles", "training_sessions", "training_session_sources", "plan_workout_matches", "workout_plan_exclusions", "planned_session_events", "wellness", "session_templates", "current_mesocycles"]));
     expect(names).not.toEqual(expect.arrayContaining(["preferences", "exercises", "planned_sessions", "planned_session_changes", "raw_records", "approvals", "profile_update_proposals"]));
   });
   it("backs up and clears incompatible planning rows while preserving Profile data", () => {
@@ -175,5 +177,58 @@ describe("v7 planning resets", () => {
     expect(repository.getCurrentPlan()?.mesocycle.weeks[0]?.sessions[0]?.components[0]?.prescription).toMatchObject({ exercises: [{ classification: { equipment: { value: ["resistance_band"] } } }] });
     repository.close(); repository = new AthriaRepository(path);
     expect(repository.getProfile().equipment).toEqual(["dumbbell", "resistance_band", "trx"]);
+  });
+});
+
+describe("workout reconciliation", () => {
+  const session = (input: { id: string; source: string; startAt: string; duration?: number; modality?: "strength" | "endurance" | "recovery" | "mixed" | "unknown"; sport?: string | null; name?: string }) => trainingSessionSchema.parse({
+    id: input.id, ownerId: "local-user", source: input.source, externalId: input.id, modality: input.modality ?? "strength", sport: input.sport ?? null, name: input.name ?? "Training",
+    startAt: input.startAt, endAt: new Date(Date.parse(input.startAt) + (input.duration ?? 60) * 60_000).toISOString(), durationMinutes: input.duration ?? 60,
+  });
+
+  it("replaces a successful source window instead of retaining stale provider ids", () => {
+    repository = new AthriaRepository(":memory:");
+    repository.replaceSourceSessions({ source: "intervals", rangeStart: "2026-09-06", rangeEnd: "2026-09-06", sessions: [session({ id: "activities:20069717815", source: "intervals", startAt: "2026-09-06T03:16:00Z", duration: 0, modality: "unknown" })] });
+    repository.replaceSourceSessions({ source: "intervals", rangeStart: "2026-09-06", rangeEnd: "2026-09-06", sessions: [session({ id: "activities:i185865986", source: "intervals", startAt: "2026-09-06T03:16:00Z", duration: 59, name: "Lunch Weight Training" })] });
+    expect(repository.listSessionsBySource("intervals").map((item) => item.externalId)).toEqual(["activities:i185865986"]);
+    expect(repository.listSessions()).toHaveLength(1);
+  });
+
+  it("clears only the requested provider dates when a successful snapshot is empty", () => {
+    repository = new AthriaRepository(":memory:");
+    repository.upsertSessions([session({ id: "sep6", source: "intervals", startAt: "2026-09-06T03:00:00Z" }), session({ id: "sep7", source: "intervals", startAt: "2026-09-07T03:00:00Z" }), session({ id: "manual", source: "manual", startAt: "2026-09-06T03:00:00Z", modality: "recovery" })]);
+    repository.replaceSourceSessions({ source: "intervals", rangeStart: "2026-09-06", rangeEnd: "2026-09-06", sessions: [] });
+    expect(repository.listSessionsBySource("intervals").map((item) => item.externalId)).toEqual(["sep7"]);
+    expect(repository.listSessionsBySource("manual").map((item) => item.externalId)).toEqual(["manual"]);
+  });
+
+  it("deduplicates compatible cross-source observations but preserves hard modality conflicts", () => {
+    repository = new AthriaRepository(":memory:");
+    repository.upsertSessions([
+      session({ id: "hevy-strength", source: "hevy", startAt: "2026-09-06T03:16:00Z", duration: 59, name: "Lunch Weight Training" }),
+      session({ id: "xunji-strength", source: "xunji", startAt: "2026-09-06T03:16:00Z", duration: 60, name: "Lunch Weight Training" }),
+      session({ id: "intervals-run", source: "intervals", startAt: "2026-09-06T03:16:00Z", duration: 60, modality: "endurance", sport: "Run", name: "Run" }),
+    ]);
+    expect(repository.listSessions()).toHaveLength(2);
+    expect(repository.sqlite.query("SELECT COUNT(*) AS count FROM training_session_sources").get()).toEqual({ count: 3 });
+  });
+
+  it("does not fuzzy merge different ids from the same source", () => {
+    repository = new AthriaRepository(":memory:");
+    repository.upsertSessions([session({ id: "one", source: "intervals", startAt: "2026-09-06T03:16:00Z" }), session({ id: "two", source: "intervals", startAt: "2026-09-06T03:16:00Z" })]);
+    expect(repository.listSessions()).toHaveLength(2);
+  });
+
+  it("migrates away a same-source zero-detail placeholder when a richer record has the same start", () => {
+    directory = mkdtempSync(join(tmpdir(), "athria-v18-")); const path = join(directory, "athria.sqlite3");
+    repository = new AthriaRepository(path); repository.close(); repository = undefined;
+    const sqlite = new Database(path);
+    const placeholder = session({ id: "old", source: "intervals", startAt: "2026-09-06T03:16:00Z", duration: 0, modality: "unknown", name: "Intervals activity" });
+    const replacement = session({ id: "new", source: "intervals", startAt: "2026-09-06T03:16:00Z", duration: 59, name: "Lunch Weight Training" });
+    sqlite.query("DELETE FROM training_session_sources").run(); sqlite.query("DELETE FROM training_sessions").run(); sqlite.query("DELETE FROM athria_migrations WHERE version=18").run();
+    for (const value of [placeholder, replacement]) sqlite.query("INSERT INTO training_sessions(id,owner_id,source,external_id,modality,start_at,data) VALUES (?,?,?,?,?,?,?)").run(value.id, value.ownerId, value.source, value.externalId, value.modality, value.startAt, JSON.stringify(value));
+    sqlite.exec("DROP TABLE plan_workout_matches; DROP TABLE training_session_sources;"); sqlite.close();
+    repository = new AthriaRepository(path);
+    expect(repository.listSessionsBySource("intervals").map((item) => item.externalId)).toEqual(["new"]);
   });
 });

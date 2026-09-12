@@ -227,14 +227,6 @@ export function WeeklyCalendar({ plan, sessions, today, onSelectSession, selecte
 
   const rootRef = useRef<HTMLDivElement>(null);
 
-  // Bring the current week into view on first mount (§7.3). `block: "nearest"`
-  // avoids yanking the whole page when the week is already visible.
-  useEffect(() => {
-    const element = rootRef.current?.querySelector<HTMLElement>(`[data-week="${currentWeek}"]`);
-    element?.scrollIntoView({ block: "nearest" });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   // Scroll to an explicitly requested week whenever `scrollToWeek` changes (§7.3).
   useEffect(() => {
     if (scrollToWeek === null) return;

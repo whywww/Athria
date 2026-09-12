@@ -260,17 +260,18 @@ async fn test_intervals_credentials(state: State<'_, RuntimeState>, api_key: Str
 }
 
 #[tauri::command]
-async fn sync_intervals(state: State<'_, RuntimeState>) -> Result<Value, String> {
+async fn sync_intervals(state: State<'_, RuntimeState>, range: Option<Value>) -> Result<Value, String> {
     let api_key = credential("intervals-api-key")?.get_password().map_err(|_| "Intervals.icu is not configured".to_string())?;
     let athlete_id = credential("intervals-athlete-id")?.get_password().unwrap_or_else(|_| "0".to_string());
-    service_post(&state, "/api/connections/intervals/sync", json!({ "apiKey": api_key, "athleteId": athlete_id })).await
+    service_post(&state, "/api/connections/intervals/sync", json!({ "apiKey": api_key, "athleteId": athlete_id, "range": range.unwrap_or_else(|| json!("incremental")) })).await
 }
 
 #[tauri::command]
-fn intervals_status() -> Value {
+async fn intervals_status(state: State<'_, RuntimeState>) -> Result<Value, String> {
     let configured = credential("intervals-api-key").and_then(|entry| entry.get_password().map_err(|error| error.to_string())).is_ok();
     let athlete_id = credential("intervals-athlete-id").ok().and_then(|entry| entry.get_password().ok()).unwrap_or_else(|| "0".to_string());
-    json!({ "configured": configured, "athleteId": athlete_id })
+    let sync = service_get(&state, "/api/connections/intervals/status").await?;
+    Ok(json!({ "configured": configured, "athleteId": athlete_id, "sync": sync }))
 }
 
 #[tauri::command]
@@ -282,9 +283,9 @@ async fn import_xunji_skill(state: State<'_, RuntimeState>, skill_text: String) 
 }
 
 #[tauri::command]
-async fn sync_xunji(state: State<'_, RuntimeState>) -> Result<Value, String> {
+async fn sync_xunji(state: State<'_, RuntimeState>, range: Option<Value>) -> Result<Value, String> {
     let api_key = credential("xunji-api-key")?.get_password().map_err(|_| "Xunji is not configured. Import the Skill from Xunji first.".to_string())?;
-    service_post(&state, "/api/connections/xunji/sync", json!({ "apiKey": api_key, "days": 90 })).await
+    service_post(&state, "/api/connections/xunji/sync", json!({ "apiKey": api_key, "range": range.unwrap_or_else(|| json!("incremental")) })).await
 }
 
 #[tauri::command]

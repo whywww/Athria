@@ -15,3 +15,7 @@ Migration `0012_simplified_storage.sql` is implemented transactionally by `migra
 Migration `0017_personal_information.sql` is implemented by `migratePersonalInformationV17()`. It renames Profile `displayName` to `preferredName` and initializes optional gender, height, and birth-date fields. Version 17 is used because version 16 already updates the equipment taxonomy.
 
 Migration 16 is implemented transactionally by `migrateEquipmentCatalogV16()`. It maps legacy bands and suspension trainers to the replacement equipment IDs and removes retired equipment IDs from profiles and current-plan classification facts.
+
+Migration `0018_workout_reconciliation.sql` is implemented by `migrateWorkoutReconciliationV18()`. It preserves current training data as provider observations, creates canonical workout and strict plan-match storage, and removes only clearly superseded zero-detail same-source placeholders.
+
+Migration `0019_plan_reconciliation_ux.sql` is implemented by `migratePlanReconciliationUxV19()`. It adds plan action events and explicit workout-to-plan exclusions, and narrowly marks legacy manual completion placeholders as date-only.

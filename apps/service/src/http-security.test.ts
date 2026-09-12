@@ -9,6 +9,7 @@ describe("loopback CORS security", () => {
     expect(response.status).toBe(204);
     expect(response.headers.get("access-control-allow-origin")).toBe("http://tauri.localhost");
     expect(response.headers.get("access-control-allow-headers")).toContain("Authorization");
+    expect(response.headers.get("access-control-allow-methods")).toContain("PATCH");
   });
   it("adds the same origin to the actual API response", () => {
     const response = applyCors(Response.json({ status: "ok" }), "http://tauri.localhost");

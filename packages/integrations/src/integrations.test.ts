@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { XunjiAuthenticationError, fetchXunjiTraining, intervalModality, normalizeIntervalsActivity, normalizeXunjiTraining, parseHevyCsv } from "./index";
+import { XunjiAuthenticationError, fetchIntervals, fetchXunjiTraining, intervalModality, intervalsIncrementalWindow, normalizeIntervalsActivity, normalizeXunjiTraining, parseHevyCsv, syncDateWindow } from "./index";
 
 describe("data integrations", () => {
   it("maps mixed activities without inventing endurance", () => expect(intervalModality("HighIntensityIntervalTraining")).toBe("mixed"));
@@ -34,6 +34,47 @@ describe("data integrations", () => {
     const activity = normalizeIntervalsActivity({ id: "run", type: "Run", name: "Easy", start_date: "2026-09-01T10:00:00Z", moving_time: 1800, distance: 5000, average_heartrate: 150, average_watts: 220 }, "activities");
     expect(activity).toMatchObject({ modality: "endurance", durationMinutes: 30, status: "completed", endurance: { distanceMeters: 5000, averageHeartRate: 150, averagePowerWatts: 220 } });
     expect(normalizeIntervalsActivity({ id: 44, type: "Ride", start_date_local: "2026-09-02T18:00:00Z", duration: 45 }, "events")).toBeNull();
+  });
+  it("computes Intervals windows from the last successful sync", () => {
+    const today = new Date("2026-09-11T12:00:00Z");
+    expect(intervalsIncrementalWindow(null, today)).toEqual({ activitiesOldest: "2026-06-14", wellnessOldest: "2026-06-14" });
+    expect(intervalsIncrementalWindow("2026-09-05T10:00:00Z", today)).toEqual({ activitiesOldest: "2026-09-05", wellnessOldest: "2026-09-05" });
+    expect(intervalsIncrementalWindow("2026-09-11T08:00:00Z", today)).toEqual({ activitiesOldest: "2026-09-11", wellnessOldest: "2026-09-11" });
+  });
+  it.each([[1, "2026-09-11"], [10, "2026-09-02"], [30, "2026-08-13"], [90, "2026-06-14"]])("computes an inclusive %i day sync window", (days, rangeStart) => {
+    expect(syncDateWindow(null, days, new Date("2026-09-11T12:00:00Z"))).toEqual({ days, rangeStart, rangeEnd: "2026-09-11" });
+  });
+  it("falls back to 90 days and limits sync windows", () => {
+    const today = new Date("2026-09-11T12:00:00Z");
+    expect(syncDateWindow(null, "incremental", today).days).toBe(90);
+    expect(syncDateWindow("2025-01-01T00:00:00Z", "incremental", today).days).toBe(365);
+    expect(syncDateWindow(null, 500, today).days).toBe(365);
+    expect(syncDateWindow(null, 0, today).days).toBe(1);
+  });
+  it("requests incremental Intervals windows with Basic API_KEY auth", async () => {
+    const calls: Array<{ url: string; authorization: string | null }> = [];
+    const fetcher = (async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(url), authorization: new Headers(init?.headers).get("Authorization") });
+      return Response.json([]);
+    }) as typeof fetch;
+    const result = await fetchIntervals("fixture", "42", { today: new Date("2026-09-11T12:00:00Z"), activitiesOldest: "2026-09-04", wellnessOldest: "2026-09-04" }, fetcher);
+    expect(calls.map((call) => call.url)).toEqual([
+      "https://intervals.icu/api/v1/athlete/42/activities?oldest=2026-09-04&newest=2026-09-11",
+      "https://intervals.icu/api/v1/athlete/42/wellness?oldest=2026-09-04&newest=2026-09-11",
+      "https://intervals.icu/api/v1/athlete/42/events?oldest=2026-08-28&newest=2026-09-25",
+    ]);
+    expect(calls[0]?.authorization).toBe(`Basic ${btoa("API_KEY:fixture")}`);
+    expect(result).toEqual({ activities: [], wellness: [], events: [] });
+  });
+  it("falls back to default Intervals windows and isolates endpoint failures", async () => {
+    const urls: string[] = [];
+    const acceptable = (async (url: string | URL | Request) => { urls.push(String(url)); return Response.json([]); }) as typeof fetch;
+    await fetchIntervals("fixture", "0", { today: new Date("2026-09-11T12:00:00Z") }, acceptable);
+    expect(urls[0]).toBe("https://intervals.icu/api/v1/athlete/0/activities?oldest=2026-06-13&newest=2026-09-11");
+    expect(urls[1]).toBe("https://intervals.icu/api/v1/athlete/0/wellness?oldest=2026-07-31&newest=2026-09-11");
+    const rejected = (async () => Response.json({}, { status: 401 })) as unknown as typeof fetch;
+    const result = await fetchIntervals("bad", "0", { today: new Date("2026-09-11T12:00:00Z") }, rejected);
+    expect(result).toEqual({ activities: "Intervals.icu rejected the API key", wellness: "Intervals.icu rejected the API key", events: "Intervals.icu rejected the API key" });
   });
   it("normalizes Xunji strength details with a stable localid", () => {
     const session = normalizeXunjiTraining({ localid: 42, datestr: "2026-09-03", title: "力量", start: 1_788_400_000_000, end: 1_788_403_600_000, movements: [{ name: "卧推", restTime: 90, sets: [{ done: true, weight: "60", unit: "kg", reps: "8", rpe: "8.5", leftWeight: "30", rightWeight: "30", restSeconds: 75 }, { done: false, weight: "60", reps: "8" }] }] });

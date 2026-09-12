@@ -9,7 +9,7 @@ export function isAllowedOrigin(origin: string): boolean {
 function corsHeaders(origin: string): Headers {
   return new Headers({
     "Access-Control-Allow-Origin": origin,
-    "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, OPTIONS",
     "Access-Control-Allow-Headers": "Authorization, Content-Type",
     "Access-Control-Max-Age": "600",
     "Vary": "Origin",

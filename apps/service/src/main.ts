@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { AthriaApplication, AthriaError } from "@athria/application";
 import { AthriaRepository } from "@athria/data";
-import { XUNJI_SYNC_DAYS, XunjiAuthenticationError, fetchIntervals, fetchXunjiTraining } from "@athria/integrations";
+import { XUNJI_SYNC_DAYS, XunjiAuthenticationError, fetchIntervals, fetchXunjiTraining, syncDateWindow } from "@athria/integrations";
 import { createMcpHttpHandler, serveMcpStdio } from "@athria/mcp";
 import { applyCors, corsPreflightResponse, isAllowedOrigin } from "./http-security";
 import { createBackup, prepareRestore, previewBackup } from "./backup";
@@ -85,9 +85,16 @@ async function main(): Promise<void> {
         if (url.pathname === "/api/personal-information" && request.method === "GET") return json(application.getPersonalInformation());
         if (url.pathname === "/api/personal-information" && request.method === "PUT") return json(application.savePersonalInformation(await body(request)));
         if (url.pathname === "/api/state" && request.method === "GET") return json(application.getTrainingState());
-        if (url.pathname === "/api/summary" && request.method === "GET") return json(application.getTrainingSummary(Number(url.searchParams.get("days") ?? "7")));
+        if (url.pathname === "/api/summary" && request.method === "GET") return json(application.getTrainingSummary(Number(url.searchParams.get("days") ?? "7"), url.searchParams.get("from") ?? undefined, url.searchParams.get("to") ?? undefined));
         if (url.pathname === "/api/sessions" && request.method === "GET") return json(application.listSessions(Number(url.searchParams.get("days") ?? "90")));
         if (url.pathname === "/api/training-sessions" && request.method === "POST") return json(application.recordTrainingSession(await body(request)), 201);
+        const trainingSessionPlanMatch = url.pathname.match(/^\/api\/training-sessions\/([^/]+)\/plan-match$/);
+        if (trainingSessionPlanMatch && request.method === "PATCH") return json(application.setTrainingSessionPlanMatch(decodeURIComponent(trainingSessionPlanMatch[1]!), await body(request)));
+        const trainingSessionAutoMatch = url.pathname.match(/^\/api\/training-sessions\/([^/]+)\/automatic-match$/);
+        if (trainingSessionAutoMatch && request.method === "POST") return json(application.clearTrainingSessionPlanExclusion(decodeURIComponent(trainingSessionAutoMatch[1]!), await body(request)));
+        const manualTrainingSession = url.pathname.match(/^\/api\/training-sessions\/([^/]+)\/manual$/);
+        if (manualTrainingSession && request.method === "PATCH") return json(application.updateManualTrainingSession(decodeURIComponent(manualTrainingSession[1]!), await body(request)));
+        if (manualTrainingSession && request.method === "DELETE") return json(application.deleteManualTrainingSession(decodeURIComponent(manualTrainingSession[1]!), await body(request)));
         const trainingSession = url.pathname.match(/^\/api\/training-sessions\/([^/]+)$/);
         if (trainingSession && request.method === "PUT") return json(application.recordTrainingSession({ ...(await body(request)), id: decodeURIComponent(trainingSession[1]!) }));
         if (url.pathname === "/api/wellness" && request.method === "GET") return json(application.listWellness(Number(url.searchParams.get("days") ?? "42")));
@@ -121,24 +128,31 @@ async function main(): Promise<void> {
         if (url.pathname === "/api/imports/hevy/preview" && request.method === "POST") { const value = await body(request); const fileName = String(value.fileName ?? "hevy.csv"); if (!fileName.toLowerCase().endsWith(".csv")) throw new AthriaError("INVALID_IMPORT_TYPE", "Hevy imports must be CSV files."); const content = Uint8Array.fromBase64(String(value.contentBase64)); if (content.byteLength > 20 * 1024 * 1024) throw new AthriaError("IMPORT_TOO_LARGE", "Hevy CSV files must not exceed 20 MB.", 413); return json(application.previewHevy(content, fileName)); }
         if (url.pathname === "/api/imports/hevy/commit" && request.method === "POST") return json(application.commitHevy(String((await body(request)).previewToken)));
         if (url.pathname === "/api/connections/intervals/test" && request.method === "POST") { const value = await body(request); const payload = await fetchIntervals(String(value.apiKey), String(value.athleteId ?? "0")); if (typeof payload.wellness === "string") throw new AthriaError("INTERVALS_CONNECTION_FAILED", payload.wellness); return json({ status: "connected", athleteId: String(value.athleteId ?? "0") }); }
-        if (url.pathname === "/api/connections/intervals/sync" && request.method === "POST") { const value = await body(request); return json(application.commitIntervals(await fetchIntervals(String(value.apiKey), String(value.athleteId ?? "0")))); }
+        if (url.pathname === "/api/connections/intervals/status" && request.method === "GET") return json(application.getIntervalsSyncStatus());
+        if (url.pathname === "/api/connections/intervals/sync" && request.method === "POST") {
+          const value = await body(request);
+          const today = new Date();
+          const attemptedAt = today.toISOString();
+          const previous = application.getIntervalsSyncStatus();
+          const window = syncDateWindow(previous?.lastSuccessAt ?? null, value.range ?? value.days, today);
+          const payload = await fetchIntervals(String(value.apiKey), String(value.athleteId ?? "0"), { today, activitiesOldest: window.rangeStart, wellnessOldest: window.rangeStart });
+          return json(application.commitIntervals(payload, { attemptedAt, rangeStart: window.rangeStart, rangeEnd: window.rangeEnd }));
+        }
         if (url.pathname === "/api/connections/xunji/status" && request.method === "GET") return json(application.getXunjiSyncStatus());
         if (url.pathname === "/api/connections/xunji/sync" && request.method === "POST") {
           const value = await body(request);
           const apiKey = typeof value.apiKey === "string" ? value.apiKey : "";
           if (!apiKey.startsWith("xjllm_")) throw new AthriaError("XUNJI_KEY_INVALID", "The imported Xunji Skill does not contain a valid API key.");
-          const days = Math.max(1, Math.min(365, Math.trunc(Number(value.days ?? XUNJI_SYNC_DAYS))));
-          const attemptedAt = new Date().toISOString();
+          const today = new Date();
+          const attemptedAt = today.toISOString();
           const previous = application.getXunjiSyncStatus();
           if (!value.replaceCredential && previous && Date.now() - new Date(previous.lastAttemptAt).getTime() < 30_000) throw new AthriaError("XUNJI_SYNC_THROTTLED", "Wait 30 seconds before syncing Xunji again.", 429);
-          const end = attemptedAt.slice(0, 10);
-          const startDate = new Date(); startDate.setDate(startDate.getDate() - days + 1);
-          const rangeStart = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, "0")}-${String(startDate.getDate()).padStart(2, "0")}`;
-          try { return json(application.commitXunji(await fetchXunjiTraining(apiKey, days), attemptedAt)); }
+          const window = syncDateWindow(previous?.lastSuccessAt ?? null, value.range ?? value.days ?? XUNJI_SYNC_DAYS, today);
+          try { return json(application.commitXunji(await fetchXunjiTraining(apiKey, window.days, today), attemptedAt)); }
           catch (error) {
             const code = error instanceof XunjiAuthenticationError ? "XUNJI_AUTHENTICATION_FAILED" : "XUNJI_SYNC_FAILED";
             const message = error instanceof XunjiAuthenticationError ? "Xunji rejected this API key. Export a new Skill from Xunji and try again." : "Xunji sync failed. Try again later.";
-            application.recordXunjiFailure({ attemptedAt, rangeStart, rangeEnd: end, code, message });
+            application.recordXunjiFailure({ attemptedAt, rangeStart: window.rangeStart, rangeEnd: window.rangeEnd, code, message });
             throw new AthriaError(code, message, error instanceof XunjiAuthenticationError ? 401 : 502);
           }
         }

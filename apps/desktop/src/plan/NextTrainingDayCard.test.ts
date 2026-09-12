@@ -57,7 +57,7 @@ describe("NextTrainingDayCard", () => {
     expect(html).toContain("Strength");
     expect(html).toContain("Back Squat");
     expect(html).toContain("4 × 5");
-    expect(html).toContain("Complete");
+    expect(html).toContain("Add as completed workout");
     expect(html).not.toContain("Open details");
   });
 

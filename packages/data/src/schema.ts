@@ -19,6 +19,58 @@ export const trainingSessions = sqliteTable("training_sessions", {
   index("sessions_owner_start").on(table.ownerId, table.startAt),
 ]);
 
+export const trainingSessionSources = sqliteTable("training_session_sources", {
+  id: text("id").primaryKey(),
+  ownerId: text("owner_id").notNull(),
+  trainingSessionId: text("training_session_id").notNull(),
+  source: text("source").notNull(),
+  externalId: text("external_id").notNull(),
+  localDate: text("local_date").notNull(),
+  startAt: text("start_at").notNull(),
+  data: text("data", { mode: "json" }).notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  uniqueIndex("session_sources_owner_source_external").on(table.ownerId, table.source, table.externalId),
+  index("session_sources_owner_date").on(table.ownerId, table.localDate),
+  index("session_sources_canonical").on(table.trainingSessionId),
+]);
+
+export const planWorkoutMatches = sqliteTable("plan_workout_matches", {
+  id: text("id").primaryKey(),
+  ownerId: text("owner_id").notNull(),
+  plannedSessionId: text("planned_session_id").notNull(),
+  trainingSessionId: text("training_session_id").notNull(),
+  method: text("method").notNull(),
+  confidence: integer("confidence").notNull(),
+  algorithmVersion: text("algorithm_version").notNull(),
+  evidence: text("evidence", { mode: "json" }).notNull(),
+  matchedAt: text("matched_at").notNull(),
+}, (table) => [
+  uniqueIndex("plan_matches_owner_plan").on(table.ownerId, table.plannedSessionId),
+  uniqueIndex("plan_matches_owner_workout").on(table.ownerId, table.trainingSessionId),
+]);
+
+export const workoutPlanExclusions = sqliteTable("workout_plan_exclusions", {
+  ownerId: text("owner_id").notNull(),
+  trainingSessionId: text("training_session_id").notNull(),
+  createdAt: text("created_at").notNull(),
+}, (table) => [uniqueIndex("workout_plan_exclusions_owner_workout").on(table.ownerId, table.trainingSessionId)]);
+
+export const plannedSessionEvents = sqliteTable("planned_session_events", {
+  id: text("id").primaryKey(),
+  ownerId: text("owner_id").notNull(),
+  plannedSessionId: text("planned_session_id").notNull(),
+  action: text("action").notNull(),
+  fromDate: text("from_date"),
+  toDate: text("to_date"),
+  reasonCode: text("reason_code"),
+  reasonNote: text("reason_note"),
+  revisionBefore: integer("revision_before").notNull(),
+  revisionAfter: integer("revision_after").notNull(),
+  createdAt: text("created_at").notNull(),
+}, (table) => [index("planned_session_events_owner_session").on(table.ownerId, table.plannedSessionId)]);
+
 export const wellness = sqliteTable("wellness", {
   ownerId: text("owner_id").notNull(),
   day: text("day").notNull(),

@@ -11,6 +11,8 @@ export interface TrainingSummary {
   sessionCount: number;
   totalDurationMinutes: number;
   byDomain: Record<string, number>;
+  durationMinutesByDomain: Record<string, number>;
+  sports: Array<{ name: string; sessionCount: number; durationMinutes: number }>;
   metrics: {
     strength: { workingSets: Metric<number> };
     endurance: { distanceMeters: Metric<number> };
@@ -88,6 +90,13 @@ export interface Mesocycle {
   adjustmentRules: Array<{ trigger: string; action: string; rationale: string }>;
 }
 
+export interface TrainingHistorySession { id: string; name: string; startAt: string; timezone: string | null; domains: string[]; sport: string | null; durationMinutes: number; source: string; timePrecision: "exact" | "date_only"; sources: Array<{ source: string; externalId: string }>; plannedSessionId: string | null; planMatch: { plannedSessionId: string; method: "auto" | "manual" } | null; isPlanMatchExcluded: boolean }
+export function formatTrainingSource(source: string): string {
+  return ({ xunji: "训记", intervals: "Intervals.icu", hevy: "Hevy", manual: "手动记录" } as Record<string, string>)[source] ?? source;
+}
+export type WellnessFieldValue = { value: number | string | null; source: "intervals_icu" | "user" | "llm"; updatedAt: string };
+export interface WellnessRecord { ownerId: string; day: string; fields: Partial<Record<"restingHeartRateBpm" | "hrvRmssdMs" | "sleepSeconds" | "sleepScore" | "weightKg" | "fatigue" | "soreness" | "stress" | "mood" | "motivation" | "readiness" | "notes", WellnessFieldValue>>; updatedAt: string }
+
 export interface PersonalInformation {
   preferredName: string;
   gender: AthleteProfile["gender"];
@@ -135,6 +144,11 @@ export interface PlannedSession {
   progressionNote?: string | null;
   schedulingRationale?: string | null;
   status: "planned" | "completed" | "skipped";
+  displayState?: "scheduled" | "completed" | "unrecorded" | "skipped";
+  completedTrainingSessionId?: string | null;
+  completedAt?: string | null;
+  completionSource?: "manual" | "import" | null;
+  match?: { plannedSessionId: string; method: "auto" | "manual" } | null;
   components: PlanComponent[];
   notes: string;
   legacySnapshot: boolean;
@@ -159,6 +173,11 @@ export interface CalendarSession {
   progressionNote: string | null;
   schedulingRationale: string | null;
   status: "planned" | "completed" | "skipped";
+  displayState?: "scheduled" | "completed" | "unrecorded" | "skipped";
+  completedTrainingSessionId?: string | null;
+  completedAt?: string | null;
+  completionSource?: "manual" | "import" | null;
+  match?: { plannedSessionId: string; method: "auto" | "manual" } | null;
   components: PlanComponent[];
   legacySnapshot: boolean;
   overrideReason: string | null;
@@ -171,8 +190,28 @@ export interface NextTrainingDay { nextTrainingDay: null | { occurrenceId: strin
 
 export interface ImportPreview { previewToken?: string; fileName?: string; counts?: { sessions?: number; sets?: number; rows?: number }; errors?: string[]; unknownColumns?: string[] }
 export interface ImportResult { added?: number; updated?: number; rawCount?: number; wellnessCount?: number; errors?: Record<string, string> }
+export type SyncRange = "incremental" | 1 | 10 | 30 | 90;
+export const syncRangeOptions: Array<{ value: SyncRange; label: string }> = [
+  { value: "incremental", label: "Since last sync" },
+  { value: 1, label: "Last 1 day" },
+  { value: 10, label: "Last 10 days" },
+  { value: 30, label: "Last 1 month" },
+  { value: 90, label: "Last 3 months" },
+];
+export function parseSyncRange(value: string): SyncRange { return value === "incremental" ? value : Number(value) as SyncRange; }
 export interface HevyImportStatus { fileName: string; importedAt: string; status: string; counts: { sessions?: number; sets?: number; rows?: number } }
-export interface IntervalsConnectionStatus { configured: boolean; athleteId: string }
+export interface IntervalsConnectionStatus {
+  configured: boolean;
+  athleteId: string;
+  sync: null | {
+    lastAttemptAt: string;
+    lastSuccessAt: string | null;
+    rangeStart: string;
+    rangeEnd: string;
+    status: "success" | "partial" | "failed";
+    data: { activities?: { added?: number; updated?: number }; wellnessCount?: number; errors?: Record<string, string> };
+  };
+}
 export interface XunjiConnectionStatus {
   configured: boolean;
   sync: null | {

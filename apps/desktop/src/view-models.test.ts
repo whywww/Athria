@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dashboardPages, editableTemplate, equipmentGroupState, formatDistance, formatDuration, formatTimezoneLabel, profilePayload, referencedTemplates, templateEditorErrors, templateNodeName, toggleEquipmentGroup, PREFERENCE_MAX_LENGTH, type AthleteProfile, type Mesocycle, type SessionTemplate, type StoredSessionTemplate } from "./view-models";
+import { dashboardPages, editableTemplate, equipmentGroupState, formatDistance, formatDuration, formatTimezoneLabel, formatTrainingSource, parseSyncRange, profilePayload, referencedTemplates, syncRangeOptions, templateEditorErrors, templateNodeName, toggleEquipmentGroup, PREFERENCE_MAX_LENGTH, type AthleteProfile, type Mesocycle, type SessionTemplate, type StoredSessionTemplate } from "./view-models";
 
 const profile: AthleteProfile = { ownerId: "local-user", preferredName: "Athlete", gender: null, heightCm: null, birthDate: null, timezone: "Asia/Hong_Kong", goals: ["general_fitness"], preference: "", maxSessionMinutes: 60, trainingRhythm: { kind: "flexible_week", targetDaysPerWeek: 4, minDaysPerWeek: 3, maxDaysPerWeek: 5 }, equipment: ["dumbbell"], injuries: [], constraintNotes: [], explicitRecoveryDays: null };
 
@@ -15,6 +15,16 @@ describe("dashboard v7 view models", () => {
     expect(dashboardPages.map((page) => page.id)).toContain("Plan");
     expect(formatDuration(135)).toBe("2 hr 15 min");
     expect(formatDistance(5250)).toBe("5.3 km");
+  });
+  it("formats known training sources and preserves unknown sources", () => {
+    expect(formatTrainingSource("xunji")).toBe("训记");
+    expect(formatTrainingSource("intervals")).toBe("Intervals.icu");
+    expect(formatTrainingSource("custom-device")).toBe("custom-device");
+  });
+  it("exposes the supported device sync ranges", () => {
+    expect(syncRangeOptions.map((option) => option.value)).toEqual(["incremental", 1, 10, 30, 90]);
+    expect(parseSyncRange("incremental")).toBe("incremental");
+    expect(parseSyncRange("30")).toBe(30);
   });
   it("validates and deeply clones generic templates", () => {
     expect(templateEditorErrors(template)).toEqual([]);

@@ -7,6 +7,10 @@ export const ErrorBanner = ({ error }: { error: unknown }) => error ? <div class
 export const Loading = () => <p className="muted">Loading…</p>;
 export const Empty = ({ children }: { children: React.ReactNode }) => <div className="empty">{children}</div>;
 
+export function PrimaryPageHeader({ preferredName, subtitle, actions }: { preferredName?: string | null | undefined; subtitle: string; actions?: React.ReactNode }) {
+  return <header className="primary-page-header"><div><h1>Hi, {preferredName || "Athlete"}! <span aria-hidden="true">👋</span></h1><p>{subtitle}</p></div>{actions}</header>;
+}
+
 export function ChoiceChip({ selected, onClick, children }: { selected: boolean; onClick: () => void; children: React.ReactNode }) {
   return <button type="button" className={`chip ${selected ? "selected" : ""}`} aria-pressed={selected} onClick={onClick}>{children}</button>;
 }

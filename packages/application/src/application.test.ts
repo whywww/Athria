@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { AthriaRepository } from "@athria/data";
-import { PLAN_SCHEMA_VERSION, TAXONOMY_VERSION, equipmentTypeIds, type CurrentPlanWrite } from "@athria/schemas";
+import { PLAN_SCHEMA_VERSION, TAXONOMY_VERSION, equipmentTypeIds, trainingSessionSchema, type CurrentPlanWrite } from "@athria/schemas";
 import { AthriaApplication, AthriaError } from "./index";
 
 let repository: AthriaRepository | undefined;
@@ -14,6 +14,20 @@ const plan = (app: AthriaApplication, revision = 0): any => {
 };
 
 describe("v7 application boundary", () => {
+  it("summarizes an exact local-date window across every training domain", () => {
+    repository = new AthriaRepository(":memory:"); const app = new AthriaApplication(repository, "local-user", () => new Date("2026-09-09T04:00:00Z"));
+    app.saveProfile({ ...app.getProfile(), timezone: "Asia/Hong_Kong" });
+    const session = (id: string, startAt: string, domains: Array<"strength" | "endurance" | "sport_skill" | "mind_body" | "recovery">, durationMinutes: number, sport: string | null = null) => trainingSessionSchema.parse({ id, externalId: id, source: "test", modality: "mixed", domains, sport, name: id, startAt, endAt: new Date(new Date(startAt).getTime() + durationMinutes * 60_000).toISOString(), durationMinutes, strengthSets: domains.includes("strength") ? [{ exerciseRaw: "Squat", setIndex: 1, setType: "normal", weight: 40, weightUnit: "kg", reps: 8 }] : [], endurance: domains.includes("endurance") ? { distanceMeters: 5000 } : null });
+    repository.upsertSessions([
+      session("mixed", "2026-09-07T16:30:00Z", ["strength", "sport_skill"], 60, "Basketball"),
+      session("run", "2026-09-08T02:00:00Z", ["endurance"], 30),
+      session("before", "2026-09-06T15:00:00Z", ["recovery"], 20),
+    ]);
+    const summary = app.getTrainingSummary(7, "2026-09-07", "2026-09-09");
+    expect(summary).toMatchObject({ sessionCount: 2, totalDurationMinutes: 90, byDomain: { strength: 1, endurance: 1, sport_skill: 1, recovery: 0 }, durationMinutesByDomain: { strength: 60, endurance: 30, sport_skill: 60 }, sports: [{ name: "Basketball", sessionCount: 1, durationMinutes: 60 }] });
+    expect(summary.metrics.strength.workingSets.value).toBe(1);
+    expect(summary.metrics.endurance.distanceMeters.value).toBe(5000);
+  });
   it("merges built-ins with local templates and protects built-ins", () => {
     repository = new AthriaRepository(":memory:"); const app = new AthriaApplication(repository);
     expect(app.listTemplates().some((item) => item.origin === "builtin")).toBe(true);
@@ -56,10 +70,71 @@ describe("v7 application boundary", () => {
     repository = new AthriaRepository(":memory:"); const app = new AthriaApplication(repository, "local-user", () => new Date("2026-09-07T00:00:00Z"));
     app.createTemplate(template()); app.saveCurrentPlan(plan(app));
     const result = app.updatePlannedSession("weekly-1", { action: "complete", expectedRevision: 1 }) as { trainingSession: { id: string; status: string; plannedSessionId: string | null } };
-    expect(result.trainingSession).toMatchObject({ status: "completed", plannedSessionId: "weekly-1" });
-    expect(app.getCalendar()[0]).toMatchObject({ status: "completed", completedTrainingSessionId: result.trainingSession.id });
+    expect(result.trainingSession).toMatchObject({ status: "completed", plannedSessionId: "weekly-1", timePrecision: "date_only", missingFields: expect.arrayContaining(["actual start time"]) });
+    expect(app.getCalendar()[0]).toMatchObject({ status: "completed", displayState: "completed", completedTrainingSessionId: result.trainingSession.id, match: { method: "manual" } });
     expect(repository.getCurrentPlan()!.mesocycle.weeks[0]!.sessions[0]!.status).toBe("planned");
     expect(app.getNextTrainingDay().nextTrainingDay).toBeNull();
+  });
+  it("replaces a manual completion with richer API data without duplicating History", () => {
+    repository = new AthriaRepository(":memory:"); const app = new AthriaApplication(repository, "local-user", () => new Date("2026-09-07T00:00:00Z"));
+    app.createTemplate(template()); app.saveCurrentPlan(plan(app));
+    const manual = (app.updatePlannedSession("weekly-1", { action: "complete", expectedRevision: 1 }) as { trainingSession: { id: string } }).trainingSession;
+    app.commitIntervals({ activities: [{ id: "apple-fitness", type: "Yoga", name: "Mobility and breathing", start_date: "2026-09-07T12:00:00Z", moving_time: 1200 }], wellness: [], events: [] }, { rangeStart: "2026-09-07", rangeEnd: "2026-09-07" });
+    expect(app.listSessions()).toHaveLength(1);
+    expect(app.listSessions()[0]).toMatchObject({ id: manual.id, source: "intervals", durationMinutes: 20, plannedSessionId: "weekly-1" });
+    expect(app.getCalendar()[0]).toMatchObject({ status: "completed", completedTrainingSessionId: manual.id });
+  });
+  it("automatically matches one compatible canonical workout to one same-day plan", () => {
+    repository = new AthriaRepository(":memory:"); const app = new AthriaApplication(repository, "local-user", () => new Date("2026-09-07T00:00:00Z"));
+    app.createTemplate(template()); app.saveCurrentPlan(plan(app));
+    app.commitIntervals({ activities: [{ id: "recovery", type: "Yoga", name: "Mobility and breathing", start_date: "2026-09-07T02:00:00Z", moving_time: 1200 }], wellness: [], events: [] }, { rangeStart: "2026-09-07", rangeEnd: "2026-09-07" });
+    const actual = app.listSessions()[0]!;
+    expect(actual.plannedSessionId).toBe("weekly-1");
+    expect(app.getCalendar()[0]).toMatchObject({ status: "completed", completedTrainingSessionId: actual.id });
+  });
+  it("leaves an actual workout unmatched when two same-day plans score equally", () => {
+    repository = new AthriaRepository(":memory:"); const app = new AthriaApplication(repository, "local-user", () => new Date("2026-09-07T00:00:00Z"));
+    app.createTemplate(template()); const candidate = plan(app); const duplicate = structuredClone(candidate.mesocycle.weeks[0]!.sessions[0]!); duplicate.id = "weekly-2"; duplicate.order = 1; candidate.mesocycle.weeks[0]!.sessions.push(duplicate); app.saveCurrentPlan(candidate);
+    app.commitIntervals({ activities: [{ id: "recovery", type: "Yoga", name: "Mobility and breathing", start_date: "2026-09-07T02:00:00Z", moving_time: 1200 }], wellness: [], events: [] }, { rangeStart: "2026-09-07", rangeEnd: "2026-09-07" });
+    expect(app.listSessions()[0]?.plannedSessionId).toBeNull();
+    expect(app.getCalendar().map((session) => session.status)).toEqual(["planned", "planned"]);
+  });
+  it("derives unrecorded only after the planned local date and rejects future completion", () => {
+    repository = new AthriaRepository(":memory:"); const app = new AthriaApplication(repository, "local-user", () => new Date("2026-09-06T04:00:00Z"));
+    app.createTemplate(template()); app.saveCurrentPlan(plan(app));
+    expect(app.getCalendar()[0]?.displayState).toBe("scheduled");
+    expect(() => app.updatePlannedSession("weekly-1", { action: "complete", expectedRevision: 1 })).toThrowError(expect.objectContaining({ code: "FUTURE_SESSION_CANNOT_BE_COMPLETED" }));
+    const later = new AthriaApplication(repository, "local-user", () => new Date("2026-09-08T04:00:00Z"));
+    expect(later.getCalendar()[0]?.displayState).toBe("unrecorded");
+  });
+  it("keeps date-only manual completion on the planned date in UTC+14", () => {
+    repository = new AthriaRepository(":memory:"); const app = new AthriaApplication(repository, "local-user", () => new Date("2026-09-07T01:00:00Z"));
+    app.saveProfile({ ...app.getProfile(), timezone: "Pacific/Kiritimati" }); app.createTemplate(template()); app.saveCurrentPlan(plan(app));
+    const workout = (app.updatePlannedSession("weekly-1", { action: "complete", expectedRevision: 1 }) as { trainingSession: { id: string } }).trainingSession;
+    const stored = app.listSessions().find((session) => session.id === workout.id)!;
+    expect(new Intl.DateTimeFormat("en-CA", { timeZone: "Pacific/Kiritimati", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(stored.startAt))).toBe("2026-09-07");
+    expect(stored.timePrecision).toBe("date_only");
+  });
+  it("records skip and restore events and allows moving the same session in either direction", () => {
+    repository = new AthriaRepository(":memory:"); const app = new AthriaApplication(repository, "local-user", () => new Date("2026-09-07T04:00:00Z"));
+    app.createTemplate(template()); const candidate = plan(app); candidate.mesocycle.schedule = { kind: "flexible_week", targetDaysPerWeek: 1, minDaysPerWeek: 1, maxDaysPerWeek: 2 }; app.saveProfile({ ...app.getProfile(), trainingRhythm: candidate.mesocycle.schedule }); candidate.inputSnapshotHash = app.snapshotHash(); app.saveCurrentPlan(candidate);
+    app.updatePlannedSession("weekly-1", { action: "skip", expectedRevision: 1, reason: { reasonCode: "schedule", note: "Work" } });
+    expect(app.getCalendar()[0]).toMatchObject({ status: "skipped", displayState: "skipped" });
+    app.updatePlannedSession("weekly-1", { action: "restore", expectedRevision: 2 });
+    app.updatePlannedSession("weekly-1", { action: "move_occurrence", scheduledDate: "2026-09-10", expectedRevision: 3 });
+    app.updatePlannedSession("weekly-1", { action: "move_occurrence", scheduledDate: "2026-09-08", expectedRevision: 4 });
+    expect(app.getCalendar()[0]).toMatchObject({ id: "weekly-1", scheduledDate: "2026-09-08" });
+    expect(repository.sqlite.query("SELECT action,reason_code,reason_note FROM planned_session_events ORDER BY revision_after").all()).toEqual([{ action: "skip", reason_code: "schedule", reason_note: "Work" }, { action: "restore", reason_code: null, reason_note: null }, { action: "move_occurrence", reason_code: null, reason_note: null }, { action: "move_occurrence", reason_code: null, reason_note: null }]);
+  });
+  it("supports manual re-linking, intentional unplanned state, and removing a manual completion", () => {
+    repository = new AthriaRepository(":memory:"); const app = new AthriaApplication(repository, "local-user", () => new Date("2026-09-07T04:00:00Z"));
+    app.createTemplate(template()); const candidate = plan(app); const second = structuredClone(candidate.mesocycle.weeks[0]!.sessions[0]!); second.id = "weekly-2"; second.order = 1; candidate.mesocycle.weeks[0]!.sessions.push(second); app.saveCurrentPlan(candidate);
+    const manual = (app.updatePlannedSession("weekly-1", { action: "complete", expectedRevision: 1 }) as { trainingSession: { id: string } }).trainingSession;
+    expect(app.setTrainingSessionPlanMatch(manual.id, { plannedSessionId: "weekly-2", expectedRevision: 1, confirmed: true }).planMatch).toMatchObject({ plannedSessionId: "weekly-2", method: "manual" });
+    expect(app.setTrainingSessionPlanMatch(manual.id, { plannedSessionId: null, expectedRevision: 1, confirmed: true })).toMatchObject({ plannedSessionId: null, isPlanMatchExcluded: true });
+    expect(app.clearTrainingSessionPlanExclusion(manual.id, { confirmed: true }).isPlanMatchExcluded).toBe(false);
+    expect(app.deleteManualTrainingSession(manual.id, { confirmed: true })).toBeNull();
+    expect(app.listSessions()).toHaveLength(0);
   });
   it("requires full Session input and exposes taxonomy through MCP", () => {
     repository = new AthriaRepository(":memory:"); const app = new AthriaApplication(repository);
@@ -136,5 +211,23 @@ describe("v7 application boundary", () => {
     try { app.saveCurrentPlan(plan(app, 0)); } catch (error) { failure = error; }
     expect(failure).toBeInstanceOf(AthriaError);
     expect((failure as AthriaError).code).toBe("REVISION_CONFLICT");
+  });
+  it("records Intervals sync state and only advances the baseline after full success", () => {
+    repository = new AthriaRepository(":memory:"); const app = new AthriaApplication(repository, "local-user", () => new Date("2026-09-11T08:00:00Z"));
+    const success = app.commitIntervals({ activities: [{ id: "run-1", type: "Run", start_date: "2026-09-10T10:00:00Z", moving_time: 1800 }], wellness: [{ id: "2026-09-10", restingHR: 50 }], events: [] }, { attemptedAt: "2026-09-11T08:00:00.000Z", rangeStart: "2026-09-04", rangeEnd: "2026-09-11" });
+    expect(success).toMatchObject({ added: 1, updated: 0, wellnessCount: 1 });
+    expect(success.sync).toMatchObject({ status: "success", lastSuccessAt: "2026-09-11T08:00:00.000Z", rangeStart: "2026-09-04", rangeEnd: "2026-09-11" });
+    expect(app.getIntervalsSyncStatus()).toMatchObject({ source: "intervals", status: "success", lastSuccessAt: "2026-09-11T08:00:00.000Z" });
+    const partial = app.commitIntervals({ activities: "Intervals.icu returned HTTP 500", wellness: [{ id: "2026-09-11", restingHR: 49 }], events: [] }, { attemptedAt: "2026-09-12T08:00:00.000Z", rangeStart: "2026-09-10", rangeEnd: "2026-09-12" });
+    expect(partial.sync).toMatchObject({ status: "partial", lastSuccessAt: "2026-09-11T08:00:00.000Z" });
+    expect(app.getIntervalsSyncStatus()).toMatchObject({ status: "partial", lastSuccessAt: "2026-09-11T08:00:00.000Z", lastAttemptAt: "2026-09-12T08:00:00.000Z" });
+    expect(app.listSessions().map((session) => session.externalId)).toEqual(["activities:run-1"]);
+  });
+  it("replaces only successful Xunji dates and retains failed dates", () => {
+    repository = new AthriaRepository(":memory:"); const app = new AthriaApplication(repository, "local-user", () => new Date("2026-09-08T08:00:00Z"));
+    const record = (localid: string, datestr: string, startAt: string) => ({ localid, datestr, title: localid, start: Date.parse(startAt), end: Date.parse(startAt) + 30 * 60_000, movements: [{ name: "Run", cardio: true, metrics: { distance: 5 } }] });
+    app.commitXunji({ rangeStart: "2026-09-06", rangeEnd: "2026-09-07", successfulDates: ["2026-09-06", "2026-09-07"], errors: [], records: [record("six", "2026-09-06", "2026-09-06T03:00:00Z"), record("seven", "2026-09-07", "2026-09-07T03:00:00Z")] });
+    app.commitXunji({ rangeStart: "2026-09-06", rangeEnd: "2026-09-07", successfulDates: ["2026-09-07"], errors: [{ datestr: "2026-09-06", code: "request_failed", message: "fixture" }], records: [] });
+    expect(app.listXunjiSessions(30).sessions.map((session) => session.externalId)).toEqual(["six"]);
   });
 });

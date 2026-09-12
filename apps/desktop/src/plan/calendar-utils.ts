@@ -57,21 +57,21 @@ export function sessionDomains(session: CalendarSession): DomainValue[] {
 }
 
 /** Visual tone used for chip/badge styling; never relies on colour alone (§16.4). */
-export type SessionTone = "completed" | "skipped" | "unresolved" | "planned";
+export type SessionTone = "completed" | "skipped" | "unrecorded" | "planned";
 
 /**
- * A session scheduled before `today` that is still `planned` is "Unresolved"
+ * A session scheduled before `today` that is still `planned` is "Unrecorded"
  * (§7.7). This is a UI-only derivation — the stored status is never rewritten.
  */
-export function isUnresolved(session: CalendarSession, today: string): boolean {
-  return session.status === "planned" && session.scheduledDate < today;
+export function isUnrecorded(session: CalendarSession, today: string): boolean {
+  return session.displayState === "unrecorded" || (session.status === "planned" && session.scheduledDate < today);
 }
 
 /** Derive the display tone for a session relative to `today`. */
 export function sessionTone(session: CalendarSession, today: string): SessionTone {
-  if (session.status === "completed") return "completed";
-  if (session.status === "skipped") return "skipped";
-  if (isUnresolved(session, today)) return "unresolved";
+  if (session.displayState === "completed" || session.status === "completed") return "completed";
+  if (session.displayState === "skipped" || session.status === "skipped") return "skipped";
+  if (isUnrecorded(session, today)) return "unrecorded";
   return "planned";
 }
 
@@ -82,8 +82,8 @@ export function sessionStatusLabel(tone: SessionTone): string {
       return "Completed";
     case "skipped":
       return "Skipped";
-    case "unresolved":
-      return "Unresolved";
+    case "unrecorded":
+      return "Unrecorded";
     default:
       return "Planned";
   }

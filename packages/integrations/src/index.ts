@@ -132,18 +132,49 @@ export function normalizeIntervalsActivity(item: Record<string, unknown>, resour
   });
 }
 
-export async function fetchIntervals(apiKey: string, athleteId = "0", today = new Date()): Promise<Record<"activities" | "events" | "wellness", unknown[] | string>> {
+export interface IntervalsFetchOptions {
+  today?: Date;
+  activitiesOldest?: string;
+  wellnessOldest?: string;
+}
+
+export interface SyncDateWindow { days: number; rangeStart: string; rangeEnd: string }
+
+export function syncDateWindow(lastSuccessAt: string | null, requestedRange: unknown = "incremental", today = new Date()): SyncDateWindow {
+  const rangeEnd = today.toISOString().slice(0, 10);
+  if (requestedRange === undefined || requestedRange === null || requestedRange === "incremental") {
+    if (!lastSuccessAt) return syncDateWindow(null, 90, today);
+    const parsedStart = Date.parse(`${lastSuccessAt.slice(0, 10)}T00:00:00Z`);
+    const parsedEnd = Date.parse(`${rangeEnd}T00:00:00Z`);
+    const elapsedDays = Number.isFinite(parsedStart) ? Math.floor((parsedEnd - parsedStart) / 86_400_000) + 1 : 90;
+    const days = Math.max(1, Math.min(365, elapsedDays));
+    return syncDateWindow(null, days, today);
+  }
+  const parsedDays = Number(requestedRange);
+  if (!Number.isFinite(parsedDays)) throw new Error("Sync range must be 'incremental' or a number of days.");
+  const days = Math.max(1, Math.min(365, Math.trunc(parsedDays)));
+  const rangeStart = new Date(Date.parse(`${rangeEnd}T00:00:00Z`) - (days - 1) * 86_400_000).toISOString().slice(0, 10);
+  return { days, rangeStart, rangeEnd };
+}
+
+export function intervalsIncrementalWindow(lastSuccessAt: string | null, today = new Date(), requestedRange: unknown = "incremental"): { activitiesOldest: string; wellnessOldest: string } {
+  const { rangeStart } = syncDateWindow(lastSuccessAt, requestedRange, today);
+  return { activitiesOldest: rangeStart, wellnessOldest: rangeStart };
+}
+
+export async function fetchIntervals(apiKey: string, athleteId = "0", options: IntervalsFetchOptions = {}, fetcher: typeof fetch = fetch): Promise<Record<"activities" | "events" | "wellness", unknown[] | string>> {
+  const today = options.today ?? new Date();
   const date = (offsetDays: number) => new Date(today.getTime() + offsetDays * 86_400_000).toISOString().slice(0, 10);
   const paths = {
-    activities: `/athlete/${athleteId}/activities?oldest=${date(-90)}&newest=${date(0)}`,
-    wellness: `/athlete/${athleteId}/wellness?oldest=${date(-42)}&newest=${date(0)}`,
+    activities: `/athlete/${athleteId}/activities?oldest=${options.activitiesOldest ?? date(-90)}&newest=${date(0)}`,
+    wellness: `/athlete/${athleteId}/wellness?oldest=${options.wellnessOldest ?? date(-42)}&newest=${date(0)}`,
     events: `/athlete/${athleteId}/events?oldest=${date(-14)}&newest=${date(14)}`,
   };
   const authorization = `Basic ${btoa(`API_KEY:${apiKey}`)}`;
   const entries = await Promise.all(Object.entries(paths).map(async ([name, path]) => {
     try {
       for (let attempt = 0; attempt < 3; attempt += 1) {
-        const response = await fetch(`https://intervals.icu/api/v1${path}`, { headers: { Authorization: authorization, "User-Agent": "Athria/0.1" }, signal: AbortSignal.timeout(60_000) });
+        const response = await fetcher(`https://intervals.icu/api/v1${path}`, { headers: { Authorization: authorization, "User-Agent": "Athria/0.1" }, signal: AbortSignal.timeout(60_000) });
         if ([401, 403].includes(response.status)) throw new Error("Intervals.icu rejected the API key");
         if ((response.status === 429 || response.status >= 500) && attempt < 2) continue;
         if (!response.ok) throw new Error(`Intervals.icu returned HTTP ${response.status}`);

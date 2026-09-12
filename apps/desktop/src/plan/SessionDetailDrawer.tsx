@@ -43,6 +43,8 @@ function DrawerPanel({ session, templates, plan, today, onClose, onMutated, retu
   const [error, setError] = useState<unknown>();
   const [moveOpen, setMoveOpen] = useState(false);
   const [moveDate, setMoveDate] = useState(() => addDays(session.scheduledDate, 1));
+  const [reasonCode, setReasonCode] = useState("");
+  const [reasonNote, setReasonNote] = useState("");
 
   const panelRef = useRef<HTMLDivElement>(null);
   const restoreTarget = useRef<HTMLElement | null>(null);
@@ -107,6 +109,8 @@ function DrawerPanel({ session, templates, plan, today, onClose, onMutated, retu
     setBusy(false);
     setMoveOpen(false);
     setMoveDate(addDays(session.scheduledDate, 1));
+    setReasonCode("");
+    setReasonNote("");
   }, [session.id, session.scheduledDate]);
 
   const act = async (update: Record<string, unknown>) => {
@@ -128,6 +132,8 @@ function DrawerPanel({ session, templates, plan, today, onClose, onMutated, retu
   const tone = sessionTone(session, today);
   const phaseLabels = plan ? phaseLabelsForSession(plan.mesocycle.domainProgressions, session) : [];
   const template = session.templateRef ? templates.find((item) => item.id === session.templateRef?.id) : undefined;
+  const reason = reasonCode ? { reasonCode, ...(reasonNote.trim() ? { note: reasonNote.trim() } : {}) } : undefined;
+  const planEnd = plan ? addDays(plan.effectiveStartDate, plan.mesocycle.durationWeeks * 7 - 1) : undefined;
 
   return (
     <div className="sd-backdrop" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
@@ -201,13 +207,14 @@ function DrawerPanel({ session, templates, plan, today, onClose, onMutated, retu
 
           {session.progressionNote && <section className="sd-section"><h3 className="sd-eyebrow">This week's progression</h3><p>{session.progressionNote}</p></section>}
           {session.schedulingRationale && <section className="sd-section"><h3 className="sd-eyebrow">Why this day</h3><p>{session.schedulingRationale}</p>{plan?.mesocycle.schedule.kind === "interval" && <small>Rotation interval: every {plan.mesocycle.schedule.intervalDays} days.</small>}</section>}
+          {session.displayState === "completed" && <section className="sd-section"><h3 className="sd-eyebrow">Completed workout</h3><p>{session.match?.method === "manual" ? "Linked by you" : "Matched automatically"}{session.completedAt ? ` · ${new Date(session.completedAt).toLocaleDateString()}` : ""}</p>{session.completedTrainingSessionId && <button type="button" className="secondary compact" onClick={() => window.dispatchEvent(new CustomEvent("athria-open-training", { detail: session.completedTrainingSessionId! }))}>View in Training</button>}</section>}
         </div>
 
         {session.status === "planned" && (
           <footer className="sd-actions">
             <div className="sd-actions-row">
-              <button type="button" className="sd-action" disabled={busy} onClick={() => void act({ action: "complete" })}>✓ Mark complete</button>
-              <button type="button" className="sd-action secondary" disabled={busy} onClick={() => void act({ action: "skip" })}>Skip</button>
+              <button type="button" className="sd-action" disabled={busy || session.scheduledDate > today} title={session.scheduledDate > today ? "Move this session to the date you completed it first." : undefined} onClick={() => void act({ action: "complete" })}>✓ Add as completed workout</button>
+              <button type="button" className="sd-action secondary" disabled={busy} onClick={() => void act({ action: "skip", ...(reason ? { reason } : {}) })}>Skip</button>
               <button
                 type="button"
                 className="sd-action secondary"
@@ -219,17 +226,22 @@ function DrawerPanel({ session, templates, plan, today, onClose, onMutated, retu
                 Move
               </button>
             </div>
+            <div className="sd-move">
+              <label>Optional reason<select value={reasonCode} onChange={(event) => setReasonCode(event.target.value)}><option value="">None</option><option value="schedule">Schedule</option><option value="recovery">Recovery</option><option value="health">Health</option><option value="travel">Travel</option><option value="equipment_weather">Equipment or weather</option><option value="preference">Preference</option><option value="other">Other</option></select></label>
+              {reasonCode && <label>Optional note<input value={reasonNote} maxLength={500} onChange={(event) => setReasonNote(event.target.value)} /></label>}
+            </div>
+            {session.scheduledDate > today && <small>To record a completed workout, move this plan to the date it was completed first.</small>}
             {moveOpen && (
               <div className="sd-move" id="sd-move-panel">
                 <label>
                   Move to date
-                  <input type="date" value={moveDate} onChange={(event) => setMoveDate(event.target.value)} />
+                  <input type="date" min={plan?.effectiveStartDate} max={planEnd} value={moveDate} onChange={(event) => setMoveDate(event.target.value)} />
                 </label>
                 <button
                   type="button"
                   className="sd-action secondary"
                   disabled={busy || !moveDate || moveDate === session.scheduledDate}
-                  onClick={() => void act({ action: "move_occurrence", scheduledDate: moveDate })}
+                  onClick={() => void act({ action: "move_occurrence", scheduledDate: moveDate, ...(reason ? { reason } : {}) })}
                 >
                   Confirm move
                 </button>
@@ -237,6 +249,7 @@ function DrawerPanel({ session, templates, plan, today, onClose, onMutated, retu
             )}
           </footer>
         )}
+        {session.status === "skipped" && <footer className="sd-actions"><button type="button" className="sd-action secondary" disabled={busy} onClick={() => void act({ action: "restore" })}>Undo skip</button></footer>}
       </div>
     </div>
   );

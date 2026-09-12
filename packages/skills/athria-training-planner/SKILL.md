@@ -51,6 +51,6 @@ When you save a Current Mesocycle, populate the optional `target` object so the 
 - Apply Profile or Wellness changes directly only after explicit user confirmation, using `update_athlete_profile` or `update_wellness` with the latest hash.
 - Treat Profile `preferredName`, `gender`, `heightCm`, and `birthDate` as stable personal facts. Weight is dated Wellness data and must never be written into Profile.
 - If the state snapshot changes, refresh context and revalidate instead of bypassing stale-state rejection.
-- Treat `get_next_training_day` as the current execution queue. Complete, skip, or move a planned session only after the user explicitly chooses that action.
+- Treat `get_next_training_day` as the current execution queue. Add a manual completed workout, skip, restore, or move a planned session only after the user explicitly chooses that action.
 
 Read [references/tool-contracts.md](references/tool-contracts.md) before constructing tool inputs or handling validation reason codes.

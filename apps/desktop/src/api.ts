@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { IntervalsConnectionStatus, SyncRange } from "./view-models";
 
 interface ServiceInfo { baseUrl: string; token: string; mcpUrl: string }
 export interface McpStatus { configured: boolean; executablePath: string; arguments: ["mcp"] }
@@ -24,12 +25,12 @@ export async function testIntervals(apiKey: string, athleteId: string): Promise<
   return invoke("test_intervals_credentials", { apiKey, athleteId });
 }
 
-export async function syncIntervals(): Promise<unknown> { return invoke("sync_intervals"); }
+export async function syncIntervals(range: SyncRange): Promise<unknown> { return invoke("sync_intervals", { range }); }
 
-export async function getIntervalsStatus(): Promise<{ configured: boolean; athleteId: string }> { return invoke("intervals_status"); }
+export async function getIntervalsStatus(): Promise<IntervalsConnectionStatus> { return invoke("intervals_status"); }
 
 export async function importXunjiSkill(skillText: string): Promise<unknown> { return invoke("import_xunji_skill", { skillText }); }
-export async function syncXunji(): Promise<unknown> { return invoke("sync_xunji"); }
+export async function syncXunji(range: SyncRange): Promise<unknown> { return invoke("sync_xunji", { range }); }
 export async function getXunjiStatus<T>(): Promise<T> { return invoke("xunji_status"); }
 export async function getMcpStatus(): Promise<McpStatus> { return invoke("mcp_status"); }
 

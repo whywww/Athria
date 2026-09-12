@@ -194,7 +194,7 @@
 .badge-planned { background: #eef1f5; color: #4a5766; }
 .badge-completed { background: #e5f2e7; color: #2f6b45; }
 .badge-skipped { background: #eceff2; color: #6b7480; }
-.badge-unresolved { background: #fdece4; color: #b8432a; }
+.badge-unrecorded { background: #fdece4; color: #b8432a; }
 
 /* Tone the whole chip down for finished / skipped work while keeping the
    title readable (§7.7). */
@@ -202,7 +202,7 @@
 .wc-chip.status-completed .wc-chip-name { color: #35513d; }
 .wc-chip.status-skipped { background: #f7f8f9; border-color: #e2e6ea; }
 .wc-chip.status-skipped .wc-chip-name { color: #6b7480; text-decoration: line-through; text-decoration-color: #c3cad2; }
-.wc-chip.status-unresolved { border-color: #f0c3b3; }
+.wc-chip.status-unrecorded { border-color: #f0c3b3; }
 
 .wc-more {
   align-self: flex-start;
@@ -293,7 +293,7 @@
 .sd-status-planned { background: #eef1f5; color: #4a5766; }
 .sd-status-completed { background: #e5f2e7; color: #2f6b45; }
 .sd-status-skipped { background: #eceff2; color: #6b7480; }
-.sd-status-unresolved { background: #fdece4; color: #b8432a; }
+.sd-status-unrecorded { background: #fdece4; color: #b8432a; }
 
 .sd-body { flex: 1 1 auto; overflow-y: auto; padding: 6px 22px 18px; }
 .sd-section { padding: 15px 0; border-bottom: 1px solid #f0ece6; }

@@ -198,6 +198,133 @@ function localDate(startAt: string, timezone: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(startAt));
 }
 
+function localNoon(date: string, timeZone: string): Date {
+  const target = Date.parse(`${date}T12:00:00.000Z`);
+  let instant = target;
+  const formatter = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const parts = formatter.formatToParts(new Date(instant));
+    const value = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((part) => part.type === type)?.value ?? 0);
+    const represented = Date.UTC(value("year"), value("month") - 1, value("day"), value("hour"), value("minute"), value("second"));
+    instant += target - represented;
+  }
+  return new Date(instant);
+}
+
+const RECONCILIATION_VERSION = "workout-reconciliation-v1";
+type SourceObservation = { id: string; canonicalId: string; session: TrainingSession; createdAt: string };
+
+const normalizedToken = (value: string | null | undefined): string => String(value ?? "").toLowerCase().replace(/running/g, "run").replace(/cycling|biking/g, "ride").replace(/[^a-z0-9\u3400-\u9fff]+/g, "");
+const normalizedExercise = (value: string | null | undefined): string => normalizedToken(value).replace(/dumbbell|barbell|machine|cable/g, "");
+const ratioScore = (left: number, right: number, bands: Array<[number, number]>): number => {
+  if (left <= 0 || right <= 0) return 0;
+  const difference = Math.abs(left - right) / Math.max(left, right);
+  return bands.find(([limit]) => difference <= limit)?.[1] ?? 0;
+};
+const jaccard = (left: Set<string>, right: Set<string>): number => {
+  if (!left.size || !right.size) return 0;
+  const intersection = [...left].filter((item) => right.has(item)).length;
+  return intersection / (left.size + right.size - intersection);
+};
+
+function inferredDomains(session: TrainingSession): Set<string> {
+  if (session.domains.length) return new Set(session.domains);
+  const domains = new Set<string>();
+  if (session.modality === "strength" || session.strengthSets.length) domains.add("strength");
+  if (session.modality === "endurance") domains.add("endurance");
+  if (session.modality === "mixed") { domains.add("strength"); domains.add("endurance"); }
+  if (session.modality === "recovery") domains.add("recovery");
+  return domains;
+}
+
+function duplicateScore(left: TrainingSession, right: TrainingSession): number | null {
+  if (left.source === right.source) return null;
+  const leftStart = Date.parse(left.startAt); const rightStart = Date.parse(right.startAt);
+  const leftEnd = Date.parse(left.endAt); const rightEnd = Date.parse(right.endAt);
+  const startDifference = Math.abs(leftStart - rightStart) / 60_000;
+  const overlap = Math.max(0, Math.min(leftEnd, rightEnd) - Math.max(leftStart, rightStart));
+  const shorter = Math.min(Math.max(0, leftEnd - leftStart), Math.max(0, rightEnd - rightStart));
+  const overlapRatio = shorter > 0 ? overlap / shorter : 0;
+  const dateOnly = left.timePrecision === "date_only" || right.timePrecision === "date_only";
+  if (dateOnly) {
+    const timezone = left.timezone ?? right.timezone ?? "UTC";
+    if (localDate(left.startAt, timezone) !== localDate(right.startAt, timezone)) return null;
+  } else if (startDifference > 30 && overlapRatio < 0.5) return null;
+  const incompatible = left.modality !== "unknown" && right.modality !== "unknown" && left.modality !== right.modality && left.modality !== "mixed" && right.modality !== "mixed";
+  if (incompatible) return null;
+  const leftSport = normalizedToken(left.sport); const rightSport = normalizedToken(right.sport);
+  if (left.modality === "endurance" && right.modality === "endurance" && leftSport && rightSport && leftSport !== rightSport) return null;
+
+  const startScore = startDifference <= 2 ? 45 : startDifference <= 5 ? 40 : startDifference <= 10 ? 34 : startDifference <= 20 ? 24 : 15;
+  const timeScore = dateOnly ? 45 : Math.max(startScore, Math.round(overlapRatio * 45));
+  const modalityScore = left.modality === right.modality ? 20 : left.modality === "mixed" || right.modality === "mixed" ? 14 : 5;
+  const durationScore = ratioScore(left.durationMinutes, right.durationMinutes, [[0.05, 15], [0.1, 12], [0.2, 8], [0.35, 4]]);
+  let contentScore = 0;
+  if (left.strengthSets.length && right.strengthSets.length) {
+    const exercises = (session: TrainingSession) => new Set(session.strengthSets.map((set) => normalizedExercise(set.exerciseKey ?? set.exerciseRaw)).filter(Boolean));
+    contentScore = Math.round(jaccard(exercises(left), exercises(right)) * 20);
+  } else if (left.modality === "endurance" && right.modality === "endurance") {
+    if (leftSport && leftSport === rightSport) contentScore += 10;
+    const leftDistance = left.endurance?.distanceMeters ?? 0; const rightDistance = right.endurance?.distanceMeters ?? 0;
+    contentScore += ratioScore(leftDistance, rightDistance, [[0.05, 10], [0.1, 8], [0.2, 4]]);
+  } else if (normalizedToken(left.name) && normalizedToken(left.name) === normalizedToken(right.name)) contentScore = 5;
+  return timeScore + modalityScore + durationScore + contentScore;
+}
+
+function informationScore(session: TrainingSession): number {
+  const enduranceFields = session.endurance ? Object.entries(session.endurance).filter(([key, value]) => key !== "heartRateZoneSeconds" && value !== null).length : 0;
+  return (session.source === "manual" ? -100 : 0) + session.strengthSets.length * 3 + enduranceFields * 2 + (session.durationMinutes > 0 ? 5 : 0) + (session.modality !== "unknown" ? 3 : 0) - session.missingFields.length;
+}
+
+function clusterObservations(observations: SourceObservation[]): SourceObservation[][] {
+  const ambiguous = new Set<string>();
+  for (const observation of observations) {
+    const bySource = new Map<string, Array<{ id: string; score: number }>>();
+    for (const candidate of observations) {
+      if (candidate.id === observation.id || candidate.session.source === observation.session.source) continue;
+      const score = duplicateScore(observation.session, candidate.session);
+      if (score !== null && score >= 75) bySource.set(candidate.session.source, [...(bySource.get(candidate.session.source) ?? []), { id: candidate.id, score }]);
+    }
+    for (const candidates of bySource.values()) {
+      candidates.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+      if (candidates[1] && candidates[0]!.score - candidates[1].score < 10) for (const candidate of candidates.filter((item) => candidates[0]!.score - item.score < 10)) ambiguous.add(`${observation.id}|${candidate.id}`);
+    }
+  }
+  const clusters = observations.sort((a, b) => `${a.session.source}:${a.session.externalId}`.localeCompare(`${b.session.source}:${b.session.externalId}`)).map((item) => [item]);
+  while (true) {
+    const candidates: Array<{ left: number; right: number; score: number }> = [];
+    for (let left = 0; left < clusters.length; left += 1) for (let right = left + 1; right < clusters.length; right += 1) {
+      const sources = new Set(clusters[left]!.map((item) => item.session.source));
+      if (clusters[right]!.some((item) => sources.has(item.session.source))) continue;
+      const scores = clusters[left]!.flatMap((a) => clusters[right]!.map((b) => ambiguous.has(`${a.id}|${b.id}`) || ambiguous.has(`${b.id}|${a.id}`) ? null : duplicateScore(a.session, b.session)));
+      if (scores.some((score) => score === null || score < 75)) continue;
+      candidates.push({ left, right, score: Math.min(...scores as number[]) });
+    }
+    candidates.sort((a, b) => b.score - a.score || clusters[a.left]![0]!.id.localeCompare(clusters[b.left]![0]!.id));
+    const best = candidates[0]; if (!best) break;
+    clusters[best.left] = [...clusters[best.left]!, ...clusters[best.right]!]; clusters.splice(best.right, 1);
+  }
+  return clusters;
+}
+
+function plannedContentScore(plan: CurrentPlan["mesocycle"]["weeks"][number]["sessions"][number], actual: TrainingSession): number {
+  const plannedExercises = new Set(plan.components.flatMap((component) => component.prescription.kind === "strength" ? component.prescription.exercises.map((exercise) => normalizedExercise(exercise.canonicalKey ?? exercise.displayName)).filter(Boolean) : []));
+  const actualExercises = new Set(actual.strengthSets.map((set) => normalizedExercise(set.exerciseKey ?? set.exerciseRaw)).filter(Boolean));
+  if (plannedExercises.size && actualExercises.size) return Math.round(jaccard(plannedExercises, actualExercises) * 20);
+  return normalizedToken(plan.name) && normalizedToken(plan.name) === normalizedToken(actual.name) ? 5 : 0;
+}
+
+function planMatchScore(plan: CurrentPlan["mesocycle"]["weeks"][number]["sessions"][number], actual: TrainingSession, timezone: string): number | null {
+  if (localDate(actual.startAt, actual.timezone ?? timezone) !== plan.scheduledDate) return null;
+  const plannedDomains = new Set(plan.components.map((component) => component.domain.value).filter(Boolean));
+  const actualDomains = inferredDomains(actual);
+  const overlap = [...plannedDomains].filter((domain) => actualDomains.has(String(domain)));
+  if (!overlap.length) return null;
+  const domainScore = plannedDomains.size === 1 && actualDomains.size === 1 ? 30 : 20;
+  const durationScore = ratioScore(plan.durationMinutes, actual.durationMinutes, [[0.1, 15], [0.2, 12], [0.35, 8], [0.5, 4]]);
+  return 35 + domainScore + durationScore + plannedContentScore(plan, actual);
+}
+
 function legacySessionSignature(session: Record<string, unknown>): string {
   return JSON.stringify({ modality: session.modality ?? null, name: session.name ?? null, durationMinutes: session.durationMinutes ?? null, exercises: session.exercises ?? [], endurance: session.endurance ?? session.enduranceDetails ?? null });
 }
@@ -358,6 +485,8 @@ export class AthriaRepository {
       this.migratePlanTargetV15();
       this.migrateEquipmentCatalogV16();
       this.migratePersonalInformationV17();
+      this.migrateWorkoutReconciliationV18();
+      this.migratePlanReconciliationUxV19();
     } catch (error) {
       this.sqlite.close();
       throw error;
@@ -775,6 +904,80 @@ export class AthriaRepository {
     })();
   }
 
+  private migrateWorkoutReconciliationV18(): void {
+    if (this.sqlite.query("SELECT version FROM athria_migrations WHERE version = 18").get()) return;
+    this.sqlite.transaction(() => {
+      this.sqlite.exec(`
+        CREATE TABLE training_session_sources (
+          id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, training_session_id TEXT NOT NULL,
+          source TEXT NOT NULL, external_id TEXT NOT NULL, local_date TEXT NOT NULL,
+          start_at TEXT NOT NULL, data TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        );
+        CREATE UNIQUE INDEX session_sources_owner_source_external ON training_session_sources(owner_id,source,external_id);
+        CREATE INDEX session_sources_owner_date ON training_session_sources(owner_id,local_date);
+        CREATE INDEX session_sources_canonical ON training_session_sources(training_session_id);
+        CREATE TABLE plan_workout_matches (
+          id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, planned_session_id TEXT NOT NULL,
+          training_session_id TEXT NOT NULL, method TEXT NOT NULL, confidence INTEGER NOT NULL,
+          algorithm_version TEXT NOT NULL, evidence TEXT NOT NULL, matched_at TEXT NOT NULL
+        );
+        CREATE UNIQUE INDEX plan_matches_owner_plan ON plan_workout_matches(owner_id,planned_session_id);
+        CREATE UNIQUE INDEX plan_matches_owner_workout ON plan_workout_matches(owner_id,training_session_id);
+      `);
+      const rows = this.sqlite.query("SELECT id,owner_id,source,external_id,start_at,data FROM training_sessions ORDER BY owner_id,source,start_at,id").all() as Array<{ id: string; owner_id: string; source: string; external_id: string; start_at: string; data: string }>;
+      const parsed = rows.map((row) => ({ row, session: trainingSessionSchema.parse(parseJson(row.data)) }));
+      const superseded = new Set<string>();
+      for (const item of parsed) {
+        if (item.session.durationMinutes > 0 || item.session.modality !== "unknown") continue;
+        const replacement = parsed.find((candidate) => candidate.row.id !== item.row.id && candidate.row.owner_id === item.row.owner_id && candidate.row.source === item.row.source && candidate.session.startAt === item.session.startAt && (candidate.session.durationMinutes > 0 || candidate.session.modality !== "unknown"));
+        if (replacement) superseded.add(item.row.id);
+      }
+      const timestamp = this.now().toISOString();
+      for (const { row, session } of parsed.filter((item) => !superseded.has(item.row.id))) {
+        const timezone = session.timezone ?? this.getProfile(row.owner_id).timezone;
+        this.sqlite.query("INSERT INTO training_session_sources(id,owner_id,training_session_id,source,external_id,local_date,start_at,data,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)").run(`source:${row.id}`, row.owner_id, row.id, row.source, row.external_id, localDate(row.start_at, timezone), row.start_at, row.data, timestamp, timestamp);
+        if (session.plannedSessionId) this.insertPlanMatch(row.owner_id, session.plannedSessionId, row.id, session.source === "manual" ? "manual" : "auto", session.source === "manual" ? 100 : 80, { migrated: true });
+      }
+      for (const ownerId of [...new Set(parsed.map((item) => item.row.owner_id))]) this.rebuildCanonicalSessions(ownerId);
+      this.sqlite.query("INSERT INTO athria_migrations(version, applied_at) VALUES (18, CURRENT_TIMESTAMP)").run();
+    })();
+  }
+
+  private migratePlanReconciliationUxV19(): void {
+    if (this.sqlite.query("SELECT version FROM athria_migrations WHERE version = 19").get()) return;
+    this.sqlite.transaction(() => {
+      this.sqlite.exec(`
+        CREATE TABLE planned_session_events (
+          id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, planned_session_id TEXT NOT NULL,
+          action TEXT NOT NULL, from_date TEXT, to_date TEXT, reason_code TEXT, reason_note TEXT,
+          revision_before INTEGER NOT NULL, revision_after INTEGER NOT NULL, created_at TEXT NOT NULL
+        );
+        CREATE INDEX planned_session_events_owner_session ON planned_session_events(owner_id,planned_session_id);
+        CREATE TABLE workout_plan_exclusions (
+          owner_id TEXT NOT NULL, training_session_id TEXT NOT NULL, created_at TEXT NOT NULL
+        );
+        CREATE UNIQUE INDEX workout_plan_exclusions_owner_workout ON workout_plan_exclusions(owner_id,training_session_id);
+      `);
+      const matches = this.sqlite.query("SELECT owner_id,planned_session_id,training_session_id FROM plan_workout_matches WHERE method='manual'").all() as Array<{ owner_id: string; planned_session_id: string; training_session_id: string }>;
+      for (const match of matches) {
+        const plan = this.getCurrentPlan(match.owner_id);
+        const planned = plan?.mesocycle.weeks.flatMap((week) => week.sessions).find((session) => session.id === match.planned_session_id);
+        if (!planned) continue;
+        const rows = this.sqlite.query("SELECT id,data FROM training_session_sources WHERE owner_id=? AND training_session_id=? AND source='manual'").all(match.owner_id, match.training_session_id) as Array<{ id: string; data: string }>;
+        for (const row of rows) {
+          const session = trainingSessionSchema.parse(parseJson(row.data));
+          const placeholder = session.durationMinutes === planned.durationMinutes && session.strengthSets.length === 0 && session.endurance === null && session.missingFields.includes("exercise details");
+          if (!placeholder) continue;
+          const startAt = localNoon(planned.scheduledDate, session.timezone ?? this.getProfile(match.owner_id).timezone); const endAt = new Date(startAt.getTime() + session.durationMinutes * 60_000);
+          const migrated = trainingSessionSchema.parse({ ...session, startAt: startAt.toISOString(), endAt: endAt.toISOString(), timePrecision: "date_only", missingFields: [...new Set([...session.missingFields, "actual start time"])] });
+          this.sqlite.query("UPDATE training_session_sources SET local_date=?,start_at=?,data=?,updated_at=? WHERE id=?").run(planned.scheduledDate, migrated.startAt, JSON.stringify(migrated), this.now().toISOString(), row.id);
+        }
+      }
+      for (const ownerId of [...new Set(matches.map((match) => match.owner_id))]) this.rebuildCanonicalSessions(ownerId);
+      this.sqlite.query("INSERT INTO athria_migrations(version, applied_at) VALUES (19, CURRENT_TIMESTAMP)").run();
+    })();
+  }
+
   close(): void { this.sqlite.close(); }
 
   getProfile(ownerId = "local-user"): AthleteProfile {
@@ -790,28 +993,139 @@ export class AthriaRepository {
     return parsed;
   }
 
+  private matchDetails(ownerId: string): Map<string, { plannedSessionId: string; method: "auto" | "manual" }> {
+    const rows = this.sqlite.query("SELECT training_session_id,planned_session_id,method FROM plan_workout_matches WHERE owner_id=?").all(ownerId) as Array<{ training_session_id: string; planned_session_id: string; method: "auto" | "manual" }>;
+    return new Map(rows.map((row) => [row.training_session_id, { plannedSessionId: row.planned_session_id, method: row.method }]));
+  }
+
+  private sourceSummaries(ownerId: string): Map<string, Array<{ source: string; externalId: string }>> {
+    const rows = this.sqlite.query("SELECT training_session_id,source,external_id FROM training_session_sources WHERE owner_id=? ORDER BY source,external_id").all(ownerId) as Array<{ training_session_id: string; source: string; external_id: string }>;
+    const summaries = new Map<string, Array<{ source: string; externalId: string }>>();
+    for (const row of rows) summaries.set(row.training_session_id, [...(summaries.get(row.training_session_id) ?? []), { source: row.source, externalId: row.external_id }]);
+    return summaries;
+  }
+
+  private withDerivedMatch(session: TrainingSession, matches: Map<string, { plannedSessionId: string; method: "auto" | "manual" }>, sources: Map<string, Array<{ source: string; externalId: string }>>, excluded = new Set<string>()): TrainingSession {
+    const match = matches.get(session.id) ?? null;
+    return trainingSessionSchema.parse({ ...session, plannedSessionId: match?.plannedSessionId ?? null, planMatch: match, sources: sources.get(session.id) ?? [{ source: session.source, externalId: session.externalId }], isPlanMatchExcluded: excluded.has(session.id) });
+  }
+
+  private insertPlanMatch(ownerId: string, plannedSessionId: string, trainingSessionId: string, method: "manual" | "auto", confidence: number, evidence: Record<string, unknown>): void {
+    const existingPlan = this.sqlite.query("SELECT method,training_session_id FROM plan_workout_matches WHERE owner_id=? AND planned_session_id=?").get(ownerId, plannedSessionId) as { method: string; training_session_id: string } | null;
+    const existingWorkout = this.sqlite.query("SELECT method,planned_session_id FROM plan_workout_matches WHERE owner_id=? AND training_session_id=?").get(ownerId, trainingSessionId) as { method: string; planned_session_id: string } | null;
+    if (method === "auto" && (existingPlan || existingWorkout)) return;
+    if (method === "manual" && existingPlan?.training_session_id === trainingSessionId && existingWorkout?.planned_session_id === plannedSessionId) return;
+    if (method === "manual") this.sqlite.query("DELETE FROM plan_workout_matches WHERE owner_id=? AND (planned_session_id=? OR training_session_id=?)").run(ownerId, plannedSessionId, trainingSessionId);
+    this.sqlite.query("INSERT INTO plan_workout_matches(id,owner_id,planned_session_id,training_session_id,method,confidence,algorithm_version,evidence,matched_at) VALUES (?,?,?,?,?,?,?,?,?)").run(crypto.randomUUID(), ownerId, plannedSessionId, trainingSessionId, method, Math.round(confidence), RECONCILIATION_VERSION, JSON.stringify(evidence), this.now().toISOString());
+  }
+
+  private rebuildCanonicalSessions(ownerId: string): void {
+    const rows = this.sqlite.query("SELECT id,training_session_id,data,created_at FROM training_session_sources WHERE owner_id=?").all(ownerId) as Array<{ id: string; training_session_id: string; data: string; created_at: string }>;
+    const observations: SourceObservation[] = rows.map((row) => ({ id: row.id, canonicalId: row.training_session_id, session: trainingSessionSchema.parse(parseJson(row.data)), createdAt: row.created_at }));
+    const existingRows = this.sqlite.query("SELECT id,data FROM training_sessions WHERE owner_id=?").all(ownerId) as Array<{ id: string; data: string }>;
+    const existing = new Map(existingRows.map((row) => [row.id, trainingSessionSchema.parse(parseJson(row.data))]));
+    const linked = new Set((this.sqlite.query("SELECT training_session_id FROM plan_workout_matches WHERE owner_id=?").all(ownerId) as Array<{ training_session_id: string }>).map((row) => row.training_session_id));
+    const hasExclusions = Boolean(this.sqlite.query("SELECT name FROM sqlite_master WHERE type='table' AND name='workout_plan_exclusions'").get());
+    const excluded = new Set(hasExclusions ? (this.sqlite.query("SELECT training_session_id FROM workout_plan_exclusions WHERE owner_id=?").all(ownerId) as Array<{ training_session_id: string }>).map((row) => row.training_session_id) : []);
+    const protectedIds = new Set([...linked, ...excluded]);
+    const usedIds = new Set<string>();
+    const canonical: TrainingSession[] = [];
+    const assignments = new Map<string, string>();
+    for (const cluster of clusterObservations(observations)) {
+      const memberIds = [...new Set(cluster.map((item) => item.canonicalId))];
+      let id = memberIds.find((candidate) => protectedIds.has(candidate) && !usedIds.has(candidate)) ?? memberIds.find((candidate) => existing.has(candidate) && !usedIds.has(candidate));
+      if (!id) {
+        const representative = [...cluster].sort((a, b) => informationScore(b.session) - informationScore(a.session) || a.id.localeCompare(b.id))[0]!.session;
+        const reusable = [...existing].filter(([candidate]) => !usedIds.has(candidate)).map(([candidate, session]) => ({ candidate, score: duplicateScore({ ...representative, source: `incoming:${representative.source}` }, session) ?? -1 })).sort((a, b) => b.score - a.score || a.candidate.localeCompare(b.candidate))[0];
+        id = reusable && reusable.score >= 75 ? reusable.candidate : memberIds.find((candidate) => !usedIds.has(candidate)) ?? crypto.randomUUID();
+      }
+      usedIds.add(id);
+      const representative = [...cluster].sort((a, b) => informationScore(b.session) - informationScore(a.session) || a.id.localeCompare(b.id))[0]!.session;
+      canonical.push(trainingSessionSchema.parse({ ...representative, id, ownerId, plannedSessionId: null }));
+      for (const observation of cluster) assignments.set(observation.id, id);
+      if (memberIds.some((candidate) => excluded.has(candidate))) excluded.add(id);
+    }
+    this.sqlite.query("DELETE FROM training_sessions WHERE owner_id=?").run(ownerId);
+    for (const session of canonical) this.sqlite.query("INSERT INTO training_sessions(id,owner_id,source,external_id,modality,start_at,data) VALUES (?,?,?,?,?,?,?)").run(session.id, ownerId, session.source, session.externalId, session.modality, session.startAt, JSON.stringify(session));
+    for (const [sourceId, canonicalId] of assignments) this.sqlite.query("UPDATE training_session_sources SET training_session_id=? WHERE id=?").run(canonicalId, sourceId);
+    this.sqlite.query("DELETE FROM plan_workout_matches WHERE owner_id=? AND training_session_id NOT IN (SELECT id FROM training_sessions WHERE owner_id=?)").run(ownerId, ownerId);
+    if (hasExclusions) {
+      this.sqlite.query("DELETE FROM workout_plan_exclusions WHERE owner_id=?").run(ownerId);
+      for (const trainingSessionId of [...excluded].filter((id) => usedIds.has(id))) this.sqlite.query("INSERT INTO workout_plan_exclusions(owner_id,training_session_id,created_at) VALUES (?,?,?)").run(ownerId, trainingSessionId, this.now().toISOString());
+    }
+  }
+
+  private reconcilePlanMatches(ownerId: string): void {
+    const plan = this.getCurrentPlan(ownerId);
+    if (!plan) return;
+    const planned = plan.mesocycle.weeks.flatMap((week) => week.sessions).filter((session) => session.status !== "skipped");
+    const plannedIds = new Set(planned.map((session) => session.id));
+    this.sqlite.query("DELETE FROM plan_workout_matches WHERE owner_id=? AND method='auto'").run(ownerId);
+    const manual = this.sqlite.query("SELECT planned_session_id,training_session_id FROM plan_workout_matches WHERE owner_id=? AND method='manual'").all(ownerId) as Array<{ planned_session_id: string; training_session_id: string }>;
+    for (const row of manual) if (!plannedIds.has(row.planned_session_id)) this.sqlite.query("DELETE FROM plan_workout_matches WHERE owner_id=? AND planned_session_id=?").run(ownerId, row.planned_session_id);
+    const occupiedPlans = new Set(manual.map((row) => row.planned_session_id)); const occupiedWorkouts = new Set(manual.map((row) => row.training_session_id));
+    const excluded = new Set((this.sqlite.query("SELECT training_session_id FROM workout_plan_exclusions WHERE owner_id=?").all(ownerId) as Array<{ training_session_id: string }>).map((row) => row.training_session_id));
+    const workouts = this.listSessions(ownerId).filter((session) => !occupiedWorkouts.has(session.id) && !excluded.has(session.id));
+    const candidates = planned.filter((session) => !occupiedPlans.has(session.id)).flatMap((session) => workouts.map((workout) => ({ session, workout, score: planMatchScore(session, workout, this.getProfile(ownerId).timezone) })).filter((item) => item.score !== null && item.score >= 70)) as Array<{ session: typeof planned[number]; workout: TrainingSession; score: number }>;
+    candidates.sort((a, b) => b.score - a.score || a.session.id.localeCompare(b.session.id) || a.workout.id.localeCompare(b.workout.id));
+    const usedPlans = new Set<string>(); const usedWorkouts = new Set<string>();
+    for (const candidate of candidates) {
+      const planAlternative = candidates.filter((item) => item.session.id === candidate.session.id && item.workout.id !== candidate.workout.id)[0]?.score ?? -Infinity;
+      const workoutAlternative = candidates.filter((item) => item.workout.id === candidate.workout.id && item.session.id !== candidate.session.id)[0]?.score ?? -Infinity;
+      if (candidate.score - planAlternative < 10 || candidate.score - workoutAlternative < 10 || usedPlans.has(candidate.session.id) || usedWorkouts.has(candidate.workout.id)) continue;
+      this.insertPlanMatch(ownerId, candidate.session.id, candidate.workout.id, "auto", candidate.score, { scheduledDate: candidate.session.scheduledDate, score: candidate.score });
+      usedPlans.add(candidate.session.id); usedWorkouts.add(candidate.workout.id);
+    }
+  }
+
   listSessions(ownerId = "local-user", since?: string): TrainingSession[] {
     const condition = since ? and(eq(schema.trainingSessions.ownerId, ownerId), gte(schema.trainingSessions.startAt, since)) : eq(schema.trainingSessions.ownerId, ownerId);
-    return this.db.select().from(schema.trainingSessions).where(condition).orderBy(desc(schema.trainingSessions.startAt)).all().map((row) => trainingSessionSchema.parse(parseJson(row.data)));
+    const matches = this.matchDetails(ownerId); const sources = this.sourceSummaries(ownerId);
+    const excluded = new Set((this.sqlite.query("SELECT training_session_id FROM workout_plan_exclusions WHERE owner_id=?").all(ownerId) as Array<{ training_session_id: string }>).map((row) => row.training_session_id));
+    return this.db.select().from(schema.trainingSessions).where(condition).orderBy(desc(schema.trainingSessions.startAt)).all().map((row) => this.withDerivedMatch(trainingSessionSchema.parse(parseJson(row.data)), matches, sources, excluded));
   }
 
   listSessionsBySource(source: string, ownerId = "local-user", since?: string): TrainingSession[] {
-    const condition = since
-      ? and(eq(schema.trainingSessions.ownerId, ownerId), eq(schema.trainingSessions.source, source), gte(schema.trainingSessions.startAt, since))
-      : and(eq(schema.trainingSessions.ownerId, ownerId), eq(schema.trainingSessions.source, source));
-    return this.db.select().from(schema.trainingSessions).where(condition).orderBy(desc(schema.trainingSessions.startAt)).all().map((row) => trainingSessionSchema.parse(parseJson(row.data)));
+    const rows = this.sqlite.query(`SELECT data,training_session_id FROM training_session_sources WHERE owner_id=? AND source=? ${since ? "AND start_at>=?" : ""} ORDER BY start_at DESC`).all(...(since ? [ownerId, source, since] : [ownerId, source])) as Array<{ data: string; training_session_id: string }>;
+    const matches = this.matchDetails(ownerId);
+    return rows.map((row) => { const session = trainingSessionSchema.parse(parseJson(row.data)); const match = matches.get(row.training_session_id) ?? null; return trainingSessionSchema.parse({ ...session, plannedSessionId: match?.plannedSessionId ?? null, planMatch: match, sources: [{ source: session.source, externalId: session.externalId }] }); });
   }
 
   upsertSessions(sessions: TrainingSession[]): { added: number; updated: number } {
     const counts = { added: 0, updated: 0 };
     this.sqlite.transaction(() => {
       for (const value of sessions.map((item) => trainingSessionSchema.parse(item))) {
-        const existing = this.db.select({ id: schema.trainingSessions.id }).from(schema.trainingSessions).where(and(eq(schema.trainingSessions.ownerId, value.ownerId), eq(schema.trainingSessions.source, value.source), eq(schema.trainingSessions.externalId, value.externalId))).get();
+        const existing = this.sqlite.query("SELECT id,created_at FROM training_session_sources WHERE owner_id=? AND source=? AND external_id=?").get(value.ownerId, value.source, value.externalId) as { id: string; created_at: string } | null;
         if (existing) counts.updated += 1; else counts.added += 1;
-        this.db.insert(schema.trainingSessions).values({ id: value.id, ownerId: value.ownerId, source: value.source, externalId: value.externalId, modality: value.modality, startAt: value.startAt, data: value }).onConflictDoUpdate({ target: [schema.trainingSessions.ownerId, schema.trainingSessions.source, schema.trainingSessions.externalId], set: { modality: value.modality, startAt: value.startAt, data: value } }).run();
+        const timezone = value.timezone ?? this.getProfile(value.ownerId).timezone; const timestamp = this.now().toISOString();
+        this.sqlite.query("INSERT INTO training_session_sources(id,owner_id,training_session_id,source,external_id,local_date,start_at,data,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(owner_id,source,external_id) DO UPDATE SET local_date=excluded.local_date,start_at=excluded.start_at,data=excluded.data,updated_at=excluded.updated_at").run(existing?.id ?? crypto.randomUUID(), value.ownerId, existing ? (this.sqlite.query("SELECT training_session_id FROM training_session_sources WHERE id=?").get(existing.id) as { training_session_id: string }).training_session_id : value.id, value.source, value.externalId, localDate(value.startAt, timezone), value.startAt, JSON.stringify({ ...value, plannedSessionId: null }), existing?.created_at ?? timestamp, timestamp);
+      }
+      for (const ownerId of [...new Set(sessions.map((session) => session.ownerId))]) {
+        this.rebuildCanonicalSessions(ownerId);
+        for (const value of sessions.filter((session) => session.ownerId === ownerId && session.plannedSessionId)) {
+          const source = this.sqlite.query("SELECT training_session_id FROM training_session_sources WHERE owner_id=? AND source=? AND external_id=?").get(ownerId, value.source, value.externalId) as { training_session_id: string };
+          this.insertPlanMatch(ownerId, value.plannedSessionId!, source.training_session_id, value.source === "manual" ? "manual" : "auto", value.source === "manual" ? 100 : 80, { explicitSourceLink: true });
+        }
+        this.reconcilePlanMatches(ownerId);
       }
     })();
     return counts;
+  }
+
+  replaceSourceSessions(input: { ownerId?: string; source: string; sessions: TrainingSession[]; dates?: string[]; localDates?: Record<string, string>; rangeStart?: string; rangeEnd?: string }): { added: number; updated: number } {
+    const ownerId = input.ownerId ?? "local-user"; const parsed = input.sessions.map((session) => trainingSessionSchema.parse({ ...session, ownerId, source: input.source }));
+    return this.sqlite.transaction(() => {
+      const existingIds = new Set((this.sqlite.query(`SELECT external_id FROM training_session_sources WHERE owner_id=? AND source=? ${input.dates ? `AND local_date IN (${input.dates.map(() => "?").join(",")})` : "AND local_date>=? AND local_date<=?"}`).all(ownerId, input.source, ...(input.dates ?? [input.rangeStart!, input.rangeEnd!])) as Array<{ external_id: string }>).map((row) => row.external_id));
+      if (input.dates) this.sqlite.query(`DELETE FROM training_session_sources WHERE owner_id=? AND source=? AND local_date IN (${input.dates.map(() => "?").join(",")})`).run(ownerId, input.source, ...input.dates);
+      else this.sqlite.query("DELETE FROM training_session_sources WHERE owner_id=? AND source=? AND local_date>=? AND local_date<=?").run(ownerId, input.source, input.rangeStart!, input.rangeEnd!);
+      const timestamp = this.now().toISOString();
+      for (const value of parsed) {
+        const timezone = value.timezone ?? this.getProfile(ownerId).timezone;
+        this.sqlite.query("INSERT INTO training_session_sources(id,owner_id,training_session_id,source,external_id,local_date,start_at,data,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)").run(crypto.randomUUID(), ownerId, value.id, value.source, value.externalId, input.localDates?.[value.externalId] ?? localDate(value.startAt, timezone), value.startAt, JSON.stringify({ ...value, plannedSessionId: null }), timestamp, timestamp);
+      }
+      this.rebuildCanonicalSessions(ownerId); this.reconcilePlanMatches(ownerId);
+      return { added: parsed.filter((session) => !existingIds.has(session.externalId)).length, updated: parsed.filter((session) => existingIds.has(session.externalId)).length };
+    })();
   }
 
   recordImportBatch(input: { ownerId: string; source: string; contentHash: string; fileName: string; parserVersion: string; status: string; data: unknown }) {
@@ -927,11 +1241,13 @@ export class AthriaRepository {
 
   saveCurrentPlan(plan: CurrentPlan, expectedRevision: number, _deletedSessionIds: string[] = [], _updatedSessions: PlannedSession[] = []): CurrentPlan {
     try {
-      return this.sqlite.transaction(() => {
+      const saved = this.sqlite.transaction(() => {
         if ((this.getCurrentPlan(plan.ownerId)?.revision ?? 0) !== expectedRevision) throw new Error("REVISION_CONFLICT");
         this.db.insert(schema.currentMesocycles).values({ ownerId: plan.ownerId, data: plan, revision: plan.revision, updatedAt: plan.updatedAt }).onConflictDoUpdate({ target: schema.currentMesocycles.ownerId, set: { data: plan, revision: plan.revision, updatedAt: plan.updatedAt } }).run();
         return plan;
       }).immediate();
+      this.reconcilePlanMatches(plan.ownerId);
+      return saved;
     } catch (error) {
       if (error instanceof SQLiteError && error.code?.startsWith("SQLITE_BUSY")) throw new Error("WRITE_BUSY");
       throw error;
@@ -941,39 +1257,51 @@ export class AthriaRepository {
   listCurrentPlannedSessions(ownerId = "local-user", scheduledDate?: string): PlannedSession[] {
     const plan = this.getCurrentPlan(ownerId); if (!plan) return [];
     const timestamp = plan.updatedAt;
-    const completedByPlanId = new Map<string, TrainingSession>();
-    for (const row of this.db.select().from(schema.trainingSessions).where(eq(schema.trainingSessions.ownerId, ownerId)).all()) {
-      const training = trainingSessionSchema.parse(parseJson(row.data));
-      if (!training.plannedSessionId) continue;
-      const previous = completedByPlanId.get(training.plannedSessionId);
-      if (!previous || training.startAt > previous.startAt) completedByPlanId.set(training.plannedSessionId, training);
+    const completedByPlanId = new Map<string, { workout: TrainingSession; method: "auto" | "manual" }>();
+    const matches = this.sqlite.query("SELECT planned_session_id,training_session_id,method FROM plan_workout_matches WHERE owner_id=?").all(ownerId) as Array<{ planned_session_id: string; training_session_id: string; method: "auto" | "manual" }>;
+    for (const match of matches) {
+      const row = this.sqlite.query("SELECT data FROM training_sessions WHERE owner_id=? AND id=?").get(ownerId, match.training_session_id) as { data: string } | null;
+      if (row) completedByPlanId.set(match.planned_session_id, { workout: trainingSessionSchema.parse(parseJson(row.data)), method: match.method });
     }
+    const sources = this.sourceSummaries(ownerId);
+    const today = localDate(this.now().toISOString(), this.getProfile(ownerId).timezone);
     return plan.mesocycle.weeks.flatMap((week) => week.sessions.map((session) => plannedSessionSchema.parse({
       ...session, occurrenceId: `plan:${session.scheduledDate}`, ownerId, planRevision: plan.revision, weekNumber: week.weekNumber,
       phaseRefs: [...new Set(session.components.map((component) => component.domain.value).filter(Boolean))].map((domain) => ({ domain, phaseId: plan.mesocycle.domainProgressions.find((item) => item.domain === domain)!.phases.find((phase) => week.weekNumber >= phase.startWeek && week.weekNumber <= phase.endWeek)!.id })),
       exerciseOverrides: [], notes: "", overrideReason: null,
       status: completedByPlanId.has(session.id) ? "completed" : session.status,
-      completedTrainingSessionId: completedByPlanId.get(session.id)?.id ?? null,
-      completedAt: completedByPlanId.get(session.id)?.endAt ?? null,
-      completionSource: completedByPlanId.has(session.id) ? (completedByPlanId.get(session.id)?.source === "manual" ? "manual" : "import") : null,
+      displayState: completedByPlanId.has(session.id) ? "completed" : session.status === "skipped" ? "skipped" : session.scheduledDate < today ? "unrecorded" : "scheduled",
+      completedTrainingSessionId: completedByPlanId.get(session.id)?.workout.id ?? null,
+      completedAt: completedByPlanId.get(session.id)?.workout.endAt ?? null,
+      completionSource: completedByPlanId.has(session.id) ? ((sources.get(completedByPlanId.get(session.id)!.workout.id) ?? []).some((source) => source.source !== "manual") ? "import" : "manual") : null,
+      match: completedByPlanId.has(session.id) ? { plannedSessionId: session.id, method: completedByPlanId.get(session.id)!.method } : null,
       createdAt: timestamp, updatedAt: timestamp,
     }))).filter((session) => !scheduledDate || session.scheduledDate === scheduledDate).sort((a, b) => a.scheduledDate.localeCompare(b.scheduledDate) || a.order - b.order);
   }
 
   scheduleRevision(ownerId = "local-user"): number { return this.getCurrentPlan(ownerId)?.revision ?? 0; }
 
-  updateCurrentPlannedSessions(input: { ownerId: string; expectedRevision: number; mode: string; sessions: PlannedSession[] }): { sessions: PlannedSession[]; revision: number } {
-    const current = this.getCurrentPlan(input.ownerId); if (!current) throw new Error("NO_CURRENT_PLAN");
-    if (current.revision !== input.expectedRevision) throw new Error("PLANNED_SESSION_REVISION_CONFLICT");
-    const updates = new Map(input.sessions.map((session) => [session.id, session]));
-    const weeks = current.mesocycle.weeks.map((week) => ({ ...week, sessions: week.sessions.filter((session) => !updates.has(session.id)) }));
-    for (const session of input.sessions) {
-      const week = weeks.find((item) => item.weekNumber === session.weekNumber); if (!week) throw new Error("PLAN_WEEK_NOT_FOUND");
-      week.sessions.push({ id: session.id, scheduledDate: session.scheduledDate, order: session.order, status: session.status === "skipped" ? "skipped" : "planned", templateRef: session.templateRef, name: session.name, intent: session.intent, durationMinutes: session.durationMinutes, recoveryDemand: session.recoveryDemand, keySession: session.keySession, components: session.components, progressionNote: session.progressionNote, schedulingRationale: session.schedulingRationale, legacySnapshot: session.legacySnapshot });
-    }
-    const updatedAt = this.now().toISOString(); const plan = currentPlanSchema.parse({ ...current, mesocycle: { ...current.mesocycle, weeks }, revision: current.revision + 1, updatedAt });
-    this.saveCurrentPlan(plan, current.revision);
-    return { sessions: input.sessions, revision: plan.revision };
+  updateCurrentPlannedSessions(input: { ownerId: string; expectedRevision: number; mode: string; sessions: PlannedSession[]; reason?: { reasonCode: string; note?: string | undefined } }): { sessions: PlannedSession[]; revision: number } {
+    const result = this.sqlite.transaction(() => {
+      const current = this.getCurrentPlan(input.ownerId); if (!current) throw new Error("NO_CURRENT_PLAN");
+      if (current.revision !== input.expectedRevision) throw new Error("PLANNED_SESSION_REVISION_CONFLICT");
+      const previous = new Map(current.mesocycle.weeks.flatMap((week) => week.sessions).map((session) => [session.id, session]));
+      const updates = new Map(input.sessions.map((session) => [session.id, session]));
+      const weeks = current.mesocycle.weeks.map((week) => ({ ...week, sessions: week.sessions.filter((session) => !updates.has(session.id)) }));
+      for (const session of input.sessions) {
+        const week = weeks.find((item) => item.weekNumber === session.weekNumber); if (!week) throw new Error("PLAN_WEEK_NOT_FOUND");
+        week.sessions.push({ id: session.id, scheduledDate: session.scheduledDate, order: session.order, status: session.status === "skipped" ? "skipped" : "planned", templateRef: session.templateRef, name: session.name, intent: session.intent, durationMinutes: session.durationMinutes, recoveryDemand: session.recoveryDemand, keySession: session.keySession, components: session.components, progressionNote: session.progressionNote, schedulingRationale: session.schedulingRationale, legacySnapshot: session.legacySnapshot });
+      }
+      const updatedAt = this.now().toISOString(); const plan = currentPlanSchema.parse({ ...current, mesocycle: { ...current.mesocycle, weeks }, revision: current.revision + 1, updatedAt });
+      this.db.insert(schema.currentMesocycles).values({ ownerId: plan.ownerId, data: plan, revision: plan.revision, updatedAt: plan.updatedAt }).onConflictDoUpdate({ target: schema.currentMesocycles.ownerId, set: { data: plan, revision: plan.revision, updatedAt: plan.updatedAt } }).run();
+      for (const session of input.sessions) {
+        const before = previous.get(session.id);
+        this.sqlite.query("INSERT INTO planned_session_events(id,owner_id,planned_session_id,action,from_date,to_date,reason_code,reason_note,revision_before,revision_after,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)").run(crypto.randomUUID(), input.ownerId, session.id, input.mode, before?.scheduledDate ?? null, session.scheduledDate, input.reason?.reasonCode ?? null, input.reason?.note ?? null, current.revision, plan.revision, updatedAt);
+      }
+      return { sessions: input.sessions, revision: plan.revision };
+    }).immediate();
+    this.reconcilePlanMatches(input.ownerId);
+    return result;
   }
 
   saveCurrentPlannedSessions(input: { ownerId: string; clientRequestId: string; scheduledDate: string; expectedRevision: number; mode: "append" | "replace"; sessions: PlannedSession[] }) {
@@ -989,13 +1317,69 @@ export class AthriaRepository {
   linkTrainingSession(trainingSessionId: string, plannedSessionId: string, ownerId = "local-user"): TrainingSession | null {
     const row = this.db.select().from(schema.trainingSessions).where(and(eq(schema.trainingSessions.id, trainingSessionId), eq(schema.trainingSessions.ownerId, ownerId))).get();
     if (!row) return null;
-    const session = trainingSessionSchema.parse({ ...trainingSessionSchema.parse(parseJson(row.data)), plannedSessionId });
-    this.db.update(schema.trainingSessions).set({ data: session }).where(eq(schema.trainingSessions.id, trainingSessionId)).run();
+    this.insertPlanMatch(ownerId, plannedSessionId, trainingSessionId, "auto", 80, { legacyLinkCall: true });
+    return this.withDerivedMatch(trainingSessionSchema.parse(parseJson(row.data)), this.matchDetails(ownerId), this.sourceSummaries(ownerId));
+  }
+
+  setTrainingSessionPlanMatch(input: { ownerId: string; trainingSessionId: string; plannedSessionId: string | null; expectedRevision: number }): TrainingSession {
+    return this.sqlite.transaction(() => {
+      const plan = this.getCurrentPlan(input.ownerId);
+      if ((plan?.revision ?? 0) !== input.expectedRevision) throw new Error("PLANNED_SESSION_REVISION_CONFLICT");
+      const workout = this.sqlite.query("SELECT data FROM training_sessions WHERE owner_id=? AND id=?").get(input.ownerId, input.trainingSessionId) as { data: string } | null;
+      if (!workout) throw new Error("TRAINING_SESSION_NOT_FOUND");
+      this.sqlite.query("DELETE FROM plan_workout_matches WHERE owner_id=? AND training_session_id=?").run(input.ownerId, input.trainingSessionId);
+      if (input.plannedSessionId === null) {
+        this.sqlite.query("INSERT INTO workout_plan_exclusions(owner_id,training_session_id,created_at) VALUES (?,?,?) ON CONFLICT(owner_id,training_session_id) DO UPDATE SET created_at=excluded.created_at").run(input.ownerId, input.trainingSessionId, this.now().toISOString());
+      } else {
+        if (!plan) throw new Error("NO_CURRENT_PLAN");
+        const planned = plan.mesocycle.weeks.flatMap((week) => week.sessions).find((session) => session.id === input.plannedSessionId);
+        if (!planned) throw new Error("PLANNED_SESSION_NOT_FOUND");
+        if (planned.status === "skipped") throw new Error("PLANNED_SESSION_SKIPPED");
+        const actual = trainingSessionSchema.parse(parseJson(workout.data));
+        if (localDate(actual.startAt, actual.timezone ?? this.getProfile(input.ownerId).timezone) !== planned.scheduledDate) throw new Error("PLAN_WORKOUT_DATE_MISMATCH");
+        this.sqlite.query("DELETE FROM workout_plan_exclusions WHERE owner_id=? AND training_session_id=?").run(input.ownerId, input.trainingSessionId);
+        this.insertPlanMatch(input.ownerId, planned.id, input.trainingSessionId, "manual", 100, { userConfirmed: true });
+      }
+      this.reconcilePlanMatches(input.ownerId);
+      return this.listSessions(input.ownerId).find((session) => session.id === input.trainingSessionId)!;
+    })();
+  }
+
+  clearTrainingSessionPlanExclusion(ownerId: string, trainingSessionId: string): TrainingSession {
+    this.sqlite.query("DELETE FROM workout_plan_exclusions WHERE owner_id=? AND training_session_id=?").run(ownerId, trainingSessionId);
+    this.reconcilePlanMatches(ownerId);
+    const session = this.listSessions(ownerId).find((item) => item.id === trainingSessionId);
+    if (!session) throw new Error("TRAINING_SESSION_NOT_FOUND");
     return session;
   }
 
+  updateManualTrainingSession(input: { ownerId: string; trainingSessionId: string; startAt?: string; durationMinutes?: number }): TrainingSession {
+    return this.sqlite.transaction(() => {
+      const row = this.sqlite.query("SELECT id,local_date,data FROM training_session_sources WHERE owner_id=? AND training_session_id=? AND source='manual'").get(input.ownerId, input.trainingSessionId) as { id: string; local_date: string; data: string } | null;
+      if (!row) throw new Error("MANUAL_SOURCE_NOT_FOUND");
+      const current = trainingSessionSchema.parse(parseJson(row.data));
+      const startAt = input.startAt ?? current.startAt;
+      const timezone = current.timezone ?? this.getProfile(input.ownerId).timezone;
+      if (localDate(startAt, timezone) !== row.local_date) throw new Error("MANUAL_DATE_CHANGE_REQUIRES_PLAN_MOVE");
+      const durationMinutes = input.durationMinutes ?? current.durationMinutes;
+      const updated = trainingSessionSchema.parse({ ...current, startAt, endAt: new Date(Date.parse(startAt) + durationMinutes * 60_000).toISOString(), durationMinutes, timePrecision: input.startAt ? "exact" : current.timePrecision, missingFields: input.startAt ? current.missingFields.filter((field) => field !== "actual start time") : current.missingFields });
+      this.sqlite.query("UPDATE training_session_sources SET start_at=?,data=?,updated_at=? WHERE id=?").run(startAt, JSON.stringify(updated), this.now().toISOString(), row.id);
+      this.rebuildCanonicalSessions(input.ownerId); this.reconcilePlanMatches(input.ownerId);
+      return this.listSessions(input.ownerId).find((session) => session.id === input.trainingSessionId)!;
+    })();
+  }
+
+  deleteManualTrainingSession(ownerId: string, trainingSessionId: string): TrainingSession | null {
+    return this.sqlite.transaction(() => {
+      const result = this.sqlite.query("DELETE FROM training_session_sources WHERE owner_id=? AND training_session_id=? AND source='manual'").run(ownerId, trainingSessionId);
+      if (!result.changes) throw new Error("MANUAL_SOURCE_NOT_FOUND");
+      this.rebuildCanonicalSessions(ownerId); this.reconcilePlanMatches(ownerId);
+      return this.listSessions(ownerId).find((session) => session.id === trainingSessionId) ?? null;
+    })();
+  }
+
   counts(): Record<string, number> {
-    const names = ["profiles", "training_sessions", "wellness", "import_batches", "connection_sync_state", "session_templates", "current_mesocycles"];
+    const names = ["profiles", "training_sessions", "training_session_sources", "plan_workout_matches", "workout_plan_exclusions", "planned_session_events", "wellness", "import_batches", "connection_sync_state", "session_templates", "current_mesocycles"];
     return Object.fromEntries(names.map((name) => [name, Number((this.sqlite.query(`SELECT COUNT(*) AS count FROM ${name}`).get() as { count: number }).count)]));
   }
 
