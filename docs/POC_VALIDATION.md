@@ -12,7 +12,7 @@ Updated: 2026-09-02
 - Real stdio MCP initialize and tool-list smoke test passed with stdout containing JSON-RPC only.
 - Loopback health, bearer-protected API, state read, and backup smoke tests passed.
 - Loopback Host and Origin rejection return 403; a missing bearer token returns 401. Trusted Tauri CORS preflight returns 204 before bearer authentication and actual API responses carry the matching allow-origin header.
-- Backup/restore preserves SQLite and retained imports, rejects non-empty targets, and blocks ZIP path traversal.
+- Backup/restore creates and validates standalone SQLite copies, rejects invalid Athria databases, and does not modify the selected restore source.
 - Tauri starts the sidecar, passes its health gate, and removes the sidecar when the desktop window closes.
 - Native release compilation and unsigned Windows x64 MSI generation pass.
 - MSI administrative extraction succeeds and contains the desktop executable plus standalone sidecar; `Athria.exe mcp` runs successfully from the extracted installation layout.

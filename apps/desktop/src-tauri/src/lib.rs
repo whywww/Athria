@@ -48,6 +48,8 @@ fn new_runtime_token() -> String { Uuid::new_v4().simple().to_string() }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AppConfig {
+    database_path: Option<PathBuf>,
+    #[serde(default)]
     data_dir: Option<PathBuf>,
 }
 
@@ -72,7 +74,8 @@ fn platform_config_root() -> Result<PathBuf, String> { Err("Unsupported Athria d
 fn read_config_from(root: &Path) -> Option<PathBuf> {
     let content = fs::read_to_string(root.join("athria.config.json")).ok()?;
     let config: AppConfig = serde_json::from_str(&content).ok()?;
-    config.data_dir.filter(|dir| dir.is_absolute()).map(|dir| simplify_path(&dir))
+    config.database_path.filter(|path| path.is_absolute()).map(|path| simplify_path(&path))
+        .or_else(|| config.data_dir.filter(|dir| dir.is_absolute()).map(|dir| simplify_path(&dir).join("athria.sqlite3")))
 }
 
 // Windows fs::canonicalize returns verbatim paths (\\?\C:\...), which leak into
@@ -88,50 +91,19 @@ fn simplify_path(path: &Path) -> PathBuf {
     }
 }
 
-fn write_config_to(root: &Path, data_dir: &Path) -> Result<(), String> {
+fn write_config_to(root: &Path, database_path: &Path) -> Result<(), String> {
     fs::create_dir_all(root).map_err(|error| error.to_string())?;
-    let config = AppConfig { data_dir: Some(data_dir.to_path_buf()) };
+    let config = AppConfig { database_path: Some(database_path.to_path_buf()), data_dir: None };
     let content = serde_json::to_string_pretty(&config).map_err(|error| error.to_string())?;
     fs::write(root.join("athria.config.json"), content).map_err(|error| error.to_string())
 }
 
-fn read_configured_data_dir() -> Option<PathBuf> {
+fn read_configured_database_path() -> Option<PathBuf> {
     platform_config_root().ok().and_then(|root| read_config_from(&root))
 }
 
-fn current_data_dir() -> PathBuf {
-    read_configured_data_dir().unwrap_or_else(|| platform_config_root().map(|root| root.join("data")).unwrap_or_else(|_| PathBuf::from("athria-data")))
-}
-
-fn copy_directory(source: &Path, destination: &Path) -> Result<(), String> {
-    fs::create_dir_all(destination).map_err(|error| error.to_string())?;
-    for entry in fs::read_dir(source).map_err(|error| error.to_string())? {
-        let entry = entry.map_err(|error| error.to_string())?;
-        let path = entry.path();
-        if path.is_dir() { copy_directory(&path, &destination.join(entry.file_name()))?; }
-        else { fs::copy(&path, &destination.join(entry.file_name())).map_err(|error| error.to_string())?; }
-    }
-    Ok(())
-}
-
-fn move_entry(source: &Path, destination: &Path) -> Result<(), String> {
-    if fs::rename(source, destination).is_ok() { return Ok(()); }
-    if source.is_dir() {
-        copy_directory(source, destination)?;
-        fs::remove_dir_all(source).map_err(|error| error.to_string())
-    } else {
-        fs::copy(source, destination).map_err(|error| error.to_string())?;
-        fs::remove_file(source).map_err(|error| error.to_string())
-    }
-}
-
-fn move_data_contents(from: &Path, to: &Path) -> Result<(), String> {
-    fs::create_dir_all(to).map_err(|error| error.to_string())?;
-    for entry in fs::read_dir(from).map_err(|error| error.to_string())? {
-        let entry = entry.map_err(|error| error.to_string())?;
-        move_entry(&entry.path(), &to.join(entry.file_name()))?;
-    }
-    Ok(())
+fn current_database_path() -> PathBuf {
+    read_configured_database_path().unwrap_or_else(|| platform_config_root().map(|root| root.join("data").join("athria.sqlite3")).unwrap_or_else(|_| PathBuf::from("athria.sqlite3")))
 }
 
 fn extract_xunji_api_key(skill_text: &str) -> Result<String, String> {
@@ -212,7 +184,7 @@ fn run_mcp_passthrough() -> i32 {
     };
     let mut command = Command::new(sidecar);
     command.arg("mcp").stdin(Stdio::inherit()).stdout(Stdio::inherit()).stderr(Stdio::inherit());
-    command.env("ATHRIA_DATA_DIR", current_data_dir());
+    command.env("ATHRIA_DATABASE_PATH", current_database_path());
     #[cfg(windows)]
     command.creation_flags(0x08000000); // CREATE_NO_WINDOW
     match command.status() {
@@ -307,82 +279,82 @@ fn mcp_status() -> Result<Value, String> {
 }
 
 #[tauri::command]
-async fn pick_data_location(app: AppHandle) -> Option<String> {
+async fn pick_database_file(app: AppHandle) -> Option<String> {
     app.dialog()
         .file()
-        .blocking_pick_folder()
-        .and_then(|folder| folder.into_path().ok())
-        .map(|path| path.to_string_lossy().into_owned())
-}
-
-#[tauri::command]
-async fn pick_backup_file(app: AppHandle) -> Option<String> {
-    app.dialog()
-        .file()
-        .add_filter("Athria backup", &["zip"])
+        .add_filter("Athria database", &["sqlite3"])
         .blocking_pick_file()
         .and_then(|file| file.into_path().ok())
         .map(|path| path.to_string_lossy().into_owned())
 }
 
+#[tauri::command]
+async fn pick_restore_file(app: AppHandle) -> Option<String> {
+    app.dialog()
+        .file()
+        .add_filter("Athria database", &["sqlite3"])
+        .blocking_pick_file()
+        .and_then(|file| file.into_path().ok())
+        .map(|path| path.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+async fn pick_backup_destination(app: AppHandle) -> Option<String> {
+    app.dialog().file().add_filter("Athria database", &["sqlite3"]).set_file_name("athria-backup.sqlite3")
+        .blocking_save_file().and_then(|file| file.into_path().ok()).map(|path| path.to_string_lossy().into_owned())
+}
+
+fn sqlite_sidecars(path: &Path) -> [PathBuf; 2] {
+    [PathBuf::from(format!("{}-wal", path.display())), PathBuf::from(format!("{}-shm", path.display()))]
+}
+
 fn activate_restore(current: &Path, stage: &Path) -> Result<PathBuf, String> {
-    let parent = current.parent().ok_or_else(|| "Athria's data folder has no parent directory.".to_string())?;
-    if stage.parent() != Some(parent) || !stage.file_name().and_then(|name| name.to_str()).is_some_and(|name| name.starts_with(".athria-restore-")) || !stage.is_dir() {
-        return Err("The prepared restore folder is invalid.".to_string());
+    let parent = current.parent().ok_or_else(|| "Athria's database has no parent directory.".to_string())?;
+    if stage.parent() != Some(parent) || !stage.file_name().and_then(|name| name.to_str()).is_some_and(|name| name.starts_with(".athria-restore-") && name.ends_with(".sqlite3")) || !stage.is_file() {
+        return Err("The prepared restore database is invalid.".to_string());
     }
-    let rollback = parent.join(format!(".athria-rollback-{}", Uuid::new_v4()));
-    fs::rename(current, &rollback).map_err(|error| format!("Athria could not preserve the current data before restoring: {error}"))?;
+    let rollback = parent.join(format!(".athria-rollback-{}.sqlite3", Uuid::new_v4()));
+    fs::rename(current, &rollback).map_err(|error| format!("Athria could not preserve the current database during restoration: {error}"))?;
+    for sidecar in sqlite_sidecars(current) { let _ = fs::remove_file(sidecar); }
     if let Err(error) = fs::rename(stage, current) {
         let rollback_error = fs::rename(&rollback, current).err();
         return Err(match rollback_error {
-            Some(rollback_error) => format!("Restore failed ({error}) and Athria could not put the original data back ({rollback_error}). The original data remains at {}.", rollback.display()),
-            None => format!("Restore failed and the original data was restored: {error}"),
+            Some(rollback_error) => format!("Restore failed ({error}) and Athria could not put the original database back ({rollback_error}). It remains at {}.", rollback.display()),
+            None => format!("Restore failed and the original database was restored: {error}"),
         });
     }
+    for sidecar in sqlite_sidecars(stage) { let _ = fs::remove_file(sidecar); }
     Ok(rollback)
 }
 
 #[tauri::command]
 async fn restore_backup(app: AppHandle, state: State<'_, RuntimeState>, path: String) -> Result<Value, String> {
     let prepared = service_post(&state, "/api/system/restore/prepare", json!({ "path": path })).await?;
-    let stage = prepared.get("stagePath").and_then(Value::as_str).map(PathBuf::from).ok_or_else(|| "Athria service returned an invalid restore folder.".to_string())?;
-    let current = current_data_dir();
+    let stage = prepared.get("stagePath").and_then(Value::as_str).map(PathBuf::from).ok_or_else(|| "Athria service returned an invalid restore database.".to_string())?;
+    let current = current_database_path();
     if let Some(child) = state.child.lock().expect("runtime state poisoned").take() {
         let _ = child.kill();
         std::thread::sleep(Duration::from_millis(600));
     }
     let rollback = activate_restore(&current, &stage)?;
-    let _ = fs::remove_dir_all(rollback);
+    let _ = fs::remove_file(rollback);
     app.restart()
 }
 
 #[tauri::command]
-async fn change_data_location(app: AppHandle, state: State<'_, RuntimeState>, new_path: String) -> Result<Value, String> {
+async fn change_database_file(app: AppHandle, state: State<'_, RuntimeState>, new_path: String) -> Result<Value, String> {
     let selected = PathBuf::from(&new_path);
-    if !selected.is_absolute() { return Err("The selected folder must be an absolute path.".to_string()); }
-    let selected = fs::canonicalize(&selected).map_err(|error| format!("Athria could not open the selected folder: {error}"))?;
-    // Data always lives in a dedicated AthriaData folder inside the user's choice,
-    // so the selected folder itself does not need to be empty.
-    let new_dir = selected.join("AthriaData");
-    if new_dir.exists() && fs::read_dir(&new_dir).map(|mut entries| entries.next().is_some()).unwrap_or(false) {
-        return Err("An \"AthriaData\" folder inside the selected folder already contains files. Choose another folder or empty \"AthriaData\" first.".to_string());
+    if !selected.is_absolute() { return Err("The selected database path must be absolute.".to_string()); }
+    let selected = simplify_path(&fs::canonicalize(&selected).map_err(|error| format!("Athria could not open the selected database: {error}"))?);
+    if selected.extension().and_then(|value| value.to_str()).is_none_or(|value| !value.eq_ignore_ascii_case("sqlite3")) || !selected.is_file() {
+        return Err("Select an existing .sqlite3 file.".to_string());
     }
-    let current_dir = current_data_dir();
-    if current_dir.is_dir() {
-        let current_canonical = fs::canonicalize(&current_dir).map_err(|error| format!("Athria could not open the current data folder: {error}"))?;
-        if new_dir == current_canonical { return Err("That folder already contains Athria's data location.".to_string()); }
-        if new_dir.starts_with(&current_canonical) || current_canonical.starts_with(&new_dir) {
-            return Err("The new data location cannot overlap the current data folder.".to_string());
-        }
-        // Stop the local service so the SQLite files are released before moving.
-        if let Some(child) = state.child.lock().expect("runtime state poisoned").take() {
-            let _ = child.kill();
-            std::thread::sleep(Duration::from_millis(600));
-        }
-        move_data_contents(&current_canonical, &new_dir)?;
-        let _ = fs::remove_dir(&current_dir); // Only succeeds when the old folder is now empty.
+    if selected == simplify_path(&fs::canonicalize(current_database_path()).map_err(|error| format!("Athria could not open the current database: {error}"))?) {
+        return Err("That database is already active.".to_string());
     }
-    write_config_to(&platform_config_root()?, &simplify_path(&new_dir))?;
+    service_post(&state, "/api/system/backup/preview", json!({ "path": selected })).await?;
+    if let Some(child) = state.child.lock().expect("runtime state poisoned").take() { let _ = child.kill(); std::thread::sleep(Duration::from_millis(600)); }
+    write_config_to(&platform_config_root()?, &selected)?;
     app.restart()
 }
 
@@ -406,7 +378,7 @@ pub fn run() -> i32 {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .manage(RuntimeState { service, child: Mutex::new(None) })
-        .invoke_handler(tauri::generate_handler![get_service_info, test_intervals_credentials, sync_intervals, intervals_status, import_xunji_skill, sync_xunji, xunji_status, mcp_status, pick_data_location, change_data_location, pick_backup_file, restore_backup])
+        .invoke_handler(tauri::generate_handler![get_service_info, test_intervals_credentials, sync_intervals, intervals_status, import_xunji_skill, sync_xunji, xunji_status, mcp_status, pick_database_file, change_database_file, pick_backup_destination, pick_restore_file, restore_backup])
         .setup(move |app| {
             #[cfg(feature = "dev-service")]
             let command = {
@@ -423,7 +395,7 @@ pub fn run() -> i32 {
                 .env("ATHRIA_SESSION_TOKEN", token)
                 .env("ATHRIA_MCP_TOKEN", mcp_token)
                 .env("ATHRIA_PARENT_PID", std::process::id().to_string())
-                .env("ATHRIA_DATA_DIR", current_data_dir());
+                .env("ATHRIA_DATABASE_PATH", current_database_path());
             let (mut events, child) = command.spawn()?;
             *app.state::<RuntimeState>().child.lock().expect("runtime state poisoned") = Some(child);
             let address = format!("127.0.0.1:{port}").parse().map_err(|error| std::io::Error::other(format!("Invalid service address: {error}")))?;
@@ -462,7 +434,7 @@ pub fn run() -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{copy_directory, extract_xunji_api_key, mcp_status, move_data_contents, new_runtime_token, read_config_from, simplify_path, write_config_to};
+    use super::{activate_restore, extract_xunji_api_key, mcp_status, new_runtime_token, read_config_from, simplify_path, write_config_to};
     use uuid::Uuid;
 
     fn temp_root(prefix: &str) -> std::path::PathBuf {
@@ -510,12 +482,21 @@ mod tests {
     }
 
     #[test]
-    fn round_trips_the_configured_data_dir() {
+    fn round_trips_the_configured_database_path() {
         let root = temp_root("athria-config");
         assert!(read_config_from(&root).is_none());
-        let target = root.join("custom-data");
+        let target = root.join("custom.sqlite3");
         write_config_to(&root, &target).unwrap();
         assert_eq!(read_config_from(&root), Some(target));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn reads_a_legacy_data_dir_as_a_database_path() {
+        let root = temp_root("athria-config-legacy");
+        let data = root.join("legacy-data");
+        std::fs::write(root.join("athria.config.json"), serde_json::json!({ "dataDir": data }).to_string()).unwrap();
+        assert_eq!(read_config_from(&root), Some(data.join("athria.sqlite3")));
         std::fs::remove_dir_all(&root).unwrap();
     }
 
@@ -535,53 +516,27 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn normalizes_verbatim_paths_when_reading_the_config() {
         let root = temp_root("athria-config-verbatim");
-        let target = root.join("custom-data");
+        let target = root.join("custom.sqlite3");
         write_config_to(&root, std::path::Path::new(&format!(r"\\?\{}", target.display()))).unwrap();
         assert_eq!(read_config_from(&root), Some(target));
         std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
-    fn moves_files_and_directories_into_the_target_folder() {
-        let root = temp_root("athria-move");
-        let from = root.join("from");
-        let to = root.join("to");
-        std::fs::create_dir_all(from.join("imports")).unwrap();
-        std::fs::write(from.join("athria.sqlite3"), b"database").unwrap();
-        std::fs::write(from.join("imports").join("hevy.csv"), b"csv").unwrap();
-        move_data_contents(&from, &to).unwrap();
-        assert_eq!(std::fs::read(to.join("athria.sqlite3")).unwrap(), b"database");
-        assert_eq!(std::fs::read(to.join("imports").join("hevy.csv")).unwrap(), b"csv");
-        assert!(std::fs::read_dir(&from).unwrap().next().is_none());
-        std::fs::remove_dir_all(&root).unwrap();
-    }
-
-    #[test]
-    fn copies_nested_directory_trees_for_the_fallback_path() {
-        let root = temp_root("athria-copy");
-        let from = root.join("from");
-        let to = root.join("to");
-        std::fs::create_dir_all(from.join("nested").join("deeper")).unwrap();
-        std::fs::write(from.join("nested").join("deeper").join("log.txt"), b"log").unwrap();
-        copy_directory(&from, &to).unwrap();
-        assert_eq!(std::fs::read(to.join("nested").join("deeper").join("log.txt")).unwrap(), b"log");
-        std::fs::remove_dir_all(&root).unwrap();
-    }
-
-    #[test]
-    fn activates_a_prepared_restore_and_preserves_the_old_directory() {
+    fn activates_a_prepared_restore_and_preserves_the_old_database() {
         let root = temp_root("athria-restore");
-        let current = root.join("data");
-        let stage = root.join(".athria-restore-test");
-        std::fs::create_dir_all(&current).unwrap();
-        std::fs::create_dir_all(&stage).unwrap();
-        std::fs::write(current.join("athria.sqlite3"), b"old").unwrap();
-        std::fs::write(stage.join("athria.sqlite3"), b"restored").unwrap();
+        let current = root.join("current.sqlite3");
+        let stage = root.join(".athria-restore-test.sqlite3");
+        std::fs::write(&current, b"old").unwrap();
+        std::fs::write(&stage, b"restored").unwrap();
+        std::fs::write(format!("{}-wal", current.display()), b"wal").unwrap();
         let rollback = activate_restore(&current, &stage).unwrap();
-        assert_eq!(std::fs::read(current.join("athria.sqlite3")).unwrap(), b"restored");
-        assert_eq!(std::fs::read(rollback.join("athria.sqlite3")).unwrap(), b"old");
+        assert_eq!(std::fs::read(&current).unwrap(), b"restored");
+        assert_eq!(std::fs::read(&rollback).unwrap(), b"old");
+        assert!(!std::path::Path::new(&format!("{}-wal", current.display())).exists());
         std::fs::remove_dir_all(&root).unwrap();
     }
 }

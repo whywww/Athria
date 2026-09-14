@@ -1,22 +1,8 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { CurrentPlan } from "../view-models";
 import { addDays, formatShortDate, formatWeekRange } from "./view";
 import "./target.css";
 
-/**
- * Mesocycle Target card (UNIFIED_MULTISPORT_MESOCYCLE_DESIGN §5).
- *
- * The first layer of the Plan page: one screen answers *what* this plan is,
- * *where* the athlete currently sits, and *what the cycle is optimising for*.
- * The Primary Goal always stays visible; the supporting detail (Supporting /
- * Maintenance / Coordination) defaults to a collapsed "Plan details"
- * disclosure so mixed-training plans stay legible.
- *
- * All week/date maths is delegated to the pure helpers in `./view` — this
- * component never re-derives week numbers itself.
- */
-
-/** Lifecycle state of the plan this card describes (§5.5). */
 export type MesocycleTargetStatus = "upcoming" | "current" | "updated" | "review" | "completed";
 
 export interface MesocycleTargetProps {
@@ -24,7 +10,6 @@ export interface MesocycleTargetProps {
   today: string;
   currentWeek: number;
   currentPhaseNames: string[];
-  /** Defaults to `"current"`. P0 fully renders `current`; others show a badge only. */
   status?: MesocycleTargetStatus;
 }
 
@@ -36,125 +21,98 @@ const statusLabels: Record<MesocycleTargetStatus, string> = {
   completed: "Plan completed",
 };
 
-export function MesocycleTarget({ plan, today, currentWeek, currentPhaseNames, status = "current" }: MesocycleTargetProps) {
-  // Details start collapsed whenever the card is mounted (§5.4).
-  const [detailsOpen, setDetailsOpen] = useState(false);
-  const toggleDetails = () => setDetailsOpen((open) => !open);
+function LineIcon({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{children}</svg>;
+}
 
+function TargetMark() {
+  return <span className="mt-mark" aria-hidden="true"><span /></span>;
+}
+
+function CalendarIcon() {
+  return <LineIcon><rect x="4" y="5.5" width="16" height="14" rx="2"/><path d="M8 3.5v4M16 3.5v4M4 9.5h16"/><path d="M8 13h2M14 13h2M8 16h2"/></LineIcon>;
+}
+
+function Chevron({ open = false }: { open?: boolean }) {
+  return <LineIcon className={`mt-chevron${open ? " is-open" : ""}`}><path d="m7 9.5 5 5 5-5"/></LineIcon>;
+}
+
+function DetailIcon({ kind }: { kind: "details" | "supporting" | "maintenance" | "coordination" }) {
+  const icon = kind === "details"
+    ? <><rect x="5" y="3.5" width="14" height="17" rx="2"/><path d="M9 8h1M13 8h2M9 12h1M13 12h2M9 16h1M13 16h2"/></>
+    : kind === "supporting"
+      ? <path d="M5 19h3v-6H5zM10.5 19h3V8h-3zM16 19h3V4h-3z"/>
+      : kind === "maintenance"
+        ? <><path d="M5 12a7 7 0 0 1 12-4.8L19 9"/><path d="M19 4v5h-5M19 12a7 7 0 0 1-12 4.8L5 15"/><path d="M5 20v-5h5"/></>
+        : <><path d="M9 17.5h6M10 21h4"/><path d="M8.2 14.5A6 6 0 1 1 15.8 14.5c-1.1.8-1.5 1.6-1.5 3h-4.6c0-1.4-.4-2.2-1.5-3Z"/><path d="M12 3v2M5.6 5.6 7 7M18.4 5.6 17 7"/></>;
+  return <span className="mt-detail-icon"><LineIcon>{icon}</LineIcon></span>;
+}
+
+function DomainIcon({ label }: { label: string }) {
+  const domain = label.split("·", 1)[0]?.trim().toLowerCase() ?? "";
+  const icon = domain.includes("strength")
+    ? <><path d="M6.5 9v6M3.5 10.5v3M17.5 9v6M20.5 10.5v3M6.5 12h11"/><path d="M9 8v8M15 8v8"/></>
+    : domain.includes("endurance")
+      ? <><circle cx="14" cy="5" r="1.8"/><path d="m12 9 3 2 2 4M12 9l-3 4-4 1M10 13l-1 6M15 12l-4 3 4 4"/></>
+      : domain.includes("sport")
+        ? <><circle cx="12" cy="12" r="7.5"/><path d="M12 4.5v15M4.5 12h15"/></>
+        : domain.includes("mind")
+          ? <><circle cx="12" cy="6" r="1.8"/><path d="M12 8v4M12 10l-4 3M12 10l4 3M12 12l-3 5M12 12l3 5"/></>
+          : <><path d="M5 18c1-8 6-12 14-12-1 8-5 13-12 12"/><path d="M7 18c3-4 6-7 10-9"/></>;
+  const tone = domain.includes("strength") ? "strength" : domain.includes("endurance") ? "endurance" : domain.includes("sport") ? "sport" : domain.includes("mind") ? "mind" : "recovery";
+  return <span className={`mt-domain-icon mt-domain-${tone}`}><LineIcon>{icon}</LineIcon></span>;
+}
+
+function DetailSection({ kind, title, children }: { kind: "supporting" | "maintenance" | "coordination"; title: string; children: ReactNode }) {
+  const [open, setOpen] = useState(true);
+  const panelId = `mt-${kind}-panel`;
+  return <section className={`mt-detail-section mt-detail-${kind}`}>
+    <button type="button" className="mt-detail-toggle" aria-expanded={open} aria-controls={panelId} onClick={() => setOpen((value) => !value)}>
+      <DetailIcon kind={kind}/><span>{title}</span><Chevron open={open}/>
+    </button>
+    {open && <div className="mt-detail-body" id={panelId}>{children}</div>}
+  </section>;
+}
+
+export function MesocycleTarget({ plan, today, currentWeek, currentPhaseNames, status = "current" }: MesocycleTargetProps) {
+  const [detailsOpen, setDetailsOpen] = useState(true);
   const target = plan.target;
   const durationWeeks = Math.max(1, plan.mesocycle.durationWeeks);
   const endDate = addDays(plan.effectiveStartDate, durationWeeks * 7 - 1);
   const range = formatWeekRange(plan.effectiveStartDate, endDate);
-
   const primary = target?.primaryGoal;
   const supporting = target?.supporting ?? [];
   const maintenance = target?.maintenance ?? [];
   const coordination = target?.coordinationStrategy;
-
-  // Legacy plans (no `target`) degrade to title + summary and render no empty
-  // Supporting / Maintenance / Coordination regions (§5.4).
   const hasDetails = supporting.length > 0 || maintenance.length > 0 || Boolean(coordination);
 
-  return (
-    <section className="mesocycle-card mt-card">
-      <header className="proposal-heading mt-heading">
-        <div>
-          <span className="proposal-mark mt-mark" aria-hidden="true">◎</span>
-          <div className="mt-heading-text">
-            <h2>{plan.title}</h2>
-            <p className="mt-range">{range}</p>
-          </div>
-        </div>
-        <div className="proposal-facts mt-facts">
-          <span className={`mt-status mt-status-${status}`}>
-            <i aria-hidden="true" />
-            {statusLabels[status]}
-          </span>
-          <span className="mt-fact">▣　{durationWeeks} weeks</span>
-        </div>
-      </header>
+  return <section className="mesocycle-card mt-card">
+    <span className="sr-only">{statusLabels[status]}</span>
+    <header className="mt-heading">
+      <div className="mt-title-group"><TargetMark/><div className="mt-heading-text"><h2>{plan.title}</h2><p>{range}</p></div></div>
+      <span className="mt-duration"><CalendarIcon/><strong>{durationWeeks} weeks</strong></span>
+    </header>
 
-      <div className="mt-progress">
-        <span className="mt-progress-week">
-          Week {currentWeek} <em>of</em> {durationWeeks}
-        </span>
-        {currentPhaseNames.map((name) => <span className="mt-progress-phase" key={name}>{name}</span>)}
-        <span className="mt-progress-asof">As of {formatShortDate(today)}</span>
-      </div>
+    <div className="mt-progress">
+      <span className="mt-progress-week"><strong>Week {currentWeek}</strong> of <strong>{durationWeeks}</strong></span>
+      <div className="mt-progress-phases">{currentPhaseNames.map((name) => <span className="mt-progress-phase" key={name}><DomainIcon label={name}/>{name}</span>)}</div>
+      <span className="mt-progress-asof">As of {formatShortDate(today)}</span>
+    </div>
 
-      <section className="proposal-section mt-primary-section">
-        <h3 className="mt-eyebrow mt-eyebrow-primary">Primary Goal</h3>
-        {primary ? (
-          <div className="mt-primary">
-            <p className="mt-primary-label">{primary.label}</p>
-            {(primary.baseline || primary.testDate) && (
-              <div className="mt-primary-meta">
-                {primary.baseline && <span className="mt-baseline">当前基线：{primary.baseline}</span>}
-                {primary.testDate && <span className="mt-testdate">目标测试 {primary.testDate}</span>}
-              </div>
-            )}
-          </div>
-        ) : (
-          <p className="mt-fallback">{plan.summary || "本周期尚未提供结构化目标说明。"}</p>
-        )}
-      </section>
-
-      {hasDetails && (
-        <section className="proposal-section mt-details-section">
-          <button
-            type="button"
-            className="mt-details-toggle"
-            aria-expanded={detailsOpen}
-            aria-controls="mt-details-panel"
-            onClick={toggleDetails}
-          >
-            <span className="mt-eyebrow">Plan details</span>
-            <span className="mt-toggle-icon" aria-hidden="true">{detailsOpen ? "−" : "+"}</span>
-          </button>
-
-          {detailsOpen && (
-            <div className="mt-details" id="mt-details-panel">
-              {(supporting.length > 0 || maintenance.length > 0) && (
-                <div className="mt-columns">
-                  {supporting.length > 0 && (
-                    <div className="mt-column">
-                      <h4 className="mt-eyebrow">Supporting</h4>
-                      <ul className="mt-list">
-                        {supporting.map((item, index) => (
-                          <li key={`supporting-${index}`}>
-                            <strong>{item.label}</strong>
-                            {item.detail && <span>{item.detail}</span>}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  {maintenance.length > 0 && (
-                    <div className="mt-column">
-                      <h4 className="mt-eyebrow">Maintenance</h4>
-                      <ul className="mt-list mt-list-maintenance">
-                        {maintenance.map((item, index) => (
-                          <li key={`maintenance-${index}`}>
-                            <strong>{item.label}</strong>
-                            {item.detail && <span>{item.detail}</span>}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {coordination && (
-                <div className="mt-block">
-                  <h4 className="mt-eyebrow">Coordination Strategy</h4>
-                  <p className="mt-coordination">{coordination}</p>
-                </div>
-              )}
-            </div>
-          )}
-        </section>
-      )}
+    <section className="mt-primary-section">
+      <h3>Primary Goal</h3>
+      {primary ? <div className="mt-primary"><p>{primary.label}</p>{(primary.baseline || primary.testDate) && <div className="mt-primary-meta">{primary.baseline && <span>当前基线：{primary.baseline}</span>}{primary.testDate && <span>目标测试 {primary.testDate}</span>}</div>}</div> : <p className="mt-fallback">{plan.summary || "本周期尚未提供结构化目标说明。"}</p>}
     </section>
-  );
+
+    {hasDetails && <section className="mt-details-shell">
+      <button type="button" className="mt-details-toggle" aria-expanded={detailsOpen} aria-controls="mt-details-panel" onClick={() => setDetailsOpen((value) => !value)}>
+        <DetailIcon kind="details"/><span>Plan details</span><Chevron open={detailsOpen}/>
+      </button>
+      {detailsOpen && <div className="mt-details-panel" id="mt-details-panel">
+        {supporting.length > 0 && <DetailSection kind="supporting" title="Supporting"><ul className="mt-list">{supporting.map((item, index) => <li key={`supporting-${index}`}><span>{item.label}</span>{item.detail && <small>{item.detail}</small>}</li>)}</ul></DetailSection>}
+        {maintenance.length > 0 && <DetailSection kind="maintenance" title="Maintenance"><ul className="mt-list">{maintenance.map((item, index) => <li key={`maintenance-${index}`}><span>{item.label}</span>{item.detail && <small>{item.detail}</small>}</li>)}</ul></DetailSection>}
+        {coordination && <DetailSection kind="coordination" title="Coordination strategy"><p className="mt-coordination">{coordination}</p></DetailSection>}
+      </div>}
+    </section>}
+  </section>;
 }

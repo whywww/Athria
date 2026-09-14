@@ -4,7 +4,7 @@ import { api } from "../api";
 import { ErrorBanner } from "../components";
 import { Prescription } from "./Prescription";
 import { addDays } from "./view";
-import { domainGlyph, formatDayLabel, phaseLabelsForSession, sessionStatusLabel, sessionTone } from "./calendar-utils";
+import { formatDayLabel, phaseLabelsForSession, sessionStatusLabel, sessionTone } from "./calendar-utils";
 import "./calendar.css";
 
 /**
@@ -181,23 +181,11 @@ function DrawerPanel({ session, templates, plan, today, onClose, onMutated, retu
 
           {session.legacySnapshot && <section className="sd-section sd-legacy"><h3 className="sd-eyebrow">Needs structured review</h3><p>This legacy prescription is preserved as written and can be converted by a connected Agent.</p></section>}
 
-          <section className="sd-section">
-            <h3 className="sd-eyebrow">Prescription</h3>
+          <section className="sd-section sd-prescription-section">
             {session.components.length > 0 ? (
               <div className="sd-prescriptions">
                 {session.components.map((component) => (
-                  <div className="sd-prescription" key={component.id}>
-                    <div className="sd-prescription-head">
-                      <span className="sd-prescription-name">{component.name}</span>
-                      {component.domain.value !== null && (
-                        <span className="wc-domain" title={friendlyLabel(component.domain.value)}>
-                          <span aria-hidden="true">{domainGlyph(component.domain.value)}</span>
-                          <span className="wc-domain-label">{friendlyLabel(component.domain.value)}</span>
-                        </span>
-                      )}
-                    </div>
-                    <Prescription component={component} variant="detailed" fallbackNotes={session.intent} />
-                  </div>
+                  <Prescription component={component} variant="detailed" fallbackNotes={session.intent} key={component.id} />
                 ))}
               </div>
             ) : (

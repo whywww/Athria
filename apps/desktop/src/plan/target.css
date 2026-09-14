@@ -1,116 +1,95 @@
-/*
- * target.css — Mesocycle Target card (UNIFIED_MULTISPORT_MESOCYCLE_DESIGN §5)
- *              + Phase Timeline (§6).
- *
- * These are scoped additions layered on top of the global design tokens and
- * card chrome in ../styles.css. The Target card already reuses
- * .mesocycle-card / .proposal-heading / .proposal-facts / .proposal-section,
- * so this file only supplies the mt-* / pt-* specifics and never restyles the
- * globals. Colours follow the existing palette (--ink, --line, --accent, the
- * navy section headings and the tone-* phase palette) to stay visually
- * consistent with the rest of the Plan page.
- */
+/* Plan summary card: measurements and type hierarchy follow the supplied
+   1448px reference while remaining fluid inside the desktop shell. */
+.plan-templates-button {
+  min-height: 54px; display: inline-flex; align-items: center; gap: 24px;
+  padding: 0 24px 0 28px; border-color: #d8dce2 !important; border-radius: 999px;
+  color: #111827 !important; background: rgba(255,255,255,.82) !important;
+  box-shadow: 0 3px 10px rgba(17,24,39,.025); font-size: 14px; font-weight: 750;
+}
+.plan-templates-button svg { width: 20px; height: 20px; }
+.plan-templates-button:hover { border-color: #c4cad3 !important; background: #fff !important; }
 
-/* =========================================================================
-   Mesocycle Target (§5)
-   ========================================================================= */
+.mt-card {
+  margin-bottom: 18px; padding: 0 36px 18px; border-color: #e5e7eb;
+  border-radius: 22px; background: rgba(255,255,255,.96);
+  box-shadow: 0 12px 34px rgba(55,65,81,.045);
+}
+.mt-heading {
+  min-height: 96px; display: flex; align-items: center; justify-content: space-between;
+  gap: 28px; padding: 16px 0 14px;
+}
+.mt-title-group { min-width: 0; display: flex; align-items: center; gap: 28px; }
+.mt-heading-text { min-width: 0; display: grid; gap: 5px; }
+.mt-heading-text h2 { margin: 0; color: #111827; font-size: 22px; font-weight: 750; line-height: 1.2; letter-spacing: -.035em; overflow-wrap: anywhere; }
+.mt-heading-text p { margin: 0; color: #69758b; font-size: 13px; line-height: 1.35; }
+.mt-mark {
+  width: 64px; height: 64px; flex: 0 0 auto; display: grid; place-items: center;
+  border: 4px solid #ffd3cb; border-radius: 50%;
+}
+.mt-mark > span { width: 36px; height: 36px; border: 4px solid #ff6748; border-radius: 50%; }
+.mt-duration {
+  min-height: 46px; display: inline-flex; align-items: center; gap: 12px; flex: 0 0 auto;
+  padding: 0 22px; border-radius: 17px; color: #182a48; background: #f3f5f9;
+  font-size: 12px; white-space: nowrap;
+}
+.mt-duration svg { width: 21px; height: 21px; }
 
-/* Heading: title + date range stacked beside the ◎ mark. */
-.mt-heading-text { min-width: 0; display: grid; gap: 3px; }
-.mt-heading-text h2 { margin: 0; }
-.mt-range { margin: 0; color: #7b8085; font-size: 12px; letter-spacing: .01em; }
-
-/* Status badge (§5.5). Distinguishable without colour: a dot + text label,
-   plus a distinct tint per state so it never relies on hue alone (§16.4). */
-.mt-facts { align-items: center; }
-.mt-facts .mt-status { display: inline-flex; align-items: center; gap: 7px; }
-.mt-status i { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
-.mt-facts .mt-status-current { color: #2c6842; background: #e8f3e9; border-color: #d3e6d6; }
-.mt-facts .mt-status-upcoming { color: #245ba7; background: #eaf1fb; border-color: #d4e2f4; }
-.mt-facts .mt-status-updated { color: #245ba7; background: #eaf1fb; border-color: #d4e2f4; }
-.mt-facts .mt-status-review { color: #7a5c16; background: #fff2cf; border-color: #efe0b4; }
-.mt-facts .mt-status-completed { color: #555b60; background: #f0eeea; border-color: #e2ddd5; }
-.mt-status-current i { animation: mt-pulse 2.4s ease-in-out infinite; }
-@keyframes mt-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
-@media (prefers-reduced-motion: reduce) { .mt-status-current i { animation: none; } }
-
-/* Progress strip: Week X of Y · phase · as-of date. */
 .mt-progress {
-  display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 12px;
-  padding: 12px 24px; border-top: 1px solid #ebe8e3; background: #fbfaf8;
+  min-height: 68px; display: flex; align-items: center; gap: 12px 20px;
+  padding: 10px 0; border-top: 1px solid #dfe3e8; border-bottom: 1px solid #dfe3e8;
 }
-.mt-progress-week { color: var(--ink); font-size: 13px; font-weight: 750; letter-spacing: -.01em; }
-.mt-progress-week em { color: #9a9da1; font-style: normal; font-weight: 500; }
+.mt-progress-week { flex: 0 0 auto; color: #222b3a; font-size: 15px; line-height: 1.3; white-space: nowrap; }
+.mt-progress-week strong { color: #111827; font-weight: 750; }
+.mt-progress-phases { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .mt-progress-phase {
-  display: inline-flex; align-items: center; padding: 3px 11px;
-  border-radius: 999px; background: #eef1f5; color: #33465e; font-size: 11px; font-weight: 700;
+  min-height: 38px; display: inline-flex; align-items: center; gap: 9px;
+  padding: 0 19px; border-radius: 999px; color: #1853a3; background: #edf4fd;
+  font-size: 12px; font-weight: 500; line-height: 1.2; white-space: nowrap;
 }
-.mt-progress-asof { margin-left: auto; color: #8a8d90; font-size: 11px; white-space: nowrap; }
+.mt-progress-phase:has(.mt-domain-endurance) { color: #087984; background: #edf8f7; }
+.mt-progress-phase:has(.mt-domain-sport) { color: #6952ae; background: #f2effc; }
+.mt-progress-phase:has(.mt-domain-mind) { color: #6b4ab1; background: #f3effc; }
+.mt-progress-phase:has(.mt-domain-recovery) { color: #31764b; background: #edf7f0; }
+.mt-domain-icon { width: 21px; height: 21px; display: grid; place-items: center; }
+.mt-domain-icon svg { width: 21px; height: 21px; }
+.mt-progress-asof { margin-left: auto; color: #68758a; font-size: 12px; white-space: nowrap; }
 
-/* Eyebrow labels (PRIMARY GOAL / SUPPORTING / … / PLAN DETAILS). Scoped to
-   .mt-card so it outranks `.proposal-section h3`. */
-.mt-card .mt-eyebrow {
-  margin: 0 0 10px; color: #8a9099; font-size: 10.5px; font-weight: 800;
-  letter-spacing: .12em; text-transform: uppercase; line-height: 1.2;
-}
-.mt-card .mt-eyebrow-primary { color: var(--accent); }
+.mt-primary-section { padding: 16px 0 18px; border-bottom: 1px solid #dfe3e8; }
+.mt-primary-section h3 { margin: 0 0 9px; color: #8994a8; font-size: 10px; font-weight: 800; line-height: 1.2; letter-spacing: .22em; text-transform: uppercase; }
+.mt-primary { display: grid; gap: 10px; }
+.mt-primary p, .mt-fallback { margin: 0; color: #152039; font-size: 15px; font-weight: 400; line-height: 1.4; letter-spacing: -.015em; }
+.mt-primary-meta { display: flex; flex-wrap: wrap; gap: 6px 20px; color: #6d7788; font-size: 11px; }
 
-/* Primary Goal — compact content matching the eyebrow label size (§5.3). */
-.mt-primary-section { padding-block: 20px; }
-.mt-primary { display: grid; gap: 9px; }
-.mt-primary-label {
-  margin: 0; color: var(--ink); font-size: 10.5px; font-weight: 400;
-  line-height: 1.18; letter-spacing: -.025em; overflow-wrap: anywhere;
+.mt-details-shell { margin: 10px -10px 0; padding: 0 10px 8px; border-radius: 18px; background: rgba(247,248,250,.9); }
+.mt-details-toggle, .mt-detail-toggle {
+  width: 100%; min-height: 56px; display: grid; grid-template-columns: auto minmax(0,1fr) auto;
+  align-items: center; gap: 16px; padding: 6px 2px; border: 0; border-radius: 12px;
+  color: #111827; background: transparent; text-align: left;
 }
-.mt-primary-meta { display: flex; flex-wrap: wrap; gap: 6px 20px; }
-.mt-baseline, .mt-testdate {
-  display: inline-flex; align-items: center; gap: 7px;
-  color: #6b7278; font-size: 12.5px; line-height: 1.4;
+.mt-details-toggle > span:nth-child(2), .mt-detail-toggle > span:nth-child(2) { font-size: 16px; font-weight: 750; letter-spacing: -.025em; }
+.mt-detail-icon {
+  width: 44px; height: 44px; display: grid; place-items: center; flex: 0 0 auto;
+  border-radius: 13px; color: #1f3151; background: linear-gradient(145deg, #f4f6f9, #eef1f5);
 }
-.mt-baseline::before, .mt-testdate::before {
-  content: ""; flex: 0 0 auto; width: 5px; height: 5px; border-radius: 50%; background: #c9c3ba;
-}
-.mt-testdate::before { background: var(--accent); opacity: .7; }
-.mt-fallback { margin: 0; color: #5c636a; font-size: 14px; line-height: 1.55; }
-
-/* Plan details disclosure (§5.4). Reset the global pill-button chrome so it
-   reads as a section header with a +/- affordance. */
-.mt-details-toggle {
-  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 0; border: 0; border-radius: 0; background: transparent; color: inherit;
-  font-weight: 400; text-align: left; cursor: pointer;
-}
-.mt-details-toggle .mt-eyebrow { margin: 0; }
-.mt-details-toggle:hover .mt-eyebrow { color: #5c636a; }
-.mt-toggle-icon {
-  flex: 0 0 auto; width: 24px; height: 24px; display: grid; place-items: center;
-  border: 1px solid var(--line); border-radius: 50%; background: #fff;
-  color: #536171; font-size: 16px; line-height: 1; transition: border-color .15s, color .15s;
-}
-.mt-details-toggle:hover .mt-toggle-icon { border-color: #cfc9c0; color: var(--ink); }
-.mt-details-toggle:focus-visible { outline: 2px solid #567fb8; outline-offset: 4px; border-radius: 6px; }
-.mt-details { display: grid; gap: 18px; margin-top: 16px; }
-
-/* Supporting / Maintenance two-column layout. */
-.mt-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 26px; }
-.mt-column { min-width: 0; }
-.mt-column .mt-eyebrow { margin-bottom: 11px; }
-.mt-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
-.mt-list li { position: relative; display: grid; gap: 2px; padding-left: 16px; }
-.mt-list li::before {
-  content: ""; position: absolute; left: 0; top: 7px; width: 6px; height: 6px;
-  border-radius: 50%; background: #c9c3ba;
-}
-.mt-list-maintenance li::before { background: #dcc79a; }
-.mt-list strong { color: #2b3238; font-size: 13px; font-weight: 700; }
-.mt-list span { color: #777c81; font-size: 12px; line-height: 1.45; }
-
-/* Coordination Strategy. */
-.mt-block { display: grid; gap: 10px; }
+.mt-detail-icon svg { width: 22px; height: 22px; }
+.mt-chevron { width: 22px; height: 22px; color: #52627b; transition: transform .16s ease; }
+.mt-chevron.is-open { transform: rotate(180deg); }
+.mt-details-toggle:hover, .mt-detail-toggle:hover { background: rgba(255,255,255,.58); }
+.mt-details-toggle:focus-visible, .mt-detail-toggle:focus-visible { outline: 2px solid #567fb8; outline-offset: 2px; }
+.mt-details-panel { padding: 0 16px 2px; border-radius: 16px; background: rgba(255,255,255,.77); box-shadow: 0 8px 22px rgba(71,85,105,.035); }
+.mt-detail-section + .mt-detail-section { border-top: 1px solid #dfe3e8; }
+.mt-detail-toggle { min-height: 60px; gap: 20px; padding: 8px 0; }
+.mt-detail-toggle > span:nth-child(2) { font-size: 15px; }
+.mt-detail-body { margin: -2px 0 12px; padding: 0 0 0 64px; }
+.mt-list { display: grid; gap: 3px; margin: 0; padding: 0 0 0 20px; color: #68758a; font-size: 13px; line-height: 1.32; }
+.mt-list li { padding-left: 1px; }
+.mt-list li::marker { color: #8d98aa; font-size: .8em; }
+.mt-list li > span { display: block; }
+.mt-list li > small { display: block; margin-top: 2px; color: #8992a0; font-size: 11px; }
 .mt-coordination {
-  margin: 0; padding: 13px 16px; border-left: 3px solid var(--accent);
-  border-radius: 0 9px 9px 0; background: #fbf7f5;
-  color: #5c534b; font-size: 12.5px; line-height: 1.6;
+  margin: 0; padding: 14px 20px; border-left: 5px solid #ff6245;
+  border-radius: 7px 14px 14px 7px; color: #5e6c81;
+  background: linear-gradient(100deg, #fff7f5, #fff9f8); font-size: 13px; line-height: 1.5;
 }
 
 /* =========================================================================
@@ -162,10 +141,19 @@
    Narrow-window responsiveness (§5.4, §6, §17)
    ========================================================================= */
 @media (max-width: 1250px) {
-  .mt-columns { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .mt-card { padding-inline: 28px; }
+  .mt-progress { gap: 12px 16px; }
+  .mt-progress-phase { padding-inline: 16px; }
 }
 @media (max-width: 720px) {
-  .mt-progress { gap: 6px 10px; }
+  .mt-card { padding-inline: 20px; }
+  .mt-heading { align-items: flex-start; flex-direction: column; }
+  .mt-title-group { gap: 18px; }
+  .mt-mark { width: 58px; height: 58px; border-width: 4px; }
+  .mt-mark > span { width: 32px; height: 32px; border-width: 4px; }
+  .mt-progress { align-items: flex-start; flex-direction: column; gap: 12px; }
   .mt-progress-asof { margin-left: 0; width: 100%; }
+  .mt-detail-body { padding-left: 0; }
+  .mt-details-panel { padding-inline: 12px; }
   .pdb-track { grid-template-columns: minmax(0, 1fr); }
 }

@@ -67,7 +67,7 @@ See [Known limitations](docs/KNOWN_LIMITATIONS.md) for the current technical and
 - **Safer writes:** schema checks, blocker rules, snapshot freshness, ownership, and revisions protect persisted state.
 - **Honest uncertainty:** validation reports missing facts and unknown outcomes instead of inventing inputs.
 - **Inspectable workflows:** the dashboard and MCP server use the same application-service boundary.
-- **Portable data:** create local backups containing the database and retained imports; credentials are excluded.
+- **Portable data:** open or back up a standalone SQLite database; credentials remain in the operating-system credential manager.
 
 ## Quick start
 
@@ -194,7 +194,7 @@ The default development database is stored at:
 - Windows: `%LOCALAPPDATA%\Athria\data\athria.sqlite3`
 - macOS: `~/Library/Application Support/Athria/data/athria.sqlite3`
 
-Set `ATHRIA_DATA_DIR` or `ATHRIA_DATABASE_PATH` when an isolated development database is needed. Do not point tests or experiments at personal training data.
+Set `ATHRIA_DATABASE_PATH` when an isolated development database is needed. Do not point tests or experiments at personal training data.
 
 ## Project structure
 
@@ -221,7 +221,7 @@ The dashboard and MCP server call the same application-service boundary. Busines
 - The service listens only on `127.0.0.1`, validates the Host header, and restricts browser origins.
 - Streamable HTTP requires a bearer token; the dashboard-managed MCP token is stored in the operating-system credential manager and is not exposed through MCP tools.
 - MCP does not expose arbitrary SQL, arbitrary file reads, secrets, database deletion, or validation bypasses.
-- Backups contain the SQLite database and retained imports but exclude credentials.
+- Backups are self-contained `.sqlite3` copies and exclude credentials.
 - Pre-v0.1 databases are not migrated into this MVP.
 
 Read [Backup and restore](docs/BACKUP.md) before moving or restoring data.
@@ -435,7 +435,7 @@ bun run perf:smoke
 - Windows：`%LOCALAPPDATA%\Athria\data\athria.sqlite3`
 - macOS：`~/Library/Application Support/Athria/data/athria.sqlite3`
 
-需要隔离的开发数据库时，请设置 `ATHRIA_DATA_DIR` 或 `ATHRIA_DATABASE_PATH`。请勿让测试或实验使用个人训练数据。
+需要隔离的开发数据库时，请设置 `ATHRIA_DATABASE_PATH`。请勿让测试或实验使用个人训练数据。
 
 ## 项目结构
 

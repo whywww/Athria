@@ -252,10 +252,9 @@ export function connectionStatusPresentation(status?: "success" | "partial" | "f
   if (status === "failed") return { tone: "failed", label: "Sync failed" };
   return { tone: "connected", label: "Connected" };
 }
-export interface DoctorResult { dataDir: string }
+export interface DoctorResult { databasePath: string }
 export interface BackupPreview {
   path: string;
-  manifest: { athriaVersion: string; createdAt: string; secretsIncluded: false };
   counts: { workouts: number; templates: number; plans: number };
 }
 export const dashboardPages = [

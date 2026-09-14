@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { api, changeDataLocation, getIntervalsStatus, getMcpStatus, getXunjiStatus, importXunjiSkill, pickBackupFile, pickDataLocation, restoreBackup, syncIntervals, syncXunji, testIntervals } from "./api";
+import { api, changeDatabaseFile, getIntervalsStatus, getMcpStatus, getXunjiStatus, importXunjiSkill, pickBackupDestination, pickDatabaseFile, pickRestoreFile, restoreBackup, syncIntervals, syncXunji, testIntervals } from "./api";
 import { mcpConfig, mcpGuides } from "./mcp-guides";
 import {
   connectionSources, connectionStatusPresentation, dashboardPages, deviceTimezone, equipmentGroupState, filterAndSortTrainingHistory, formatDateTime, formatDuration, formatTimezoneLabel, formatTrainingRhythm, formatTrainingSource, friendlyLabel, isUntouchedDefaultProfile,
@@ -185,13 +185,13 @@ function EditableProfileBoard({ profile, form, setForm, customGoal, setCustomGoa
   return <div className="profile-content profile-editor">
     <section className="profile-top-summary">
       <section className="profile-goals-panel"><span className="profile-feature-icon" aria-hidden="true"><AppIcon name="target"/></span><div className="editable-panel-content"><strong>Training Goals</strong><small>What do you want to focus on?</small><div className="goal-tags">{availableGoals.map((goal) => commonGoals.includes(goal) ? <GoalTag key={goal} goal={goal} selected={form.goals.includes(goal)} onClick={() => toggleList("goals", goal)}/> : <GoalTag key={goal} goal={goal} selected={form.goals.includes(goal)} onClick={() => toggleList("goals", goal)} onDelete={() => deleteCustomGoal(goal)}/>)}</div><div className="inline-input"><input aria-label="Custom training goal" placeholder="Add another goal" value={customGoal} onChange={(event) => setCustomGoal(event.target.value)}/><button type="button" className="secondary" disabled={!customGoal.trim()} onClick={() => { const goal = customGoal.trim(); setAvailableGoals((current) => current.includes(goal) ? current : [...current, goal]); setForm((current) => current && !current.goals.includes(goal) ? { ...current, goals: [...current.goals, goal] } : current); setCustomGoal(""); }}>Add</button></div></div></section>
-      <div className="profile-summary-item profile-preferences-editor"><div className="profile-editor-heading"><AppIcon name="preferences"/><span><strong className="profile-editor-title">Preferences</strong><small className="profile-editor-subtitle">Tell us more about your training</small></span></div><label className="profile-editor-control"><span className="sr-only">Training preferences</span><span className="preference-input"><textarea aria-label="Training preferences" rows={4} maxLength={PREFERENCE_MAX_LENGTH} value={form.preference} onChange={(event) => setForm({ ...form, preference: event.target.value })} placeholder="e.g. I prefer morning workouts, 3–4 days per week…"/><small>{form.preference.length}/{PREFERENCE_MAX_LENGTH}</small></span></label></div>
+      <div className="profile-summary-item profile-preferences-editor"><div className="profile-editor-heading"><AppIcon name="preferences"/><span><strong className="profile-editor-title">Preferences</strong><small className="profile-editor-subtitle">Tell us more about your training</small></span></div><label className="profile-editor-control"><span className="sr-only">Training preferences</span><span className="preference-input"><textarea aria-label="Training preferences" rows={4} maxLength={PREFERENCE_MAX_LENGTH} value={form.preference} onChange={(event) => setForm({ ...form, preference: event.target.value })} placeholder="I prefer a varied mix of training styles."/><small>{form.preference.length}/{PREFERENCE_MAX_LENGTH}</small></span></label></div>
       <div className="profile-summary-item profile-rhythm-editor"><div className="profile-editor-heading"><AppIcon name="rhythm"/><span><strong className="profile-editor-title">Training rhythm</strong><small className="profile-editor-subtitle">How often do you want to train?</small></span></div><div className="profile-rhythm-options">
         <div className="profile-rhythm-option"><label><input type="radio" name="training-rhythm" checked={form.trainingRhythm.kind === "fixed_week"} onChange={() => changeRhythm("fixed_week")}/><span>Fixed week</span></label>{form.trainingRhythm.kind === "fixed_week" && <div className="day-list">{weekdays.map((day, index) => <button type="button" key={day} className={form.trainingRhythm.kind === "fixed_week" && form.trainingRhythm.days.includes(index) ? "selected" : ""} aria-pressed={form.trainingRhythm.kind === "fixed_week" && form.trainingRhythm.days.includes(index)} onClick={() => toggleTrainingDay(index)}>{day.slice(0, 3)}{form.trainingRhythm.kind === "fixed_week" && form.trainingRhythm.days.includes(index) ? " ✓" : ""}</button>)}</div>}</div>
         <div className="profile-rhythm-option"><label><input type="radio" name="training-rhythm" checked={form.trainingRhythm.kind === "flexible_week"} onChange={() => changeRhythm("flexible_week")}/><span>Flexible week</span></label>{form.trainingRhythm.kind === "flexible_week" && <div className="rhythm-parameters"><label>Target days<input type="number" min="1" max="7" value={form.trainingRhythm.targetDaysPerWeek} onChange={(event) => updateFlexibleRhythm("targetDaysPerWeek", Number(event.target.value))}/></label><label>Min<input type="number" min="1" max="7" value={form.trainingRhythm.minDaysPerWeek} onChange={(event) => updateFlexibleRhythm("minDaysPerWeek", Number(event.target.value))}/></label><label>Max<input type="number" min="1" max="7" value={form.trainingRhythm.maxDaysPerWeek} onChange={(event) => updateFlexibleRhythm("maxDaysPerWeek", Number(event.target.value))}/></label></div>}</div>
         <div className="profile-rhythm-option"><label><input type="radio" name="training-rhythm" checked={form.trainingRhythm.kind === "interval"} onChange={() => changeRhythm("interval")}/><span>Intervals</span></label>{form.trainingRhythm.kind === "interval" && <span className="interval-parameter">Every <input aria-label="Interval days" type="number" min="1" max="30" value={form.trainingRhythm.intervalDays} onChange={(event) => updateIntervalRhythm(Number(event.target.value))}/> days</span>}</div>
       </div></div>
-      <div className="profile-summary-item profile-duration-editor"><div className="profile-editor-heading"><AppIcon name="clock"/><span><strong className="profile-editor-title">Max session length</strong><small className="profile-editor-subtitle">How much time per session?</small></span></div><label className="profile-editor-control"><span className="sr-only">Max session length</span><select aria-label="Max session length" value={form.maxSessionMinutes} onChange={(event) => setForm({ ...form, maxSessionMinutes: Number(event.target.value) })}>{[15, 30, 45, 60, 75, 90, 120, 180, 240].map((value) => <option key={value} value={value}>{value} min</option>)}</select><span className="profile-duration-note"><AppIcon name="sparkles"/><span><strong>Short on time?</strong><small>You can always adjust this later.</small></span></span></label></div>
+      <div className="profile-summary-item profile-duration-editor"><div className="profile-editor-heading"><AppIcon name="clock"/><span><strong className="profile-editor-title">Max session length</strong><small className="profile-editor-subtitle">How much time per session?</small></span></div><label className="profile-editor-control"><span className="sr-only">Max session length</span><select aria-label="Max session length" value={form.maxSessionMinutes} onChange={(event) => setForm({ ...form, maxSessionMinutes: Number(event.target.value) })}>{[15, 30, 45, 60, 75, 90, 120, 180, 240].map((value) => <option key={value} value={value}>{value} min</option>)}</select></label></div>
     </section>
   </div>;
 }
@@ -211,10 +211,10 @@ function AgentManagedDetails({ profile }: { profile: AthleteProfile }) {
 
 function ProfileBoard({ profile, equipmentCategories }: { profile: AthleteProfile; equipmentCategories: EquipmentCategory[] }) {
   return <div className="profile-content">
-    <section className="profile-top-summary">
+    <section className="profile-top-summary profile-readonly-summary">
       <section className="profile-goals-panel"><span className="profile-feature-icon" aria-hidden="true"><AppIcon name="target"/></span><div><strong>Training Goals</strong><small>What do you want to focus on?</small>{profile.goals.length ? <div className="goal-tags">{profile.goals.map((goal) => <GoalTag key={goal} goal={goal}/>)}</div> : <p>No goals selected</p>}</div></section>
       <div className="profile-summary-item"><AppIcon name="preferences"/><div><span>Preferences</span><strong>{profile.preference || "Not set"}</strong></div></div>
-      <div className="profile-summary-item"><AppIcon name="rhythm"/><div><span>Training rhythm</span><strong>{formatTrainingRhythm(profile.trainingRhythm)}</strong></div></div>
+      <div className="profile-summary-item profile-rhythm-summary"><AppIcon name="rhythm"/><div><span>Training rhythm</span><strong>{formatTrainingRhythm(profile.trainingRhythm)}</strong></div></div>
       <div className="profile-summary-item"><AppIcon name="clock"/><div><span>Max session length</span><strong>{profile.maxSessionMinutes} min</strong></div></div>
     </section>
     <EquipmentSelector categories={equipmentCategories} selected={profile.equipment}/>
@@ -402,16 +402,15 @@ export function Timeline() {
 
 function Backup() {
   const doctor = useQuery({ queryKey: ["backup-doctor"], queryFn: () => api<DoctorResult>("/api/system/doctor") });
-  const dataDir = (doctor.data as DoctorResult | undefined)?.dataDir;
+  const databasePath = (doctor.data as DoctorResult | undefined)?.databasePath;
   const [message, setMessage] = useState(""); const [error, setError] = useState<unknown>();
   const [preview, setPreview] = useState<BackupPreview>(); const [restoring, setRestoring] = useState(false);
   const [pendingLocation, setPendingLocation] = useState(""); const [moving, setMoving] = useState(false);
-  const pendingTarget = pendingLocation ? `${pendingLocation.replace(/[\\/]+$/, "")}${pendingLocation.includes("\\") ? "\\" : "/"}AthriaData` : "";
-  const createBackup = () => { setError(undefined); api<{ path: string }>("/api/system/backup", { method: "POST", body: "{}" }).then((result) => setMessage(`Backup created at ${result.path}`)).catch(setError); };
+  const createBackup = async () => { setError(undefined); setMessage(""); try { const path = await pickBackupDestination(); if (path) { const result = await api<{ path: string }>("/api/system/backup", { method: "POST", body: JSON.stringify({ path }) }); setMessage(`Backup created at ${result.path}`); } } catch (value) { setError(value); } };
   const chooseBackup = async () => {
     setError(undefined); setMessage(""); setPreview(undefined);
     try {
-      const path = await pickBackupFile();
+      const path = await pickRestoreFile();
       if (path) setPreview(await api<BackupPreview>("/api/system/backup/preview", { method: "POST", body: JSON.stringify({ path }) }));
     } catch (value) { setError(value); }
   };
@@ -423,45 +422,43 @@ function Backup() {
   const chooseLocation = async () => {
     setError(undefined);
     try {
-      const picked = await pickDataLocation();
+      const picked = await pickDatabaseFile();
       if (picked) setPendingLocation(picked);
     } catch (value) { setError(value); }
   };
   const confirmLocation = async () => {
-    try { setMoving(true); setError(undefined); await changeDataLocation(pendingLocation); }
+    try { setMoving(true); setError(undefined); await changeDatabaseFile(pendingLocation); }
     catch (value) { setMoving(false); setError(value); }
   };
   return <Card title="Backup and restore">
-    <p>Backups include your training database and retained imports. Account credentials are never included.</p>
-    {dataDir && <div className="data-location">
-      <strong>Local data location</strong>
-      <span>{dataDir}</span>
-      <small>This folder contains Athria's local database, imports, backups, logs, and exports.</small>
+    <p>Your training data is stored in one local SQLite database. Account credentials are never included.</p>
+    {databasePath && <div className="data-location">
+      <strong>Local database</strong>
+      <span>{databasePath}</span>
+      <small>Athria opens this database file directly.</small>
       {pendingLocation
         ? <div className="data-location-confirm">
-          <p>Athria will create <b>{pendingTarget}</b>, move all local data there, and restart. The selected folder can contain other files.</p>
+          <p>Athria will open <b>{pendingLocation}</b> and restart. The selected database will not be copied or moved.</p>
           <div className="data-location-actions">
             <button type="button" className="secondary compact" disabled={moving} onClick={() => setPendingLocation("")}>Cancel</button>
-            <button type="button" className="compact" disabled={moving} onClick={() => void confirmLocation()}>{moving ? "Moving data…" : "Move data and restart"}</button>
+            <button type="button" className="compact" disabled={moving} onClick={() => void confirmLocation()}>{moving ? "Opening database…" : "Open database and restart"}</button>
           </div>
         </div>
         : <div className="data-location-actions"><button type="button" className="secondary compact" onClick={() => void chooseLocation()}>Change location</button></div>}
     </div>}
-    <div className="section"><h3>Create a backup</h3><p>Save a timestamped backup ZIP inside your local Athria data folder.</p><button onClick={createBackup}>Create backup</button></div>
-    <div className="section"><h3>Restore a backup</h3><p>Select an Athria backup ZIP to inspect it before replacing the data in your current local data location.</p>
+    <div className="section"><h3>Create a backup</h3><p>Save a self-contained copy of your active SQLite database.</p><button onClick={() => void createBackup()}>Create backup</button></div>
+    <div className="section"><h3>Restore a backup</h3><p>Select an Athria .sqlite3 file to inspect it before replacing your active database.</p>
       {!preview
         ? <button type="button" className="secondary" onClick={() => void chooseBackup()}>Choose backup</button>
         : <div className="restore-confirm">
           <strong>Restore this backup?</strong>
           <span className="restore-path">{preview.path}</span>
           <div className="restore-summary">
-            <span><b>{formatDateTime(preview.manifest.createdAt)}</b><small>created</small></span>
-            <span><b>{preview.manifest.athriaVersion}</b><small>Athria version</small></span>
             <span><b>{preview.counts.workouts}</b><small>workouts</small></span>
             <span><b>{preview.counts.templates}</b><small>templates</small></span>
             <span><b>{preview.counts.plans}</b><small>plans</small></span>
           </div>
-          <p>Your current Athria data will be replaced. The local data location will not change. Athria will create a safety backup first and restart when restoration is complete.</p>
+          <p>Your active database will be replaced without keeping a safety copy. Its file location will not change. Athria will restart when restoration is complete.</p>
           <div className="data-location-actions">
             <button type="button" className="secondary compact" disabled={restoring} onClick={() => setPreview(undefined)}>Cancel</button>
             <button type="button" className="compact" disabled={restoring} onClick={() => void confirmRestore()}>{restoring ? "Preparing restore…" : "Restore and restart"}</button>
@@ -567,6 +564,5 @@ export function App() {
   const navIcons: Record<Page, IconName> = { Overview: "overview", Training: "training", Profile: "profile", Plan: "plan", Connections: "devices", Settings: "settings", Help: "help" };
   const NavItems = ({ items }: { items: typeof dashboardPages[number][] }) => <>{items.map((item) => <button key={item.id} className={item.id === page ? "active" : ""} aria-current={item.id === page ? "page" : undefined} onClick={() => setPage(item.id)}><AppIcon name={navIcons[item.id]}/>{item.label}</button>)}</>;
   const preferredName = profile.data?.preferredName || "Athlete";
-  const initials = preferredName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "A";
-  return <div className="shell"><aside><div className="brand"><img src="/athria-logo.png" alt="Athria" /></div><nav aria-label="Main navigation"><NavItems items={primaryPages}/></nav><div className="sidebar-lower"><nav className="support-nav" aria-label="Support navigation"><NavItems items={supportPages}/></nav><div className="sidebar-motto" aria-hidden="true"><span>Stronger<br/>You, Brighter<br/>Days</span><b>→</b><i/><i/><i/></div><div className="sidebar-user"><span className="sidebar-avatar" aria-hidden="true">{initials}</span><span><strong>{preferredName}</strong><small>Athlete profile</small></span><b aria-hidden="true">•••</b></div></div></aside><main className={primaryPage ? "primary-main" : undefined}>{page !== "Plan" && page !== "Profile" && page !== "Connections" && (primaryPage ? <PrimaryPageHeader preferredName={preferredName} subtitle={page === "Overview" ? "Let's keep the momentum going. Here's your overview for today." : "Your AI fitness hub. Local-first. Data you own."}/> : <header><div><h1>Hi, {preferredName}! <span aria-hidden="true">👋</span></h1><p>Your AI fitness hub. Local-first. Data you own.</p></div></header>)}{serviceCrash && <div className="error">The local service stopped unexpectedly. Close and reopen Athria. If the problem continues, create a backup before troubleshooting.</div>}<View/></main></div>;
+  return <div className="shell"><aside><div className="brand"><img src="/athria-logo.png" alt="Athria" /></div><nav aria-label="Main navigation"><NavItems items={primaryPages}/></nav><div className="sidebar-lower"><nav className="support-nav" aria-label="Support navigation"><NavItems items={supportPages}/></nav><div className="sidebar-motto" aria-hidden="true"><span>Stronger<br/>You, Brighter<br/>Days</span><b>→</b><i/><i/><i/></div></div></aside><main className={primaryPage ? "primary-main" : undefined}>{page !== "Plan" && page !== "Profile" && page !== "Connections" && (primaryPage ? <PrimaryPageHeader preferredName={preferredName} subtitle={page === "Overview" ? "Let's keep the momentum going. Here's your overview for today." : "Your AI fitness hub. Local-first. Data you own."}/> : <header><div><h1>Hi, {preferredName}! <span aria-hidden="true">👋</span></h1><p>Your AI fitness hub. Local-first. Data you own.</p></div></header>)}{serviceCrash && <div className="error">The local service stopped unexpectedly. Close and reopen Athria. If the problem continues, create a backup before troubleshooting.</div>}<View/></main></div>;
 }

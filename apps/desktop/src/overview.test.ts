@@ -120,6 +120,19 @@ describe("Overview", () => {
     expect(html).not.toContain("consistency-weekdays");
   });
 
+  it("renders calendar markers in centered groups only on marked days", () => {
+    const history = [{ id: "done", name: "Run", startAt: "2026-09-08T04:00:00Z", timezone: null, domains: ["endurance"], sport: "Run", durationMinutes: 30 }] as TrainingHistorySession[];
+    const planned = [
+      { scheduledDate: "2026-09-08", status: "skipped" },
+      { scheduledDate: "2026-09-09", status: "planned" },
+    ] as CalendarSession[];
+    const html = renderToStaticMarkup(createElement(OverviewDashboard, { summary, wellness: [], history, planned, today: "2026-09-11", timezone: "Asia/Hong_Kong" }));
+
+    expect(html).toContain('<span class="mini-day ">7</span>');
+    expect(html).toContain('<span class="mini-day-markers"><i class="completed" aria-label="Completed training"></i><i class="skipped" aria-label="Skipped plan"></i></span>');
+    expect(html).toContain('<span class="mini-day-markers"><i class="planned" aria-label="Scheduled training"></i></span>');
+  });
+
   it("keeps compact summary visuals when comparison and readiness history are missing", () => {
     const html = renderToStaticMarkup(createElement(OverviewDashboard, { summary: { ...summary, totalDurationMinutes: 1250 }, wellness: [], history: [], planned: [], today: "2026-09-11", timezone: "Asia/Hong_Kong" }));
     expect(html).toContain("20 hr 50 min");
