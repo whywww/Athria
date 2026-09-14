@@ -8,9 +8,9 @@ import "./target.css";
  *
  * The first layer of the Plan page: one screen answers *what* this plan is,
  * *where* the athlete currently sits, and *what the cycle is optimising for*.
- * The Primary Goal always carries the highest visual weight; the supporting
- * detail (Supporting / Maintenance / Coordination) collapses into a single
- * "Plan details" disclosure so mixed-training plans stay legible.
+ * The Primary Goal always stays visible; the supporting detail (Supporting /
+ * Maintenance / Coordination) defaults to a collapsed "Plan details"
+ * disclosure so mixed-training plans stay legible.
  *
  * All week/date maths is delegated to the pure helpers in `./view` — this
  * component never re-derives week numbers itself.
@@ -26,7 +26,6 @@ export interface MesocycleTargetProps {
   currentPhaseNames: string[];
   /** Defaults to `"current"`. P0 fully renders `current`; others show a badge only. */
   status?: MesocycleTargetStatus;
-  storageKey?: string;
 }
 
 const statusLabels: Record<MesocycleTargetStatus, string> = {
@@ -37,10 +36,10 @@ const statusLabels: Record<MesocycleTargetStatus, string> = {
   completed: "Plan completed",
 };
 
-export function MesocycleTarget({ plan, today, currentWeek, currentPhaseNames, status = "current", storageKey }: MesocycleTargetProps) {
-  // Disclosure preference persists for this session via component state (§5.4).
-  const [detailsOpen, setDetailsOpen] = useState(() => storageKey ? sessionStorage.getItem(`${storageKey}:target`) !== "closed" : true);
-  const toggleDetails = () => setDetailsOpen((open) => { const next = !open; if (storageKey) sessionStorage.setItem(`${storageKey}:target`, next ? "open" : "closed"); return next; });
+export function MesocycleTarget({ plan, today, currentWeek, currentPhaseNames, status = "current" }: MesocycleTargetProps) {
+  // Details start collapsed whenever the card is mounted (§5.4).
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const toggleDetails = () => setDetailsOpen((open) => !open);
 
   const target = plan.target;
   const durationWeeks = Math.max(1, plan.mesocycle.durationWeeks);

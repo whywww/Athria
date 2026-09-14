@@ -92,11 +92,14 @@ async function main(): Promise<void> {
         if (trainingSessionPlanMatch && request.method === "PATCH") return json(application.setTrainingSessionPlanMatch(decodeURIComponent(trainingSessionPlanMatch[1]!), await body(request)));
         const trainingSessionAutoMatch = url.pathname.match(/^\/api\/training-sessions\/([^/]+)\/automatic-match$/);
         if (trainingSessionAutoMatch && request.method === "POST") return json(application.clearTrainingSessionPlanExclusion(decodeURIComponent(trainingSessionAutoMatch[1]!), await body(request)));
+        const trainingSessionType = url.pathname.match(/^\/api\/training-sessions\/([^/]+)\/type$/);
+        if (trainingSessionType && request.method === "PATCH") return json(application.updateTrainingSessionType(decodeURIComponent(trainingSessionType[1]!), await body(request)));
         const manualTrainingSession = url.pathname.match(/^\/api\/training-sessions\/([^/]+)\/manual$/);
         if (manualTrainingSession && request.method === "PATCH") return json(application.updateManualTrainingSession(decodeURIComponent(manualTrainingSession[1]!), await body(request)));
         if (manualTrainingSession && request.method === "DELETE") return json(application.deleteManualTrainingSession(decodeURIComponent(manualTrainingSession[1]!), await body(request)));
         const trainingSession = url.pathname.match(/^\/api\/training-sessions\/([^/]+)$/);
         if (trainingSession && request.method === "PUT") return json(application.recordTrainingSession({ ...(await body(request)), id: decodeURIComponent(trainingSession[1]!) }));
+        if (trainingSession && request.method === "DELETE") return json(application.deleteTrainingSession(decodeURIComponent(trainingSession[1]!), await body(request)));
         if (url.pathname === "/api/wellness" && request.method === "GET") return json(application.listWellness(Number(url.searchParams.get("days") ?? "42")));
         const wellness = url.pathname.match(/^\/api\/wellness\/(\d{4}-\d{2}-\d{2})$/);
         if (wellness && request.method === "GET") return json(application.getWellnessDay(wellness[1]!));

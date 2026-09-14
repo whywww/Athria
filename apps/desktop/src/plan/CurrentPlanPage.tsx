@@ -116,7 +116,7 @@ function CurrentPlanView({ plan, templates, profile }: { plan: CurrentPlan; temp
   }, [storageKey]);
   return <>
     {/* Layer 1 — Mesocycle Target (§5) */}
-    <MesocycleTarget plan={plan} today={today} currentWeek={currentWeek} currentPhaseNames={currentPhaseNames} status={position.state === "completed" ? "completed" : position.state === "future" ? "upcoming" : "current"} storageKey={storageKey} />
+    <MesocycleTarget plan={plan} today={today} currentWeek={currentWeek} currentPhaseNames={currentPhaseNames} status={position.state === "completed" ? "completed" : position.state === "future" ? "upcoming" : "current"} />
     {/* Layer 2 — domain timelines; selecting a phase scrolls the Weekly Plan, never filters it */}
     <ProgressionByDomain progressions={plan.mesocycle.domainProgressions} currentWeek={currentWeek} onSelectPhase={(_domain, _phaseId, startWeek) => requestWeek(startWeek)} />
     {/* Layer 3 — Weekly Plan (§7) */}

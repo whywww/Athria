@@ -1,14 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { api, changeDataLocation, getIntervalsStatus, getMcpStatus, getXunjiStatus, importXunjiSkill, pickBackupFile, pickDataLocation, restoreBackup, syncIntervals, syncXunji, testIntervals } from "./api";
 import { mcpConfig, mcpGuides } from "./mcp-guides";
 import {
-  dashboardPages, deviceTimezone, equipmentGroupState, formatDateTime, formatDuration, formatTimezoneLabel, formatTrainingRhythm, formatTrainingSource, friendlyLabel, isUntouchedDefaultProfile,
-  parseSyncRange, profilePayload, syncRangeOptions, timezoneOptions, PREFERENCE_MAX_LENGTH,
+  connectionSources, connectionStatusPresentation, dashboardPages, deviceTimezone, equipmentGroupState, filterAndSortTrainingHistory, formatDateTime, formatDuration, formatTimezoneLabel, formatTrainingRhythm, formatTrainingSource, friendlyLabel, isUntouchedDefaultProfile,
+  paginateTrainingHistory, parseSyncRange, profilePayload, syncRangeOptions, timezoneOptions, PREFERENCE_MAX_LENGTH,
   toggleEquipmentGroup,
   type AthleteProfile, type BackupPreview, type CurrentPlan, type DoctorResult, type HevyImportStatus, type ImportPreview,
-  type CalendarSession, type EquipmentCategory, type ImportResult, type NextTrainingDay, type PersonalInformation, type SyncRange, type TrainingHistorySession, type TrainingTaxonomy, type TrainingSummary, type WellnessRecord, type XunjiConnectionStatus,
+  type CalendarSession, type EquipmentCategory, type ImportResult, type NextTrainingDay, type PersonalInformation, type SyncRange, type TrainingHistorySession, type TrainingHistorySort, type TrainingTaxonomy, type TrainingSummary, type WellnessRecord, type XunjiConnectionStatus,
 } from "./view-models";
 import { Card, Empty, ErrorBanner, Loading, PrimaryPageHeader, weekdays } from "./components";
 import { CurrentPlanPage, NextTrainingDayCard } from "./plan/CurrentPlanPage";
@@ -18,7 +18,7 @@ import { OverviewDashboard, overviewDateRange } from "./overview";
 type Page = (typeof dashboardPages)[number]["id"];
 const commonGoals = ["general_fitness", "build_strength", "build_muscle", "improve_endurance", "fat_loss"];
 
-type IconName = "overview" | "training" | "profile" | "plan" | "devices" | "settings" | "help" | "globe" | "edit" | "target" | "preferences" | "rhythm" | "clock" | "equipment" | "sparkles" | "warning" | "notes" | "recovery" | "info";
+type IconName = "overview" | "training" | "profile" | "plan" | "devices" | "settings" | "help" | "globe" | "edit" | "target" | "preferences" | "rhythm" | "clock" | "equipment" | "sparkles" | "warning" | "notes" | "recovery" | "info" | "plus" | "refresh" | "database" | "upload" | "close";
 
 function AppIcon({ name, className = "" }: { name: IconName; className?: string }) {
   const paths: Record<IconName, React.ReactNode> = {
@@ -41,6 +41,11 @@ function AppIcon({ name, className = "" }: { name: IconName; className?: string 
     notes: <><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 12h6M9 16h6"/></>,
     recovery: <><path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.5"/><path d="M4 4v4.5h4.5"/></>,
     info: <><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/></>,
+    plus: <path d="M12 5v14M5 12h14"/>,
+    refresh: <><path d="M20 7v5h-5"/><path d="M18.4 16a8 8 0 1 1 .1-8.1L20 12"/></>,
+    database: <><ellipse cx="12" cy="5" rx="7" ry="3"/><path d="M5 5v6c0 1.7 3.1 3 7 3s7-1.3 7-3V5M5 11v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/></>,
+    upload: <><path d="M12 16V4M7 9l5-5 5 5"/><path d="M5 15v5h14v-5"/></>,
+    close: <path d="m6 6 12 12M18 6 6 18"/>,
   };
   return <svg className={`app-icon ${className}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 }
@@ -124,8 +129,8 @@ function Profile() {
   const profileActions = editing && form ? <div className="profile-actions"><label className="profile-timezone-field"><AppIcon name="globe"/><select className="profile-timezone-select" aria-label="Time zone" value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })}>{timezoneOptions(form.timezone).map((zone) => <option key={zone} value={zone}>{zone}{zone === deviceTimezone() ? " (device)" : ""}</option>)}</select></label><button type="button" className="secondary compact profile-cancel-button" onClick={cancelEdit}>Cancel</button><button type="button" className="compact profile-save-button" disabled={save.isPending || form.goals.length === 0 || !rhythmValid} onClick={() => { setSaved(false); save.mutate(profilePayload(profile, form)); }}>{save.isPending ? "Saving…" : "Save"}</button></div> : <div className="profile-actions"><span className="profile-timezone-pill"><AppIcon name="globe"/>{formatTimezoneLabel(profile.timezone)}</span><button type="button" className="secondary compact edit-button" onClick={beginEdit}><AppIcon name="edit"/>Edit</button></div>;
 
   return <div className="profile-page">
-    <PrimaryPageHeader preferredName={profile.preferredName} subtitle="Your AI fitness hub. Local-first. Data you own." actions={profileActions}/>
-    <Card title={<span className="profile-card-title"><span className="profile-title-icon"><AppIcon name="profile"/></span><span>Training Profile<small>Your training setup and preferences</small></span></span>} className={`profile-board ${editing ? "is-editing" : ""}`}>
+    <PrimaryPageHeader preferredName={profile.preferredName} subtitle="Your AI fitness hub. Local-first. Data you own."/>
+    <Card title={<span className="profile-card-title"><span className="profile-title-icon"><AppIcon name="profile"/></span><span>Training Profile<small>Your training setup and preferences</small></span></span>} className={`profile-board ${editing ? "is-editing" : ""}`} action={profileActions}>
       <div className="profile-board-art" aria-hidden="true"><i/><i/><i/></div>
       {editing && form ? <EditableProfileBoard profile={profile} form={form} setForm={setForm} customGoal={customGoal} setCustomGoal={setCustomGoal} availableGoals={availableGoals} setAvailableGoals={setAvailableGoals} toggleList={toggleList} toggleTrainingDay={toggleTrainingDay}/> : <ProfileBoard profile={profile} equipmentCategories={taxonomy.data.equipmentCategories}/>}
       <ErrorBanner error={save.error}/>
@@ -216,13 +221,40 @@ function ProfileBoard({ profile, equipmentCategories }: { profile: AthleteProfil
   </div>;
 }
 
+type ConnectionDialog = "hevy" | "intervals" | "xunji" | null;
+
+function ProviderLogo({ source }: { source: "hevy" | "intervals" | "xunji" }) {
+  if (source === "intervals") return <span className="provider-logo intervals-logo" aria-hidden="true"><i/><i/><i/></span>;
+  if (source === "xunji") return <span className="provider-logo xunji-logo" aria-hidden="true"><svg viewBox="0 0 48 48"><path d="m12 11 25 26M36 11 11 36"/></svg></span>;
+  return <span className="provider-logo hevy-logo" aria-hidden="true"><svg viewBox="0 0 48 48"><path d="M12 18v12M8 20v8M36 18v12M40 20v8M12 24h24M17 15v18M31 15v18"/></svg></span>;
+}
+
+function SourceBadge({ tone, children }: { tone: "connected" | "partial" | "failed" | "neutral"; children: React.ReactNode }) {
+  return <span className={`source-status ${tone}`}><i/>{children}</span>;
+}
+
+function SourceCard({ source, title, description, badge, lastSyncLabel, lastSync, action, menuLabel, onMenuAction, feedback }: { source: "hevy" | "intervals" | "xunji"; title: string; description: string; badge: React.ReactNode; lastSyncLabel: string; lastSync: string; action: React.ReactNode; menuLabel: string; onMenuAction: () => void; feedback?: React.ReactNode }) {
+  return <article className="source-card"><div className="source-card-main"><ProviderLogo source={source}/><div className="source-title"><div><h2>{title}</h2>{badge}</div><p>{description}</p></div><Metric icon="clock" label={lastSyncLabel} value={lastSync}/></div>{feedback}<footer>{action}<details className="source-menu"><summary aria-label={`More options for ${title}`}>•••</summary><div><button type="button" onClick={onMenuAction}>{menuLabel}</button></div></details></footer></article>;
+}
+
+function Metric({ icon, label, value }: { icon: "clock" | "database" | "upload"; label: string; value: string }) {
+  return <div className="source-metric"><AppIcon name={icon}/><div><span>{label}</span><strong title={value}>{value}</strong></div></div>;
+}
+
+function AvailableSourceCard({ source, title, description, onConnect }: { source: "hevy" | "intervals" | "xunji"; title: string; description: string; onConnect: () => void }) {
+  return <article className="available-source-card"><ProviderLogo source={source}/><div><h3>{title}</h3><p>{description}</p><button type="button" className="connect-source-button" onClick={onConnect}><AppIcon name="plus"/>Connect</button></div><span className="available-source-arrow" aria-hidden="true">›</span></article>;
+}
+
+function ConnectionModal({ title, description, onClose, children }: { title: string; description?: string; onClose: () => void; children: React.ReactNode }) {
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="connection-modal" role="dialog" aria-modal="true" aria-labelledby="connection-modal-title"><header><div><h2 id="connection-modal-title">{title}</h2>{description && <p>{description}</p>}</div><button type="button" className="modal-close" aria-label="Close dialog" onClick={onClose}><AppIcon name="close"/></button></header><div className="modal-body">{children}</div></section></div>;
+}
+
 function Connections() {
   const client = useQueryClient();
   const hevyStatus = useQuery({ queryKey: ["hevy-status"], queryFn: () => api<HevyImportStatus | null>("/api/imports/hevy/status") });
   const intervalsStatus = useQuery({ queryKey: ["intervals-status"], queryFn: getIntervalsStatus });
   const xunjiStatus = useQuery({ queryKey: ["xunji-status"], queryFn: () => getXunjiStatus<XunjiConnectionStatus>() });
-  const [editingHevy, setEditingHevy] = useState(false); const [editingIntervals, setEditingIntervals] = useState(false);
-  const [editingXunji, setEditingXunji] = useState(false); const [xunjiSkill, setXunjiSkill] = useState("");
+  const [dialog, setDialog] = useState<ConnectionDialog>(null); const [xunjiSkill, setXunjiSkill] = useState("");
   const [preview, setPreview] = useState<ImportPreview>(); const [importResult, setImportResult] = useState<ImportResult>();
   const [hevyError, setHevyError] = useState<unknown>(); const [intervalsError, setIntervalsError] = useState<unknown>();
   const [intervalsMessage, setIntervalsMessage] = useState(""); const [intervalsBusy, setIntervalsBusy] = useState(false);
@@ -230,25 +262,34 @@ function Connections() {
   const [intervalsRange, setIntervalsRange] = useState<SyncRange>("incremental"); const [xunjiRange, setXunjiRange] = useState<SyncRange>("incremental");
   const [key, setKey] = useState(""); const [athleteId, setAthleteId] = useState("0");
   const onFile = async (file: File) => { try { setHevyError(undefined); setImportResult(undefined); const bytes = new Uint8Array(await file.arrayBuffer()); let binary = ""; bytes.forEach((byte) => { binary += String.fromCharCode(byte); }); setPreview(await api<ImportPreview>("/api/imports/hevy/preview", { method: "POST", body: JSON.stringify({ fileName: file.name, contentBase64: btoa(binary) }) })); } catch (value) { setHevyError(value); } };
-  const commit = async () => { if (!preview?.previewToken) return; try { setHevyError(undefined); setImportResult(await api<ImportResult>("/api/imports/hevy/commit", { method: "POST", body: JSON.stringify({ previewToken: preview.previewToken }) })); setPreview(undefined); setEditingHevy(false); await client.invalidateQueries({ queryKey: ["hevy-status"] }); } catch (value) { setHevyError(value); } };
-  const cancelHevy = () => { setEditingHevy(false); setPreview(undefined); setImportResult(undefined); setHevyError(undefined); };
-  const beginIntervalsEdit = () => { setKey(""); setAthleteId(intervalsStatus.data?.athleteId ?? "0"); setIntervalsMessage(""); setIntervalsError(undefined); setEditingIntervals(true); };
-  const cancelIntervals = () => { setKey(""); setAthleteId(intervalsStatus.data?.athleteId ?? "0"); setIntervalsError(undefined); setEditingIntervals(false); };
-  const saveIntervals = async () => { try { setIntervalsError(undefined); await testIntervals(key, athleteId); setIntervalsMessage("Connected. Your credentials were saved securely on this device."); setKey(""); setEditingIntervals(false); await client.invalidateQueries({ queryKey: ["intervals-status"] }); } catch (value) { setIntervalsError(value); } };
-  const sync = async () => { try { setIntervalsBusy(true); setIntervalsError(undefined); const result = await syncIntervals(intervalsRange) as ImportResult & { sync?: { status?: string } }; setIntervalsMessage(`Sync ${result.sync?.status ?? "complete"}: ${result.added ?? 0} added, ${result.updated ?? 0} updated.`); await Promise.all([client.invalidateQueries({ queryKey: ["intervals-status"] }), client.invalidateQueries({ queryKey: ["sessions"] }), client.invalidateQueries({ queryKey: ["summary"] }), client.invalidateQueries({ queryKey: ["state"] })]); } catch (value) { setIntervalsError(value); } finally { setIntervalsBusy(false); } };
-  const cancelXunji = () => { setEditingXunji(false); setXunjiSkill(""); setXunjiError(undefined); };
+  const closeDialog = () => { setDialog(null); setPreview(undefined); setXunjiSkill(""); setKey(""); setHevyError(undefined); setIntervalsError(undefined); setXunjiError(undefined); };
+  useEffect(() => { if (!dialog) return; const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") closeDialog(); }; window.addEventListener("keydown", onKeyDown); return () => window.removeEventListener("keydown", onKeyDown); }, [dialog]);
+  const openIntervals = () => { setAthleteId(intervalsStatus.data?.athleteId ?? "0"); setIntervalsMessage(""); setDialog("intervals"); };
+  const commit = async () => { if (!preview?.previewToken) return; try { setHevyError(undefined); setImportResult(await api<ImportResult>("/api/imports/hevy/commit", { method: "POST", body: JSON.stringify({ previewToken: preview.previewToken }) })); setPreview(undefined); setDialog(null); await client.invalidateQueries({ queryKey: ["hevy-status"] }); } catch (value) { setHevyError(value); } };
+  const saveIntervals = async () => { try { setIntervalsError(undefined); await testIntervals(key, athleteId); setIntervalsMessage("Connected. Your credentials were saved securely on this device."); setKey(""); setDialog(null); await client.invalidateQueries({ queryKey: ["intervals-status"] }); } catch (value) { setIntervalsError(value); } };
+  const sync = async (range: SyncRange = "incremental", closeOnSuccess = false) => { try { setIntervalsBusy(true); setIntervalsError(undefined); const result = await syncIntervals(range) as ImportResult & { sync?: { status?: string } }; setIntervalsMessage(`Sync ${result.sync?.status ?? "complete"}: ${result.added ?? 0} added, ${result.updated ?? 0} updated.`); await Promise.all([client.invalidateQueries({ queryKey: ["intervals-status"] }), client.invalidateQueries({ queryKey: ["sessions"] }), client.invalidateQueries({ queryKey: ["summary"] }), client.invalidateQueries({ queryKey: ["state"] })]); if (closeOnSuccess) setDialog(null); } catch (value) { setIntervalsError(value); } finally { setIntervalsBusy(false); } };
   const refreshXunjiViews = async () => { await Promise.all([client.invalidateQueries({ queryKey: ["xunji-status"] }), client.invalidateQueries({ queryKey: ["sessions"] }), client.invalidateQueries({ queryKey: ["summary"] }), client.invalidateQueries({ queryKey: ["state"] })]); };
-  const connectXunji = async () => { try { setXunjiBusy(true); setXunjiError(undefined); const result = await importXunjiSkill(xunjiSkill) as ImportResult & { sync?: { status?: string } }; setXunjiMessage(`Sync ${result.sync?.status ?? "complete"}: ${result.added ?? 0} added, ${result.updated ?? 0} updated.`); setXunjiSkill(""); setEditingXunji(false); await refreshXunjiViews(); } catch (value) { setXunjiError(value); } finally { setXunjiBusy(false); } };
-  const runXunjiSync = async () => { try { setXunjiBusy(true); setXunjiError(undefined); const result = await syncXunji(xunjiRange) as ImportResult & { sync?: { status?: string } }; setXunjiMessage(`Sync ${result.sync?.status ?? "complete"}: ${result.added ?? 0} added, ${result.updated ?? 0} updated.`); await refreshXunjiViews(); } catch (value) { setXunjiError(value); } finally { setXunjiBusy(false); } };
-  return <div className="grid">
-    <Card title="Import from Hevy" action={<button type="button" className="secondary compact" onClick={() => editingHevy ? cancelHevy() : setEditingHevy(true)}>{editingHevy ? "Cancel" : "Edit"}</button>}><p>Import strength workouts from a reviewed Hevy CSV export.</p>{hevyStatus.isPending ? <Loading/> : editingHevy ? <><input aria-label="Hevy CSV export" type="file" accept=".csv,text/csv" onChange={(event) => event.target.files?.[0] && void onFile(event.target.files[0])}/>{preview && <ImportSummary value={preview}><button onClick={() => void commit()}>Import reviewed workouts</button></ImportSummary>}</> : hevyStatus.data ? <ConnectionState configured label="Imported"><strong>{hevyStatus.data.fileName}</strong><span>Last imported {formatDateTime(hevyStatus.data.importedAt)}</span><MiniStats counts={hevyStatus.data.counts}/></ConnectionState> : <ConnectionState configured={false} label="Not configured"><span>No Hevy file has been imported yet.</span></ConnectionState>}{importResult && <div className="success">Import complete: {importResult.added ?? 0} added, {importResult.updated ?? 0} updated.</div>}<ErrorBanner error={hevyStatus.error ?? hevyError}/></Card>
-    <Card title="Import from Xunji" action={<button type="button" className="secondary compact" onClick={() => editingXunji ? cancelXunji() : setEditingXunji(true)}>{editingXunji ? "Cancel" : "Edit"}</button>}><p>Sync 训记 training records into your local Athria history.</p>{xunjiStatus.isPending ? <Loading/> : editingXunji ? <><label>Xunji exported Skill<textarea rows={9} autoComplete="off" spellCheck={false} placeholder="Paste the complete Skill exported by Xunji" value={xunjiSkill} onChange={(event) => setXunjiSkill(event.target.value)}/></label><p className="helper">Athria extracts only the API key. The pasted text is never stored, and credentials stay in Windows Credential Manager.</p><button disabled={!xunjiSkill.trim() || xunjiBusy} onClick={() => void connectXunji()}>{xunjiBusy ? "Connecting and syncing…" : "Connect and sync"}</button></> : xunjiStatus.data?.configured ? <ConnectionState configured label={xunjiStatus.data.sync?.status === "partial" ? "Partially synced" : "Connected"}><div className="connection-detail"><small>Last successful sync</small><strong>{xunjiStatus.data.sync?.lastSuccessAt ? formatDateTime(xunjiStatus.data.sync.lastSuccessAt) : "Not yet completed"}</strong></div>{xunjiStatus.data.sync && <span>{xunjiStatus.data.sync.rangeStart} – {xunjiStatus.data.sync.rangeEnd} · {xunjiStatus.data.sync.data.records ?? 0} records</span>}<SyncControls label="Xunji sync range" range={xunjiRange} busy={xunjiBusy} onRangeChange={setXunjiRange} onSync={() => void runXunjiSync()}/></ConnectionState> : <ConnectionState configured={false} label="Not configured"><span>Export your training-data Skill from Xunji, then paste it here.</span></ConnectionState>}{xunjiMessage && <div className="success">{xunjiMessage}</div>}<ErrorBanner error={xunjiStatus.error ?? xunjiError}/></Card>
-    <Card title="Connect Intervals.icu" action={<button type="button" className="secondary compact" onClick={editingIntervals ? cancelIntervals : beginIntervalsEdit}>{editingIntervals ? "Cancel" : "Edit"}</button>}><p>Sync endurance activities and wellness data with saved credentials.</p>{intervalsStatus.isPending ? <Loading/> : editingIntervals ? <><label>API key<input type="password" autoComplete="off" placeholder={intervalsStatus.data?.configured ? "Enter a new key to replace the saved key" : "Enter API key"} value={key} onChange={(event) => setKey(event.target.value)}/></label><label>Athlete ID<input value={athleteId} onChange={(event) => setAthleteId(event.target.value)}/></label><p className="helper">Find these in Intervals.icu → Settings → Developer Settings.</p><button disabled={!key} onClick={() => void saveIntervals()}>Test and save</button></> : <ConnectionState configured={Boolean(intervalsStatus.data?.configured)} label={intervalsStatus.data?.configured ? intervalsStatus.data.sync?.status === "partial" ? "Partially synced" : "Connected" : "Not configured"}>{intervalsStatus.data?.configured ? <><div className="connection-detail"><small>Athlete ID</small><strong>{intervalsStatus.data.athleteId}</strong></div><div className="connection-detail"><small>Last successful sync</small><strong>{intervalsStatus.data.sync?.lastSuccessAt ? formatDateTime(intervalsStatus.data.sync.lastSuccessAt) : "Not yet completed"}</strong></div>{intervalsStatus.data.sync && <span>{intervalsStatus.data.sync.rangeStart} – {intervalsStatus.data.sync.rangeEnd}</span>}<SyncControls label="Intervals.icu sync range" range={intervalsRange} busy={intervalsBusy} onRangeChange={setIntervalsRange} onSync={() => void sync()}/></> : <span>Add an API key and Athlete ID to start syncing.</span>}</ConnectionState>}{intervalsMessage && <div className="success">{intervalsMessage}</div>}<ErrorBanner error={intervalsStatus.error ?? intervalsError}/></Card>
-  </div>;
-}
-
-function SyncControls({ label, range, busy, onRangeChange, onSync }: { label: string; range: SyncRange; busy: boolean; onRangeChange: (range: SyncRange) => void; onSync: () => void }) {
-  return <div className="sync-controls"><select aria-label={label} disabled={busy} value={range} onChange={(event) => onRangeChange(parseSyncRange(event.target.value))}>{syncRangeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><button className="secondary" disabled={busy} onClick={onSync}>{busy ? "Syncing…" : "Sync now"}</button></div>;
+  const connectXunji = async () => { try { setXunjiBusy(true); setXunjiError(undefined); const result = await importXunjiSkill(xunjiSkill) as ImportResult & { sync?: { status?: string } }; setXunjiMessage(`Sync ${result.sync?.status ?? "complete"}: ${result.added ?? 0} added, ${result.updated ?? 0} updated.`); setXunjiSkill(""); setDialog(null); await refreshXunjiViews(); } catch (value) { setXunjiError(value); } finally { setXunjiBusy(false); } };
+  const runXunjiSync = async (range: SyncRange = "incremental", closeOnSuccess = false) => { try { setXunjiBusy(true); setXunjiError(undefined); const result = await syncXunji(range) as ImportResult & { sync?: { status?: string } }; setXunjiMessage(`Sync ${result.sync?.status ?? "complete"}: ${result.added ?? 0} added, ${result.updated ?? 0} updated.`); await refreshXunjiViews(); if (closeOnSuccess) setDialog(null); } catch (value) { setXunjiError(value); } finally { setXunjiBusy(false); } };
+  const intervals = intervalsStatus.data; const xunji = xunjiStatus.data;
+  const sources = connectionSources(Boolean(intervals?.configured), Boolean(xunji?.configured), Boolean(hevyStatus.data));
+  return <section className="connections-page">
+    <header className="connections-header"><h1>Connections</h1><p>Sync your data from the apps and devices you use. Keep everything in one place.</p></header>
+    <section className="connections-section"><h2>Connected ({sources.added.length})</h2><div className="connected-sources-grid">
+      {hevyStatus.data && <SourceCard source="hevy" title="Hevy" description="Strength training workouts" badge={<SourceBadge tone="connected">Imported</SourceBadge>} lastSyncLabel="Last imported" lastSync={formatDateTime(hevyStatus.data.importedAt)} feedback={<><ErrorBanner error={hevyStatus.error ?? hevyError}/>{importResult && <div className="source-feedback success">Import complete: {importResult.added ?? 0} added, {importResult.updated ?? 0} updated.</div>}</>} action={<button type="button" className="source-action primary" onClick={() => setDialog("hevy")}><AppIcon name="upload"/>Import again</button>} menuLabel="Choose another CSV" onMenuAction={() => setDialog("hevy")}/>}
+      {intervals?.configured && <SourceCard source="intervals" title="Intervals.icu" description="Endurance activities and performance metrics." badge={<SourceBadge tone={connectionStatusPresentation(intervals.sync?.status).tone}>{connectionStatusPresentation(intervals.sync?.status).label}</SourceBadge>} lastSyncLabel="Last synced" lastSync={intervals.sync?.lastSuccessAt ? formatDateTime(intervals.sync.lastSuccessAt) : "Not yet completed"} feedback={<><ErrorBanner error={intervalsStatus.error ?? intervalsError}/>{intervalsMessage && <div className="source-feedback success">{intervalsMessage}</div>}</>} action={<button type="button" className="source-action primary" disabled={intervalsBusy} onClick={() => void sync()}><AppIcon name="refresh"/>{intervalsBusy ? "Syncing…" : "Sync now"}</button>} menuLabel="Edit connection" onMenuAction={openIntervals}/>}
+      {xunji?.configured && <SourceCard source="xunji" title="Xunji" description="Strength and training records" badge={<SourceBadge tone={connectionStatusPresentation(xunji.sync?.status).tone}>{connectionStatusPresentation(xunji.sync?.status).label}</SourceBadge>} lastSyncLabel="Last synced" lastSync={xunji.sync?.lastSuccessAt ? formatDateTime(xunji.sync.lastSuccessAt) : "Not yet completed"} feedback={<><ErrorBanner error={xunjiStatus.error ?? xunjiError}/>{xunjiMessage && <div className="source-feedback success">{xunjiMessage}</div>}</>} action={<button type="button" className="source-action primary" disabled={xunjiBusy} onClick={() => void runXunjiSync()}><AppIcon name="refresh"/>{xunjiBusy ? "Syncing…" : "Sync now"}</button>} menuLabel="Edit connection" onMenuAction={() => setDialog("xunji")}/>}
+      {!intervalsStatus.isPending && !xunjiStatus.isPending && !hevyStatus.isPending && sources.added.length === 0 && <div className="connections-empty"><span><AppIcon name="plus"/></span><strong>No connections yet</strong><p>Choose one of the available connections below to get started.</p></div>}
+    </div></section>
+    <section className="connections-section available-connections"><h2>Available Connections</h2>{sources.available.length ? <div className="available-sources-grid">
+      {sources.available.includes("hevy") && <AvailableSourceCard source="hevy" title="Hevy" description="Import strength workouts from a CSV export." onConnect={() => setDialog("hevy")}/>}
+      {sources.available.includes("intervals") && <AvailableSourceCard source="intervals" title="Intervals.icu" description="Sync endurance activities and wellness data." onConnect={openIntervals}/>}
+      {sources.available.includes("xunji") && <AvailableSourceCard source="xunji" title="Xunji" description="Sync strength and training records." onConnect={() => setDialog("xunji")}/>}
+    </div> : <div className="available-sources-empty"><span>✓</span><div><strong>All supported connections are connected</strong><p>Manage or sync them from the cards above.</p></div></div>}</section>
+    {dialog === "intervals" && <ConnectionModal title={intervals?.configured ? "Edit Intervals.icu" : "Connect Intervals.icu"} description="Your credentials are stored securely on this device." onClose={closeDialog}><label>API key<input type="password" autoComplete="off" autoFocus placeholder={intervals?.configured ? "Enter a new key to replace the saved key" : "Enter API key"} value={key} onChange={(event) => setKey(event.target.value)}/></label><label>Athlete ID<input value={athleteId} onChange={(event) => setAthleteId(event.target.value)}/></label><label>Sync range<select aria-label="Intervals.icu sync range" value={intervalsRange} onChange={(event) => setIntervalsRange(parseSyncRange(event.target.value))}>{syncRangeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><p className="helper">Find your API key and Athlete ID in Intervals.icu → Settings → Developer Settings.</p><ErrorBanner error={intervalsError}/><div className="modal-actions"><button type="button" className="secondary" onClick={closeDialog}>Cancel</button>{intervals?.configured && <button type="button" className="secondary" disabled={intervalsBusy} onClick={() => void sync(intervalsRange, true)}>{intervalsBusy ? "Syncing…" : "Sync selected range"}</button>}<button type="button" disabled={!key} onClick={() => void saveIntervals()}>Test and save</button></div></ConnectionModal>}
+    {dialog === "xunji" && <ConnectionModal title={xunji?.configured ? "Edit Xunji" : "Connect Xunji"} description="Paste the complete training-data Skill exported by Xunji." onClose={closeDialog}><label>Xunji exported Skill<textarea rows={8} autoComplete="off" autoFocus spellCheck={false} placeholder="Paste the complete Skill exported by Xunji" value={xunjiSkill} onChange={(event) => setXunjiSkill(event.target.value)}/></label><label>Sync range<select aria-label="Xunji sync range" value={xunjiRange} onChange={(event) => setXunjiRange(parseSyncRange(event.target.value))}>{syncRangeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><p className="helper">Athria extracts only the API key. The pasted text is never stored.</p><ErrorBanner error={xunjiError}/><div className="modal-actions"><button type="button" className="secondary" onClick={closeDialog}>Cancel</button>{xunji?.configured && <button type="button" className="secondary" disabled={xunjiBusy} onClick={() => void runXunjiSync(xunjiRange, true)}>{xunjiBusy ? "Syncing…" : "Sync selected range"}</button>}<button type="button" disabled={!xunjiSkill.trim() || xunjiBusy} onClick={() => void connectXunji()}>{xunjiBusy ? "Connecting and syncing…" : "Connect and sync"}</button></div></ConnectionModal>}
+    {dialog === "hevy" && <ConnectionModal title="Import from Hevy" description="Select a CSV export, review it, then import the workouts." onClose={closeDialog}><label>Hevy CSV export<input type="file" accept=".csv,text/csv" onChange={(event) => event.target.files?.[0] && void onFile(event.target.files[0])}/></label>{preview && <ImportSummary value={preview}><button type="button" onClick={() => void commit()}>Import reviewed workouts</button></ImportSummary>}<ErrorBanner error={hevyError}/></ConnectionModal>}
+  </section>;
 }
 
 function MiniStats({ counts }: { counts: { sessions?: number; sets?: number; rows?: number } }) {
@@ -259,53 +300,104 @@ function ImportSummary({ value, children }: { value: ImportPreview; children: Re
   return <div className="preview"><strong>{value.fileName}</strong><MiniStats counts={value.counts ?? {}}/>{Boolean(value.unknownColumns?.length) && <p>Ignored columns: {value.unknownColumns!.join(", ")}</p>}{Boolean(value.errors?.length) && <div className="warning-list"><strong>{value.errors!.length} rows need attention</strong>{value.errors!.map((item, index) => <span key={index}>{item}</span>)}</div>}{children}</div>;
 }
 
-function ConnectionState({ configured, label, children }: { configured: boolean; label: string; children: React.ReactNode }) {
-  return <div className="connection-state"><div className={`connection-badge ${configured ? "configured" : ""}`}><i/>{label}</div>{children}</div>;
-}
-
 function workoutLocalDate(item: TrainingHistorySession, fallbackTimezone: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: item.timezone ?? fallbackTimezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(item.startAt));
 }
 
+type TrainingDisplayType = "strength" | "endurance" | "sport_skill" | "mind_body" | "recovery" | "unclassified";
+const trainingTypeOptions = ["strength", "endurance", "sport_skill", "mind_body", "recovery"] as const;
+
+function trainingDisplayType(item: TrainingHistorySession): { id: TrainingDisplayType; label: string } {
+  const domain = item.domains[0];
+  if (domain === "strength" || domain === "endurance" || domain === "sport_skill" || domain === "mind_body" || domain === "recovery") return { id: domain, label: friendlyLabel(domain) };
+  return { id: "unclassified", label: "Unclassified" };
+}
+
+function TrainingTypeIcon({ type }: { type: TrainingDisplayType }) {
+  const path = {
+    strength: <><path d="M7 9v6M4.5 10.5v3M17 9v6M19.5 10.5v3M7 12h10"/><path d="M9.5 8v8M14.5 8v8"/></>,
+    endurance: <><circle cx="13.5" cy="5.5" r="1.7"/><path d="m11.5 9 2.3 2.1 2.8.7M13.8 11.1l-2 3.2-3.5 1.2M11.8 14.3l3 4.2M10.8 9.2 8.5 12"/></>,
+    sport_skill: <><circle cx="12" cy="12" r="7.5"/><path d="M12 4.5v15M4.5 12h15M6.7 6.7c2.8 2.7 2.8 7.9 0 10.6M17.3 6.7c-2.8 2.7-2.8 7.9 0 10.6"/></>,
+    mind_body: <><circle cx="12" cy="6" r="1.8"/><path d="M12 8v4M12 10l-4 3M12 10l4 3M12 12l-3 5M12 12l3 5M7 18c2-1 3.5-.8 5 .8 1.5-1.6 3-1.8 5-.8"/></>,
+    recovery: <><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></>,
+    unclassified: <><circle cx="12" cy="12" r="8"/><path d="M12 8v5M12 16h.01"/></>,
+  }[type];
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{path}</svg>;
+}
+
+function workoutDateTime(item: TrainingHistorySession, fallbackTimezone: string): { date: string; time: string } {
+  const timeZone = item.timezone ?? fallbackTimezone;
+  const instant = new Date(item.startAt);
+  const date = new Intl.DateTimeFormat("en-GB", { timeZone, day: "numeric", month: "short", year: "numeric" }).format(instant);
+  const time = item.timePrecision === "date_only" ? "-" : new Intl.DateTimeFormat("en-GB", { timeZone, hour: "numeric", minute: "2-digit", hour12: true }).format(instant).toLocaleLowerCase();
+  return { date, time };
+}
+
+function trainingHistorySourceLabel(source: string): string {
+  return ({ manual: "Manual", xunji: "Xunji" } as Record<string, string>)[source] ?? formatTrainingSource(source);
+}
+
 function TimelineWorkout({ item, planned, revision, timezone, onMutated }: { item: TrainingHistorySession; planned: CalendarSession[]; revision: number; timezone: string; onMutated: () => Promise<void> }) {
-  const [busy, setBusy] = useState(false); const [error, setError] = useState<unknown>(); const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false); const [error, setError] = useState<unknown>(); const [editing, setEditing] = useState(false); const [typeOpen, setTypeOpen] = useState(false); const rowRef = useRef<HTMLElement>(null); const menuRef = useRef<HTMLDetailsElement>(null);
   const [duration, setDuration] = useState(String(item.durationMinutes)); const [startAt, setStartAt] = useState("");
   const day = workoutLocalDate(item, timezone);
+  const displayType = trainingDisplayType(item); const dateTime = workoutDateTime(item, timezone);
   const compatible = (session: CalendarSession) => session.components.some((component) => component.domain.value !== null && item.domains.includes(component.domain.value));
   const eligible = planned.filter((session) => session.scheduledDate === day && session.status !== "skipped").sort((left, right) => Number(compatible(right)) - Number(compatible(left)) || Number(Boolean(left.completedTrainingSessionId)) - Number(Boolean(right.completedTrainingSessionId)));
-  const mutate = async (path: string, init: RequestInit) => { setBusy(true); setError(undefined); try { await api(path, init); await onMutated(); } catch (value) { setError(value); } finally { setBusy(false); } };
+  useEffect(() => { if (!typeOpen) return; const close = (event: PointerEvent) => { if (!rowRef.current?.contains(event.target as Node)) setTypeOpen(false); }; document.addEventListener("pointerdown", close); return () => document.removeEventListener("pointerdown", close); }, [typeOpen]);
+  const mutate = async (path: string, init: RequestInit): Promise<boolean> => { setBusy(true); setError(undefined); try { await api(path, init); await onMutated(); return true; } catch (value) { setError(value); return false; } finally { setBusy(false); } };
   const changeMatch = async (value: string) => {
     if (value === "__automatic__") return mutate(`/api/training-sessions/${encodeURIComponent(item.id)}/automatic-match`, { method: "POST", body: JSON.stringify({ confirmed: true }) });
     const target = eligible.find((session) => session.id === value);
     if (target?.completedTrainingSessionId && target.completedTrainingSessionId !== item.id && !window.confirm(`${target.name} is linked to another workout. Replace that link?`)) return;
-    return mutate(`/api/training-sessions/${encodeURIComponent(item.id)}/plan-match`, { method: "PATCH", body: JSON.stringify({ plannedSessionId: value === "__unplanned__" ? null : value, expectedRevision: revision, confirmed: true }) });
+    return mutate(`/api/training-sessions/${encodeURIComponent(item.id)}/plan-match`, { method: "PATCH", body: JSON.stringify({ plannedSessionId: value, expectedRevision: revision, confirmed: true }) });
   };
-  const saveManual = () => {
+  const changeType = async (domain: Exclude<TrainingDisplayType, "unclassified">) => { if (domain === displayType.id) { setTypeOpen(false); return; } if (await mutate(`/api/training-sessions/${encodeURIComponent(item.id)}/type`, { method: "PATCH", body: JSON.stringify({ domain, confirmed: true }) })) setTypeOpen(false); };
+  const resetManualDraft = () => { setDuration(String(item.durationMinutes)); setStartAt(""); };
+  const beginManualEdit = () => { resetManualDraft(); setEditing(true); };
+  const cancelManualEdit = () => { resetManualDraft(); setEditing(false); };
+  const saveManual = async () => {
     const parsedDuration = Number(duration); const payload: Record<string, unknown> = { confirmed: true, durationMinutes: parsedDuration };
     if (startAt) payload.startAt = new Date(startAt).toISOString();
-    void mutate(`/api/training-sessions/${encodeURIComponent(item.id)}/manual`, { method: "PATCH", body: JSON.stringify(payload) }).then(() => setEditing(false));
+    if (await mutate(`/api/training-sessions/${encodeURIComponent(item.id)}/manual`, { method: "PATCH", body: JSON.stringify(payload) })) { setEditing(false); menuRef.current?.removeAttribute("open"); }
   };
   const removeManual = () => { if (window.confirm("Remove the manual workout record? Synced sources will be kept.")) void mutate(`/api/training-sessions/${encodeURIComponent(item.id)}/manual`, { method: "DELETE", body: JSON.stringify({ confirmed: true }) }); };
+  const deleteRecord = () => { if (window.confirm("Delete this workout record and all of its source data? A synced workout may be imported again during a future sync.")) void mutate(`/api/training-sessions/${encodeURIComponent(item.id)}`, { method: "DELETE", body: JSON.stringify({ confirmed: true }) }); };
   const hasManual = item.sources.some((source) => source.source === "manual");
-  return <article className="timeline-workout" key={item.id}>
-    <div className="timeline-heading"><strong>{item.name}</strong><div className="timeline-sources">{item.sources.map((source) => <span className="source-badge" key={`${source.source}:${source.externalId}`}>{formatTrainingSource(source.source)}</span>)}</div></div>
-    <span>{item.timePrecision === "date_only" ? `${day} · Time not recorded` : formatDateTime(item.startAt)} · {item.domains.length ? item.domains.map(friendlyLabel).join(" + ") : "Unclassified"} · {formatDuration(item.durationMinutes)}{item.timePrecision === "date_only" ? " estimated" : ""}</span>
-    <div className="timeline-match"><label>Planned session<select disabled={busy} value={item.planMatch?.plannedSessionId ?? (item.isPlanMatchExcluded ? "__unplanned__" : "")} onChange={(event) => void changeMatch(event.target.value)}><option value="" disabled>{item.planMatch ? "Select a plan" : "No confident match"}</option>{eligible.map((session) => <option key={session.id} value={session.id}>{session.name}{!compatible(session) ? " · different domain" : ""}{session.completedTrainingSessionId && session.completedTrainingSessionId !== item.id ? " · linked" : ""}</option>)}<option value="__unplanned__">No planned session</option>{item.isPlanMatchExcluded && <option value="__automatic__">Allow automatic matching</option>}</select></label>{item.planMatch && <small>{item.planMatch.method === "manual" ? "Linked by you" : "Matched automatically"}</small>}</div>
-    {hasManual && <div className="timeline-manual"><button type="button" className="secondary compact" disabled={busy} onClick={() => setEditing((value) => !value)}>Edit manual details</button><button type="button" className="secondary compact" disabled={busy} onClick={removeManual}>Remove manual record</button></div>}
-    {editing && <div className="timeline-editor"><label>Duration (minutes)<input type="number" min="1" max="1440" value={duration} onChange={(event) => setDuration(event.target.value)}/></label><label>Actual start time<input type="datetime-local" value={startAt} onChange={(event) => setStartAt(event.target.value)}/></label><button type="button" className="compact" disabled={busy || !Number.isInteger(Number(duration)) || Number(duration) < 1} onClick={saveManual}>Save</button></div>}
+  const hasSynced = item.sources.some((source) => source.source !== "manual");
+  const subtitle = item.sport || (item.domains.length > 1 ? item.domains.map(friendlyLabel).join(" + ") : `${displayType.label} workout`);
+  return <article className="training-row" key={item.id} ref={rowRef}>
+    <div className="training-workout-cell"><span className={`training-type-icon ${displayType.id}`}><TrainingTypeIcon type={displayType.id}/></span><span><strong>{item.name}</strong><small>{subtitle}</small></span></div>
+    <div className="training-date-cell"><strong>{dateTime.date}</strong><small>{dateTime.time}</small></div>
+    <div className="training-type-cell"><button type="button" className={`training-type-badge ${displayType.id}`} aria-expanded={typeOpen} aria-label={`Change type for ${item.name}`} disabled={busy} onClick={() => setTypeOpen((value) => !value)}>{displayType.label}</button></div>
+    <div className="training-duration-cell"><AppIcon name="clock"/><span>{formatDuration(item.durationMinutes)}{item.timePrecision === "date_only" ? <small>Estimated</small> : null}</span></div>
+    <div className="training-source-cell"><span>{trainingHistorySourceLabel(item.source)}</span></div>
+    <div className="training-plan-cell"><span className={`training-plan-mark ${item.planMatch ? "matched" : ""}`} aria-label={item.planMatch ? `${item.name} is matched to a planned session` : `${item.name} is not matched to a planned session`} title={item.planMatch ? "Matched to a planned session" : undefined}>{item.planMatch ? "✓" : ""}</span></div>
+    <div className="training-actions-cell"><details className={editing ? "training-row-menu editing" : "training-row-menu"} ref={menuRef} onToggle={(event) => { if (!event.currentTarget.open && editing) cancelManualEdit(); }}><summary aria-label={`Actions for ${item.name}`}>•••</summary><div>{editing ? <div className="training-row-menu-editor"><label>Duration (minutes)<input type="number" min="1" max="1440" disabled={busy} value={duration} onChange={(event) => setDuration(event.target.value)}/></label><label>Actual start time<input type="datetime-local" disabled={busy} value={startAt} onChange={(event) => setStartAt(event.target.value)}/></label><div className="training-row-menu-editor-actions"><button type="button" className="secondary" disabled={busy} onClick={cancelManualEdit}>Cancel</button><button type="button" className="training-row-menu-save" disabled={busy || !Number.isInteger(Number(duration)) || Number(duration) < 1} onClick={() => void saveManual()}>{busy ? "Saving…" : "Save"}</button></div></div> : <><label className="training-row-menu-plan"><span>Planned session</span><select aria-label={`Planned session for ${item.name}`} disabled={busy} value={item.planMatch?.plannedSessionId ?? ""} onChange={(event) => void changeMatch(event.target.value)}><option value="" disabled>-</option>{eligible.map((session) => <option key={session.id} value={session.id}>{session.name}{!compatible(session) ? " · different domain" : ""}{session.completedTrainingSessionId && session.completedTrainingSessionId !== item.id ? " · linked" : ""}</option>)}{item.isPlanMatchExcluded && <option value="__automatic__">Allow automatic matching</option>}</select>{item.planMatch && <small>{item.planMatch.method === "manual" ? "Linked by you" : "Matched automatically"}</small>}</label>{hasManual && <button type="button" disabled={busy} onClick={beginManualEdit}>Edit manual details</button>}{hasManual && hasSynced && <button type="button" className="danger-text" disabled={busy} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); removeManual(); }}>Remove manual source</button>}<button type="button" className="danger-text" disabled={busy} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); deleteRecord(); }}>Delete record</button></>}</div></details></div>
+    {typeOpen && <div className="training-type-options" role="group" aria-label={`Type options for ${item.name}`}>{trainingTypeOptions.map((domain) => <button type="button" key={domain} className={`training-type-option ${domain} ${displayType.id === domain ? "selected" : ""}`} aria-pressed={displayType.id === domain} disabled={busy} onClick={() => void changeType(domain)}>{friendlyLabel(domain)}</button>)}</div>}
     <ErrorBanner error={error}/>
   </article>;
 }
 
-function Timeline() {
+export function Timeline() {
   const client = useQueryClient();
+  const [search, setSearch] = useState(""); const [sort, setSort] = useState<TrainingHistorySort>("newest"); const [page, setPage] = useState(1);
   const query = useQuery({ queryKey: ["sessions"], queryFn: () => api<TrainingHistorySession[]>("/api/sessions?days=365") });
   const calendar = useQuery({ queryKey: ["calendar", "timeline"], queryFn: () => api<CalendarSession[]>("/api/plans/calendar") });
   const plan = useQuery({ queryKey: ["current-plan"], queryFn: () => api<CurrentPlan | null>("/api/plans/current") });
   const profile = useQuery({ queryKey: ["profile"], queryFn: () => api<AthleteProfile>("/api/profile") });
   const refresh = async () => { await Promise.all([client.invalidateQueries({ queryKey: ["sessions"] }), client.invalidateQueries({ queryKey: ["calendar"] }), client.invalidateQueries({ queryKey: ["summary"] }), client.invalidateQueries({ queryKey: ["state"] }), client.invalidateQueries({ queryKey: ["next-training-day"] })]); };
   const error = query.error ?? calendar.error ?? plan.error ?? profile.error;
-  return <Card title="Training timeline"><ErrorBanner error={error}/>{query.isPending || calendar.isPending || plan.isPending || profile.isPending ? <Loading/> : !query.data?.length ? <Empty>No workouts imported yet.</Empty> : <div className="timeline">{query.data.map((item) => <TimelineWorkout key={item.id} item={item} planned={calendar.data ?? []} revision={plan.data?.revision ?? 0} timezone={profile.data?.timezone ?? "UTC"} onMutated={refresh}/>)}</div>}</Card>;
+  const plannedNames = useMemo(() => Object.fromEntries((calendar.data ?? []).map((session) => [session.id, session.name])), [calendar.data]);
+  const filtered = useMemo(() => filterAndSortTrainingHistory(query.data ?? [], search, sort, plannedNames), [query.data, search, sort, plannedNames]);
+  const pagination = paginateTrainingHistory(filtered, page);
+  useEffect(() => { if (page !== pagination.page) setPage(pagination.page); }, [page, pagination.page]);
+  const loading = query.isPending || calendar.isPending || plan.isPending || profile.isPending;
+  return <section className="card training-history">
+    <div className="training-history-header"><div><h2>Training history</h2><p>Your recent workouts, sessions and activities.</p></div><div className="training-history-tools"><label className="training-search"><span className="sr-only">Search workouts</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg><input type="search" placeholder="Search workouts..." value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }}/></label><label className="training-sort"><span className="sr-only">Sort training history</span><select aria-label="Sort training history" value={sort} onChange={(event) => { setSort(event.target.value as TrainingHistorySort); setPage(1); }}><option value="newest">Newest first</option><option value="oldest">Oldest first</option></select></label></div></div>
+    <ErrorBanner error={error}/>
+    {loading ? <Loading/> : <><div className="training-table-scroll"><div className="training-table"><div className="training-table-heading" aria-hidden="true"><span>Workout</span><span>Date &amp; time</span><span>Type</span><span>Duration</span><span>Source</span><span className="training-plan-heading">Plan Matched</span><span/></div><div className="training-table-body">{pagination.items.map((item) => <TimelineWorkout key={item.id} item={item} planned={calendar.data ?? []} revision={plan.data?.revision ?? 0} timezone={profile.data?.timezone ?? "UTC"} onMutated={refresh}/>)}{!query.data?.length ? <Empty>No workouts imported yet.</Empty> : !filtered.length ? <Empty>No workouts match your search.</Empty> : null}</div></div></div><footer className="training-history-footer"><span>{filtered.length ? `Showing ${pagination.start}–${pagination.end} of ${filtered.length} sessions` : "Showing 0 sessions"}</span><div><button type="button" aria-label="Previous page" disabled={pagination.page === 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>‹</button><button type="button" aria-label="Next page" disabled={pagination.page === pagination.totalPages} onClick={() => setPage((current) => Math.min(pagination.totalPages, current + 1))}>›</button></div></footer></>}
+  </section>;
 }
 
 function Backup() {
@@ -459,10 +551,10 @@ function McpSetup() {
 }
 
 function Help() {
-  return <><Card title="Help & Support"><p>Athria is your local-first training companion. Use Devices to connect data sources, Profile to confirm your preferences, and Plan to review Agent-created training plans.</p><div className="help-grid"><section><strong>Need to update your profile?</strong><span>Open Profile and choose Edit, or explicitly confirm a profile change with your connected Agent.</span></section><section><strong>Having trouble with a connection?</strong><span>Open Devices, re-enter the connection details, then test or sync again.</span></section><section><strong>Protect your data</strong><span>Create a local backup from Settings before troubleshooting or moving Athria to another device.</span></section></div></Card><Card title="Connect Athria to your AI agent" className="mcp-card"><McpSetup/></Card></>;
+  return <><Card title="Help & Support"><p>Athria is your local-first training companion. Use Connections to connect data sources, Profile to confirm your preferences, and Plan to review Agent-created training plans.</p><div className="help-grid"><section><strong>Need to update your profile?</strong><span>Open Profile and choose Edit, or explicitly confirm a profile change with your connected Agent.</span></section><section><strong>Having trouble with a connection?</strong><span>Open Connections, re-enter the connection details, then test or sync again.</span></section><section><strong>Protect your data</strong><span>Create a local backup from Settings before troubleshooting or moving Athria to another device.</span></section></div></Card><Card title="Connect Athria to your AI agent" className="mcp-card"><McpSetup/></Card></>;
 }
 
-const views: Record<Page, () => React.ReactElement> = { Overview, Training: Timeline, Profile, Plan: CurrentPlanPage, Devices: Connections, Settings, Help };
+const views: Record<Page, () => React.ReactElement> = { Overview, Training: Timeline, Profile, Plan: CurrentPlanPage, Connections, Settings, Help };
 
 export function App() {
   const [page, setPage] = useState<Page>("Overview"); const [serviceCrash, setServiceCrash] = useState(false); const View = views[page];
@@ -472,9 +564,9 @@ export function App() {
   const primaryPage = primaryPages.some((item) => item.id === page);
   useEffect(() => { let unlisten: UnlistenFn | undefined; void listen("athria-service-crashed", () => setServiceCrash(true)).then((dispose) => { unlisten = dispose; }); return () => unlisten?.(); }, []);
   useEffect(() => { const openTraining = () => setPage("Training"); window.addEventListener("athria-open-training", openTraining); return () => window.removeEventListener("athria-open-training", openTraining); }, []);
-  const navIcons: Record<Page, IconName> = { Overview: "overview", Training: "training", Profile: "profile", Plan: "plan", Devices: "devices", Settings: "settings", Help: "help" };
+  const navIcons: Record<Page, IconName> = { Overview: "overview", Training: "training", Profile: "profile", Plan: "plan", Connections: "devices", Settings: "settings", Help: "help" };
   const NavItems = ({ items }: { items: typeof dashboardPages[number][] }) => <>{items.map((item) => <button key={item.id} className={item.id === page ? "active" : ""} aria-current={item.id === page ? "page" : undefined} onClick={() => setPage(item.id)}><AppIcon name={navIcons[item.id]}/>{item.label}</button>)}</>;
   const preferredName = profile.data?.preferredName || "Athlete";
   const initials = preferredName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "A";
-  return <div className="shell"><aside><div className="brand"><img src="/athria-logo.png" alt="Athria" /></div><nav aria-label="Main navigation"><NavItems items={primaryPages}/></nav><div className="sidebar-lower"><nav className="support-nav" aria-label="Support navigation"><NavItems items={supportPages}/></nav><div className="sidebar-motto" aria-hidden="true"><span>Stronger<br/>You, Brighter<br/>Days</span><b>→</b><i/><i/><i/></div><div className="sidebar-user"><span className="sidebar-avatar" aria-hidden="true">{initials}</span><span><strong>{preferredName}</strong><small>Athlete profile</small></span><b aria-hidden="true">•••</b></div></div></aside><main className={primaryPage ? "primary-main" : undefined}>{page !== "Plan" && page !== "Profile" && (primaryPage ? <PrimaryPageHeader preferredName={preferredName} subtitle={page === "Overview" ? "Let's keep the momentum going. Here's your overview for today." : "Your AI fitness hub. Local-first. Data you own."}/> : <header><div><h1>Hi, {preferredName}! <span aria-hidden="true">👋</span></h1><p>Your AI fitness hub. Local-first. Data you own.</p></div></header>)}{serviceCrash && <div className="error">The local service stopped unexpectedly. Close and reopen Athria. If the problem continues, create a backup before troubleshooting.</div>}<View/></main></div>;
+  return <div className="shell"><aside><div className="brand"><img src="/athria-logo.png" alt="Athria" /></div><nav aria-label="Main navigation"><NavItems items={primaryPages}/></nav><div className="sidebar-lower"><nav className="support-nav" aria-label="Support navigation"><NavItems items={supportPages}/></nav><div className="sidebar-motto" aria-hidden="true"><span>Stronger<br/>You, Brighter<br/>Days</span><b>→</b><i/><i/><i/></div><div className="sidebar-user"><span className="sidebar-avatar" aria-hidden="true">{initials}</span><span><strong>{preferredName}</strong><small>Athlete profile</small></span><b aria-hidden="true">•••</b></div></div></aside><main className={primaryPage ? "primary-main" : undefined}>{page !== "Plan" && page !== "Profile" && page !== "Connections" && (primaryPage ? <PrimaryPageHeader preferredName={preferredName} subtitle={page === "Overview" ? "Let's keep the momentum going. Here's your overview for today." : "Your AI fitness hub. Local-first. Data you own."}/> : <header><div><h1>Hi, {preferredName}! <span aria-hidden="true">👋</span></h1><p>Your AI fitness hub. Local-first. Data you own.</p></div></header>)}{serviceCrash && <div className="error">The local service stopped unexpectedly. Close and reopen Athria. If the problem continues, create a backup before troubleshooting.</div>}<View/></main></div>;
 }

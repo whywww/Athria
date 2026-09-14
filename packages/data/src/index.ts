@@ -487,6 +487,7 @@ export class AthriaRepository {
       this.migratePersonalInformationV17();
       this.migrateWorkoutReconciliationV18();
       this.migratePlanReconciliationUxV19();
+      this.migrateTrainingSessionTypeOverridesV20();
     } catch (error) {
       this.sqlite.close();
       throw error;
@@ -978,6 +979,22 @@ export class AthriaRepository {
     })();
   }
 
+  private migrateTrainingSessionTypeOverridesV20(): void {
+    if (this.sqlite.query("SELECT version FROM athria_migrations WHERE version = 20").get()) return;
+    this.sqlite.transaction(() => {
+      this.sqlite.exec(`
+        CREATE TABLE training_session_type_overrides (
+          owner_id TEXT NOT NULL, training_session_id TEXT NOT NULL,
+          domain TEXT NOT NULL CHECK(domain IN ('strength','endurance','sport_skill','mind_body','recovery')),
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY(owner_id, training_session_id)
+        );
+        CREATE INDEX training_session_type_overrides_owner ON training_session_type_overrides(owner_id);
+      `);
+      this.sqlite.query("INSERT INTO athria_migrations(version, applied_at) VALUES (20, CURRENT_TIMESTAMP)").run();
+    })();
+  }
+
   close(): void { this.sqlite.close(); }
 
   getProfile(ownerId = "local-user"): AthleteProfile {
@@ -1005,9 +1022,15 @@ export class AthriaRepository {
     return summaries;
   }
 
-  private withDerivedMatch(session: TrainingSession, matches: Map<string, { plannedSessionId: string; method: "auto" | "manual" }>, sources: Map<string, Array<{ source: string; externalId: string }>>, excluded = new Set<string>()): TrainingSession {
+  private typeOverrides(ownerId: string): Map<string, TrainingSession["domains"][number]> {
+    const rows = this.sqlite.query("SELECT training_session_id,domain FROM training_session_type_overrides WHERE owner_id=?").all(ownerId) as Array<{ training_session_id: string; domain: TrainingSession["domains"][number] }>;
+    return new Map(rows.map((row) => [row.training_session_id, row.domain]));
+  }
+
+  private withDerivedMatch(session: TrainingSession, matches: Map<string, { plannedSessionId: string; method: "auto" | "manual" }>, sources: Map<string, Array<{ source: string; externalId: string }>>, excluded = new Set<string>(), overrides = new Map<string, TrainingSession["domains"][number]>()): TrainingSession {
     const match = matches.get(session.id) ?? null;
-    return trainingSessionSchema.parse({ ...session, plannedSessionId: match?.plannedSessionId ?? null, planMatch: match, sources: sources.get(session.id) ?? [{ source: session.source, externalId: session.externalId }], isPlanMatchExcluded: excluded.has(session.id) });
+    const domain = overrides.get(session.id);
+    return trainingSessionSchema.parse({ ...session, domains: domain ? [domain] : session.domains, missingFields: domain ? session.missingFields.filter((field) => field !== "domains") : session.missingFields, plannedSessionId: match?.plannedSessionId ?? null, planMatch: match, sources: sources.get(session.id) ?? [{ source: session.source, externalId: session.externalId }], isPlanMatchExcluded: excluded.has(session.id) });
   }
 
   private insertPlanMatch(ownerId: string, plannedSessionId: string, trainingSessionId: string, method: "manual" | "auto", confidence: number, evidence: Record<string, unknown>): void {
@@ -1027,7 +1050,9 @@ export class AthriaRepository {
     const linked = new Set((this.sqlite.query("SELECT training_session_id FROM plan_workout_matches WHERE owner_id=?").all(ownerId) as Array<{ training_session_id: string }>).map((row) => row.training_session_id));
     const hasExclusions = Boolean(this.sqlite.query("SELECT name FROM sqlite_master WHERE type='table' AND name='workout_plan_exclusions'").get());
     const excluded = new Set(hasExclusions ? (this.sqlite.query("SELECT training_session_id FROM workout_plan_exclusions WHERE owner_id=?").all(ownerId) as Array<{ training_session_id: string }>).map((row) => row.training_session_id) : []);
-    const protectedIds = new Set([...linked, ...excluded]);
+    const hasTypeOverrides = Boolean(this.sqlite.query("SELECT name FROM sqlite_master WHERE type='table' AND name='training_session_type_overrides'").get());
+    const overrideIds = new Set(hasTypeOverrides ? [...this.typeOverrides(ownerId).keys()] : []);
+    const protectedIds = new Set([...linked, ...excluded, ...overrideIds]);
     const usedIds = new Set<string>();
     const canonical: TrainingSession[] = [];
     const assignments = new Map<string, string>();
@@ -1049,6 +1074,7 @@ export class AthriaRepository {
     for (const session of canonical) this.sqlite.query("INSERT INTO training_sessions(id,owner_id,source,external_id,modality,start_at,data) VALUES (?,?,?,?,?,?,?)").run(session.id, ownerId, session.source, session.externalId, session.modality, session.startAt, JSON.stringify(session));
     for (const [sourceId, canonicalId] of assignments) this.sqlite.query("UPDATE training_session_sources SET training_session_id=? WHERE id=?").run(canonicalId, sourceId);
     this.sqlite.query("DELETE FROM plan_workout_matches WHERE owner_id=? AND training_session_id NOT IN (SELECT id FROM training_sessions WHERE owner_id=?)").run(ownerId, ownerId);
+    if (hasTypeOverrides) this.sqlite.query("DELETE FROM training_session_type_overrides WHERE owner_id=? AND training_session_id NOT IN (SELECT id FROM training_sessions WHERE owner_id=?)").run(ownerId, ownerId);
     if (hasExclusions) {
       this.sqlite.query("DELETE FROM workout_plan_exclusions WHERE owner_id=?").run(ownerId);
       for (const trainingSessionId of [...excluded].filter((id) => usedIds.has(id))) this.sqlite.query("INSERT INTO workout_plan_exclusions(owner_id,training_session_id,created_at) VALUES (?,?,?)").run(ownerId, trainingSessionId, this.now().toISOString());
@@ -1082,7 +1108,8 @@ export class AthriaRepository {
     const condition = since ? and(eq(schema.trainingSessions.ownerId, ownerId), gte(schema.trainingSessions.startAt, since)) : eq(schema.trainingSessions.ownerId, ownerId);
     const matches = this.matchDetails(ownerId); const sources = this.sourceSummaries(ownerId);
     const excluded = new Set((this.sqlite.query("SELECT training_session_id FROM workout_plan_exclusions WHERE owner_id=?").all(ownerId) as Array<{ training_session_id: string }>).map((row) => row.training_session_id));
-    return this.db.select().from(schema.trainingSessions).where(condition).orderBy(desc(schema.trainingSessions.startAt)).all().map((row) => this.withDerivedMatch(trainingSessionSchema.parse(parseJson(row.data)), matches, sources, excluded));
+    const overrides = this.typeOverrides(ownerId);
+    return this.db.select().from(schema.trainingSessions).where(condition).orderBy(desc(schema.trainingSessions.startAt)).all().map((row) => this.withDerivedMatch(trainingSessionSchema.parse(parseJson(row.data)), matches, sources, excluded, overrides));
   }
 
   listSessionsBySource(source: string, ownerId = "local-user", since?: string): TrainingSession[] {
@@ -1369,6 +1396,14 @@ export class AthriaRepository {
     })();
   }
 
+  setTrainingSessionTypeOverride(ownerId: string, trainingSessionId: string, domain: TrainingSession["domains"][number]): TrainingSession {
+    const exists = this.sqlite.query("SELECT id FROM training_sessions WHERE owner_id=? AND id=?").get(ownerId, trainingSessionId);
+    if (!exists) throw new Error("TRAINING_SESSION_NOT_FOUND");
+    this.sqlite.query("INSERT INTO training_session_type_overrides(owner_id,training_session_id,domain,updated_at) VALUES (?,?,?,?) ON CONFLICT(owner_id,training_session_id) DO UPDATE SET domain=excluded.domain,updated_at=excluded.updated_at").run(ownerId, trainingSessionId, domain, this.now().toISOString());
+    this.reconcilePlanMatches(ownerId);
+    return this.listSessions(ownerId).find((session) => session.id === trainingSessionId)!;
+  }
+
   deleteManualTrainingSession(ownerId: string, trainingSessionId: string): TrainingSession | null {
     return this.sqlite.transaction(() => {
       const result = this.sqlite.query("DELETE FROM training_session_sources WHERE owner_id=? AND training_session_id=? AND source='manual'").run(ownerId, trainingSessionId);
@@ -1378,8 +1413,21 @@ export class AthriaRepository {
     })();
   }
 
+  deleteTrainingSession(ownerId: string, trainingSessionId: string): void {
+    this.sqlite.transaction(() => {
+      const exists = this.sqlite.query("SELECT id FROM training_sessions WHERE owner_id=? AND id=?").get(ownerId, trainingSessionId);
+      if (!exists) throw new Error("TRAINING_SESSION_NOT_FOUND");
+      this.sqlite.query("DELETE FROM training_session_sources WHERE owner_id=? AND training_session_id=?").run(ownerId, trainingSessionId);
+      this.sqlite.query("DELETE FROM plan_workout_matches WHERE owner_id=? AND training_session_id=?").run(ownerId, trainingSessionId);
+      this.sqlite.query("DELETE FROM workout_plan_exclusions WHERE owner_id=? AND training_session_id=?").run(ownerId, trainingSessionId);
+      this.sqlite.query("DELETE FROM training_session_type_overrides WHERE owner_id=? AND training_session_id=?").run(ownerId, trainingSessionId);
+      this.sqlite.query("DELETE FROM training_sessions WHERE owner_id=? AND id=?").run(ownerId, trainingSessionId);
+      this.rebuildCanonicalSessions(ownerId); this.reconcilePlanMatches(ownerId);
+    })();
+  }
+
   counts(): Record<string, number> {
-    const names = ["profiles", "training_sessions", "training_session_sources", "plan_workout_matches", "workout_plan_exclusions", "planned_session_events", "wellness", "import_batches", "connection_sync_state", "session_templates", "current_mesocycles"];
+    const names = ["profiles", "training_sessions", "training_session_sources", "training_session_type_overrides", "plan_workout_matches", "workout_plan_exclusions", "planned_session_events", "wellness", "import_batches", "connection_sync_state", "session_templates", "current_mesocycles"];
     return Object.fromEntries(names.map((name) => [name, Number((this.sqlite.query(`SELECT COUNT(*) AS count FROM ${name}`).get() as { count: number }).count)]));
   }
 

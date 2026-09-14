@@ -55,11 +55,11 @@
 }
 .mt-card .mt-eyebrow-primary { color: var(--accent); }
 
-/* Primary Goal — highest visual weight (§5.3). */
+/* Primary Goal — compact content matching the eyebrow label size (§5.3). */
 .mt-primary-section { padding-block: 20px; }
 .mt-primary { display: grid; gap: 9px; }
 .mt-primary-label {
-  margin: 0; color: var(--ink); font-size: 27px; font-weight: 800;
+  margin: 0; color: var(--ink); font-size: 10.5px; font-weight: 400;
   line-height: 1.18; letter-spacing: -.025em; overflow-wrap: anywhere;
 }
 .mt-primary-meta { display: flex; flex-wrap: wrap; gap: 6px 20px; }
@@ -122,10 +122,10 @@
 .pdb-domains { display: grid; gap: 20px; }
 .pdb-domain { min-width: 0; }
 .pdb-domain h4 { display: flex; align-items: center; gap: 8px; margin: 0 0 9px; color: #263955; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
-.pdb-track { display: flex; align-items: stretch; min-width: 640px; gap: 9px; }
-.pdb-domain { overflow-x: auto; padding-bottom: 3px; }
+.pdb-track { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: stretch; gap: 9px; }
+.pdb-domain { padding-bottom: 3px; }
 .pdb-phase {
-  position: relative; flex-basis: 0; min-width: 150px; overflow: hidden;
+  position: relative; min-width: 0; overflow: hidden;
   display: grid; align-content: start; gap: 5px;
   padding: 15px 15px 14px; border: 1px solid #e8e5e0; border-radius: 12px;
   background: #fff; color: inherit; font: inherit; font-weight: 400;
@@ -161,13 +161,11 @@
 /* =========================================================================
    Narrow-window responsiveness (§5.4, §6, §17)
    ========================================================================= */
-@media (max-width: 1080px) {
+@media (max-width: 1250px) {
   .mt-columns { grid-template-columns: minmax(0, 1fr); gap: 18px; }
-  .mt-primary-label { font-size: 23px; }
 }
 @media (max-width: 720px) {
-  .mt-primary-label { font-size: 20px; }
   .mt-progress { gap: 6px 10px; }
   .mt-progress-asof { margin-left: 0; width: 100%; }
-  .pdb-track { min-width: 540px; }
+  .pdb-track { grid-template-columns: minmax(0, 1fr); }
 }

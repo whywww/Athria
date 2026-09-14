@@ -139,7 +139,7 @@ COORDINATION STRATEGY
 ### 5.3 信息层级
 
 1. 计划标题、日期范围、当前进度。
-2. Primary Goal，视觉权重最高。
+2. Primary Goal，标题与内容使用同样的紧凑字号，通过位置和始终可见来体现优先级。
 3. Supporting 与 Maintenance 目标。
 4. Coordination Strategy。
 
@@ -148,8 +148,8 @@ COORDINATION STRATEGY
 ### 5.4 折叠规则
 
 - Primary Goal 与当前进度始终展示。
-- Supporting、Maintenance 和 Coordination Strategy 在窄屏可折叠到 `Plan details`。
-- 用户展开或折叠后的偏好在本次使用过程中保持。
+- Supporting、Maintenance 和 Coordination Strategy 默认折叠到 `Plan details`。
+- 用户可在当前页面展开或收起；每次重新进入 Plan 页时恢复默认收起。
 - 如果只有一个目标，也保留 Primary 标识，不显示空的 Supporting/Maintenance 区域。
 
 ### 5.5 状态表达

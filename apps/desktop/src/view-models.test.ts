@@ -1,11 +1,26 @@
 import { describe, expect, it } from "vitest";
-import { dashboardPages, editableTemplate, equipmentGroupState, formatDistance, formatDuration, formatTimezoneLabel, formatTrainingSource, parseSyncRange, profilePayload, referencedTemplates, syncRangeOptions, templateEditorErrors, templateNodeName, toggleEquipmentGroup, PREFERENCE_MAX_LENGTH, type AthleteProfile, type Mesocycle, type SessionTemplate, type StoredSessionTemplate } from "./view-models";
+import { connectionSources, connectionStatusPresentation, dashboardPages, editableTemplate, equipmentGroupState, filterAndSortTrainingHistory, formatDistance, formatDuration, formatTimezoneLabel, formatTrainingSource, paginateTrainingHistory, parseSyncRange, profilePayload, referencedTemplates, syncRangeOptions, templateEditorErrors, templateNodeName, toggleEquipmentGroup, PREFERENCE_MAX_LENGTH, type AthleteProfile, type Mesocycle, type SessionTemplate, type StoredSessionTemplate, type TrainingHistorySession } from "./view-models";
 
 const profile: AthleteProfile = { ownerId: "local-user", preferredName: "Athlete", gender: null, heightCm: null, birthDate: null, timezone: "Asia/Hong_Kong", goals: ["general_fitness"], preference: "", maxSessionMinutes: 60, trainingRhythm: { kind: "flexible_week", targetDaysPerWeek: 4, minDaysPerWeek: 3, maxDaysPerWeek: 5 }, equipment: ["dumbbell"], injuries: [], constraintNotes: [], explicitRecoveryDays: null };
 
 const template: SessionTemplate = { id: "lower", name: "Lower", intent: "Lower-body pattern", domain: "strength", nodes: [{ name: "Squat pattern", role: "primary", movementPatternIds: ["squat"], targetMuscleIds: ["quadriceps"], matchPolicy: "all", variables: ["exercise_selection"] }] };
+const history = [
+  { id: "new", name: "Evening Yoga Flow", startAt: "2026-09-10T12:00:00Z", domains: ["mind_body"], sport: "Yoga", source: "xunji", sources: [{ source: "xunji", externalId: "2" }], planMatch: { plannedSessionId: "yoga-plan", method: "manual" as const } },
+  { id: "old", name: "Easy Run", startAt: "2026-09-06T23:00:00Z", domains: ["endurance"], sport: "Running", source: "intervals", sources: [{ source: "intervals", externalId: "1" }], planMatch: null },
+].map((item) => ({ timezone: null, durationMinutes: 30, timePrecision: "exact" as const, plannedSessionId: item.planMatch?.plannedSessionId ?? null, isPlanMatchExcluded: false, ...item })) satisfies TrainingHistorySession[];
 
 describe("dashboard v7 view models", () => {
+  it("separates added sources from sources available to add", () => {
+    expect(connectionSources(false, false, false)).toEqual({ added: [], available: ["intervals", "xunji", "hevy"] });
+    expect(connectionSources(true, false, false)).toEqual({ added: ["intervals"], available: ["xunji", "hevy"] });
+    expect(connectionSources(false, true, true)).toEqual({ added: ["xunji", "hevy"], available: ["intervals"] });
+    expect(connectionSources(true, true, true)).toEqual({ added: ["intervals", "xunji", "hevy"], available: [] });
+    expect(dashboardPages.some((page) => page.id === "Connections" && page.label === "Connections")).toBe(true);
+    expect(connectionStatusPresentation("success")).toEqual({ tone: "connected", label: "Connected" });
+    expect(connectionStatusPresentation("partial")).toEqual({ tone: "partial", label: "Partially synced" });
+    expect(connectionStatusPresentation("failed")).toEqual({ tone: "failed", label: "Sync failed" });
+  });
+
   it("toggles equipment groups without changing other selections", () => {
     expect(equipmentGroupState(["dumbbell", "treadmill"], ["dumbbell", "barbell"])).toBe("some");
     expect(toggleEquipmentGroup(["dumbbell", "treadmill"], ["dumbbell", "barbell"])).toEqual(["dumbbell", "treadmill", "barbell"]);
@@ -20,6 +35,21 @@ describe("dashboard v7 view models", () => {
     expect(formatTrainingSource("xunji")).toBe("训记");
     expect(formatTrainingSource("intervals")).toBe("Intervals.icu");
     expect(formatTrainingSource("custom-device")).toBe("custom-device");
+  });
+  it("filters training history across workout metadata and planned names", () => {
+    const plans = { "yoga-plan": "Daily Mobility" };
+    expect(filterAndSortTrainingHistory(history, "YOGA", "newest", plans).map((item) => item.id)).toEqual(["new"]);
+    expect(filterAndSortTrainingHistory(history, "mind-body", "newest", plans).map((item) => item.id)).toEqual(["new"]);
+    expect(filterAndSortTrainingHistory(history, "Intervals.icu", "newest", plans).map((item) => item.id)).toEqual(["old"]);
+    expect(filterAndSortTrainingHistory(history, "daily mobility", "newest", plans).map((item) => item.id)).toEqual(["new"]);
+    expect(filterAndSortTrainingHistory(history, "missing", "newest", plans)).toEqual([]);
+  });
+  it("sorts and paginates training history with clamped boundaries", () => {
+    expect(filterAndSortTrainingHistory(history, "", "oldest").map((item) => item.id)).toEqual(["old", "new"]);
+    const items = Array.from({ length: 41 }, (_, index) => index + 1);
+    expect(paginateTrainingHistory(items, 2)).toMatchObject({ items: Array.from({ length: 20 }, (_, index) => index + 21), page: 2, totalPages: 3, start: 21, end: 40 });
+    expect(paginateTrainingHistory(items, 99)).toMatchObject({ items: [41], page: 3, start: 41, end: 41 });
+    expect(paginateTrainingHistory([], 2)).toMatchObject({ items: [], page: 1, totalPages: 1, start: 0, end: 0 });
   });
   it("exposes the supported device sync ranges", () => {
     expect(syncRangeOptions.map((option) => option.value)).toEqual(["incremental", 1, 10, 30, 90]);

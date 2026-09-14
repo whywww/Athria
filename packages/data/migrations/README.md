@@ -19,3 +19,5 @@ Migration 16 is implemented transactionally by `migrateEquipmentCatalogV16()`. I
 Migration `0018_workout_reconciliation.sql` is implemented by `migrateWorkoutReconciliationV18()`. It preserves current training data as provider observations, creates canonical workout and strict plan-match storage, and removes only clearly superseded zero-detail same-source placeholders.
 
 Migration `0019_plan_reconciliation_ux.sql` is implemented by `migratePlanReconciliationUxV19()`. It adds plan action events and explicit workout-to-plan exclusions, and narrowly marks legacy manual completion placeholders as date-only.
+
+Migration `0020_training_session_type_overrides.sql` is implemented by `migrateTrainingSessionTypeOverridesV20()`. It stores one user-selected domain per canonical workout without mutating or being overwritten by provider observations.

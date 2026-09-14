@@ -438,6 +438,15 @@ export class AthriaApplication {
     catch (error) { throw new AthriaError(error instanceof Error ? error.message : "MATCH_UPDATE_FAILED", "The workout could not be returned to automatic matching.", 404); }
   }
 
+  updateTrainingSessionType(id: string, value: unknown): TrainingSession {
+    const input = z.object({ domain: domainSchema, confirmed: z.literal(true) }).strict().parse(value);
+    try { return this.repository.setTrainingSessionTypeOverride(this.ownerId, id, input.domain); }
+    catch (error) {
+      const code = error instanceof Error ? error.message : "TYPE_UPDATE_FAILED";
+      throw new AthriaError(code, code === "TRAINING_SESSION_NOT_FOUND" ? "The workout was not found." : "The workout type could not be updated.", code === "TRAINING_SESSION_NOT_FOUND" ? 404 : 409);
+    }
+  }
+
   updateManualTrainingSession(id: string, value: unknown): TrainingSession {
     const input = z.object({ startAt: z.string().datetime({ offset: true }).optional(), durationMinutes: z.number().int().min(1).max(1440).optional(), confirmed: z.literal(true) }).strict().refine((item) => item.startAt !== undefined || item.durationMinutes !== undefined, "Provide a start time or duration.").parse(value);
     try { return this.repository.updateManualTrainingSession({ ownerId: this.ownerId, trainingSessionId: id, ...(input.startAt ? { startAt: input.startAt } : {}), ...(input.durationMinutes !== undefined ? { durationMinutes: input.durationMinutes } : {}) }); }
@@ -451,6 +460,15 @@ export class AthriaApplication {
     z.object({ confirmed: z.literal(true) }).strict().parse(value);
     try { return this.repository.deleteManualTrainingSession(this.ownerId, id); }
     catch (error) { throw new AthriaError(error instanceof Error ? error.message : "MANUAL_DELETE_FAILED", "The manual workout record could not be removed.", 404); }
+  }
+
+  deleteTrainingSession(id: string, value: unknown): { deleted: true } {
+    z.object({ confirmed: z.literal(true) }).strict().parse(value);
+    try { this.repository.deleteTrainingSession(this.ownerId, id); return { deleted: true }; }
+    catch (error) {
+      const code = error instanceof Error ? error.message : "TRAINING_SESSION_DELETE_FAILED";
+      throw new AthriaError(code, code === "TRAINING_SESSION_NOT_FOUND" ? "The workout was not found." : "The workout could not be deleted.", code === "TRAINING_SESSION_NOT_FOUND" ? 404 : 409);
+    }
   }
 
   listWellness(days = 42) { const since = new Date(this.now().getTime() - days * 86_400_000).toISOString().slice(0, 10); return this.repository.listWellness(this.ownerId, since).map((record) => ({ ...record, snapshotHash: stableHash(record) })); }

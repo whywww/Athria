@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatDuration, friendlyLabel, type CalendarSession, type CurrentPlan, type StoredSessionTemplate } from "../view-models";
-import { currentWeekNumber, formatShortDate, formatWeekRange, groupSessionsByWeek, type CalendarDay, type CalendarWeek } from "./view";
-import { domainGlyph, phaseNamesForWeek, sessionDomains, sessionStatusLabel, sessionTone, weekdayShort } from "./calendar-utils";
+import { currentWeekNumber, formatShortDate, groupSessionsByWeek, type CalendarDay, type CalendarWeek } from "./view";
+import { sessionDomains, sessionStatusLabel, sessionTone, weekdayShort, type DomainValue } from "./calendar-utils";
 import "./calendar.css";
 
 /**
@@ -14,8 +14,8 @@ import "./calendar.css";
  * so it can open the Session Detail Drawer and later restore focus.
  *
  * Sub-components (`WeekRow` / `DayCell` / `SessionChip`) are memoised and only
- * receive primitive or reference-stable props; grouping and phase mapping are
- * memoised so a selection change re-renders the minimum number of nodes.
+ * receive primitive or reference-stable props so a selection change re-renders
+ * the minimum number of nodes.
  */
 
 export interface WeeklyCalendarProps {
@@ -36,31 +36,49 @@ interface SessionChipProps {
   onSelect: (sessionId: string, triggerEl: HTMLElement | null) => void;
 }
 
+function CalendarDomainIcon({ domain }: { domain: DomainValue }) {
+  const path = domain === "strength" ? <><path d="M7 9v6M4.5 10.5v3M17 9v6M19.5 10.5v3M7 12h10"/><path d="M9.5 8v8M14.5 8v8"/></>
+    : domain === "endurance" ? <><circle cx="13.5" cy="5.5" r="1.7"/><path d="m11.5 9 2.3 2.1 2.8.7M13.8 11.1l-2 3.2-3.5 1.2M11.8 14.3l3 4.2M10.8 9.2 8.5 12"/></>
+    : domain === "sport_skill" ? <><circle cx="12" cy="12" r="7.5"/><path d="M12 4.5v15M4.5 12h15M6.7 6.7c2.8 2.7 2.8 7.9 0 10.6M17.3 6.7c-2.8 2.7-2.8 7.9 0 10.6"/></>
+    : domain === "mind_body" ? <><circle cx="12" cy="6" r="1.8"/><path d="M12 8v4M12 10l-4 3M12 10l4 3M12 12l-3 5M12 12l3 5M7 18c2-1 3.5-.8 5 .8 1.5-1.6 3-1.8 5-.8"/></>
+    : <><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></>;
+  return <svg className="wc-domain-icon" data-domain-icon={domain} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{path}</svg>;
+}
+
+function RestIcon() {
+  return <svg className="wc-rest-icon" data-icon="rest" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 18V8M20 18v-6a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2v3M4 15h16M7 10V8h4a2 2 0 0 1 2 2"/><path d="M4 19v-1M20 19v-1"/></svg>;
+}
+
 const SessionChip = memo(function SessionChip({ session, today, selected, onSelect }: SessionChipProps) {
   const tone = sessionTone(session, today);
   const domains = sessionDomains(session);
+  const primaryDomain = domains[0] ?? "neutral";
   return (
     <button
       type="button"
-      className={`wc-chip status-${tone}${selected ? " is-selected" : ""}`}
+      className={`wc-chip tone-${primaryDomain} status-${tone}${selected ? " is-selected" : ""}`}
       data-session-id={session.id}
       aria-pressed={selected}
       onClick={(event) => onSelect(session.id, event.currentTarget)}
     >
       <span className="wc-chip-top">
-        {domains.map((domain) => (
-          <span className="wc-domain" key={domain} title={friendlyLabel(domain)}>
-            <span aria-hidden="true">{domainGlyph(domain)}</span>
-            <span className="wc-domain-label">{friendlyLabel(domain)}</span>
+        <span className="wc-chip-domains">
+          {domains.map((domain) => (
+            <span className="wc-chip-domain" key={domain} title={friendlyLabel(domain)}>
+              <CalendarDomainIcon domain={domain}/>
+              <span className="sr-only">{friendlyLabel(domain)}</span>
+            </span>
+          ))}
+        </span>
+        {(tone === "completed" || tone === "unrecorded") && (
+          <span className={`wc-status-light status-${tone}`}>
+            <span className="sr-only">{sessionStatusLabel(tone)}</span>
           </span>
-        ))}
-        <span className="wc-duration">{formatDuration(session.durationMinutes)}</span>
+        )}
       </span>
+      <span className="wc-chip-meta"><span className="wc-duration">{formatDuration(session.durationMinutes)}</span></span>
       <span className="wc-chip-name">{session.name}</span>
-      <span className={`wc-badge badge-${tone}`}>
-        {tone === "completed" && <span aria-hidden="true">✓ </span>}
-        {sessionStatusLabel(tone)}
-      </span>
+      {tone === "skipped" && <span className="wc-badge badge-skipped">{sessionStatusLabel(tone)}</span>}
     </button>
   );
 });
@@ -86,13 +104,16 @@ const DayCell = memo(function DayCell({ day, today, selectedSessionId, onSelect 
   return (
     <div className={`wc-day${isToday ? " is-today" : ""}${isPast ? " is-past" : ""}`}>
       <div className="wc-day-head">
-        <span className="wc-day-date">{formatShortDate(day.date)}</span>
+        <span className="wc-day-label">
+          <span className="wc-day-weekday">{weekdayShort[day.weekday]}</span>
+          <span className="wc-day-date">{formatShortDate(day.date)}</span>
+        </span>
         {isToday && <span className="wc-today-tag">Today</span>}
       </div>
       {sessions.length === 0 ? (
         // LLM-scheduled empty day → Rest (§7.6). A skipped session still renders
         // as a chip with a "Skipped" badge, never rewritten into a rest day.
-        <span className="rest-pill wc-rest">Rest</span>
+        <span className="wc-rest"><RestIcon/><span>Rest</span></span>
       ) : (
         <div className="wc-day-sessions">
           {visible.map((session) => (
@@ -117,36 +138,40 @@ const DayCell = memo(function DayCell({ day, today, selectedSessionId, onSelect 
 
 interface WeekRowProps {
   week: CalendarWeek;
-  phaseName: string;
   expanded: boolean;
   isCurrent: boolean;
   today: string;
   selectedSessionId: string | null;
   onToggleWeek: (weekNumber: number) => void;
   onSelect: (sessionId: string, triggerEl: HTMLElement | null) => void;
-  focus: string | null | undefined;
-  rhythmLabel: string | undefined;
 }
 
 function weekSummary(week: CalendarWeek): string {
   const sessions = week.days.flatMap((day) => day.sessions);
   let enduranceMeters = 0; let enduranceMinutes = 0; let strengthSets = 0; let sport = 0; let recovery = 0;
-  for (const session of sessions) for (const component of session.components) {
-    if (component.domain.value === "endurance") {
-      enduranceMinutes += session.durationMinutes;
+  for (const session of sessions) {
+    const domains = sessionDomains(session);
+    if (domains.includes("endurance")) enduranceMinutes += session.durationMinutes;
+    if (domains.includes("sport_skill")) sport += 1;
+    if (domains.includes("recovery") || domains.includes("mind_body")) recovery += 1;
+    for (const component of session.components) {
       if (component.prescription.kind === "endurance") for (const segment of component.prescription.segments) enduranceMeters += segment.type === "repeat" ? segment.repetitions * (segment.work.distanceMeters ?? 0) + segment.repetitions * (segment.recovery?.distanceMeters ?? 0) : segment.distanceMeters ?? 0;
+      if (component.prescription.kind === "strength") strengthSets += component.prescription.exercises.reduce((sum, exercise) => sum + exercise.sets, 0);
     }
-    if (component.prescription.kind === "strength") strengthSets += component.prescription.exercises.reduce((sum, exercise) => sum + exercise.sets, 0);
-    if (component.domain.value === "sport_skill") sport += 1;
-    if (component.domain.value === "recovery" || component.domain.value === "mind_body") recovery += 1;
   }
-  return [enduranceMeters ? `Endurance ${Math.round(enduranceMeters / 100) / 10} km` : enduranceMinutes ? `Endurance ${enduranceMinutes} min` : null, strengthSets ? `Strength ${strengthSets} sets` : null, sport ? `Sport ${sport}` : null, recovery ? `Recovery ${recovery}` : null].filter(Boolean).join(" · ");
+  return [enduranceMeters ? `${Math.round(enduranceMeters / 100) / 10} km` : enduranceMinutes ? `${enduranceMinutes} min` : null, strengthSets ? `${strengthSets} sets` : null, sport ? `${sport} sport` : null, recovery ? `${recovery} recovery` : null].filter(Boolean).join(" · ");
 }
 
-const WeekRow = memo(function WeekRow({ week, phaseName, expanded, isCurrent, today, selectedSessionId, onToggleWeek, onSelect, focus, rhythmLabel }: WeekRowProps) {
+function compactWeekRange(startDate: string, endDate: string): string {
+  const start = formatShortDate(startDate);
+  const end = formatShortDate(endDate);
+  const startMonth = start.split(" ")[0]!;
+  return end.startsWith(`${startMonth} `) ? `${start} – ${end.slice(startMonth.length + 1)}` : `${start} – ${end}`;
+}
+
+const WeekRow = memo(function WeekRow({ week, expanded, isCurrent, today, selectedSessionId, onToggleWeek, onSelect }: WeekRowProps) {
   const sessionCount = week.days.reduce((total, day) => total + day.sessions.length, 0);
-  const range = formatWeekRange(week.startDate, week.endDate);
-  const title = `W${week.weekNumber}${phaseName ? ` · ${phaseName}` : ""} · ${range}`;
+  const title = `W${week.weekNumber} · ${compactWeekRange(week.startDate, week.endDate)}`;
   return (
     <section
       className={`wc-week${expanded ? " is-expanded" : " is-collapsed"}${isCurrent ? " is-current" : ""}`}
@@ -159,18 +184,13 @@ const WeekRow = memo(function WeekRow({ week, phaseName, expanded, isCurrent, to
           aria-expanded={expanded}
           onClick={() => onToggleWeek(week.weekNumber)}
         >
-          <span className="wc-week-chevron" aria-hidden="true">{expanded ? "▾" : "▸"}</span>
+          <span className="wc-week-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="m8 10 4 4 4-4"/></svg></span>
           <span className="wc-week-title">{title}</span>
-          {isCurrent && <span className="wc-current-pill">This week</span>}
           <span className="wc-week-summary">{weekSummary(week) || `${sessionCount} session${sessionCount === 1 ? "" : "s"}`}</span>
         </button>
       </div>
       {expanded && (
         <div className="wc-week-body">
-          {(focus || rhythmLabel) && <div className="wc-week-context">{focus && <span>{focus}</span>}{rhythmLabel && <small>{rhythmLabel}</small>}</div>}
-          <div className="wc-weekdays" aria-hidden="true">
-            {weekdayShort.map((label) => <span key={label}>{label}</span>)}
-          </div>
           <div className="wc-grid">
             {week.days.map((day) => (
               <DayCell key={day.date} day={day} today={today} selectedSessionId={selectedSessionId} onSelect={onSelect} />
@@ -184,7 +204,6 @@ const WeekRow = memo(function WeekRow({ week, phaseName, expanded, isCurrent, to
 
 export function WeeklyCalendar({ plan, sessions, today, onSelectSession, selectedSessionId = null, scrollToWeek = null, storageKey }: WeeklyCalendarProps) {
   const durationWeeks = Math.max(1, plan.mesocycle.durationWeeks);
-  const progressions = plan.mesocycle.domainProgressions;
 
   const weeks = useMemo(
     () => groupSessionsByWeek(sessions, plan.effectiveStartDate, durationWeeks),
@@ -194,14 +213,6 @@ export function WeeklyCalendar({ plan, sessions, today, onSelectSession, selecte
     () => currentWeekNumber(plan.effectiveStartDate, today, durationWeeks),
     [plan.effectiveStartDate, today, durationWeeks],
   );
-  const phaseByWeek = useMemo(() => {
-    const map = new Map<number, string>();
-    for (const week of weeks) {
-      map.set(week.weekNumber, phaseNamesForWeek(progressions, week.weekNumber));
-    }
-    return map;
-  }, [weeks, progressions]);
-
   const defaultExpanded = useMemo(() => {
     if (storageKey) {
       try { const stored = JSON.parse(sessionStorage.getItem(`${storageKey}:weeks`) ?? "null") as number[] | null; if (Array.isArray(stored)) return new Set(stored.filter((week) => week >= 1 && week <= durationWeeks)); } catch { /* use positioning week */ }
@@ -237,14 +248,19 @@ export function WeeklyCalendar({ plan, sessions, today, onSelectSession, selecte
 
   const first = weeks.at(0);
   const last = weeks.at(-1);
-  const overallRange = first && last ? formatWeekRange(first.startDate, last.endDate) : "";
+  const overallRange = first && last ? compactWeekRange(first.startDate, last.endDate) : "";
+  const durationLabel = `${durationWeeks} week${durationWeeks === 1 ? "" : "s"}`;
 
   return (
     <section className="wc-calendar" ref={rootRef} aria-label="Weekly training calendar">
       <div className="wc-toolbar">
         <div className="wc-toolbar-text">
           <h3 className="wc-heading">Weekly Calendar</h3>
-          <span className="wc-subheading">{durationWeeks} weeks{overallRange ? ` · ${overallRange}` : ""}</span>
+          <span className="wc-subheading">{overallRange}{overallRange ? ` (${durationLabel})` : durationLabel}</span>
+        </div>
+        <div className="wc-status-legend" aria-label="Session status legend">
+          <span><i className="wc-status-light status-completed" aria-hidden="true"/>Completed</span>
+          <span><i className="wc-status-light status-unrecorded" aria-hidden="true"/>Unrecorded</span>
         </div>
       </div>
       <div className="wc-weeks">
@@ -252,15 +268,12 @@ export function WeeklyCalendar({ plan, sessions, today, onSelectSession, selecte
           <WeekRow
             key={week.weekNumber}
             week={week}
-            phaseName={phaseByWeek.get(week.weekNumber) ?? ""}
             expanded={expanded.has(week.weekNumber)}
             isCurrent={week.weekNumber === currentWeek}
             today={today}
             selectedSessionId={selectedSessionId}
             onToggleWeek={toggleWeek}
             onSelect={handleSelect}
-            focus={plan.mesocycle.weeks.find((item) => item.weekNumber === week.weekNumber)?.focus}
-            rhythmLabel={plan.mesocycle.schedule.kind === "flexible_week" ? `Flexible placement · target ${plan.mesocycle.schedule.targetDaysPerWeek} days` : plan.mesocycle.schedule.kind === "interval" ? `Interval rhythm · every ${plan.mesocycle.schedule.intervalDays} days` : undefined}
           />
         ))}
       </div>

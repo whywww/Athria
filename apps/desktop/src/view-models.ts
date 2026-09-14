@@ -94,6 +94,24 @@ export interface TrainingHistorySession { id: string; name: string; startAt: str
 export function formatTrainingSource(source: string): string {
   return ({ xunji: "训记", intervals: "Intervals.icu", hevy: "Hevy", manual: "手动记录" } as Record<string, string>)[source] ?? source;
 }
+export type TrainingHistorySort = "newest" | "oldest";
+export const TRAINING_HISTORY_PAGE_SIZE = 20;
+export function filterAndSortTrainingHistory(sessions: TrainingHistorySession[], query: string, sort: TrainingHistorySort, plannedNames: Readonly<Record<string, string>> = {}): TrainingHistorySession[] {
+  const term = query.trim().toLocaleLowerCase();
+  const filtered = term ? sessions.filter((session) => {
+    const plannedSessionId = session.planMatch?.plannedSessionId ?? session.plannedSessionId;
+    const sources = session.sources.length ? session.sources.map((source) => source.source) : [session.source];
+    return [session.name, session.sport ?? "", ...session.domains.map(friendlyLabel), ...sources.flatMap((source) => [source, formatTrainingSource(source)]), plannedSessionId ? plannedNames[plannedSessionId] ?? "" : ""]
+      .some((value) => value.toLocaleLowerCase().includes(term));
+  }) : [...sessions];
+  return filtered.sort((left, right) => (sort === "newest" ? Date.parse(right.startAt) - Date.parse(left.startAt) : Date.parse(left.startAt) - Date.parse(right.startAt)) || left.id.localeCompare(right.id));
+}
+export function paginateTrainingHistory<T>(items: T[], requestedPage: number, pageSize = TRAINING_HISTORY_PAGE_SIZE): { items: T[]; page: number; totalPages: number; start: number; end: number } {
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+  const page = Math.min(Math.max(1, requestedPage), totalPages);
+  const offset = (page - 1) * pageSize;
+  return { items: items.slice(offset, offset + pageSize), page, totalPages, start: items.length ? offset + 1 : 0, end: Math.min(offset + pageSize, items.length) };
+}
 export type WellnessFieldValue = { value: number | string | null; source: "intervals_icu" | "user" | "llm"; updatedAt: string };
 export interface WellnessRecord { ownerId: string; day: string; fields: Partial<Record<"restingHeartRateBpm" | "hrvRmssdMs" | "sleepSeconds" | "sleepScore" | "weightKg" | "fatigue" | "soreness" | "stress" | "mood" | "motivation" | "readiness" | "notes", WellnessFieldValue>>; updatedAt: string }
 
@@ -223,6 +241,17 @@ export interface XunjiConnectionStatus {
     data: { successfulDays?: number; failedDays?: number; records?: number; errors?: Array<{ code: string; message: string }> };
   };
 }
+export type ConnectionSource = "intervals" | "xunji" | "hevy";
+export function connectionSources(intervalsConfigured: boolean, xunjiConfigured: boolean, hevyImported: boolean): { added: ConnectionSource[]; available: ConnectionSource[] } {
+  const added = [intervalsConfigured ? "intervals" as const : null, xunjiConfigured ? "xunji" as const : null, hevyImported ? "hevy" as const : null].filter((source): source is ConnectionSource => source !== null);
+  const available = (["intervals", "xunji", "hevy"] as const).filter((source) => !added.includes(source));
+  return { added, available };
+}
+export function connectionStatusPresentation(status?: "success" | "partial" | "failed"): { tone: "connected" | "partial" | "failed"; label: string } {
+  if (status === "partial") return { tone: "partial", label: "Partially synced" };
+  if (status === "failed") return { tone: "failed", label: "Sync failed" };
+  return { tone: "connected", label: "Connected" };
+}
 export interface DoctorResult { dataDir: string }
 export interface BackupPreview {
   path: string;
@@ -234,7 +263,7 @@ export const dashboardPages = [
   { id: "Training", label: "Training", icon: "›››", group: "primary" },
   { id: "Profile", label: "Profile", icon: "♡", group: "primary" },
   { id: "Plan", label: "Plan", icon: "≡", group: "primary" },
-  { id: "Devices", label: "Devices", icon: "⌁", group: "support" },
+  { id: "Connections", label: "Connections", icon: "⌁", group: "support" },
   { id: "Settings", label: "Settings", icon: "⚙", group: "support" },
   { id: "Help", label: "Help & Support", icon: "?", group: "support" },
 ] as const;

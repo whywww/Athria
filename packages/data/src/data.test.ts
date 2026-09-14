@@ -23,13 +23,22 @@ describe("v7 planning resets", () => {
     expect(repository.sqlite.query("SELECT version FROM athria_migrations WHERE version=17").get()).toEqual({ version: 17 });
     expect(repository.sqlite.query("SELECT version FROM athria_migrations WHERE version=18").get()).toEqual({ version: 18 });
     expect(repository.sqlite.query("SELECT version FROM athria_migrations WHERE version=19").get()).toEqual({ version: 19 });
+    expect(repository.sqlite.query("SELECT version FROM athria_migrations WHERE version=20").get()).toEqual({ version: 20 });
     expect(repository.counts()).toMatchObject({ session_templates: 0, current_mesocycles: 0 });
   });
   it("removes duplicate, history, approval, proposal, raw and catalog tables", () => {
     repository = new AthriaRepository(":memory:");
     const names = repository.sqlite.query("SELECT name FROM sqlite_master WHERE type='table'").all().map((row) => String((row as { name: string }).name));
-    expect(names).toEqual(expect.arrayContaining(["profiles", "training_sessions", "training_session_sources", "plan_workout_matches", "workout_plan_exclusions", "planned_session_events", "wellness", "session_templates", "current_mesocycles"]));
+    expect(names).toEqual(expect.arrayContaining(["profiles", "training_sessions", "training_session_sources", "training_session_type_overrides", "plan_workout_matches", "workout_plan_exclusions", "planned_session_events", "wellness", "session_templates", "current_mesocycles"]));
     expect(names).not.toEqual(expect.arrayContaining(["preferences", "exercises", "planned_sessions", "planned_session_changes", "raw_records", "approvals", "profile_update_proposals"]));
+  });
+  it("upgrades a v19 database with workout type override storage", () => {
+    directory = mkdtempSync(join(tmpdir(), "athria-type-v20-")); const path = join(directory, "athria.sqlite3");
+    repository = new AthriaRepository(path); repository.close(); repository = undefined;
+    const sqlite = new Database(path); sqlite.exec("DROP TABLE training_session_type_overrides; DELETE FROM athria_migrations WHERE version=20;"); sqlite.close();
+    repository = new AthriaRepository(path);
+    expect(repository.sqlite.query("SELECT version FROM athria_migrations WHERE version=20").get()).toEqual({ version: 20 });
+    expect(repository.sqlite.query("SELECT name FROM sqlite_master WHERE type='table' AND name='training_session_type_overrides'").get()).toEqual({ name: "training_session_type_overrides" });
   });
   it("backs up and clears incompatible planning rows while preserving Profile data", () => {
     directory = mkdtempSync(join(tmpdir(), "athria-v8-")); const path = join(directory, "athria.sqlite3");
@@ -217,6 +226,34 @@ describe("workout reconciliation", () => {
     repository = new AthriaRepository(":memory:");
     repository.upsertSessions([session({ id: "one", source: "intervals", startAt: "2026-09-06T03:16:00Z" }), session({ id: "two", source: "intervals", startAt: "2026-09-06T03:16:00Z" })]);
     expect(repository.listSessions()).toHaveLength(2);
+  });
+
+  it("keeps a user-selected workout type across provider replacement and removes orphaned overrides", () => {
+    repository = new AthriaRepository(":memory:");
+    const original = session({ id: "synced", source: "intervals", startAt: "2026-09-06T03:16:00Z", modality: "endurance", name: "Run" });
+    repository.upsertSessions([original]);
+    expect(repository.setTrainingSessionTypeOverride("local-user", "synced", "recovery").domains).toEqual(["recovery"]);
+    repository.replaceSourceSessions({ source: "intervals", rangeStart: "2026-09-06", rangeEnd: "2026-09-06", sessions: [{ ...original, name: "Updated Run" }] });
+    expect(repository.listSessions()[0]).toMatchObject({ id: "synced", name: "Updated Run", domains: ["recovery"] });
+    expect(JSON.parse((repository.sqlite.query("SELECT data FROM training_session_sources WHERE external_id='synced'").get() as { data: string }).data).domains).toEqual([]);
+    repository.replaceSourceSessions({ source: "intervals", rangeStart: "2026-09-06", rangeEnd: "2026-09-06", sessions: [] });
+    expect(repository.sqlite.query("SELECT COUNT(*) AS count FROM training_session_type_overrides").get()).toEqual({ count: 0 });
+  });
+
+  it("deletes a canonical workout with all sources and associated state", () => {
+    repository = new AthriaRepository(":memory:");
+    repository.upsertSessions([
+      session({ id: "manual", source: "manual", startAt: "2026-09-06T03:16:00Z", name: "Lunch Weight Training" }),
+      session({ id: "synced", source: "intervals", startAt: "2026-09-06T03:16:00Z", name: "Lunch Weight Training" }),
+    ]);
+    const workout = repository.listSessions()[0]!;
+    repository.setTrainingSessionTypeOverride("local-user", workout.id, "recovery");
+    repository.linkTrainingSession(workout.id, "planned-1");
+    repository.sqlite.query("INSERT INTO workout_plan_exclusions(owner_id,training_session_id,created_at) VALUES (?,?,?)").run("local-user", workout.id, "2026-09-06T04:00:00Z");
+    repository.deleteTrainingSession("local-user", workout.id);
+    expect(repository.listSessions()).toEqual([]);
+    for (const table of ["training_session_sources", "plan_workout_matches", "workout_plan_exclusions", "training_session_type_overrides"]) expect(repository.sqlite.query(`SELECT COUNT(*) AS count FROM ${table}`).get()).toEqual({ count: 0 });
+    expect(() => repository!.deleteTrainingSession("local-user", workout.id)).toThrow("TRAINING_SESSION_NOT_FOUND");
   });
 
   it("migrates away a same-source zero-detail placeholder when a richer record has the same start", () => {

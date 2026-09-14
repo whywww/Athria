@@ -136,6 +136,20 @@ describe("v7 application boundary", () => {
     expect(app.deleteManualTrainingSession(manual.id, { confirmed: true })).toBeNull();
     expect(app.listSessions()).toHaveLength(0);
   });
+  it("deletes an entire workout and reports a missing workout", () => {
+    repository = new AthriaRepository(":memory:"); const app = new AthriaApplication(repository);
+    const workout = app.recordTrainingSession({ name: "Workout", modality: "recovery", domains: ["recovery"], sport: null, startAt: "2026-09-07T02:00:00Z", endAt: "2026-09-07T03:00:00Z", durationMinutes: 60, timezone: "UTC", plannedSessionId: null, strengthSets: [], endurance: null, missingFields: [] });
+    expect(app.deleteTrainingSession(workout.id, { confirmed: true })).toEqual({ deleted: true });
+    expect(app.listSessions()).toEqual([]);
+    expect(() => app.deleteTrainingSession(workout.id, { confirmed: true })).toThrowError(AthriaError);
+  });
+  it("persists each supported user-selected workout type and rejects invalid updates", () => {
+    repository = new AthriaRepository(":memory:"); const app = new AthriaApplication(repository, "local-user", () => new Date("2026-09-07T04:00:00Z"));
+    const workout = app.recordTrainingSession({ name: "Mixed session", modality: "mixed", domains: ["strength", "endurance"], sport: null, startAt: "2026-09-07T02:00:00Z", endAt: "2026-09-07T03:00:00Z", durationMinutes: 60, timezone: "UTC", plannedSessionId: null, strengthSets: [], endurance: null, missingFields: [] });
+    for (const domain of ["strength", "endurance", "sport_skill", "mind_body", "recovery"] as const) expect(app.updateTrainingSessionType(workout.id, { domain, confirmed: true }).domains).toEqual([domain]);
+    expect(() => app.updateTrainingSessionType(workout.id, { domain: "invalid", confirmed: true })).toThrow();
+    expect(() => app.updateTrainingSessionType("missing", { domain: "recovery", confirmed: true })).toThrowError(AthriaError);
+  });
   it("requires full Session input and exposes taxonomy through MCP", () => {
     repository = new AthriaRepository(":memory:"); const app = new AthriaApplication(repository);
     const taxonomy = app.getTrainingTaxonomy();
