@@ -1191,12 +1191,15 @@ export class AthriaRepository {
         if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) continue;
         const existing = this.getWellness(ownerId, day);
         const updatedAt = this.now().toISOString();
-        const aliases: Record<string, string[]> = { restingHeartRateBpm: ["restingHR", "restingHeartRate"], hrvRmssdMs: ["hrv", "hrvRmssd"], sleepSeconds: ["sleepSecs", "sleepSeconds"], sleepScore: ["sleepScore"], weightKg: ["weight"], fatigue: ["fatigue"], soreness: ["soreness"], stress: ["stress"], mood: ["mood"], motivation: ["motivation"], readiness: ["readiness"] };
+        const aliases: Record<string, string[]> = { restingHeartRateBpm: ["restingHR", "restingHeartRate"], hrvRmssdMs: ["hrv", "hrvRmssd"], hrvSdnnMs: ["hrvSDNN", "hrvSdnn"], sleepSeconds: ["sleepSecs", "sleepSeconds"], sleepScore: ["sleepScore"], sleepQuality: ["sleepQuality"], avgSleepingHeartRateBpm: ["avgSleepingHR"], weightKg: ["weight"], bodyFatPercent: ["bodyFat"], vo2maxMlKgMin: ["vo2max"], spo2Percent: ["spO2"], stepsCount: ["steps"], respirationRpm: ["respiration"], fatigue: ["fatigue"], soreness: ["soreness"], stress: ["stress"], mood: ["mood"], motivation: ["motivation"], readiness: ["readiness"], injuryScore: ["injury"], eftpWatts: ["eftpWatts"], wPrimeJoules: ["wPrimeJoules"], pMaxWatts: ["pMaxWatts"] };
+        const sportInfo = Array.isArray(value.sportInfo) ? value.sportInfo.filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null) : [];
+        const power = sportInfo.find((item) => item.type === "Ride") ?? sportInfo.find((item) => ["eftp", "wPrime", "pMax"].some((key) => item[key] !== undefined && item[key] !== null));
+        const extended = power ? { ...value, eftpWatts: power.eftp, wPrimeJoules: power.wPrime, pMaxWatts: power.pMax } : value;
         const fields = { ...(existing?.fields ?? {}) } as WellnessRecord["fields"];
         for (const [field, names] of Object.entries(aliases)) {
           const prior = fields[field as keyof typeof fields];
           if (prior && prior.source !== "intervals_icu") continue;
-          const raw = names.map((name) => value[name]).find((item) => item !== undefined && item !== null && item !== "");
+          const raw = names.map((name) => extended[name]).find((item) => item !== undefined && item !== null && item !== "");
           const number = Number(raw); if (raw !== undefined && Number.isFinite(number)) (fields as Record<string, unknown>)[field] = { value: number, source: "intervals_icu", updatedAt };
         }
         const record = wellnessRecordSchema.parse({ ownerId, day, fields, updatedAt });

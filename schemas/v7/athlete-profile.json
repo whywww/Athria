@@ -266,6 +266,14 @@
           "type": "null"
         }
       ]
+    },
+    "unitSystem": {
+      "default": "metric",
+      "type": "string",
+      "enum": [
+        "metric",
+        "imperial"
+      ]
     }
   },
   "required": [
@@ -282,7 +290,8 @@
     "equipment",
     "injuries",
     "constraintNotes",
-    "explicitRecoveryDays"
+    "explicitRecoveryDays",
+    "unitSystem"
   ],
   "additionalProperties": false
 }

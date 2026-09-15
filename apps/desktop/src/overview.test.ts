@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { OverviewDashboard, calendarDays, formatWellnessDate, mesocycleProgress, overviewDateRange, recoveryStatus, sparklineGeometry, twelveWeekConsistency, weeklyLoad, weeklyOverview, wellnessHighlights } from "./overview";
+import { OverviewDashboard, RecoveryHelpModal, calendarDays, formatWellnessDate, loadAxisLabel, mesocycleProgress, overviewDateRange, recoveryStatus, sparklineGeometry, twelveWeekConsistency, weeklyLoad, weeklyOverview, wellnessHighlights } from "./overview";
 import type { CalendarSession, TrainingHistorySession, TrainingSummary, WellnessRecord } from "./view-models";
 
 const quality = { completeness: 1, missingFields: [], anomalies: [] };
@@ -46,9 +46,9 @@ describe("Overview", () => {
 
   it("selects four prioritized wellness fields and compares prior matching values", () => {
     const result = wellnessHighlights(wellness)!;
-    expect(result.values.map((item) => item.key)).toEqual(["readiness", "sleepScore", "hrvRmssdMs", "restingHeartRateBpm"]);
-    expect(result.values[0]?.delta).toBe(2);
-    expect(result.values[0]?.series).toEqual([70, 72]);
+    expect(result.values.map((item) => item.key)).toEqual(["sleepScore", "hrvRmssdMs", "restingHeartRateBpm", "sleepSeconds"]);
+    expect(result.values[0]?.delta).toBe(-2);
+    expect(result.values[0]?.series).toEqual([86, 84]);
   });
 
   it("formats the wellness date without a status prefix", () => {
@@ -89,6 +89,41 @@ describe("Overview", () => {
     expect(load[1]).toMatchObject({ completed: 45, scheduled: 30 });
   });
 
+  it("formats compact load axis labels", () => {
+    expect(loadAxisLabel(30)).toBe("30m");
+    expect(loadAxisLabel(60)).toBe("1h");
+    expect(loadAxisLabel(90)).toBe("1.5h");
+    expect(loadAxisLabel(75)).toBe("75m");
+    expect(loadAxisLabel(150)).toBe("2.5h");
+  });
+
+  it("scales the weekly load axis to the heaviest day", () => {
+    const history = [{ id: "heavy", startAt: "2026-09-07T04:00:00Z", durationMinutes: 70 }] as TrainingHistorySession[];
+    const html = renderToStaticMarkup(createElement(OverviewDashboard, { summary, wellness: [], history, planned: [], today: "2026-09-11", timezone: "Asia/Hong_Kong" }));
+    expect(html).toContain("<span>1.5h</span>");
+    expect(html).toContain("<span>45m</span>");
+    expect(html).toContain("<span>0h</span>");
+  });
+
+  it("links the empty activity state to connections and the next training day", () => {
+    const html = renderToStaticMarkup(createElement(OverviewDashboard, { summary: { ...summary, sessionCount: 0 }, wellness: [], history: [], planned: [], today: "2026-09-11", timezone: "Asia/Hong_Kong" }));
+    expect(html).toContain("No completed workouts yet this week.");
+    expect(html).toContain(">training apps</button>");
+    expect(html).toContain(">next plan</button>.");
+    expect(html).not.toContain(">Connect to your training apps</button>");
+    expect(html.match(/overview-empty-link/g)).toHaveLength(2);
+  });
+
+  it("stacks the training load change into two right-aligned lines", () => {
+    const history = [
+      { id: "previous", startAt: "2026-09-01T04:00:00Z", durationMinutes: 30 },
+      { id: "current", startAt: "2026-09-08T04:00:00Z", durationMinutes: 60 },
+    ] as TrainingHistorySession[];
+    const html = renderToStaticMarkup(createElement(OverviewDashboard, { summary, wellness: [], history, planned: [], today: "2026-09-11", timezone: "Asia/Hong_Kong" }));
+    expect(html).toContain("<span>↑ 100%</span>");
+    expect(html).toContain("<span>from last week</span>");
+  });
+
   it("counts mesocycle completion across all weeks for the plan progress card", () => {
     const planned = [
       { scheduledDate: "2026-09-07", status: "completed" },
@@ -117,16 +152,53 @@ describe("Overview", () => {
     expect(html).not.toContain('title="2026-09-13"');
   });
 
-  it("maps readiness to recovery copy and handles missing data", () => {
-    expect(recoveryStatus(wellness).label).toBe("Good");
+  it("combines recovery signals into one verdict and handles missing data", () => {
+    const records: WellnessRecord[] = [
+      { ownerId: "local-user", day: "2026-09-10", fields: { hrvRmssdMs: field(40), restingHeartRateBpm: field(55), sleepScore: field(70) }, updatedAt: "2026-09-10T00:00:00Z" },
+      { ownerId: "local-user", day: "2026-09-08", fields: { hrvRmssdMs: field(50), restingHeartRateBpm: field(50) }, updatedAt: "2026-09-08T00:00:00Z" },
+      { ownerId: "local-user", day: "2026-09-07", fields: { hrvRmssdMs: field(50), restingHeartRateBpm: field(50) }, updatedAt: "2026-09-07T00:00:00Z" },
+      { ownerId: "local-user", day: "2026-09-06", fields: { hrvRmssdMs: field(50), restingHeartRateBpm: field(50) }, updatedAt: "2026-09-06T00:00:00Z" },
+      { ownerId: "local-user", day: "2026-09-05", fields: { hrvRmssdMs: field(50), restingHeartRateBpm: field(50) }, updatedAt: "2026-09-05T00:00:00Z" },
+    ];
+    expect(recoveryStatus(records)).toMatchObject({ label: "Caution", value: 45, series: [90, 45] });
+    expect(recoveryStatus(wellness).label).toBe("Ready");
     expect(recoveryStatus([])).toMatchObject({ label: "No data", value: null });
+  });
+
+  it("renders the recovery help dialog with the plain-language calculation", () => {
+    const html = renderToStaticMarkup(createElement(RecoveryHelpModal, { onClose: () => undefined }));
+    expect(html).toContain('role="dialog"');
+    expect(html).toContain("How we calculate Overall readiness");
+    expect(html).toContain("Ready · 70+");
+    expect(html).toContain("Caution · 45-69");
+    expect(html).toContain("Rest · below 45");
+  });
+
+  it("renders featured wellness trends, compact sleep, and never the excluded weight", () => {
+    const records: WellnessRecord[] = [
+      { ownerId: "local-user", day: "2026-09-10", fields: { sleepSeconds: field(28000), hrvRmssdMs: field(55), restingHeartRateBpm: field(50), vo2maxMlKgMin: field(51.2), weightKg: field(70) }, updatedAt: "2026-09-10T00:00:00Z" },
+      { ownerId: "local-user", day: "2026-09-09", fields: { sleepSeconds: field(27900), hrvRmssdMs: field(50), restingHeartRateBpm: field(51), weightKg: field(71) }, updatedAt: "2026-09-09T00:00:00Z" },
+    ];
+    const html = renderToStaticMarkup(createElement(OverviewDashboard, { summary, wellness: records, history: [], planned: [], today: "2026-09-11", timezone: "Asia/Hong_Kong" }));
+    expect(html).toContain("<strong>7:47</strong>");
+    expect(html).toContain("VO2 max (ml/kg/min)");
+    expect(html).toContain("<strong>51.2</strong>");
+    expect(html).not.toContain("Weight (kg)");
   });
 
   it("renders all dashboard sections, fixed domains, wellness trends, and calendar legend", () => {
     const history = [{ id: "current", name: "Basketball", startAt: "2026-09-08T04:00:00Z", timezone: null, domains: ["sport_skill"], sport: "Basketball", durationMinutes: 60 }] as TrainingHistorySession[];
     const html = renderToStaticMarkup(createElement(OverviewDashboard, { summary, wellness, history, planned: [], today: "2026-09-11", timezone: "Asia/Hong_Kong" }));
     expect(html).toContain("Basketball");
-    expect(html).toContain("Readiness");
+    expect(html).toContain("Sleep score");
+    expect(html).toContain("<strong>Ready</strong>");
+    expect(html).toContain("Ready to train");
+    expect(html).toContain("How do we calculate?");
+    expect(html).not.toContain("recovery-modal");
+    expect(html).toContain("HRV (ms)");
+    expect(html).toContain("Resting HR (bpm)");
+    expect(html).toContain("<strong>55</strong>");
+    expect(html).not.toContain("55 ms");
     expect(html).toContain("September 2026");
     expect(html).toContain("Mind-body");
     expect(html).toContain("Training Load");
@@ -138,7 +210,8 @@ describe("Overview", () => {
     expect(html).toContain('data-icon="target"');
     expect(html).toContain('data-icon="recovery"');
     expect(html).toContain('data-chart="coral-bars"');
-    expect(html).toContain('data-chart="green-bars"');
+    expect(html).toContain("Overall readiness");
+    expect(html).toContain("<b>75</b>");
     expect(html).toContain("donut-segment domain-strength");
     expect(html).toContain("donut-segment domain-endurance");
     expect(html).toContain("donut-segment domain-sport_skill");
@@ -174,12 +247,12 @@ describe("Overview", () => {
     expect(html).toContain('<span class="mini-day-markers"><i class="planned" aria-label="Scheduled training"></i></span>');
   });
 
-  it("keeps compact summary visuals when comparison and readiness history are missing", () => {
+  it("keeps compact summary visuals when comparison and recovery history are missing", () => {
     const html = renderToStaticMarkup(createElement(OverviewDashboard, { summary: { ...summary, totalDurationMinutes: 1250 }, wellness: [], history: [], planned: [], today: "2026-09-11", timezone: "Asia/Hong_Kong" }));
     expect(html).toContain("20 hr 50 min");
     expect(html).toContain("No prior data");
     expect(html).toContain("No data");
-    expect(html).toContain('data-chart="green-bars"');
+    expect(html).toContain("<b>—</b>");
     expect(html).toContain("0%");
   });
 });

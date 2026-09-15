@@ -178,6 +178,16 @@ describe("v7 application boundary", () => {
     expect(repository.getWellness("local-user", "2026-09-11")?.fields.weightKg).toMatchObject({ value: 68.2, source: "user" });
     expect(() => app.savePersonalInformation({ preferredName: "Stale", gender: null, heightCm: null, birthDate: null, expectedSnapshotHash: current.snapshotHash })).toThrow(/changed/i);
   });
+  it("persists the chosen unit system and keeps it when a save omits it", () => {
+    repository = new AthriaRepository(":memory:", () => new Date("2026-09-11T03:00:00Z")); const app = new AthriaApplication(repository, "local-user", () => new Date("2026-09-11T03:00:00Z"));
+    const current = app.getPersonalInformation();
+    expect(current.unitSystem).toBe("metric");
+    const saved = app.savePersonalInformation({ preferredName: "Taylor", gender: null, heightCm: 172.5, birthDate: null, unitSystem: "imperial", expectedSnapshotHash: current.snapshotHash });
+    expect(saved.unitSystem).toBe("imperial");
+    expect(repository.getProfile().unitSystem).toBe("imperial");
+    const unchanged = app.savePersonalInformation({ preferredName: "Taylor", gender: null, heightCm: 172.5, birthDate: null, expectedSnapshotHash: saved.snapshotHash });
+    expect(unchanged.unitSystem).toBe("imperial");
+  });
   it("does not copy an unchanged historical weight and allows a cleared user weight to sync again", () => {
     repository = new AthriaRepository(":memory:", () => new Date("2026-09-11T03:00:00Z")); const app = new AthriaApplication(repository, "local-user", () => new Date("2026-09-11T03:00:00Z"));
     repository.upsertWellness("local-user", [{ id: "2026-09-10", weight: 70 }]);

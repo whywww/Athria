@@ -19,6 +19,8 @@ export interface TrainingSummary {
   };
 }
 
+export type UnitSystem = "metric" | "imperial";
+
 export interface AthleteProfile {
   ownerId: string;
   preferredName: string;
@@ -37,6 +39,7 @@ export interface AthleteProfile {
   injuries: string[];
   constraintNotes: string[];
   explicitRecoveryDays: number | null;
+  unitSystem: UnitSystem;
 }
 
 export interface PlanExercise {
@@ -113,13 +116,14 @@ export function paginateTrainingHistory<T>(items: T[], requestedPage: number, pa
   return { items: items.slice(offset, offset + pageSize), page, totalPages, start: items.length ? offset + 1 : 0, end: Math.min(offset + pageSize, items.length) };
 }
 export type WellnessFieldValue = { value: number | string | null; source: "intervals_icu" | "user" | "llm"; updatedAt: string };
-export interface WellnessRecord { ownerId: string; day: string; fields: Partial<Record<"restingHeartRateBpm" | "hrvRmssdMs" | "sleepSeconds" | "sleepScore" | "weightKg" | "fatigue" | "soreness" | "stress" | "mood" | "motivation" | "readiness" | "notes", WellnessFieldValue>>; updatedAt: string }
+export interface WellnessRecord { ownerId: string; day: string; fields: Partial<Record<"restingHeartRateBpm" | "hrvRmssdMs" | "hrvSdnnMs" | "sleepSeconds" | "sleepScore" | "sleepQuality" | "avgSleepingHeartRateBpm" | "weightKg" | "bodyFatPercent" | "vo2maxMlKgMin" | "spo2Percent" | "stepsCount" | "respirationRpm" | "fatigue" | "soreness" | "stress" | "mood" | "motivation" | "readiness" | "injuryScore" | "eftpWatts" | "wPrimeJoules" | "pMaxWatts" | "notes", WellnessFieldValue>>; updatedAt: string }
 
 export interface PersonalInformation {
   preferredName: string;
   gender: AthleteProfile["gender"];
   heightCm: number | null;
   birthDate: string | null;
+  unitSystem: UnitSystem;
   weightKg: number | null;
   weightDate: string | null;
   snapshotHash: string;
@@ -247,11 +251,6 @@ export function connectionSources(intervalsConfigured: boolean, xunjiConfigured:
   const available = (["intervals", "xunji", "hevy"] as const).filter((source) => !added.includes(source));
   return { added, available };
 }
-export function connectionStatusPresentation(status?: "success" | "partial" | "failed"): { tone: "connected" | "partial" | "failed"; label: string } {
-  if (status === "partial") return { tone: "partial", label: "Partially synced" };
-  if (status === "failed") return { tone: "failed", label: "Sync failed" };
-  return { tone: "connected", label: "Connected" };
-}
 export interface DoctorResult { databasePath: string }
 export interface BackupPreview {
   path: string;
@@ -286,6 +285,48 @@ export function formatDuration(minutes: number): string {
 
 export function formatDistance(meters: number): string {
   return meters >= 1000 ? `${Number((meters / 1000).toFixed(1))} km` : `${Math.round(meters)} m`;
+}
+
+const CM_PER_INCH = 2.54;
+const KG_PER_POUND = 0.45359237;
+
+function roundTo(value: number, decimals: number): number {
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
+}
+
+// Drops a trailing ".0" so integral measurements render without a decimal (68.2 -> "68.2", 68 -> "68").
+function formatMeasured(value: number): string {
+  return String(roundTo(value, 1));
+}
+
+export function cmToImperialHeight(cm: number): { feet: number; inches: number } {
+  const totalInches = roundTo(cm / CM_PER_INCH, 1);
+  const feet = Math.floor(totalInches / 12);
+  const inches = roundTo(totalInches - feet * 12, 1);
+  return inches >= 12 ? { feet: feet + 1, inches: 0 } : { feet, inches };
+}
+
+export function imperialHeightToCm(feet: number, inches: number): number {
+  return roundTo((feet * 12 + inches) * CM_PER_INCH, 1);
+}
+
+export function kgToPounds(kg: number): number {
+  return roundTo(kg / KG_PER_POUND, 1);
+}
+
+export function poundsToKg(pounds: number): number {
+  return roundTo(pounds * KG_PER_POUND, 1);
+}
+
+export function formatPersonalHeight(cm: number, unitSystem: UnitSystem): string {
+  if (unitSystem === "metric") return `${formatMeasured(cm)} cm`;
+  const { feet, inches } = cmToImperialHeight(cm);
+  return `${feet} ft ${formatMeasured(inches)} in`;
+}
+
+export function formatPersonalWeight(kg: number, unitSystem: UnitSystem): string {
+  return unitSystem === "metric" ? `${formatMeasured(kg)} kg` : `${formatMeasured(kgToPounds(kg))} lb`;
 }
 
 export function formatDateTime(value: string, timezone?: string): string {

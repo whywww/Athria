@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
-import { formatDuration, friendlyLabel, type CalendarSession, type CurrentPlan, type StoredSessionTemplate } from "../view-models";
+import { formatDuration, type CalendarSession, type CurrentPlan, type StoredSessionTemplate } from "../view-models";
 import { api } from "../api";
 import { ErrorBanner } from "../components";
 import { Prescription } from "./Prescription";
 import { addDays } from "./view";
-import { formatDayLabel, phaseLabelsForSession, sessionStatusLabel, sessionTone } from "./calendar-utils";
+import { formatDayLabel, phaseLabelsForSession } from "./calendar-utils";
 import "./calendar.css";
 
 /**
@@ -129,7 +129,6 @@ function DrawerPanel({ session, templates, plan, today, onClose, onMutated, retu
     }
   };
 
-  const tone = sessionTone(session, today);
   const phaseLabels = plan ? phaseLabelsForSession(plan.mesocycle.domainProgressions, session) : [];
   const template = session.templateRef ? templates.find((item) => item.id === session.templateRef?.id) : undefined;
   const reason = reasonCode ? { reasonCode, ...(reasonNote.trim() ? { note: reasonNote.trim() } : {}) } : undefined;
@@ -147,25 +146,26 @@ function DrawerPanel({ session, templates, plan, today, onClose, onMutated, retu
         </header>
 
         <div className="sd-meta">
-          <span className={`sd-status sd-status-${tone}`}>
-            {tone === "completed" && <span aria-hidden="true">✓ </span>}
-            {sessionStatusLabel(tone)}
-          </span>
           <span className="sd-meta-item">Week {session.weekNumber}</span>
           {phaseLabels.map((label) => <span className="sd-meta-item" key={label}>{label}</span>)}
-          <span className="sd-meta-item">{formatDuration(session.durationMinutes)}</span>
-          {session.keySession && <span className="sd-meta-item">Key session</span>}
         </div>
 
         <div className="sd-body">
           <ErrorBanner error={error} />
 
-          {session.intent && (
-            <section className="sd-section">
-              <h3 className="sd-eyebrow">Purpose</h3>
-              <p className="sd-purpose">{session.intent}</p>
-            </section>
-          )}
+          {session.legacySnapshot && <section className="sd-section sd-legacy"><h3 className="sd-eyebrow">Needs structured review</h3><p>This legacy prescription is preserved as written and can be converted by a connected Agent.</p></section>}
+
+          <section className="sd-section sd-prescription-section">
+            {session.components.length > 0 ? (
+              <div className="sd-prescriptions">
+                {session.components.map((component) => (
+                  <Prescription component={component} variant="detailed" fallbackNotes={session.intent} summary={session.intent} meta={formatDuration(session.durationMinutes)} key={component.id} />
+                ))}
+              </div>
+            ) : (
+              <p className="sd-empty">No structured prescription is available for this session.</p>
+            )}
+          </section>
 
           {/* Base template renders only when it resolves (§8.3) — never an empty block. */}
           {template && (
@@ -179,23 +179,7 @@ function DrawerPanel({ session, templates, plan, today, onClose, onMutated, retu
             </section>
           )}
 
-          {session.legacySnapshot && <section className="sd-section sd-legacy"><h3 className="sd-eyebrow">Needs structured review</h3><p>This legacy prescription is preserved as written and can be converted by a connected Agent.</p></section>}
-
-          <section className="sd-section sd-prescription-section">
-            {session.components.length > 0 ? (
-              <div className="sd-prescriptions">
-                {session.components.map((component) => (
-                  <Prescription component={component} variant="detailed" fallbackNotes={session.intent} key={component.id} />
-                ))}
-              </div>
-            ) : (
-              <p className="sd-empty">No structured prescription is available for this session.</p>
-            )}
-          </section>
-
-          {session.progressionNote && <section className="sd-section"><h3 className="sd-eyebrow">This week's progression</h3><p>{session.progressionNote}</p></section>}
-          {session.schedulingRationale && <section className="sd-section"><h3 className="sd-eyebrow">Why this day</h3><p>{session.schedulingRationale}</p>{plan?.mesocycle.schedule.kind === "interval" && <small>Rotation interval: every {plan.mesocycle.schedule.intervalDays} days.</small>}</section>}
-          {session.displayState === "completed" && <section className="sd-section"><h3 className="sd-eyebrow">Completed workout</h3><p>{session.match?.method === "manual" ? "Linked by you" : "Matched automatically"}{session.completedAt ? ` · ${new Date(session.completedAt).toLocaleDateString()}` : ""}</p>{session.completedTrainingSessionId && <button type="button" className="secondary compact" onClick={() => window.dispatchEvent(new CustomEvent("athria-open-training", { detail: session.completedTrainingSessionId! }))}>View in Training</button>}</section>}
+          {session.displayState === "completed" && <section className="sd-section"><h3 className="sd-eyebrow">Completed workout</h3><div className="sd-completed"><p>{session.match?.method === "manual" ? "Linked by you" : "Matched automatically"}{session.completedAt ? ` · ${new Date(session.completedAt).toLocaleDateString()}` : ""}</p>{session.completedTrainingSessionId && <button type="button" className="secondary compact" onClick={() => window.dispatchEvent(new CustomEvent("athria-open-training", { detail: session.completedTrainingSessionId! }))}>View in Training</button>}</div></section>}
         </div>
 
         {session.status === "planned" && (
@@ -213,12 +197,9 @@ function DrawerPanel({ session, templates, plan, today, onClose, onMutated, retu
               >
                 Move
               </button>
+              <label className="sd-reason">Optional reason<select value={reasonCode} onChange={(event) => setReasonCode(event.target.value)}><option value="">None</option><option value="schedule">Schedule</option><option value="recovery">Recovery</option><option value="health">Health</option><option value="travel">Travel</option><option value="equipment_weather">Equipment or weather</option><option value="preference">Preference</option><option value="other">Other</option></select></label>
+              {reasonCode && <label className="sd-reason sd-reason-note">Optional note<input value={reasonNote} maxLength={500} onChange={(event) => setReasonNote(event.target.value)} /></label>}
             </div>
-            <div className="sd-move">
-              <label>Optional reason<select value={reasonCode} onChange={(event) => setReasonCode(event.target.value)}><option value="">None</option><option value="schedule">Schedule</option><option value="recovery">Recovery</option><option value="health">Health</option><option value="travel">Travel</option><option value="equipment_weather">Equipment or weather</option><option value="preference">Preference</option><option value="other">Other</option></select></label>
-              {reasonCode && <label>Optional note<input value={reasonNote} maxLength={500} onChange={(event) => setReasonNote(event.target.value)} /></label>}
-            </div>
-            {session.scheduledDate > today && <small>To record a completed workout, move this plan to the date it was completed first.</small>}
             {moveOpen && (
               <div className="sd-move" id="sd-move-panel">
                 <label>

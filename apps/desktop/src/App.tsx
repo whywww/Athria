@@ -4,11 +4,11 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { api, changeDatabaseFile, getIntervalsStatus, getMcpStatus, getXunjiStatus, importXunjiSkill, pickBackupDestination, pickDatabaseFile, pickRestoreFile, restoreBackup, syncIntervals, syncXunji, testIntervals } from "./api";
 import { mcpConfig, mcpGuides } from "./mcp-guides";
 import {
-  connectionSources, connectionStatusPresentation, dashboardPages, deviceTimezone, equipmentGroupState, filterAndSortTrainingHistory, formatDateTime, formatDuration, formatTimezoneLabel, formatTrainingRhythm, formatTrainingSource, friendlyLabel, isUntouchedDefaultProfile,
+  cmToImperialHeight, connectionSources, dashboardPages, deviceTimezone, equipmentGroupState, filterAndSortTrainingHistory, formatDateTime, formatDuration, formatPersonalHeight, formatPersonalWeight, formatTimezoneLabel, formatTrainingRhythm, formatTrainingSource, friendlyLabel, imperialHeightToCm, isUntouchedDefaultProfile, kgToPounds, poundsToKg,
   paginateTrainingHistory, parseSyncRange, profilePayload, syncRangeOptions, timezoneOptions, PREFERENCE_MAX_LENGTH,
   toggleEquipmentGroup,
   type AthleteProfile, type BackupPreview, type CurrentPlan, type DoctorResult, type HevyImportStatus, type ImportPreview,
-  type CalendarSession, type EquipmentCategory, type ImportResult, type NextTrainingDay, type PersonalInformation, type SyncRange, type TrainingHistorySession, type TrainingHistorySort, type TrainingTaxonomy, type TrainingSummary, type WellnessRecord, type XunjiConnectionStatus,
+  type CalendarSession, type EquipmentCategory, type ImportResult, type NextTrainingDay, type PersonalInformation, type SyncRange, type TrainingHistorySession, type TrainingHistorySort, type TrainingTaxonomy, type TrainingSummary, type UnitSystem, type WellnessRecord, type XunjiConnectionStatus,
 } from "./view-models";
 import { Card, Empty, ErrorBanner, Loading, PrimaryPageHeader, weekdays } from "./components";
 import { CurrentPlanPage, NextTrainingDayCard } from "./plan/CurrentPlanPage";
@@ -83,7 +83,7 @@ function Overview() {
   if (error || !query.data || !profile.data || !today) return <ErrorBanner error={error}/>;
   return <>
     <OverviewDashboard summary={query.data} wellness={wellness.data ?? []} history={history.data ?? []} planned={calendar.data ?? []} today={today} timezone={profile.data.timezone}/>
-    <div className="overview-next-day">{plan.data && !nextDay.isPending && nextDay.data ? <NextTrainingDayCard value={nextDay.data} plan={plan.data} /> : !plan.data ? <div className="overview-plan-empty"><strong>No current plan</strong><span>Create a plan to see your next training day here.</span></div> : null}</div>
+    <div className="overview-next-day" id="overview-next-day">{plan.data && !nextDay.isPending && nextDay.data ? <NextTrainingDayCard value={nextDay.data} plan={plan.data} /> : !plan.data ? <div className="overview-plan-empty"><strong>No current plan</strong><span>Create a plan to see your next training day here.</span></div> : null}</div>
   </>;
 }
 
@@ -229,12 +229,8 @@ function ProviderLogo({ source }: { source: "hevy" | "intervals" | "xunji" }) {
   return <span className="provider-logo hevy-logo" aria-hidden="true"><svg viewBox="0 0 48 48"><path d="M12 18v12M8 20v8M36 18v12M40 20v8M12 24h24M17 15v18M31 15v18"/></svg></span>;
 }
 
-function SourceBadge({ tone, children }: { tone: "connected" | "partial" | "failed" | "neutral"; children: React.ReactNode }) {
-  return <span className={`source-status ${tone}`}><i/>{children}</span>;
-}
-
-function SourceCard({ source, title, description, badge, lastSyncLabel, lastSync, action, menuLabel, onMenuAction, feedback }: { source: "hevy" | "intervals" | "xunji"; title: string; description: string; badge: React.ReactNode; lastSyncLabel: string; lastSync: string; action: React.ReactNode; menuLabel: string; onMenuAction: () => void; feedback?: React.ReactNode }) {
-  return <article className="source-card"><div className="source-card-main"><ProviderLogo source={source}/><div className="source-title"><div><h2>{title}</h2>{badge}</div><p>{description}</p></div><Metric icon="clock" label={lastSyncLabel} value={lastSync}/></div>{feedback}<footer>{action}<details className="source-menu"><summary aria-label={`More options for ${title}`}>•••</summary><div><button type="button" onClick={onMenuAction}>{menuLabel}</button></div></details></footer></article>;
+function SourceCard({ source, title, description, lastSyncLabel, lastSync, action, menuLabel, onMenuAction, feedback }: { source: "hevy" | "intervals" | "xunji"; title: string; description: string; lastSyncLabel: string; lastSync: string; action: React.ReactNode; menuLabel: string; onMenuAction: () => void; feedback?: React.ReactNode }) {
+  return <article className="source-card"><div className="source-card-main"><ProviderLogo source={source}/><div className="source-title"><div><h2>{title}</h2></div><p>{description}</p></div><Metric icon="clock" label={lastSyncLabel} value={lastSync}/></div>{feedback}<footer>{action}<details className="source-menu"><summary aria-label={`More options for ${title}`}>•••</summary><div><button type="button" onClick={onMenuAction}>{menuLabel}</button></div></details></footer></article>;
 }
 
 function Metric({ icon, label, value }: { icon: "clock" | "database" | "upload"; label: string; value: string }) {
@@ -242,7 +238,7 @@ function Metric({ icon, label, value }: { icon: "clock" | "database" | "upload";
 }
 
 function AvailableSourceCard({ source, title, description, onConnect }: { source: "hevy" | "intervals" | "xunji"; title: string; description: string; onConnect: () => void }) {
-  return <article className="available-source-card"><ProviderLogo source={source}/><div><h3>{title}</h3><p>{description}</p><button type="button" className="connect-source-button" onClick={onConnect}><AppIcon name="plus"/>Connect</button></div><span className="available-source-arrow" aria-hidden="true">›</span></article>;
+  return <article className="available-source-card" role="button" tabIndex={0} aria-label={`Connect ${title}`} onClick={onConnect} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onConnect(); } }}><ProviderLogo source={source}/><div><h3>{title}</h3><p>{description}</p></div><span className="available-source-arrow" aria-hidden="true">›</span></article>;
 }
 
 function ConnectionModal({ title, description, onClose, children }: { title: string; description?: string; onClose: () => void; children: React.ReactNode }) {
@@ -274,11 +270,10 @@ function Connections() {
   const intervals = intervalsStatus.data; const xunji = xunjiStatus.data;
   const sources = connectionSources(Boolean(intervals?.configured), Boolean(xunji?.configured), Boolean(hevyStatus.data));
   return <section className="connections-page">
-    <header className="connections-header"><h1>Connections</h1><p>Sync your data from the apps and devices you use. Keep everything in one place.</p></header>
     <section className="connections-section"><h2>Connected ({sources.added.length})</h2><div className="connected-sources-grid">
-      {hevyStatus.data && <SourceCard source="hevy" title="Hevy" description="Strength training workouts" badge={<SourceBadge tone="connected">Imported</SourceBadge>} lastSyncLabel="Last imported" lastSync={formatDateTime(hevyStatus.data.importedAt)} feedback={<><ErrorBanner error={hevyStatus.error ?? hevyError}/>{importResult && <div className="source-feedback success">Import complete: {importResult.added ?? 0} added, {importResult.updated ?? 0} updated.</div>}</>} action={<button type="button" className="source-action primary" onClick={() => setDialog("hevy")}><AppIcon name="upload"/>Import again</button>} menuLabel="Choose another CSV" onMenuAction={() => setDialog("hevy")}/>}
-      {intervals?.configured && <SourceCard source="intervals" title="Intervals.icu" description="Endurance activities and performance metrics." badge={<SourceBadge tone={connectionStatusPresentation(intervals.sync?.status).tone}>{connectionStatusPresentation(intervals.sync?.status).label}</SourceBadge>} lastSyncLabel="Last synced" lastSync={intervals.sync?.lastSuccessAt ? formatDateTime(intervals.sync.lastSuccessAt) : "Not yet completed"} feedback={<><ErrorBanner error={intervalsStatus.error ?? intervalsError}/>{intervalsMessage && <div className="source-feedback success">{intervalsMessage}</div>}</>} action={<button type="button" className="source-action primary" disabled={intervalsBusy} onClick={() => void sync()}><AppIcon name="refresh"/>{intervalsBusy ? "Syncing…" : "Sync now"}</button>} menuLabel="Edit connection" onMenuAction={openIntervals}/>}
-      {xunji?.configured && <SourceCard source="xunji" title="Xunji" description="Strength and training records" badge={<SourceBadge tone={connectionStatusPresentation(xunji.sync?.status).tone}>{connectionStatusPresentation(xunji.sync?.status).label}</SourceBadge>} lastSyncLabel="Last synced" lastSync={xunji.sync?.lastSuccessAt ? formatDateTime(xunji.sync.lastSuccessAt) : "Not yet completed"} feedback={<><ErrorBanner error={xunjiStatus.error ?? xunjiError}/>{xunjiMessage && <div className="source-feedback success">{xunjiMessage}</div>}</>} action={<button type="button" className="source-action primary" disabled={xunjiBusy} onClick={() => void runXunjiSync()}><AppIcon name="refresh"/>{xunjiBusy ? "Syncing…" : "Sync now"}</button>} menuLabel="Edit connection" onMenuAction={() => setDialog("xunji")}/>}
+      {hevyStatus.data && <SourceCard source="hevy" title="Hevy" description="Strength training workouts" lastSyncLabel="Last imported" lastSync={formatDateTime(hevyStatus.data.importedAt)} feedback={<><ErrorBanner error={hevyStatus.error ?? hevyError}/>{importResult && <div className="source-feedback success">Import complete: {importResult.added ?? 0} added, {importResult.updated ?? 0} updated.</div>}</>} action={<button type="button" className="source-action primary" onClick={() => setDialog("hevy")}><AppIcon name="upload"/>Import again</button>} menuLabel="Choose another CSV" onMenuAction={() => setDialog("hevy")}/>}
+      {intervals?.configured && <SourceCard source="intervals" title="Intervals.icu" description="Endurance activities and performance metrics." lastSyncLabel="Last synced" lastSync={intervals.sync?.lastSuccessAt ? formatDateTime(intervals.sync.lastSuccessAt) : "Not yet completed"} feedback={<><ErrorBanner error={intervalsStatus.error ?? intervalsError}/>{intervalsMessage && <div className="source-feedback success">{intervalsMessage}</div>}</>} action={<button type="button" className="source-action primary" disabled={intervalsBusy} onClick={() => void sync()}><AppIcon name="refresh"/>{intervalsBusy ? "Syncing…" : "Sync now"}</button>} menuLabel="Edit connection" onMenuAction={openIntervals}/>}
+      {xunji?.configured && <SourceCard source="xunji" title="Xunji" description="Strength and training records" lastSyncLabel="Last synced" lastSync={xunji.sync?.lastSuccessAt ? formatDateTime(xunji.sync.lastSuccessAt) : "Not yet completed"} feedback={<><ErrorBanner error={xunjiStatus.error ?? xunjiError}/>{xunjiMessage && <div className="source-feedback success">{xunjiMessage}</div>}</>} action={<button type="button" className="source-action primary" disabled={xunjiBusy} onClick={() => void runXunjiSync()}><AppIcon name="refresh"/>{xunjiBusy ? "Syncing…" : "Sync now"}</button>} menuLabel="Edit connection" onMenuAction={() => setDialog("xunji")}/>}
       {!intervalsStatus.isPending && !xunjiStatus.isPending && !hevyStatus.isPending && sources.added.length === 0 && <div className="connections-empty"><span><AppIcon name="plus"/></span><strong>No connections yet</strong><p>Choose one of the available connections below to get started.</p></div>}
     </div></section>
     <section className="connections-section available-connections"><h2>Available Connections</h2>{sources.available.length ? <div className="available-sources-grid">
@@ -474,34 +469,69 @@ function PersonalInformationCard() {
   const client = useQueryClient();
   const query = useQuery({ queryKey: ["personal-information"], queryFn: () => api<PersonalInformation>("/api/personal-information") });
   const [form, setForm] = useState<PersonalInformation | null>(null);
+  const [unit, setUnit] = useState<UnitSystem>("metric");
   const [weightText, setWeightText] = useState("");
   const [weightChanged, setWeightChanged] = useState(false);
+  const [feetText, setFeetText] = useState("");
+  const [inchesText, setInchesText] = useState("");
+  const [heightTouched, setHeightTouched] = useState(false);
   const save = useMutation({
     mutationFn: (value: Record<string, unknown>) => api<PersonalInformation>("/api/personal-information", { method: "PUT", body: JSON.stringify(value) }),
-    onSuccess: async () => { setForm(null); setWeightChanged(false); await Promise.all(["personal-information", "profile", "state", "wellness"].map((key) => client.invalidateQueries({ queryKey: [key] }))); },
+    onSuccess: async () => { setForm(null); setWeightChanged(false); setHeightTouched(false); await Promise.all(["personal-information", "profile", "state", "wellness"].map((key) => client.invalidateQueries({ queryKey: [key] }))); },
   });
   if (query.isPending) return <Card title="Personal Information"><Loading/></Card>;
   if (query.isError || !query.data) return <Card title="Personal Information"><ErrorBanner error={query.error}/></Card>;
   const value = query.data;
-  const begin = () => { setForm({ ...value }); setWeightText(value.weightKg?.toString() ?? ""); setWeightChanged(false); save.reset(); };
-  const cancel = () => { setForm(null); setWeightChanged(false); save.reset(); };
+  const begin = () => {
+    setForm({ ...value });
+    setUnit(value.unitSystem);
+    setWeightText(value.weightKg == null ? "" : value.unitSystem === "metric" ? String(value.weightKg) : String(kgToPounds(value.weightKg)));
+    setWeightChanged(false);
+    const height = value.heightCm == null ? null : cmToImperialHeight(value.heightCm);
+    setFeetText(height ? String(height.feet) : "");
+    setInchesText(height ? String(height.inches) : "");
+    setHeightTouched(false);
+    save.reset();
+  };
+  const cancel = () => { setForm(null); setWeightChanged(false); setHeightTouched(false); save.reset(); };
+  const switchUnit = (next: UnitSystem) => {
+    if (!form || next === unit) return;
+    if (next === "imperial") {
+      const height = form.heightCm == null ? null : cmToImperialHeight(form.heightCm);
+      setFeetText(height ? String(height.feet) : "");
+      setInchesText(height ? String(height.inches) : "");
+      setHeightTouched(false);
+      setWeightText((text) => text.trim() ? String(kgToPounds(Number(text))) : text);
+    } else {
+      if (heightTouched) setForm({ ...form, heightCm: feetText.trim() || inchesText.trim() ? imperialHeightToCm(Number(feetText) || 0, Number(inchesText) || 0) : null });
+      setHeightTouched(false);
+      setWeightText((text) => text.trim() ? String(poundsToKg(Number(text))) : text);
+    }
+    setUnit(next);
+  };
+  // Untouched imperial drafts submit the untouched canonical value, so a plain unit toggle never rewrites stored data through 0.1 rounding.
+  const heightCmDraft = !form ? null : unit === "metric" || !heightTouched ? form.heightCm : feetText.trim() || inchesText.trim() ? imperialHeightToCm(Number(feetText) || 0, Number(inchesText) || 0) : null;
+  const weightKgDraft = unit === "metric" ? Number(weightText) : poundsToKg(Number(weightText));
   const submit = () => {
     if (!form) return;
-    const payload: Record<string, unknown> = { preferredName: form.preferredName.trim(), gender: form.gender, heightCm: form.heightCm, birthDate: form.birthDate, expectedSnapshotHash: value.snapshotHash };
-    if (weightChanged) payload.weightKg = weightText.trim() ? Number(weightText) : null;
+    const payload: Record<string, unknown> = { preferredName: form.preferredName.trim(), gender: form.gender, heightCm: heightCmDraft, birthDate: form.birthDate, unitSystem: unit, expectedSnapshotHash: value.snapshotHash };
+    if (weightChanged) payload.weightKg = weightText.trim() ? weightKgDraft : null;
     save.mutate(payload);
   };
   const genderLabel = value.gender ? friendlyLabel(value.gender) : "Not specified";
-  const validWeight = !weightChanged || !weightText.trim() || (Number(weightText) >= 20 && Number(weightText) <= 500);
-  const valid = Boolean(form?.preferredName.trim()) && (form?.heightCm === null || (form!.heightCm >= 50 && form!.heightCm <= 250)) && validWeight && (!form?.birthDate || form.birthDate <= new Date().toISOString().slice(0, 10));
+  const validWeight = !weightChanged || !weightText.trim() || (weightKgDraft >= 20 && weightKgDraft <= 500);
+  const valid = Boolean(form?.preferredName.trim()) && (heightCmDraft === null || (heightCmDraft >= 50 && heightCmDraft <= 250)) && validWeight && (!form?.birthDate || form.birthDate <= new Date().toISOString().slice(0, 10));
   return <Card title="Personal Information" className="personal-information-card" action={form ? <div className="actions"><button className="secondary compact" onClick={cancel}>Cancel</button><button className="compact" disabled={!valid || save.isPending} onClick={submit}>{save.isPending ? "Saving…" : "Save"}</button></div> : <button className="secondary compact" onClick={begin}><span aria-hidden="true">✎</span>Edit</button>}>
     {form ? <div className="personal-information-form">
+      <div className="unit-row"><span className="unit-label">Units</span><span className="unit-switch" role="group" aria-label="Measurement units"><button type="button" className={unit === "metric" ? "active" : ""} aria-pressed={unit === "metric"} onClick={() => switchUnit("metric")}>Metric</button><button type="button" className={unit === "imperial" ? "active" : ""} aria-pressed={unit === "imperial"} onClick={() => switchUnit("imperial")}>Imperial</button></span></div>
       <label><span>Preferred name</span><input maxLength={100} value={form.preferredName} onChange={(event) => setForm({ ...form, preferredName: event.target.value })}/></label>
       <label><span>Gender</span><select value={form.gender ?? ""} onChange={(event) => setForm({ ...form, gender: (event.target.value || null) as PersonalInformation["gender"] })}><option value="">Not specified</option><option value="female">Female</option><option value="male">Male</option><option value="non_binary">Non-binary</option><option value="prefer_not_to_say">Prefer not to say</option></select></label>
-      <label><span>Height <em>cm</em></span><input type="number" min="50" max="250" step="0.1" value={form.heightCm ?? ""} onChange={(event) => setForm({ ...form, heightCm: event.target.value ? Number(event.target.value) : null })}/></label>
-      <label><span>Weight <em>kg</em></span><input type="number" min="20" max="500" step="0.1" value={weightText} onChange={(event) => { setWeightText(event.target.value); setWeightChanged(true); }}/></label>
+      <label><span>Height <em>{unit === "metric" ? "cm" : "ft / in"}</em></span>{unit === "metric"
+        ? <input type="number" min="50" max="250" step="0.1" value={form.heightCm ?? ""} onChange={(event) => setForm({ ...form, heightCm: event.target.value ? Number(event.target.value) : null })}/>
+        : <div className="imperial-height"><span className="imperial-field"><input type="number" min="0" max="8" step="1" aria-label="Height feet" value={feetText} onChange={(event) => { setFeetText(event.target.value); setHeightTouched(true); }}/><em>ft</em></span><span className="imperial-field"><input type="number" min="0" max="11.9" step="0.1" aria-label="Height inches" value={inchesText} onChange={(event) => { setInchesText(event.target.value); setHeightTouched(true); }}/><em>in</em></span></div>}</label>
+      <label><span>Weight <em>{unit === "metric" ? "kg" : "lb"}</em></span><input type="number" min={unit === "metric" ? "20" : "44"} max={unit === "metric" ? "500" : "1103"} step="0.1" value={weightText} onChange={(event) => { setWeightText(event.target.value); setWeightChanged(true); }}/></label>
       <label><span>Birth date</span><input type="date" max={new Date().toISOString().slice(0, 10)} value={form.birthDate ?? ""} onChange={(event) => setForm({ ...form, birthDate: event.target.value || null })}/></label>
-    </div> : <dl className="personal-information-summary"><div><dt>Preferred name</dt><dd>{value.preferredName}</dd></div><div><dt>Gender</dt><dd>{genderLabel}</dd></div><div><dt>Height</dt><dd>{value.heightCm == null ? "Not specified" : `${value.heightCm} cm`}</dd></div><div><dt>Weight</dt><dd>{value.weightKg == null ? "Not recorded" : `${value.weightKg} kg`}{value.weightDate && <small>{value.weightDate}</small>}</dd></div><div><dt>Birth date</dt><dd>{value.birthDate ?? "Not specified"}</dd></div></dl>}
+    </div> : <dl className="personal-information-summary"><div><dt>Preferred name</dt><dd>{value.preferredName}</dd></div><div><dt>Gender</dt><dd>{genderLabel}</dd></div><div><dt>Height</dt><dd>{value.heightCm == null ? "Not specified" : formatPersonalHeight(value.heightCm, value.unitSystem)}</dd></div><div><dt>Weight {value.weightDate && <small>{value.weightDate}</small>}</dt><dd>{value.weightKg == null ? "Not recorded" : formatPersonalWeight(value.weightKg, value.unitSystem)}</dd></div><div><dt>Birth date</dt><dd>{value.birthDate ?? "Not specified"}</dd></div></dl>}
     <ErrorBanner error={save.error}/>
   </Card>;
 }
@@ -558,11 +588,10 @@ export function App() {
   const profile = useQuery({ queryKey: ["profile"], queryFn: () => api<AthleteProfile>("/api/profile") });
   const primaryPages = dashboardPages.filter((item) => item.group === "primary");
   const supportPages = dashboardPages.filter((item) => item.group === "support");
-  const primaryPage = primaryPages.some((item) => item.id === page);
   useEffect(() => { let unlisten: UnlistenFn | undefined; void listen("athria-service-crashed", () => setServiceCrash(true)).then((dispose) => { unlisten = dispose; }); return () => unlisten?.(); }, []);
-  useEffect(() => { const openTraining = () => setPage("Training"); window.addEventListener("athria-open-training", openTraining); return () => window.removeEventListener("athria-open-training", openTraining); }, []);
+  useEffect(() => { const openTraining = () => setPage("Training"); const openConnections = () => setPage("Connections"); window.addEventListener("athria-open-training", openTraining); window.addEventListener("athria-open-connections", openConnections); return () => { window.removeEventListener("athria-open-training", openTraining); window.removeEventListener("athria-open-connections", openConnections); }; }, []);
   const navIcons: Record<Page, IconName> = { Overview: "overview", Training: "training", Profile: "profile", Plan: "plan", Connections: "devices", Settings: "settings", Help: "help" };
   const NavItems = ({ items }: { items: typeof dashboardPages[number][] }) => <>{items.map((item) => <button key={item.id} className={item.id === page ? "active" : ""} aria-current={item.id === page ? "page" : undefined} onClick={() => setPage(item.id)}><AppIcon name={navIcons[item.id]}/>{item.label}</button>)}</>;
   const preferredName = profile.data?.preferredName || "Athlete";
-  return <div className="shell"><aside><div className="brand"><img src="/athria-logo.svg" alt="Athria" /></div><nav aria-label="Main navigation"><NavItems items={primaryPages}/></nav><div className="sidebar-lower"><nav className="support-nav" aria-label="Support navigation"><NavItems items={supportPages}/></nav></div></aside><main className={primaryPage ? "primary-main" : undefined}>{page !== "Plan" && page !== "Profile" && page !== "Connections" && (primaryPage ? <PrimaryPageHeader preferredName={preferredName} subtitle={page === "Overview" ? "Let's keep the momentum going. Here's your overview for today." : "Your AI fitness hub. Local-first. Data you own."}/> : <header><div><h1>Hi, {preferredName}! <span aria-hidden="true">👋</span></h1><p>Your AI fitness hub. Local-first. Data you own.</p></div></header>)}{serviceCrash && <div className="error">The local service stopped unexpectedly. Close and reopen Athria. If the problem continues, create a backup before troubleshooting.</div>}<View/></main></div>;
+  return <div className="shell"><aside><div className="brand"><img src="/athria-logo.svg" alt="Athria" /></div><nav aria-label="Main navigation"><NavItems items={primaryPages}/></nav><div className="sidebar-lower"><nav className="support-nav" aria-label="Support navigation"><NavItems items={supportPages}/></nav></div></aside><main className="primary-main">{page !== "Plan" && page !== "Profile" && <PrimaryPageHeader preferredName={preferredName} subtitle={page === "Overview" ? "Let's keep the momentum going. Here's your overview for today." : page === "Connections" ? "Sync your data from the apps and devices you use. Keep everything in one place." : page === "Settings" ? "Your personal information, system status, and local backups." : page === "Help" ? "Guides for setting up Athria and connecting your AI agent." : "Your AI fitness hub. Local-first. Data you own."}/>}{serviceCrash && <div className="error">The local service stopped unexpectedly. Close and reopen Athria. If the problem continues, create a backup before troubleshooting.</div>}<View/></main></div>;
 }

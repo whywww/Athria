@@ -159,7 +159,7 @@ export class AthriaApplication {
     const wellness = this.repository.listWellness(this.ownerId);
     const latestWeight = wellness.find((record) => record.fields.weightKg?.value != null);
     const state = { profile, latestWeight: latestWeight ? { weightKg: latestWeight.fields.weightKg!.value, weightDate: latestWeight.day } : { weightKg: null, weightDate: null }, todayWellness: this.repository.getWellness(this.ownerId, today) };
-    return { preferredName: profile.preferredName, gender: profile.gender, heightCm: profile.heightCm, birthDate: profile.birthDate, ...state.latestWeight, snapshotHash: stableHash(state) };
+    return { preferredName: profile.preferredName, gender: profile.gender, heightCm: profile.heightCm, birthDate: profile.birthDate, unitSystem: profile.unitSystem, ...state.latestWeight, snapshotHash: stableHash(state) };
   }
 
   savePersonalInformation(value: unknown) {
@@ -167,7 +167,7 @@ export class AthriaApplication {
     return this.repository.sqlite.transaction(() => {
       if (input.expectedSnapshotHash !== this.getPersonalInformation().snapshotHash) throw new AthriaError("INPUT_SNAPSHOT_CHANGED", "Personal information changed. Refresh before saving.", 409);
       const profile = this.getProfile();
-      this.repository.saveProfile(athleteProfileSchema.parse({ ...profile, preferredName: input.preferredName, gender: input.gender, heightCm: input.heightCm, birthDate: input.birthDate }));
+      this.repository.saveProfile(athleteProfileSchema.parse({ ...profile, preferredName: input.preferredName, gender: input.gender, heightCm: input.heightCm, birthDate: input.birthDate, unitSystem: input.unitSystem ?? profile.unitSystem }));
       if ("weightKg" in input) {
         const day = localDate(this.now(), profile.timezone);
         const current = this.repository.getWellness(this.ownerId, day);

@@ -100,6 +100,69 @@
         }
       ]
     },
+    "timePrecision": {
+      "default": "exact",
+      "type": "string",
+      "enum": [
+        "exact",
+        "date_only"
+      ]
+    },
+    "sources": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "minLength": 1
+          },
+          "externalId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "source",
+          "externalId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "planMatch": {
+      "default": null,
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "plannedSessionId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "method": {
+              "type": "string",
+              "enum": [
+                "auto",
+                "manual"
+              ]
+            }
+          },
+          "required": [
+            "plannedSessionId",
+            "method"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "isPlanMatchExcluded": {
+      "default": false,
+      "type": "boolean"
+    },
     "strengthSets": {
       "default": [],
       "type": "array",
@@ -396,6 +459,10 @@
     "status",
     "timezone",
     "plannedSessionId",
+    "timePrecision",
+    "sources",
+    "planMatch",
+    "isPlanMatchExcluded",
     "strengthSets",
     "endurance",
     "missingFields"

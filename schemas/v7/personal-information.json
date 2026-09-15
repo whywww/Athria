@@ -58,6 +58,13 @@
         }
       ]
     },
+    "unitSystem": {
+      "type": "string",
+      "enum": [
+        "metric",
+        "imperial"
+      ]
+    },
     "expectedSnapshotHash": {
       "type": "string",
       "minLength": 1

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { connectionSources, connectionStatusPresentation, dashboardPages, editableTemplate, equipmentGroupState, filterAndSortTrainingHistory, formatDistance, formatDuration, formatTimezoneLabel, formatTrainingSource, paginateTrainingHistory, parseSyncRange, profilePayload, referencedTemplates, syncRangeOptions, templateEditorErrors, templateNodeName, toggleEquipmentGroup, PREFERENCE_MAX_LENGTH, type AthleteProfile, type Mesocycle, type SessionTemplate, type StoredSessionTemplate, type TrainingHistorySession } from "./view-models";
+import { cmToImperialHeight, connectionSources, dashboardPages, editableTemplate, equipmentGroupState, filterAndSortTrainingHistory, formatDistance, formatDuration, formatPersonalHeight, formatPersonalWeight, formatTimezoneLabel, formatTrainingSource, imperialHeightToCm, kgToPounds, paginateTrainingHistory, parseSyncRange, poundsToKg, profilePayload, referencedTemplates, syncRangeOptions, templateEditorErrors, templateNodeName, toggleEquipmentGroup, PREFERENCE_MAX_LENGTH, type AthleteProfile, type Mesocycle, type SessionTemplate, type StoredSessionTemplate, type TrainingHistorySession } from "./view-models";
 
-const profile: AthleteProfile = { ownerId: "local-user", preferredName: "Athlete", gender: null, heightCm: null, birthDate: null, timezone: "Asia/Hong_Kong", goals: ["general_fitness"], preference: "", maxSessionMinutes: 60, trainingRhythm: { kind: "flexible_week", targetDaysPerWeek: 4, minDaysPerWeek: 3, maxDaysPerWeek: 5 }, equipment: ["dumbbell"], injuries: [], constraintNotes: [], explicitRecoveryDays: null };
+const profile: AthleteProfile = { ownerId: "local-user", preferredName: "Athlete", gender: null, heightCm: null, birthDate: null, timezone: "Asia/Hong_Kong", goals: ["general_fitness"], preference: "", maxSessionMinutes: 60, trainingRhythm: { kind: "flexible_week", targetDaysPerWeek: 4, minDaysPerWeek: 3, maxDaysPerWeek: 5 }, equipment: ["dumbbell"], injuries: [], constraintNotes: [], explicitRecoveryDays: null, unitSystem: "metric" };
 
 const template: SessionTemplate = { id: "lower", name: "Lower", intent: "Lower-body pattern", domain: "strength", nodes: [{ name: "Squat pattern", role: "primary", movementPatternIds: ["squat"], targetMuscleIds: ["quadriceps"], matchPolicy: "all", variables: ["exercise_selection"] }] };
 const history = [
@@ -16,9 +16,6 @@ describe("dashboard v7 view models", () => {
     expect(connectionSources(false, true, true)).toEqual({ added: ["xunji", "hevy"], available: ["intervals"] });
     expect(connectionSources(true, true, true)).toEqual({ added: ["intervals", "xunji", "hevy"], available: [] });
     expect(dashboardPages.some((page) => page.id === "Connections" && page.label === "Connections")).toBe(true);
-    expect(connectionStatusPresentation("success")).toEqual({ tone: "connected", label: "Connected" });
-    expect(connectionStatusPresentation("partial")).toEqual({ tone: "partial", label: "Partially synced" });
-    expect(connectionStatusPresentation("failed")).toEqual({ tone: "failed", label: "Sync failed" });
   });
 
   it("toggles equipment groups without changing other selections", () => {
@@ -77,5 +74,19 @@ describe("dashboard v7 view models", () => {
   it("truncates an over-length preference when building the profile payload", () => {
     const long = "a".repeat(PREFERENCE_MAX_LENGTH + 30);
     expect(profilePayload(profile, { ...profile, preference: long }).preference).toHaveLength(PREFERENCE_MAX_LENGTH);
+  });
+  it("converts and formats metric and imperial measurements", () => {
+    expect(cmToImperialHeight(172.7)).toEqual({ feet: 5, inches: 8 });
+    expect(cmToImperialHeight(182.8)).toEqual({ feet: 6, inches: 0 });
+    expect(imperialHeightToCm(5, 8)).toBe(172.7);
+    expect(kgToPounds(68.2)).toBe(150.4);
+    expect(poundsToKg(150.4)).toBe(68.2);
+    expect(formatPersonalHeight(172.7, "metric")).toBe("172.7 cm");
+    expect(formatPersonalHeight(172.7, "imperial")).toBe("5 ft 8 in");
+    expect(formatPersonalHeight(180, "metric")).toBe("180 cm");
+    expect(formatPersonalHeight(152.4, "imperial")).toBe("5 ft 0 in");
+    expect(formatPersonalWeight(68.2, "metric")).toBe("68.2 kg");
+    expect(formatPersonalWeight(68.2, "imperial")).toBe("150.4 lb");
+    expect(formatPersonalWeight(45.359237, "imperial")).toBe("100 lb");
   });
 });

@@ -82,6 +82,17 @@ describe("v7 planning resets", () => {
     repository.upsertWellness("local-user", [{ id: "2026-09-10", restingHR: 48 }]);
     expect(repository.getWellness("local-user", "2026-09-10")?.fields.restingHeartRateBpm?.value).toBe(55);
   });
+  it("stores extended Intervals wellness fields including sport power metrics", () => {
+    repository = new AthriaRepository(":memory:", () => new Date("2026-09-11T00:00:00Z"));
+    repository.upsertWellness("local-user", [{ id: "2026-09-10", hrvSDNN: 39.2, spO2: 99.25, steps: 12707, respiration: 14.5, avgSleepingHR: 52.4, sleepQuality: 3, bodyFat: 15.8, injury: 1, vo2max: 51.2, sportInfo: [{ type: "Ride", eftp: 245.5, wPrime: 21000, pMax: 890 }] }]);
+    expect(repository.getWellness("local-user", "2026-09-10")?.fields).toMatchObject({
+      hrvSdnnMs: { value: 39.2, source: "intervals_icu" }, spo2Percent: { value: 99.25 }, stepsCount: { value: 12707 }, respirationRpm: { value: 14.5 },
+      avgSleepingHeartRateBpm: { value: 52.4 }, sleepQuality: { value: 3 }, bodyFatPercent: { value: 15.8 }, injuryScore: { value: 1 }, vo2maxMlKgMin: { value: 51.2 },
+      eftpWatts: { value: 245.5 }, wPrimeJoules: { value: 21000 }, pMaxWatts: { value: 890 },
+    });
+    repository.upsertWellness("local-user", [{ id: "2026-09-10", sportInfo: [{ type: "Ride", eftp: null, wPrime: null, pMax: null }] }]);
+    expect(repository.getWellness("local-user", "2026-09-10")?.fields.eftpWatts?.value).toBe(245.5);
+  });
   it("stores only compact template data while reconstructing API metadata", () => {
     directory = mkdtempSync(join(tmpdir(), "athria-template-data-")); const path = join(directory, "athria.sqlite3");
     repository = new AthriaRepository(path);
