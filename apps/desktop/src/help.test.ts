@@ -18,8 +18,14 @@ describe("Help", () => {
     expect(html).toContain("How do I back up my data and sync it with my own cloud?");
   });
 
+  it("renders the FAQ as collapsed accordions", () => {
+    const html = renderHelp();
+    expect((html.match(/class="faq-item"/g) ?? []).length).toBe(3);
+    expect(html).toContain("Plans are created by your connected AI agent.");
+  });
+
   it("names MCP in the agent connection card title", () => {
-    expect(renderHelp()).toContain("Connect Athria to your AI agent through MCP");
+    expect(renderHelp()).toContain("Connect Athria to Your AI Agent through MCP");
   });
 
   it("explains AI and training terms in the glossary", () => {
@@ -27,5 +33,6 @@ describe("Help", () => {
     expect(html).toContain("Model Context Protocol");
     expect(html).toContain("Mesocycle");
     expect(html).toContain("RPE / RIR");
+    expect(html).toContain("Heart rate zone");
   });
 });

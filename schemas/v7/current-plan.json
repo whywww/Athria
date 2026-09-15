@@ -1143,6 +1143,7 @@
                                           "maximum": 100
                                         },
                                         "targetRpe": {
+                                          "description": "Strength effort on the 1–10 RPE scale; primary effort notation for strength exercises.",
                                           "default": null,
                                           "anyOf": [
                                             {
@@ -1156,6 +1157,7 @@
                                           ]
                                         },
                                         "targetRir": {
+                                          "description": "Optional RIR (reps in reserve) alternative effort notation for strength exercises.",
                                           "anyOf": [
                                             {
                                               "type": "number",
@@ -1300,6 +1302,7 @@
                                               "maxLength": 80
                                             },
                                             "heartRateZone": {
+                                              "description": "Endurance effort: relative heart-rate zone label such as 'Zone 1–2'; primary effort notation for every endurance step, relative to the athlete's own baseline.",
                                               "type": "string",
                                               "minLength": 1,
                                               "maxLength": 40
@@ -1315,6 +1318,7 @@
                                               "maxLength": 40
                                             },
                                             "rpe": {
+                                              "description": "Secondary free-text effort note for endurance steps; heart-rate zone labels are the primary notation.",
                                               "type": "string",
                                               "minLength": 1,
                                               "maxLength": 40
@@ -1390,6 +1394,7 @@
                                                   "maxLength": 80
                                                 },
                                                 "heartRateZone": {
+                                                  "description": "Endurance effort: relative heart-rate zone label such as 'Zone 1–2'; primary effort notation for every endurance step, relative to the athlete's own baseline.",
                                                   "type": "string",
                                                   "minLength": 1,
                                                   "maxLength": 40
@@ -1405,6 +1410,7 @@
                                                   "maxLength": 40
                                                 },
                                                 "rpe": {
+                                                  "description": "Secondary free-text effort note for endurance steps; heart-rate zone labels are the primary notation.",
                                                   "type": "string",
                                                   "minLength": 1,
                                                   "maxLength": 40
@@ -1463,6 +1469,7 @@
                                                   "maxLength": 80
                                                 },
                                                 "heartRateZone": {
+                                                  "description": "Endurance effort: relative heart-rate zone label such as 'Zone 1–2'; primary effort notation for every endurance step, relative to the athlete's own baseline.",
                                                   "type": "string",
                                                   "minLength": 1,
                                                   "maxLength": 40
@@ -1478,6 +1485,7 @@
                                                   "maxLength": 40
                                                 },
                                                 "rpe": {
+                                                  "description": "Secondary free-text effort note for endurance steps; heart-rate zone labels are the primary notation.",
                                                   "type": "string",
                                                   "minLength": 1,
                                                   "maxLength": 40

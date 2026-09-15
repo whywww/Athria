@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { OverviewDashboard, RecoveryHelpModal, calendarDays, formatWellnessDate, loadAxisLabel, mesocycleProgress, overviewDateRange, recoveryStatus, sparklineGeometry, twelveWeekConsistency, weeklyLoad, weeklyOverview, wellnessHighlights } from "./overview";
+import { OverviewDashboard, RecoveryHelpModal, calendarDays, formatWellnessDate, formatWellnessRange, loadAxisLabel, mesocycleProgress, overviewDateRange, recoveryStatus, sparklineGeometry, twelveWeekConsistency, weeklyLoad, weeklyOverview, wellnessHighlights } from "./overview";
 import type { CalendarSession, TrainingHistorySession, TrainingSummary, WellnessRecord } from "./view-models";
 
 const quality = { completeness: 1, missingFields: [], anomalies: [] };
@@ -45,24 +45,44 @@ describe("Overview", () => {
   });
 
   it("selects four prioritized wellness fields and compares prior matching values", () => {
-    const result = wellnessHighlights(wellness)!;
+    const result = wellnessHighlights(wellness, "2026-09-11")!;
+    expect(result.start).toBe("2026-08-29");
+    expect(result.end).toBe("2026-09-11");
     expect(result.values.map((item) => item.key)).toEqual(["sleepScore", "hrvRmssdMs", "restingHeartRateBpm", "sleepSeconds"]);
     expect(result.values[0]?.delta).toBe(-2);
     expect(result.values[0]?.series).toEqual([86, 84]);
   });
 
-  it("formats the wellness date without a status prefix", () => {
+  it("formats wellness dates and the shared fourteen-day range without a status prefix", () => {
     expect(formatWellnessDate("2026-09-11")).toBe("Sep 11, 2026");
+    expect(formatWellnessRange("2026-08-29", "2026-09-11")).toBe("Aug 29 – Sep 11, 2026");
+    expect(formatWellnessRange("2025-12-28", "2026-01-10")).toBe("Dec 28, 2025 – Jan 10, 2026");
+    expect(formatWellnessRange("2026-09-11", "2026-09-11")).toBe("Sep 11, 2026");
   });
 
-  it("builds bounded smooth trend geometry from at most seven finite samples", () => {
-    const geometry = sparklineGeometry([Number.NaN, 10, 14, 12, 18, 17, 21, 19, 23])!;
-    expect(geometry.points).toHaveLength(7);
+  it("builds bounded smooth trend geometry from at most fourteen finite samples", () => {
+    const geometry = sparklineGeometry([Number.NaN, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20])!;
+    expect(geometry.points).toHaveLength(14);
     expect(geometry.linePath).toMatch(/^M 4 /);
     expect(geometry.linePath).toContain(" C ");
     expect(geometry.linePath).toMatch(/ 96 /);
     expect(geometry.points.every(({ y }) => y >= 5 && y <= 32)).toBe(true);
     expect(geometry.areaPath).toMatch(/L 96 39 L 4 39 Z$/);
+  });
+
+  it("restricts wellness series and fields to the shared fourteen-day window", () => {
+    const records: WellnessRecord[] = [
+      { ownerId: "local-user", day: "2026-09-10", fields: { sleepScore: field(80), hrvRmssdMs: field(60) }, updatedAt: "2026-09-10T00:00:00Z" },
+      { ownerId: "local-user", day: "2026-08-25", fields: { sleepScore: field(70), weightKg: field(70) }, updatedAt: "2026-08-25T00:00:00Z" },
+      { ownerId: "local-user", day: "2026-08-20", fields: { restingHeartRateBpm: field(44) }, updatedAt: "2026-08-20T00:00:00Z" },
+    ];
+    const result = wellnessHighlights(records, "2026-09-10")!;
+    expect(result.start).toBe("2026-08-28");
+    expect(result.end).toBe("2026-09-10");
+    expect(result.values.map((item) => item.key)).toEqual(["sleepScore", "hrvRmssdMs"]);
+    expect(result.values.find((item) => item.key === "sleepScore")?.series).toEqual([80]);
+    expect(result.values.find((item) => item.key === "restingHeartRateBpm")).toBeUndefined();
+    expect(wellnessHighlights(records, "2026-10-01")).toBeNull();
   });
 
   it("handles empty, single, two-point, and flat wellness trends", () => {
@@ -168,7 +188,7 @@ describe("Overview", () => {
   it("renders the recovery help dialog with the plain-language calculation", () => {
     const html = renderToStaticMarkup(createElement(RecoveryHelpModal, { onClose: () => undefined }));
     expect(html).toContain('role="dialog"');
-    expect(html).toContain("How we calculate Overall readiness");
+    expect(html).toContain("How We Calculate Overall Readiness");
     expect(html).toContain("Ready · 70+");
     expect(html).toContain("Caution · 45-69");
     expect(html).toContain("Rest · below 45");
@@ -210,7 +230,7 @@ describe("Overview", () => {
     expect(html).toContain('data-icon="target"');
     expect(html).toContain('data-icon="recovery"');
     expect(html).toContain('data-chart="coral-bars"');
-    expect(html).toContain("Overall readiness");
+    expect(html).toContain("Overall Readiness");
     expect(html).toContain("<b>75</b>");
     expect(html).toContain("donut-segment domain-strength");
     expect(html).toContain("donut-segment domain-endurance");
@@ -226,7 +246,7 @@ describe("Overview", () => {
     expect(html).toContain("<linearGradient");
     expect(html).toContain('fill="url(#wellness-spark-');
     expect(html).toContain('mask="url(#wellness-spark-mask-');
-    expect(html).toContain('<time dateTime="2026-09-10">Sep 10, 2026</time>');
+    expect(html).toContain('<time dateTime="2026-09-11">Aug 29 – Sep 11, 2026</time>');
     expect(html.indexOf("September 2026")).toBeLessThan(html.indexOf("Wellness"));
     expect(html).toContain('class="favorable">↓ 1 from previous</small>');
     expect(html).not.toContain("Latest ·");

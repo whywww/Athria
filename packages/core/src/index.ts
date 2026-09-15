@@ -370,6 +370,12 @@ export function validatePlan(profile: AthleteProfile, draft: { mesocycle: Resolv
     results.push(rule("advisory", "STRENGTH_PUSH_PULL_BALANCE", ratioStatus(push, pull), [], { pushSets: push, pullSets: pull, boundary: 2 }, [], null, "strength"));
     const knee = (setsByPattern.squat ?? 0) + (setsByPattern.lunge ?? 0); const hinge = setsByPattern.hinge ?? 0;
     results.push(rule("advisory", "STRENGTH_KNEE_HINGE_BALANCE", ratioStatus(knee, hinge), [], { kneeDominantSets: knee, hingeSets: hinge, boundary: 2 }, [], null, "strength"));
+    const strengthExercises = prescriptions.flatMap((item) => item.components.flatMap((component) => component.prescription.kind === "strength" ? component.prescription.exercises : []));
+    const effortMissing = strengthExercises.filter((exercise) => exercise.targetRpe == null && exercise.targetRir == null).map((exercise) => exercise.id);
+    results.push(rule("advisory", "STRENGTH_EFFORT_RPE", strengthExercises.length === 0 ? "not_applicable" : effortMissing.length === 0 ? "pass" : "fail", [], { exerciseCount: strengthExercises.length, missingEffort: effortMissing }, [], null, "strength"));
+    const enduranceSteps = prescriptions.flatMap((item) => item.components.flatMap((component) => component.prescription.kind === "endurance" ? component.prescription.segments.flatMap((segment) => segment.type === "repeat" ? (segment.recovery ? [segment.work, segment.recovery] : [segment.work]) : [segment]) : []));
+    const zoneMissing = enduranceSteps.filter((step) => !step.heartRateZone).map((step) => step.name);
+    results.push(rule("advisory", "ENDURANCE_EFFORT_ZONE", enduranceSteps.length === 0 ? "not_applicable" : zoneMissing.length === 0 ? "pass" : "fail", [], { stepCount: enduranceSteps.length, missingZone: zoneMissing }, [], null, "structure"));
     const highDates = [...new Set(weeklyPrescriptions.filter((session) => session.recoveryDemand === "high").map((session) => session.scheduledDate))].sort();
     let closestDays = Infinity;
     for (let index = 1; index < highDates.length; index += 1) closestDays = Math.min(closestDays, Math.round((Date.parse(`${highDates[index]}T12:00:00Z`) - Date.parse(`${highDates[index - 1]}T12:00:00Z`)) / 86_400_000));

@@ -153,9 +153,9 @@ function GroupCheckbox({ state, label, onChange }: { state: "none" | "some" | "a
 function EquipmentSelector({ categories, selected, onToggleItem, onToggleGroup }: { categories: EquipmentCategory[]; selected: string[]; onToggleItem?: (id: string) => void; onToggleGroup?: (ids: string[]) => void }) {
   const editable = Boolean(onToggleItem && onToggleGroup);
   const selectedItems = categories.flatMap((category) => category.groups.flatMap((group) => group.items)).filter((item) => selected.includes(item.id));
-  if (!editable) return <section className="profile-section equipment-section"><div className="profile-section-heading"><AppIcon name="equipment"/><span><strong>Available equipment</strong><small>Select equipment available to you</small></span></div>{selectedItems.length ? <div className="equipment-items readonly-equipment">{selectedItems.map((item) => <span className="equipment-item selected" key={item.id}>{item.label}</span>)}</div> : <span className="muted-tag">None</span>}</section>;
+  if (!editable) return <section className="profile-section equipment-section"><div className="profile-section-heading"><AppIcon name="equipment"/><span><strong>Available Equipment</strong><small>Select equipment available to you</small></span></div>{selectedItems.length ? <div className="equipment-items readonly-equipment">{selectedItems.map((item) => <span className="equipment-item selected" key={item.id}>{item.label}</span>)}</div> : <span className="muted-tag">None</span>}</section>;
   const visibleCategories = editable ? categories : categories.map((category) => ({ ...category, groups: category.groups.map((group) => ({ ...group, items: group.items.filter((item) => selected.includes(item.id)) })).filter((group) => group.items.length) })).filter((category) => category.groups.length);
-  return <section className="profile-section equipment-section"><div className="profile-section-heading"><AppIcon name="equipment"/><span><strong>Available equipment</strong><small>Select equipment available to you</small></span></div>{visibleCategories.length ? <div className="equipment-categories">{visibleCategories.map((category) => <section className="equipment-category" key={category.id}><h3>{category.label}</h3><div className="equipment-groups">{category.groups.map((group) => {
+  return <section className="profile-section equipment-section"><div className="profile-section-heading"><AppIcon name="equipment"/><span><strong>Available Equipment</strong><small>Select equipment available to you</small></span></div>{visibleCategories.length ? <div className="equipment-categories">{visibleCategories.map((category) => <section className="equipment-category" key={category.id}><h3>{category.label}</h3><div className="equipment-groups">{category.groups.map((group) => {
     const ids = group.items.map((item) => item.id);
     return <div className="equipment-group" key={group.id}>{editable && onToggleGroup ? <GroupCheckbox state={equipmentGroupState(selected, ids)} label={group.label === category.label ? "Select all" : group.label} onChange={() => onToggleGroup(ids)}/> : <h4>{group.label === category.label ? "Equipment" : group.label}</h4>}<div className="equipment-items">{group.items.map((item) => {
       const isSelected = selected.includes(item.id);
@@ -186,12 +186,15 @@ function EditableProfileBoard({ profile, form, setForm, customGoal, setCustomGoa
     <section className="profile-top-summary">
       <section className="profile-goals-panel"><span className="profile-feature-icon" aria-hidden="true"><AppIcon name="target"/></span><div className="editable-panel-content"><strong>Training Goals</strong><small>What do you want to focus on?</small><div className="goal-tags">{availableGoals.map((goal) => commonGoals.includes(goal) ? <GoalTag key={goal} goal={goal} selected={form.goals.includes(goal)} onClick={() => toggleList("goals", goal)}/> : <GoalTag key={goal} goal={goal} selected={form.goals.includes(goal)} onClick={() => toggleList("goals", goal)} onDelete={() => deleteCustomGoal(goal)}/>)}</div><div className="inline-input"><input aria-label="Custom training goal" placeholder="Add another goal" value={customGoal} onChange={(event) => setCustomGoal(event.target.value)}/><button type="button" className="secondary" disabled={!customGoal.trim()} onClick={() => { const goal = customGoal.trim(); setAvailableGoals((current) => current.includes(goal) ? current : [...current, goal]); setForm((current) => current && !current.goals.includes(goal) ? { ...current, goals: [...current.goals, goal] } : current); setCustomGoal(""); }}>Add</button></div></div></section>
       <div className="profile-summary-item profile-preferences-editor"><div className="profile-editor-heading"><AppIcon name="preferences"/><span><strong className="profile-editor-title">Preferences</strong><small className="profile-editor-subtitle">Tell us more about your training</small></span></div><label className="profile-editor-control"><span className="sr-only">Training preferences</span><span className="preference-input"><textarea aria-label="Training preferences" rows={4} maxLength={PREFERENCE_MAX_LENGTH} value={form.preference} onChange={(event) => setForm({ ...form, preference: event.target.value })} placeholder="I prefer a varied mix of training styles."/><small>{form.preference.length}/{PREFERENCE_MAX_LENGTH}</small></span></label></div>
-      <div className="profile-summary-item profile-rhythm-editor"><div className="profile-editor-heading"><AppIcon name="rhythm"/><span><strong className="profile-editor-title">Training rhythm</strong><small className="profile-editor-subtitle">How often do you want to train?</small></span></div><div className="profile-rhythm-options">
+      <div className="profile-summary-item profile-rhythm-editor"><div className="profile-editor-heading"><AppIcon name="rhythm"/><span><strong className="profile-editor-title">Training Rhythm</strong><small className="profile-editor-subtitle">How often do you want to train?</small></span></div><div className="profile-rhythm-options">
         <div className="profile-rhythm-option"><label><input type="radio" name="training-rhythm" checked={form.trainingRhythm.kind === "fixed_week"} onChange={() => changeRhythm("fixed_week")}/><span>Fixed week</span></label>{form.trainingRhythm.kind === "fixed_week" && <div className="day-list">{weekdays.map((day, index) => <button type="button" key={day} className={form.trainingRhythm.kind === "fixed_week" && form.trainingRhythm.days.includes(index) ? "selected" : ""} aria-pressed={form.trainingRhythm.kind === "fixed_week" && form.trainingRhythm.days.includes(index)} onClick={() => toggleTrainingDay(index)}>{day.slice(0, 3)}{form.trainingRhythm.kind === "fixed_week" && form.trainingRhythm.days.includes(index) ? " ✓" : ""}</button>)}</div>}</div>
         <div className="profile-rhythm-option"><label><input type="radio" name="training-rhythm" checked={form.trainingRhythm.kind === "flexible_week"} onChange={() => changeRhythm("flexible_week")}/><span>Flexible week</span></label>{form.trainingRhythm.kind === "flexible_week" && <div className="rhythm-parameters"><label>Target days<input type="number" min="1" max="7" value={form.trainingRhythm.targetDaysPerWeek} onChange={(event) => updateFlexibleRhythm("targetDaysPerWeek", Number(event.target.value))}/></label><label>Min<input type="number" min="1" max="7" value={form.trainingRhythm.minDaysPerWeek} onChange={(event) => updateFlexibleRhythm("minDaysPerWeek", Number(event.target.value))}/></label><label>Max<input type="number" min="1" max="7" value={form.trainingRhythm.maxDaysPerWeek} onChange={(event) => updateFlexibleRhythm("maxDaysPerWeek", Number(event.target.value))}/></label></div>}</div>
         <div className="profile-rhythm-option"><label><input type="radio" name="training-rhythm" checked={form.trainingRhythm.kind === "interval"} onChange={() => changeRhythm("interval")}/><span>Intervals</span></label>{form.trainingRhythm.kind === "interval" && <span className="interval-parameter">Every <input aria-label="Interval days" type="number" min="1" max="30" value={form.trainingRhythm.intervalDays} onChange={(event) => updateIntervalRhythm(Number(event.target.value))}/> days</span>}</div>
       </div></div>
-      <div className="profile-summary-item profile-duration-editor"><div className="profile-editor-heading"><AppIcon name="clock"/><span><strong className="profile-editor-title">Max session length</strong><small className="profile-editor-subtitle">How much time per session?</small></span></div><label className="profile-editor-control"><span className="sr-only">Max session length</span><select aria-label="Max session length" value={form.maxSessionMinutes} onChange={(event) => setForm({ ...form, maxSessionMinutes: Number(event.target.value) })}>{[15, 30, 45, 60, 75, 90, 120, 180, 240].map((value) => <option key={value} value={value}>{value} min</option>)}</select></label></div>
+      <div className="profile-column-stack">
+        <div className="profile-summary-item profile-duration-editor"><div className="profile-editor-heading"><AppIcon name="clock"/><span><strong className="profile-editor-title">Max Session Length</strong><small className="profile-editor-subtitle">How much time per session?</small></span></div><label className="profile-editor-control"><span className="sr-only">Max Session Length</span><select aria-label="Max Session Length" value={form.maxSessionMinutes} onChange={(event) => setForm({ ...form, maxSessionMinutes: Number(event.target.value) })}>{[15, 30, 45, 60, 75, 90, 120, 180, 240].map((value) => <option key={value} value={value}>{value} min</option>)}</select></label></div>
+        <div className="profile-summary-item profile-duration-editor"><div className="profile-editor-heading"><AppIcon name="plan"/><span><strong className="profile-editor-title">Mesocycle Length</strong><small className="profile-editor-subtitle">How long should a mesocycle be?</small></span></div><label className="profile-editor-control"><span className="sr-only">Mesocycle Length</span><select aria-label="Mesocycle Length" value={form.mesocycleDurationWeeks} onChange={(event) => setForm({ ...form, mesocycleDurationWeeks: Number(event.target.value) })}>{[1, 2, 3, 4, 5, 6, 7, 8].map((value) => <option key={value} value={value}>{value} {value === 1 ? "week" : "weeks"}</option>)}</select></label></div>
+      </div>
     </section>
   </div>;
 }
@@ -203,19 +206,22 @@ function ReadonlyTags({ values, empty = "None" }: { values: string[]; empty?: st
 function AgentManagedDetails({ profile }: { profile: AthleteProfile }) {
   const rows: Array<{ label: string; description: string; icon: IconName; value?: string; notes?: string[] }> = [];
   if (profile.injuries.length) rows.push({ label: "Injuries", description: "These are taken into account when planning your training.", icon: "warning", notes: profile.injuries });
-  if (profile.constraintNotes.length) rows.push({ label: "Constraint notes", description: "These help guide exercise selection and programming.", icon: "notes", notes: profile.constraintNotes });
-  if (profile.explicitRecoveryDays !== null) rows.push({ label: "Recovery interval", description: "This guides spacing between demanding sessions.", icon: "recovery", value: `${profile.explicitRecoveryDays} day${profile.explicitRecoveryDays === 1 ? "" : "s"} between hard sessions` });
+  if (profile.constraintNotes.length) rows.push({ label: "Constraint Notes", description: "These help guide exercise selection and programming.", icon: "notes", notes: profile.constraintNotes });
+  if (profile.explicitRecoveryDays !== null) rows.push({ label: "Recovery Interval", description: "This guides spacing between demanding sessions.", icon: "recovery", value: `${profile.explicitRecoveryDays} day${profile.explicitRecoveryDays === 1 ? "" : "s"} between hard sessions` });
   if (!rows.length) return <div className="agent-managed-empty">No injuries or training constraints recorded.</div>;
   return <div className="agent-managed-grid">{rows.map((row) => <article className="agent-managed-card" key={row.label}><span className="agent-card-icon"><AppIcon name={row.icon}/></span><div><strong>{row.label}</strong><p>{row.description}</p>{row.notes ? <ol className="agent-note-list">{row.notes.map((note, index) => <li key={index}>{note}</li>)}</ol> : <span className="agent-value">{row.value}</span>}</div></article>)}</div>;
 }
 
-function ProfileBoard({ profile, equipmentCategories }: { profile: AthleteProfile; equipmentCategories: EquipmentCategory[] }) {
+export function ProfileBoard({ profile, equipmentCategories }: { profile: AthleteProfile; equipmentCategories: EquipmentCategory[] }) {
   return <div className="profile-content">
     <section className="profile-top-summary profile-readonly-summary">
       <section className="profile-goals-panel"><span className="profile-feature-icon" aria-hidden="true"><AppIcon name="target"/></span><div><strong>Training Goals</strong><small>What do you want to focus on?</small>{profile.goals.length ? <div className="goal-tags">{profile.goals.map((goal) => <GoalTag key={goal} goal={goal}/>)}</div> : <p>No goals selected</p>}</div></section>
       <div className="profile-summary-item"><AppIcon name="preferences"/><div><span>Preferences</span><strong>{profile.preference || "Not set"}</strong></div></div>
-      <div className="profile-summary-item profile-rhythm-summary"><AppIcon name="rhythm"/><div><span>Training rhythm</span><strong>{formatTrainingRhythm(profile.trainingRhythm)}</strong></div></div>
-      <div className="profile-summary-item"><AppIcon name="clock"/><div><span>Max session length</span><strong>{profile.maxSessionMinutes} min</strong></div></div>
+      <div className="profile-summary-item profile-rhythm-summary"><AppIcon name="rhythm"/><div><span>Training Rhythm</span><strong>{formatTrainingRhythm(profile.trainingRhythm)}</strong></div></div>
+      <div className="profile-column-stack">
+        <div className="profile-summary-item"><AppIcon name="clock"/><div><span>Max Session Length</span><strong>{profile.maxSessionMinutes} min</strong></div></div>
+        <div className="profile-summary-item"><AppIcon name="plan"/><div><span>Mesocycle Length</span><strong>{profile.mesocycleDurationWeeks} {profile.mesocycleDurationWeeks === 1 ? "week" : "weeks"}</strong></div></div>
+      </div>
     </section>
     <EquipmentSelector categories={equipmentCategories} selected={profile.equipment}/>
   </div>;
@@ -389,7 +395,7 @@ export function Timeline() {
   useEffect(() => { if (page !== pagination.page) setPage(pagination.page); }, [page, pagination.page]);
   const loading = query.isPending || calendar.isPending || plan.isPending || profile.isPending;
   return <section className="card training-history">
-    <div className="training-history-header"><div><h2>Training history</h2><p>Your recent workouts, sessions and activities.</p></div><div className="training-history-tools"><label className="training-search"><span className="sr-only">Search workouts</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg><input type="search" placeholder="Search workouts..." value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }}/></label><label className="training-sort"><span className="sr-only">Sort training history</span><select aria-label="Sort training history" value={sort} onChange={(event) => { setSort(event.target.value as TrainingHistorySort); setPage(1); }}><option value="newest">Newest first</option><option value="oldest">Oldest first</option></select></label></div></div>
+    <div className="training-history-header"><div><h2>Training History</h2><p>Your recent workouts, sessions and activities.</p></div><div className="training-history-tools"><label className="training-search"><span className="sr-only">Search workouts</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg><input type="search" placeholder="Search workouts..." value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }}/></label><label className="training-sort"><span className="sr-only">Sort training history</span><select aria-label="Sort training history" value={sort} onChange={(event) => { setSort(event.target.value as TrainingHistorySort); setPage(1); }}><option value="newest">Newest first</option><option value="oldest">Oldest first</option></select></label></div></div>
     <ErrorBanner error={error}/>
     {loading ? <Loading/> : <><div className="training-table-scroll"><div className="training-table"><div className="training-table-heading" aria-hidden="true"><span>Workout</span><span>Date &amp; time</span><span>Type</span><span>Duration</span><span>Source</span><span className="training-plan-heading">Plan Matched</span><span/></div><div className="training-table-body">{pagination.items.map((item) => <TimelineWorkout key={item.id} item={item} planned={calendar.data ?? []} revision={plan.data?.revision ?? 0} timezone={profile.data?.timezone ?? "UTC"} onMutated={refresh}/>)}{!query.data?.length ? <Empty>No workouts imported yet.</Empty> : !filtered.length ? <Empty>No workouts match your search.</Empty> : null}</div></div></div><footer className="training-history-footer"><span>{filtered.length ? `Showing ${pagination.start}–${pagination.end} of ${filtered.length} sessions` : "Showing 0 sessions"}</span><div><button type="button" aria-label="Previous page" disabled={pagination.page === 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>‹</button><button type="button" aria-label="Next page" disabled={pagination.page === pagination.totalPages} onClick={() => setPage((current) => Math.min(pagination.totalPages, current + 1))}>›</button></div></footer></>}
   </section>;
@@ -425,10 +431,10 @@ function Backup() {
     try { setMoving(true); setError(undefined); await changeDatabaseFile(pendingLocation); }
     catch (value) { setMoving(false); setError(value); }
   };
-  return <Card title="Backup and restore">
+  return <Card title="Backup and Restore">
     <p>Your training data is stored in one local SQLite database. Account credentials are never included.</p>
     {databasePath && <div className="data-location">
-      <strong>Local database</strong>
+      <strong>Local Database</strong>
       <span>{databasePath}</span>
       <small>Athria opens this database file directly.</small>
       {pendingLocation
@@ -441,8 +447,8 @@ function Backup() {
         </div>
         : <div className="data-location-actions"><button type="button" className="secondary compact" onClick={() => void chooseLocation()}>Change location</button></div>}
     </div>}
-    <div className="section"><h3>Create a backup</h3><p>Save a self-contained copy of your active SQLite database.</p><button onClick={() => void createBackup()}>Create backup</button></div>
-    <div className="section"><h3>Restore a backup</h3><p>Select an Athria .sqlite3 file to inspect it before replacing your active database.</p>
+    <div className="section"><h3>Create a Backup</h3><p>Save a self-contained copy of your active SQLite database.</p><button onClick={() => void createBackup()}>Create backup</button></div>
+    <div className="section"><h3>Restore a Backup</h3><p>Select an Athria .sqlite3 file to inspect it before replacing your active database.</p>
       {!preview
         ? <button type="button" className="secondary" onClick={() => void chooseBackup()}>Choose backup</button>
         : <div className="restore-confirm">
@@ -537,7 +543,7 @@ function PersonalInformationCard() {
 }
 
 function Settings() {
-  return <><PersonalInformationCard/><Card title="System status" className="system-card"><p>Athria runs locally and keeps your training data on this device.</p><ServiceStatus/></Card><Backup/></>;
+  return <><PersonalInformationCard/><Card title="System Status" className="system-card"><p>Athria runs locally and keeps your training data on this device.</p><ServiceStatus/></Card><Backup/></>;
 }
 
 function Copyable({ label, value, block = false }: { label: string; value: string; block?: boolean }) {
@@ -581,31 +587,28 @@ export function Help() {
   return <>
     <Card title="Help & Support">
       <p>Athria is your local-first training companion. Use Connections to connect data sources, Profile to confirm your preferences, and Plan to review Agent-created training plans.</p>
-      <div className="help-grid">
-        <section><strong>How do I create a new plan?</strong><span>Plans are created by your connected AI agent. Connect an agent through MCP below, then ask it to build your plan — it uses your Profile, training history and synced workouts. Open Plan to review the Weekly Sessions it saves. Reusable Session Templates can be built in the Plan page's Template Library.</span></section>
-        <section><strong>How do I import my training data?</strong><span>Open Connections and pick a source: Hevy (import a CSV export), Intervals.icu (sync endurance activities) or Xunji (sync strength and training records). Then use Sync now whenever you want to pull in new workouts.</span></section>
-        <section><strong>How do I back up my data and sync it with my own cloud?</strong><span>Athria has no cloud of its own — every workout, plan and profile lives in one local database file. In Settings, create a backup and save the .sqlite3 file anywhere, including a folder synced by your own cloud drive (OneDrive, iCloud Drive, Google Drive, Dropbox). Restore from that file on another device. Saved credentials are never included, so re-enter them after restoring.</span></section>
+      <div className="help-faq">
+        <details className="faq-item"><summary><span>How do I create a new plan?</span></summary><div className="faq-answer"><p>Plans are created by your connected AI agent. Connect an agent through MCP below, then ask it to build your plan — it uses your Profile, training history and synced workouts. Open Plan to review the Weekly Sessions it saves. Reusable Session Templates can be built in the Plan page's Template Library.</p></div></details>
+        <details className="faq-item"><summary><span>How do I import my training data?</span></summary><div className="faq-answer"><p>Open Connections and pick a source: Hevy (import a CSV export), Intervals.icu (sync endurance activities) or Xunji (sync strength and training records). Then use Sync now whenever you want to pull in new workouts.</p></div></details>
+        <details className="faq-item"><summary><span>How do I back up my data and sync it with my own cloud?</span></summary><div className="faq-answer"><p>Athria has no cloud of its own — every workout, plan and profile lives in one local database file. In Settings, create a backup and save the .sqlite3 file anywhere, including a folder synced by your own cloud drive (OneDrive, iCloud Drive, Google Drive, Dropbox). Restore from that file on another device. Saved credentials are never included, so re-enter them after restoring.</p></div></details>
       </div>
     </Card>
-    <Card title="Connect Athria to your AI agent through MCP" className="mcp-card"><McpSetup/></Card>
+    <Card title="Connect Athria to Your AI Agent through MCP" className="mcp-card"><McpSetup/></Card>
     <Card title="Glossary">
       <p>Plain-language definitions of the AI and training terms used across Athria. No prior background is needed.</p>
-      <h3 className="glossary-heading">AI &amp; data</h3>
+      <h3 className="glossary-heading">AI &amp; Data</h3>
       <div className="help-grid glossary-grid">
         <section><strong>AI agent</strong><span>A desktop AI app (Qoder, Claude Desktop, Codex, Trae or Cursor) that you connect to Athria. It reads your data and writes plans only when you ask.</span></section>
         <section><strong>MCP</strong><span>Model Context Protocol — the open standard your AI agent uses to talk to Athria. The connection stays on this computer.</span></section>
         <section><strong>Local-first</strong><span>All Athria data lives on this device and works without an account or an Athria server.</span></section>
-        <section><strong>SQLite database</strong><span>The single file where Athria keeps your Profile, plans and training history.</span></section>
-        <section><strong>Backup &amp; restore</strong><span>A backup is a self-contained copy of that database; restoring replaces your current data with the chosen copy.</span></section>
       </div>
       <h3 className="glossary-heading">Training</h3>
       <div className="help-grid glossary-grid">
         <section><strong>Mesocycle</strong><span>Your multi-week plan: start date, Weekly Sessions, phase progressions and adjustment rules.</span></section>
-        <section><strong>Weekly Session</strong><span>One planned workout with a complete prescription — what to do, for how long and how hard.</span></section>
         <section><strong>Template</strong><span>A reusable single-domain pattern, such as "Lower Strength A". Templates carry structure only — no exercises or sets.</span></section>
         <section><strong>Training domain</strong><span>The five training types Athria plans around: strength, endurance, sport skill, mind-body and recovery.</span></section>
         <section><strong>RPE / RIR</strong><span>Two effort scales: RPE rates how hard a set felt (usually 1–10); RIR counts the good reps still left in reserve.</span></section>
-        <section><strong>Sync vs import</strong><span>Sync keeps pulling new workouts from a connected service; import adds a file once, such as a Hevy CSV export.</span></section>
+        <section><strong>Heart rate zone</strong><span>Five training zones calculated from your measured maximum heart rate — never from age. Endurance sessions can be prescribed by zone, so intensity follows your actual heart rate.</span></section>
       </div>
     </Card>
   </>;

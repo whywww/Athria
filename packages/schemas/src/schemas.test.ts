@@ -85,6 +85,11 @@ describe("profile note boundaries", () => {
     for (const days of [1, 7]) expect(athleteProfileSchema.parse({ explicitRecoveryDays: days }).explicitRecoveryDays).toBe(days);
     for (const days of [0, 8, 2.5]) expect(athleteProfileSchema.safeParse({ explicitRecoveryDays: days }).success).toBe(false);
   });
+  it("bounds mesocycleDurationWeeks to whole weeks from 1 to 8 and defaults to 8", () => {
+    expect(athleteProfileSchema.parse({}).mesocycleDurationWeeks).toBe(8);
+    for (const weeks of [1, 8]) expect(athleteProfileSchema.parse({ mesocycleDurationWeeks: weeks }).mesocycleDurationWeeks).toBe(weeks);
+    for (const weeks of [0, 9, 4.5]) expect(athleteProfileSchema.safeParse({ mesocycleDurationWeeks: weeks }).success).toBe(false);
+  });
   it("caps injuries and constraintNotes and rejects normalized duplicates", () => {
     const ten = Array.from({ length: 10 }, (_, index) => `Note ${index}`);
     for (const field of ["injuries", "constraintNotes"] as const) {

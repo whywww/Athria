@@ -34,7 +34,7 @@ function TemplateEditor({ template, taxonomy, onChange }: { template: SessionTem
     return next as unknown as StrengthTemplateSlot;
   }));
   const variableOptions = taxonomy.templateVariables[template.domain] ?? [];
-  return <Card title="Template details" className="template-editor">
+  return <Card title="Template Details" className="template-editor">
     <div className="template-basics"><label>Name<input required placeholder="e.g. Lower Strength A" value={template.name} onChange={(event) => onChange({ ...template, name: event.target.value })}/></label><label>Single training domain<select value={template.domain} onChange={(event) => onChange(emptyTemplate(event.target.value as TemplateComponentDomain))}>{componentDomains.map((domain) => <option key={domain} value={domain}>{friendlyLabel(domain)}</option>)}</select></label></div>
     <label>Purpose<textarea rows={2} value={template.intent} onChange={(event) => onChange({ ...template, intent: event.target.value })}/></label>
     <div className="component-heading"><div><h3>Stable structure</h3><p>Describe ordered roles and variables, never a concrete workout.</p></div><button type="button" className="secondary compact" onClick={() => updateNodes([...nodes, { role: roles[template.domain][0]!, variables: [variableOptions[0]!] }])}>+ Add node</button></div>
@@ -47,7 +47,50 @@ function TemplateEditor({ template, taxonomy, onChange }: { template: SessionTem
   </Card>;
 }
 
-function TemplateLibrary({ onBack }: { onBack: () => void }) {
+function TemplateBackIcon() {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>;
+}
+
+function TemplatePlusIcon() {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>;
+}
+
+function TemplateDomainIcon({ domain }: { domain: TemplateComponentDomain }) {
+  const icon = domain === "strength"
+    ? <><path d="M6.5 9v6M3.5 10.5v3M17.5 9v6M20.5 10.5v3M6.5 12h11"/><path d="M9 8v8M15 8v8"/></>
+    : domain === "endurance"
+      ? <><circle cx="14" cy="5" r="1.8"/><path d="m12 9 3 2 2 4M12 9l-3 4-4 1M10 13l-1 6M15 12l-4 3 4 4"/></>
+      : domain === "sport_skill"
+        ? <><circle cx="12" cy="12" r="7.5"/><path d="M12 4.5v15M4.5 12h15"/></>
+        : domain === "mind_body"
+          ? <><circle cx="12" cy="6" r="1.8"/><path d="M12 8v4M12 10l-4 3M12 10l4 3M12 12l-3 5M12 12l3 5"/></>
+          : <><path d="M5 18c1-8 6-12 14-12-1 8-5 13-12 12"/><path d="M7 18c3-4 6-7 10-9"/></>;
+  return <span className="template-library-icon" data-domain={domain}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{icon}</svg></span>;
+}
+
+function TemplateCard({ item, onCopy, onEdit, onRemove }: {
+  item: StoredSessionTemplate;
+  onCopy: (item: StoredSessionTemplate) => void;
+  onEdit: (item: StoredSessionTemplate) => void;
+  onRemove: (item: StoredSessionTemplate & { origin: "user"; revision: number }) => void;
+}) {
+  return <article className="card template-library-card">
+    <div className="template-library-card-header">
+      <TemplateDomainIcon domain={item.domain}/>
+      <div className="template-library-heading">
+        <div className="template-library-badges"><span className={`template-library-origin${item.origin === "user" ? " mine" : ""}`}>{item.origin === "builtin" ? "Built-in" : "My template"}</span><span className="template-library-domain">{friendlyLabel(item.domain)}</span></div>
+        <h2>{item.name}</h2>
+        <p>{item.intent}</p>
+      </div>
+      <div className="template-library-actions">
+        {item.origin === "builtin" ? <button type="button" className="template-library-action" onClick={() => onCopy(item)}>Copy to my templates</button> : <><button type="button" className="template-library-action" onClick={() => onEdit(item)}>Edit</button><button type="button" className="template-library-action danger" onClick={() => void onRemove(item)}>Delete</button></>}
+      </div>
+    </div>
+    <TemplateNodes template={item}/>
+  </article>;
+}
+
+function TemplateLibrary({ onBack, preferredName }: { onBack: () => void; preferredName?: string | null | undefined }) {
   const client = useQueryClient();
   const query = useQuery({ queryKey: ["templates"], queryFn: () => api<StoredSessionTemplate[]>("/api/templates") });
   const taxonomy = useQuery({ queryKey: ["training-taxonomy"], queryFn: () => api<TrainingTaxonomy>("/api/training-taxonomy") });
@@ -77,8 +120,12 @@ function TemplateLibrary({ onBack }: { onBack: () => void }) {
     try { await api(`/api/templates/${encodeURIComponent(item.id)}`, { method: "DELETE", body: JSON.stringify({ expectedRevision: item.revision }) }); await client.invalidateQueries({ queryKey: ["templates"] }); }
     catch (value) { setError(value); }
   };
-  if (editing) { const errors = templateEditorErrors(editing.template); return <div className="plan-page"><div className="plan-page-header"><div><h1>{editing.revision ? "Edit template" : "Create template"}</h1><p>Define a stable single-domain pattern. Weekly Sessions own every executable dose.</p></div><div className="actions"><button className="secondary" onClick={() => setEditing(null)}>Cancel</button><button disabled={errors.length > 0 || taxonomy.isPending} onClick={() => void save()}>Save template</button></div></div><ErrorBanner error={error ?? taxonomy.error}/>{taxonomy.data ? <TemplateEditor template={editing.template} taxonomy={taxonomy.data} onChange={(template) => setEditing((current) => current ? { ...current, template } : current)}/> : <Loading/>}</div>; }
-  return <div className="plan-page"><div className="plan-page-header"><div><button className="text-button" onClick={onBack}>← Back to plan</button><h1>Template Library</h1><p>Stable archetypes only—no exercises, distance, duration or dose.</p></div><button onClick={() => begin(emptyTemplate())}>Create template</button></div><ErrorBanner error={query.error ?? error}/>{query.isPending ? <Loading/> : !query.data?.length ? <Empty>No templates yet.</Empty> : <div className="template-library-grid">{query.data.map((item) => <article className="card template-library-card" key={item.id}><div className="template-library-card-header"><div><div className="badge">{item.origin === "builtin" ? "Built-in" : "My template"}</div><h2>{item.name}</h2><p>{item.intent}</p><div className="template-summary"><span>{friendlyLabel(item.domain)}</span></div></div><div className="actions">{item.origin === "builtin" ? <button className="secondary compact" onClick={() => copy(item)}>Copy to my templates</button> : <><button className="secondary compact" onClick={() => begin(item)}>Edit</button><button className="danger compact" onClick={() => void remove(item)}>Delete</button></>}</div></div><TemplateNodes template={item}/></article>)}</div>}</div>;
+  if (editing) { const errors = templateEditorErrors(editing.template); return <div className="plan-page"><PrimaryPageHeader preferredName={preferredName} subtitle="Define a stable single-domain pattern. Weekly Sessions own every executable dose." actions={<div className="actions"><button className="secondary" onClick={() => setEditing(null)}>Cancel</button><button disabled={errors.length > 0 || taxonomy.isPending} onClick={() => void save()}>Save template</button></div>}/><ErrorBanner error={error ?? taxonomy.error}/>{taxonomy.data ? <TemplateEditor template={editing.template} taxonomy={taxonomy.data} onChange={(template) => setEditing((current) => current ? { ...current, template } : current)}/> : <Loading/>}</div>; }
+  return <div className="plan-page template-library">
+    <PrimaryPageHeader preferredName={preferredName} subtitle="Stable archetypes only—no exercises, distance, duration or dose." actions={<div className="actions"><button type="button" className="secondary template-library-back" onClick={onBack}><TemplateBackIcon/>Back to plan</button><button type="button" className="template-library-create" onClick={() => begin(emptyTemplate())}><TemplatePlusIcon/>Create template</button></div>}/>
+    <ErrorBanner error={query.error ?? error}/>
+    {query.isPending ? <Loading/> : !query.data?.length ? <Empty>No templates yet.</Empty> : <div className="template-library-grid">{query.data.map((item) => <TemplateCard key={item.id} item={item} onCopy={copy} onEdit={begin} onRemove={remove}/>)}</div>}
+  </div>;
 }
 
 function CurrentPlanView({ plan, templates, profile }: { plan: CurrentPlan; templates: StoredSessionTemplate[]; profile: AthleteProfile }) {
@@ -156,7 +203,7 @@ export function CurrentPlanPage() {
   const profileQuery = useQuery({ queryKey: ["profile"], queryFn: () => api<AthleteProfile>("/api/profile") });
   const today = profileQuery.data ? localDateForTimezone(profileQuery.data.timezone) : null;
   const nextDay = useQuery({ queryKey: ["next-training-day", today], queryFn: () => api<NextTrainingDay>(`/api/plans/next-training-day?onOrAfterDate=${today}`), enabled: today !== null });
-  if (library) return <TemplateLibrary onBack={() => setLibrary(false)}/>;
+  if (library) return <TemplateLibrary onBack={() => setLibrary(false)} preferredName={profileQuery.data?.preferredName}/>;
   const templates = templatesQuery.data ?? [];
   const loading = planQuery.isPending || templatesQuery.isPending || profileQuery.isPending;
   return <div className="plan-page"><PrimaryPageHeader preferredName={profileQuery.data?.preferredName} subtitle="Sessions are complete prescriptions; templates are optional provenance." actions={<div className="actions"><button className="secondary plan-templates-button" onClick={() => setLibrary(true)}>View all templates<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div>}/><ErrorBanner error={planQuery.error ?? templatesQuery.error ?? profileQuery.error ?? nextDay.error}/>{loading ? <Loading/> : !planQuery.data ? <div className="card empty-plan"><h2>No current plan</h2><p>Ask your connected AI Agent to create a plan using your profile, training history and complete Weekly Sessions.</p><button type="button" className="secondary" onClick={() => setLibrary(true)}>Browse templates</button></div> : <CurrentPlanView plan={planQuery.data} templates={templates} profile={profileQuery.data!}/>}</div>;

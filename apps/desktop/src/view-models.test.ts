@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { cmToImperialHeight, connectionSources, dashboardPages, editableTemplate, equipmentGroupState, filterAndSortTrainingHistory, formatDistance, formatDuration, formatPersonalHeight, formatPersonalWeight, formatTimezoneLabel, formatTrainingSource, imperialHeightToCm, kgToPounds, paginateTrainingHistory, parseSyncRange, poundsToKg, profilePayload, referencedTemplates, syncRangeOptions, templateEditorErrors, templateNodeName, toggleEquipmentGroup, PREFERENCE_MAX_LENGTH, type AthleteProfile, type Mesocycle, type SessionTemplate, type StoredSessionTemplate, type TrainingHistorySession } from "./view-models";
 
-const profile: AthleteProfile = { ownerId: "local-user", preferredName: "Athlete", gender: null, heightCm: null, birthDate: null, timezone: "Asia/Hong_Kong", goals: ["general_fitness"], preference: "", maxSessionMinutes: 60, trainingRhythm: { kind: "flexible_week", targetDaysPerWeek: 4, minDaysPerWeek: 3, maxDaysPerWeek: 5 }, equipment: ["dumbbell"], injuries: [], constraintNotes: [], explicitRecoveryDays: null, unitSystem: "metric" };
+const profile: AthleteProfile = { ownerId: "local-user", preferredName: "Athlete", gender: null, heightCm: null, birthDate: null, timezone: "Asia/Hong_Kong", goals: ["general_fitness"], preference: "", maxSessionMinutes: 60, trainingRhythm: { kind: "flexible_week", targetDaysPerWeek: 4, minDaysPerWeek: 3, maxDaysPerWeek: 5 }, equipment: ["dumbbell"], injuries: [], constraintNotes: [], explicitRecoveryDays: null, mesocycleDurationWeeks: 8, unitSystem: "metric" };
 
 const template: SessionTemplate = { id: "lower", name: "Lower", intent: "Lower-body pattern", domain: "strength", nodes: [{ name: "Squat pattern", role: "primary", movementPatternIds: ["squat"], targetMuscleIds: ["quadriceps"], matchPolicy: "all", variables: ["exercise_selection"] }] };
 const history = [
@@ -74,6 +74,10 @@ describe("dashboard v7 view models", () => {
   it("truncates an over-length preference when building the profile payload", () => {
     const long = "a".repeat(PREFERENCE_MAX_LENGTH + 30);
     expect(profilePayload(profile, { ...profile, preference: long }).preference).toHaveLength(PREFERENCE_MAX_LENGTH);
+  });
+  it("passes the mesocycle length through the profile payload", () => {
+    expect(profilePayload(profile, profile).mesocycleDurationWeeks).toBe(8);
+    expect(profilePayload(profile, { ...profile, mesocycleDurationWeeks: 4 }).mesocycleDurationWeeks).toBe(4);
   });
   it("converts and formats metric and imperial measurements", () => {
     expect(cmToImperialHeight(172.7)).toEqual({ feet: 5, inches: 8 });

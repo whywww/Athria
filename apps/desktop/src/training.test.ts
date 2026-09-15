@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { Timeline } from "./App";
 import type { AthleteProfile, CalendarSession, TrainingHistorySession } from "./view-models";
 
-const profile: AthleteProfile = { ownerId: "local-user", preferredName: "Hailey", gender: null, heightCm: null, birthDate: null, timezone: "UTC", goals: [], preference: "", maxSessionMinutes: 60, trainingRhythm: { kind: "flexible_week", targetDaysPerWeek: 4, minDaysPerWeek: 3, maxDaysPerWeek: 5 }, equipment: [], injuries: [], constraintNotes: [], explicitRecoveryDays: null, unitSystem: "metric" };
+const profile: AthleteProfile = { ownerId: "local-user", preferredName: "Hailey", gender: null, heightCm: null, birthDate: null, timezone: "UTC", goals: [], preference: "", maxSessionMinutes: 60, trainingRhythm: { kind: "flexible_week", targetDaysPerWeek: 4, minDaysPerWeek: 3, maxDaysPerWeek: 5 }, equipment: [], injuries: [], constraintNotes: [], explicitRecoveryDays: null, mesocycleDurationWeeks: 8, unitSystem: "metric" };
 const session: TrainingHistorySession = { id: "workout-1", name: "Morning Stretch", startAt: "2026-09-05T12:00:00Z", timezone: "UTC", domains: ["mind_body"], sport: "Yoga", durationMinutes: 15, source: "manual", timePrecision: "date_only", sources: [{ source: "manual", externalId: "manual-1" }], plannedSessionId: "plan-1", planMatch: { plannedSessionId: "plan-1", method: "manual" }, isPlanMatchExcluded: false };
 const unmatched: TrainingHistorySession = { ...session, id: "workout-2", name: "Easy Run", startAt: "2026-09-04T08:00:00Z", domains: ["endurance"], sport: "Running", source: "intervals", timePrecision: "exact", sources: [{ source: "intervals", externalId: "run-1" }], plannedSessionId: null, planMatch: null };
 const mixed: TrainingHistorySession = { ...session, id: "workout-3", name: "Mixed source workout", source: "intervals", sources: [{ source: "manual", externalId: "manual-3" }, { source: "intervals", externalId: "synced-3" }] };
@@ -23,7 +23,7 @@ function renderTimeline() {
 describe("Training history", () => {
   it("renders compact plan markers and exposes matching and deletion through every row menu", () => {
     const html = renderTimeline();
-    expect(html).toContain("Training history");
+    expect(html).toContain("Training History");
     expect(html).toContain("Search workouts...");
     expect(html).toContain("Date &amp; time");
     expect(html).toContain("Plan Matched");

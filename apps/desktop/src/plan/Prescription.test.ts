@@ -45,12 +45,12 @@ describe("Prescription", () => {
     expect(html).not.toContain('role="columnheader">Notes');
   });
 
-  it("uses an RPE header when no exercise prescribes RIR", () => {
+  it("keeps the unified Effort header when no exercise prescribes RIR", () => {
     const rpeOnly: PlanComponent = { ...strength, prescription: { kind: "strength", exercises: [{ ...exercise, targetRir: null }] } };
     const html = render(rpeOnly);
     expect(html).toContain("1 exercise");
-    expect(html).toContain('role="columnheader">RPE</span>');
-    expect(html).not.toContain('role="columnheader">Effort</span>');
+    expect(html).toContain('role="columnheader">Effort</span>');
+    expect(html).not.toContain('role="columnheader">RPE</span>');
   });
 
   it("renders endurance modules and nested work/recovery rows without losing targets", () => {

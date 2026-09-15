@@ -106,7 +106,7 @@ const enduranceSession = (scheduledDate: string, week: number) => {
   const id = `demo-w${week}-endurance-${enduranceCount}`;
   const kind = (["easy", "intervals", "long"] as const)[(enduranceCount - 1) % 3]!;
   const deload = week === durationWeeks;
-  const step = (name: string, role: "warm_up" | "steady" | "work" | "recovery" | "cool_down", durationSeconds: number, rpe: string, extra: Record<string, unknown> = {}) => ({ type: "step" as const, name, role, durationSeconds, rpe, ...extra });
+  const step = (name: string, role: "warm_up" | "steady" | "work" | "recovery" | "cool_down", durationSeconds: number, heartRateZone: string, extra: Record<string, unknown> = {}) => ({ type: "step" as const, name, role, durationSeconds, heartRateZone, ...extra });
   const session = (name: string, intent: string, durationMinutes: number, recoveryDemand: "low" | "normal" | "high", keySession: boolean, templateId: string, segments: unknown[], progressionNote: string, rationale: string) => ({
     id, scheduledDate, order: 0, templateRef: builtinRef(templateId), name, intent, durationMinutes, recoveryDemand, keySession,
     components: [{ id: `${id}-main`, name, domain: fact("endurance" as const), prescription: { kind: "endurance" as const, segments } }],
@@ -116,24 +116,24 @@ const enduranceSession = (scheduledDate: string, week: number) => {
     const durationMinutes = Math.min(maxMinutes, deload ? 40 : 50);
     const repetitions = deload ? 4 : Math.max(3, Math.min(8, Math.floor((durationMinutes - 20) / 5)));
     return session("Aerobic Intervals", "Improve aerobic power with controlled hard repeats.", durationMinutes, "high", true, "builtin.intervals", [
-      step("Easy warm-up", "warm_up", 600, "2-3"),
-      { type: "repeat" as const, name: "Controlled hard repeats", repetitions, work: step("Controlled hard running", "work", 180, deload ? "6-7" : "7-8"), recovery: step("Easy jog recovery", "recovery", 120, "2") },
-      step("Easy cooldown", "cool_down", 600, "2"),
+      step("Easy warm-up", "warm_up", 600, "Zone 1–2"),
+      { type: "repeat" as const, name: "Controlled hard repeats", repetitions, work: step("Controlled hard running", "work", 180, deload ? "Zone 3–4" : "Zone 4"), recovery: step("Easy jog recovery", "recovery", 120, "Zone 1–2") },
+      step("Easy cooldown", "cool_down", 600, "Zone 1–2"),
     ], `Complete ${repetitions} controlled repetitions; do not sprint.`, "Primary quality endurance session of the week.");
   }
   if (kind === "long" && maxMinutes >= 40) {
     const durationMinutes = Math.min(maxMinutes, deload ? 45 : 60 + 5 * Math.min(week - 1, 2));
     return session("Long Easy Session", "Develop aerobic endurance and durable time on feet.", durationMinutes, "normal", true, "builtin.long-run", [
-      step("Easy warm-up", "warm_up", 300, "2"),
-      step("Long easy effort", "steady", (durationMinutes - 10) * 60, "3-4", { talkTest: "Comfortable full sentences" }),
-      step("Easy cooldown", "cool_down", 300, "2"),
+      step("Easy warm-up", "warm_up", 300, "Zone 1–2"),
+      step("Long easy effort", "steady", (durationMinutes - 10) * 60, "Zone 2", { talkTest: "Comfortable full sentences" }),
+      step("Easy cooldown", "cool_down", 300, "Zone 1–2"),
     ], deload ? "Shorter final-week long session to absorb training." : `Planned duration: ${durationMinutes} minutes at conversational pace.`, "Longest aerobic effort of the week.");
   }
   const durationMinutes = Math.min(maxMinutes, deload ? 30 : 40);
   return session("Easy Aerobic Session", "Build aerobic consistency without accumulating excessive fatigue.", durationMinutes, "low", false, "builtin.easy-run", [
-    step("Easy warm-up", "warm_up", 300, "2"),
-    step("Continuous easy effort", "steady", (durationMinutes - 10) * 60, "3", { talkTest: "Comfortable full sentences" }),
-    step("Easy cooldown", "cool_down", 300, "2"),
+    step("Easy warm-up", "warm_up", 300, "Zone 1–2"),
+    step("Continuous easy effort", "steady", (durationMinutes - 10) * 60, "Zone 2", { talkTest: "Comfortable full sentences" }),
+    step("Easy cooldown", "cool_down", 300, "Zone 1–2"),
   ], "Keep this genuinely easy; breathing should stay comfortable.", "Low-intensity aerobic base work.");
 };
 

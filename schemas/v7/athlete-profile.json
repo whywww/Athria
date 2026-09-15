@@ -274,6 +274,12 @@
         "metric",
         "imperial"
       ]
+    },
+    "mesocycleDurationWeeks": {
+      "default": 8,
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 8
     }
   },
   "required": [
@@ -291,7 +297,8 @@
     "injuries",
     "constraintNotes",
     "explicitRecoveryDays",
-    "unitSystem"
+    "unitSystem",
+    "mesocycleDurationWeeks"
   ],
   "additionalProperties": false
 }

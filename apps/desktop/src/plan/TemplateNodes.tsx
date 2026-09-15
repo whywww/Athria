@@ -8,14 +8,14 @@ export function TemplateNodes({ template }: { template: SessionTemplate }) {
   return <ol className="template-node-grid" aria-label={`${template.name} structure`}>
     {template.nodes.map((node, index) => {
       const strength = template.domain === "strength" ? node as StrengthTemplateSlot : null;
+      const variables = [...node.variables.map((value) => ({ value, optional: false })), ...(node.optionalVariables ?? []).map((value) => ({ value, optional: true }))];
       return <li className="template-node" key={index}>
         <div className="template-node-heading">
-          <span aria-hidden="true">{index + 1}</span>
+          <span className="template-node-index" aria-hidden="true">{index + 1}</span>
           <strong>{templateNodeName(node)}</strong>
-          {node.optional && <small>Optional</small>}
+          {node.optional && <small className="template-node-flag">Optional</small>}
         </div>
-        {node.variables.length > 0 && <Chips values={node.variables}/>}
-        {node.optionalVariables?.length ? <div className="template-node-optional"><small>Optional</small><Chips values={node.optionalVariables} muted/></div> : null}
+        {variables.length > 0 && <div className="template-node-chips">{variables.map(({ value, optional }) => <span key={value} className={optional ? "optional" : undefined} title={optional ? "Optional" : undefined}>{friendlyLabel(value)}</span>)}</div>}
         {strength?.movementPatternIds?.length ? <div className="template-node-meta"><small>Patterns</small><Chips values={strength.movementPatternIds} muted/></div> : null}
         {strength?.targetMuscleIds?.length ? <div className="template-node-meta"><small>Muscles</small><Chips values={strength.targetMuscleIds} muted/></div> : null}
         {strength?.matchPolicy === "all" && <div className="template-node-match">Match all</div>}

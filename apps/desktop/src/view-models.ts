@@ -31,6 +31,7 @@ export interface AthleteProfile {
   goals: string[];
   preference: string;
   maxSessionMinutes: number;
+  mesocycleDurationWeeks: number;
   trainingRhythm:
     | { kind: "fixed_week"; days: number[] }
     | { kind: "flexible_week"; targetDaysPerWeek: number; minDaysPerWeek: number; maxDaysPerWeek: number }
@@ -394,7 +395,7 @@ export function timezoneOptions(current: string): string[] {
 export function isUntouchedDefaultProfile(profile: AthleteProfile): boolean {
   return profile.preferredName === "Athlete" && profile.timezone === "Asia/Hong_Kong" && profile.goals.length === 1 && profile.goals[0] === "general_fitness"
     && profile.trainingRhythm.kind === "flexible_week" && profile.trainingRhythm.targetDaysPerWeek === 4 && profile.trainingRhythm.minDaysPerWeek === 3 && profile.trainingRhythm.maxDaysPerWeek === 5
-    && profile.equipment.length === 30 && profile.injuries.length === 0 && profile.constraintNotes.length === 0 && profile.explicitRecoveryDays === null;
+    && profile.equipment.length === 30 && profile.injuries.length === 0 && profile.constraintNotes.length === 0 && profile.explicitRecoveryDays === null && profile.mesocycleDurationWeeks === 8;
 }
 
 export function profilePayload(current: AthleteProfile, edits: AthleteProfile = current): AthleteProfile {
@@ -405,6 +406,7 @@ export function profilePayload(current: AthleteProfile, edits: AthleteProfile = 
     goals: edits.goals,
     preference: edits.preference.trim().slice(0, PREFERENCE_MAX_LENGTH),
     maxSessionMinutes: edits.maxSessionMinutes,
+    mesocycleDurationWeeks: edits.mesocycleDurationWeeks,
     trainingRhythm: edits.trainingRhythm.kind === "fixed_week"
       ? { ...edits.trainingRhythm, days: [...new Set(edits.trainingRhythm.days)].sort((a, b) => a - b) }
       : { ...edits.trainingRhythm },

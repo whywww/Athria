@@ -65,30 +65,36 @@ const wellnessPriority: Array<{ key: WellnessKey; label: string; format: (value:
   { key: "motivation", label: "Motivation", format: String, tone: "green" },
 ];
 
-export function wellnessHighlights(records: WellnessRecord[]) {
-  const sorted = [...records].sort((left, right) => right.day.localeCompare(left.day));
-  const anchor = sorted.find((record) => wellnessPriority.some(({ key }) => wellnessNumber(record, key) !== null));
-  if (!anchor) return null;
-  const cutoff = addDays(anchor.day, -6);
+// Every metric curve shares one fourteen-day window ending today, so the header range always matches the trends shown.
+export function wellnessHighlights(records: WellnessRecord[], today: string) {
+  const start = addDays(today, -13); const end = today;
+  const windowRecords = records.filter((record) => record.day >= start && record.day <= end).sort((left, right) => left.day.localeCompare(right.day));
   const chosen: typeof wellnessPriority = [];
   for (const item of wellnessPriority) {
-    if (sorted.some((record) => record.day >= cutoff && wellnessNumber(record, item.key) !== null)) chosen.push(item);
+    if (windowRecords.some((record) => wellnessNumber(record, item.key) !== null)) chosen.push(item);
     if (chosen.length === 4) break;
   }
-  let newest = anchor.day;
+  if (!chosen.length) return null;
   const values = chosen.map((item) => {
-    const record = sorted.find((entry) => wellnessNumber(entry, item.key) !== null)!;
-    if (record.day > newest) newest = record.day;
-    const value = wellnessNumber(record, item.key)!;
-    const previous = sorted.find((entry) => entry.day < record.day && wellnessNumber(entry, item.key) !== null)?.fields[item.key]?.value as number | undefined;
-    const series = [...sorted].reverse().flatMap((entry) => typeof entry.fields[item.key]?.value === "number" ? [entry.fields[item.key]!.value as number] : []).slice(-7);
+    const series = windowRecords.flatMap((record) => { const value = wellnessNumber(record, item.key); return value === null ? [] : [value]; }).slice(-14);
+    const value = series.at(-1)!; const previous = series.at(-2);
     return { ...item, display: item.format(value), delta: previous === undefined ? null : Number((value - previous).toFixed(1)), series };
   });
-  return { day: newest, values };
+  return { start, end, values };
 }
 
 export function formatWellnessDate(day: string) {
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(new Date(`${day}T12:00:00Z`));
+}
+
+function wellnessDayShort(day: string) {
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${day}T12:00:00Z`));
+}
+
+export function formatWellnessRange(start: string, end: string) {
+  if (start === end) return formatWellnessDate(start);
+  const startYear = start.slice(0, 4); const endYear = end.slice(0, 4);
+  return startYear === endYear ? `${wellnessDayShort(start)} – ${wellnessDayShort(end)}, ${endYear}` : `${wellnessDayShort(start)}, ${startYear} – ${wellnessDayShort(end)}, ${endYear}`;
 }
 
 function medianValue(values: number[]) {
@@ -194,7 +200,7 @@ const sparklineBounds = { left: 4, right: 96, top: 5, bottom: 32, baseline: 39 }
 function pathNumber(value: number) { return Number(value.toFixed(3)); }
 
 export function sparklineGeometry(input: number[]) {
-  const values = input.filter(Number.isFinite).slice(-7);
+  const values = input.filter(Number.isFinite).slice(-14);
   if (!values.length) return null;
   const min = Math.min(...values); const max = Math.max(...values); const spread = max - min;
   const width = sparklineBounds.right - sparklineBounds.left;
@@ -298,7 +304,7 @@ export function RecoveryHelpModal({ onClose }: { onClose: () => void }) {
   }, [onClose]);
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <section className="recovery-modal" role="dialog" aria-modal="true" aria-labelledby="recovery-help-title">
-      <header><div><h2 id="recovery-help-title">How we calculate Overall readiness</h2><p>One score that sums up how ready you are to train.</p></div><button type="button" className="modal-close" aria-label="Close dialog" onClick={onClose}><svg className="app-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>
+      <header><div><h2 id="recovery-help-title">How We Calculate Overall Readiness</h2><p>One score that sums up how ready you are to train.</p></div><button type="button" className="modal-close" aria-label="Close dialog" onClick={onClose}><svg className="app-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>
       <div className="modal-body">
         <p className="recovery-help-lead">We compare the signals you track with your own recent baseline (up to 28 days):</p>
         <ul className="recovery-help-signals">
@@ -333,7 +339,7 @@ function monthShift(month: string, amount: number) { const date = new Date(`${mo
 export function OverviewDashboard({ summary, wellness, history, planned, today, timezone }: { summary: TrainingSummary; wellness: WellnessRecord[]; history: TrainingHistorySession[]; planned: CalendarSession[]; today: string; timezone: string }) {
   const [visibleMonth, setVisibleMonth] = useState(today.slice(0, 7));
   const [helpOpen, setHelpOpen] = useState(false);
-  const wellnessData = wellnessHighlights(wellness); const recovery = recoveryStatus(wellness); const week = weeklyOverview(today, history, planned, timezone); const load = weeklyLoad(today, history, planned, timezone);
+  const wellnessData = wellnessHighlights(wellness, today); const recovery = recoveryStatus(wellness); const week = weeklyOverview(today, history, planned, timezone); const load = weeklyLoad(today, history, planned, timezone);
   const calendarAnchor = `${visibleMonth}-01`; const days = calendarDays(calendarAnchor, history, planned, timezone);
   const monthLabel = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${visibleMonth}-01T12:00:00Z`));
   const monthCompleted = new Set(history.map((session) => localDay(session.startAt, timezone)).filter((day) => day.startsWith(`${visibleMonth}-`)));
@@ -348,9 +354,9 @@ export function OverviewDashboard({ summary, wellness, history, planned, today, 
 
   return <div className="overview-dashboard">
     <section className="overview-summary-grid" aria-label="This week so far">
-      <SummaryCard icon="workout" title="Completed workouts" value={summary.sessionCount} className="bars-summary"><Change value={week.sessionDelta}/><MiniBars values={completedSeries} tone="coral"/></SummaryCard>
-      <SummaryCard icon="target" title="Plan progress" value={`${meso.completed} / ${meso.total}`} className="plan-summary"><small>this mesocycle</small><span className="progress-ring" style={{ "--progress": `${meso.percent * 3.6}deg` } as React.CSSProperties}><b>{meso.percent}%</b></span></SummaryCard>
-      <SummaryCard icon="recovery" title="Overall readiness" value={recovery.label} className="recovery-summary"><small>{recovery.detail}</small><button type="button" className="recovery-help" aria-haspopup="dialog" onClick={() => setHelpOpen(true)}>How do we calculate?<span aria-hidden="true">→</span></button><span className="progress-ring" style={{ "--progress": `${(recovery.value ?? 0) * 3.6}deg` } as React.CSSProperties}><b>{recovery.value ?? "—"}</b></span></SummaryCard>
+      <SummaryCard icon="workout" title="Completed Workouts" value={summary.sessionCount} className="bars-summary"><Change value={week.sessionDelta}/><MiniBars values={completedSeries} tone="coral"/></SummaryCard>
+      <SummaryCard icon="target" title="Plan Progress" value={`${meso.completed} / ${meso.total}`} className="plan-summary"><small>this mesocycle</small><span className="progress-ring" style={{ "--progress": `${meso.percent * 3.6}deg` } as React.CSSProperties}><b>{meso.percent}%</b></span></SummaryCard>
+      <SummaryCard icon="recovery" title="Overall Readiness" value={recovery.label} className="recovery-summary"><small>{recovery.detail}</small><button type="button" className="recovery-help" aria-haspopup="dialog" onClick={() => setHelpOpen(true)}>How do we calculate?<span aria-hidden="true">→</span></button><span className="progress-ring" style={{ "--progress": `${(recovery.value ?? 0) * 3.6}deg` } as React.CSSProperties}><b>{recovery.value ?? "—"}</b></span></SummaryCard>
     </section>
 
     <div className="overview-layout">
@@ -375,7 +381,7 @@ export function OverviewDashboard({ summary, wellness, history, planned, today, 
         <div className="consistency-grid" data-range="twelve-weeks" aria-label="Training consistency over the last twelve weeks">{consistencyDays.filter((item) => !item.future).map((item) => <i key={item.day} className={item.active ? "active" : ""} title={item.day}/>)}</div>
         <div className="consistency-note"><TrophyIcon/><div><strong>{monthCompleted.size ? "Nice consistency!" : "Your month starts here"}</strong><small>{monthCompleted.size ? `You've been active ${monthCompleted.size} day${monthCompleted.size === 1 ? "" : "s"} this month.` : "Complete a workout to begin your streak."}</small></div></div>
       </section></div>
-      <section className="overview-panel overview-wellness"><header><h2>Wellness</h2>{wellnessData && <time dateTime={wellnessData.day}>{formatWellnessDate(wellnessData.day)}</time>}</header>
+      <section className="overview-panel overview-wellness"><header><h2>Wellness</h2>{wellnessData && <time dateTime={wellnessData.end}>{formatWellnessRange(wellnessData.start, wellnessData.end)}</time>}</header>
         {!wellnessData ? <p className="overview-empty">No wellness data yet. Connect Intervals.icu or record a wellness check-in.</p> : <div className="wellness-grid">{wellnessData.values.map((item) => <article className={`wellness-${item.tone}`} key={item.key}><div className="wellness-copy"><span>{item.label}</span><strong>{item.display}</strong><small className={wellnessDeltaTone(item.key, item.delta)}>{item.delta === null ? "No earlier value" : `${item.delta > 0 ? "↑" : item.delta < 0 ? "↓" : "→"} ${Math.abs(item.delta)} from previous`}</small></div><Sparkline values={item.series}/></article>)}</div>}
       </section></div>
       {helpOpen && <RecoveryHelpModal onClose={() => setHelpOpen(false)}/>}

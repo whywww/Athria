@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultProfile } from "@athria/schemas";
+import { defaultProfile, mesocycleSchema, TAXONOMY_VERSION } from "@athria/schemas";
 import { estimateOneRepMax, evaluateDoubleProgression, evaluateRpeAutoregulation, expandSchedule, validatePlan } from "./index";
 
 const mesocycle = { durationWeeks: 1, schedule: { kind: "fixed_week" as const, days: [0] }, domainProgressions: [], weeks: [{ weekNumber: 1, focus: null, sessions: [] }], adjustmentRules: [] };
@@ -37,5 +37,24 @@ describe("deterministic v7 core", () => {
     const advisory = validatePlan(profile(null), recoveryPlan);
     expect(advisory.results.find((item) => item.reasonCode === "EXPLICIT_RECOVERY_INTERVAL")).toBeUndefined();
     expect(advisory.results.find((item) => item.reasonCode === "ADJACENT_HIGH_DEMAND_SESSIONS")).toMatchObject({ status: "pass", enforcement: "advisory", evidence: { closestDays: 2 } });
+  });
+  it("advises on domain-specific effort notation without blocking the plan", () => {
+    const fact = (value: unknown) => ({ value, source: "user_confirmed", confidence: 1, evidence: "fixture", taxonomyVersion: TAXONOMY_VERSION });
+    const phase = (domain: "strength" | "endurance") => ({ id: `${domain}-base`, phaseType: "foundation", name: "Base", startWeek: 1, endWeek: 1, focus: "Base", progression: [] });
+    const exercise = (id: string, targetRpe: number | null, targetRir: number | null = null) => ({ id, displayName: id, canonicalKey: null, classification: { primaryMovement: fact("squat"), primaryMuscles: fact(["quadriceps"]), secondaryMuscles: fact([]), equipment: fact(["barbell"]), impact: fact("low"), laterality: fact("bilateral") }, sets: 3, repsMin: 8, repsMax: 10, targetRpe, targetRir, restSeconds: 90, referenceLoad: null, referenceLoadUnit: null, notes: "" });
+    const strengthComponent = (exercises: unknown[]) => ({ id: "strength", name: "Strength", domain: fact("strength"), prescription: { kind: "strength", exercises } });
+    const enduranceComponent = (segments: unknown[]) => ({ id: "endurance", name: "Endurance", domain: fact("endurance"), prescription: { kind: "endurance", segments } });
+    const step = (name: string, heartRateZone?: string) => ({ type: "step", name, role: "work", ...(heartRateZone ? { heartRateZone } : {}) });
+    const workPlan = (components: unknown[], domains: Array<"strength" | "endurance">) => mesocycleSchema.parse({ durationWeeks: 1, schedule: { kind: "fixed_week", days: [0] }, domainProgressions: domains.map((domain) => ({ domain, phases: [phase(domain)] })), weeks: [{ weekNumber: 1, focus: null, sessions: [{ id: "session-1", scheduledDate: "2026-09-07", order: 0, name: "Mixed", intent: "Train", durationMinutes: 60, components }] }], adjustmentRules: [] });
+    const profile = { ...defaultProfile(), trainingRhythm: { kind: "fixed_week" as const, days: [0] } };
+    const aligned = validatePlan(profile, { effectiveStartDate: "2026-09-07", mesocycle: workPlan([strengthComponent([exercise("squat", 7)]), enduranceComponent([step("Tempo work", "Zone 4")])], ["strength", "endurance"]) });
+    expect(aligned.results.find((item) => item.reasonCode === "STRENGTH_EFFORT_RPE")).toMatchObject({ status: "pass", enforcement: "advisory", rulePackId: "strength" });
+    expect(aligned.results.find((item) => item.reasonCode === "ENDURANCE_EFFORT_ZONE")).toMatchObject({ status: "pass", enforcement: "advisory", rulePackId: "structure", evidence: { stepCount: 1 } });
+    const missing = validatePlan(profile, { effectiveStartDate: "2026-09-07", mesocycle: workPlan([strengthComponent([exercise("squat", null), exercise("row", null, 2)]), enduranceComponent([step("Tempo work"), { type: "repeat", name: "Repeats", repetitions: 4, work: step("Hard repeats"), recovery: step("Jog recovery", "Zone 1–2") }])], ["strength", "endurance"]) });
+    expect(missing.results.find((item) => item.reasonCode === "STRENGTH_EFFORT_RPE")).toMatchObject({ status: "fail", evidence: { exerciseCount: 2, missingEffort: ["squat"] } });
+    expect(missing.results.find((item) => item.reasonCode === "ENDURANCE_EFFORT_ZONE")).toMatchObject({ status: "fail", evidence: { stepCount: 3, missingZone: ["Tempo work", "Hard repeats"] } });
+    expect(missing.valid).toBe(true);
+    const enduranceOnly = validatePlan(profile, { effectiveStartDate: "2026-09-07", mesocycle: workPlan([enduranceComponent([step("Easy work", "Zone 2")])], ["endurance"]) });
+    expect(enduranceOnly.results.find((item) => item.reasonCode === "STRENGTH_EFFORT_RPE")).toMatchObject({ status: "not_applicable" });
   });
 });

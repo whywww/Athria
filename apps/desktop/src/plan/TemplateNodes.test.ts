@@ -16,6 +16,8 @@ describe("TemplateNodes", () => {
     expect(html).toContain(">Trunk<");
     expect(html).toContain("Exercise Selection");
     expect(html).toContain("Optional");
+    expect((html.match(/class="optional"/g) ?? []).length).toBe(1);
+    expect(html).toMatch(/class="optional"[^>]*>Load</);
     expect(html).not.toContain("Required");
     expect(html).not.toContain("None");
     expect(html).toContain("Patterns");
@@ -29,8 +31,18 @@ describe("TemplateNodes", () => {
     expect(html).toContain("Warm Up");
     expect(html).toContain("Duration");
     expect(html).not.toContain("Optional");
+    expect(html).not.toContain('class="optional"');
     expect(html).not.toContain("Patterns");
     expect(html).not.toContain("Muscles");
     expect(html).not.toContain("Match");
+  });
+
+  it("marks every chip optional when a node has no required variables", () => {
+    const template: SessionTemplate = { id: "steady", name: "Steady", intent: "Hold a steady effort.", domain: "endurance", nodes: [{ role: "steady", variables: [], optionalVariables: ["rpe", "distance"] }] };
+    const html = renderToStaticMarkup(createElement(TemplateNodes, { template }));
+    expect((html.match(/class="optional"/g) ?? []).length).toBe(2);
+    expect(html).not.toContain("<span>");
+    expect(html).toContain("Rpe");
+    expect(html).toContain("Distance");
   });
 });

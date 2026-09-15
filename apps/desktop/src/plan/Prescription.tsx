@@ -40,11 +40,10 @@ function PrescriptionPanel({ component, summary, meta, children }: { component: 
 
 function StrengthPrescription({ component, summary, meta }: { component: PlanComponent & { prescription: Extract<PlanComponent["prescription"], { kind: "strength" }> }; summary?: string | undefined; meta?: string | undefined }) {
   const exerciseCount = component.prescription.exercises.length;
-  const effortHeader = component.prescription.exercises.some((exercise) => exercise.targetRir != null) ? "Effort" : "RPE";
   return <PrescriptionPanel component={component} summary={summary ?? `${exerciseCount} ${exerciseCount === 1 ? "exercise" : "exercises"}`} meta={meta}>
     <div className="rx-table rx-strength-table" role="table" aria-label={`${component.name} exercises`}>
       <div className="rx-table-row rx-table-header" role="row">
-        <span role="columnheader">#</span><span role="columnheader">Exercise</span><span role="columnheader">Sets × Reps</span><span role="columnheader">{effortHeader}</span><span role="columnheader">Rest</span>
+        <span role="columnheader">#</span><span role="columnheader">Exercise</span><span role="columnheader">Sets × Reps</span><span role="columnheader">Effort</span><span role="columnheader">Rest</span>
       </div>
       <div role="rowgroup">
         {component.prescription.exercises.map((exercise, index) => {
@@ -57,7 +56,7 @@ function StrengthPrescription({ component, summary, meta }: { component: PlanCom
             <span className="rx-index" data-label="#" role="cell">{index + 1}</span>
             <span className="rx-primary-cell rx-exercise-cell" data-label="Exercise" role="cell">{movement != null && <small className="rx-movement-pill">{friendlyLabel(String(movement))}</small>}<strong>{exercise.displayName}</strong></span>
             <span data-label="Sets × Reps" role="cell"><strong>{exercise.sets} × {reps}</strong>{load && <small>{load}</small>}</span>
-            <span data-label={effortHeader} role="cell"><Values values={effort} empty="Controlled" /></span>
+            <span data-label="Effort" role="cell"><Values values={effort} empty="Controlled" /></span>
             <span data-label="Rest" role="cell">{formatRest(exercise.restSeconds)}</span>
             <span className="rx-strength-details" data-label="Notes" role="cell">{details.length ? details.map((value, detailIndex) => <span key={`${value}-${detailIndex}`}>{value}</span>) : <span className="rx-empty-value">—</span>}</span>
           </div>;

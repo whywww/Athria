@@ -39,7 +39,7 @@ describe("MesocycleTarget", () => {
     }));
 
     expect(html).toContain('aria-expanded="false"');
-    expect(html).toContain("Plan details");
+    expect(html).toContain("Plan Details");
     expect(html).not.toContain('id="mt-details-panel"');
     expect(html).not.toContain("Maintain twice weekly");
     expect(html).not.toContain('id="mt-supporting-panel"');
@@ -60,6 +60,6 @@ describe("MesocycleTarget", () => {
 
     expect(html).toContain("Build a durable aerobic base");
     expect(html).toContain("Endurance · Base");
-    expect(html).not.toContain("Plan details");
+    expect(html).not.toContain("Plan Details");
   });
 });

@@ -102,12 +102,12 @@ export function MesocycleTarget({ plan, today, currentWeek, currentPhaseNames, s
 
     {hasDetails && <section className="mt-details-shell">
       <button type="button" className="mt-details-toggle" aria-expanded={detailsOpen} aria-controls="mt-details-panel" onClick={() => setDetailsOpen((value) => !value)}>
-        <DetailIcon kind="details"/><span>Plan details</span><Chevron open={detailsOpen}/>
+        <DetailIcon kind="details"/><span>Plan Details</span><Chevron open={detailsOpen}/>
       </button>
       {detailsOpen && <div className="mt-details-panel" id="mt-details-panel">
         {supporting.length > 0 && <DetailSection kind="supporting" title="Supporting"><ul className="mt-list">{supporting.map((item, index) => <li key={`supporting-${index}`}><span>{item.label}</span>{item.detail && <small>{item.detail}</small>}</li>)}</ul></DetailSection>}
         {maintenance.length > 0 && <DetailSection kind="maintenance" title="Maintenance"><ul className="mt-list">{maintenance.map((item, index) => <li key={`maintenance-${index}`}><span>{item.label}</span>{item.detail && <small>{item.detail}</small>}</li>)}</ul></DetailSection>}
-        {coordination && <DetailSection kind="coordination" title="Coordination strategy"><p className="mt-coordination">{coordination}</p></DetailSection>}
+        {coordination && <DetailSection kind="coordination" title="Coordination Strategy"><p className="mt-coordination">{coordination}</p></DetailSection>}
       </div>}
     </section>}
   </section>;

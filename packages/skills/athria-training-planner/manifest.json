@@ -1,6 +1,6 @@
 {
   "name": "athria-training-planner",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "purpose": "Create and revise reusable templates plus complete week-specific prescriptions for the single current Mesocycle through Athria's deterministic tools.",
   "appliesWhen": ["The user asks to create, revise, validate, or explain a training plan."],
   "doesNotApplyWhen": ["The request is for medical diagnosis, injury treatment, or unsupervised rehabilitation."],

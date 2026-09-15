@@ -2,7 +2,7 @@ import * as z from "zod";
 
 export const OWNER_ID = "local-user";
 export const FORMULA_VERSION = "0.2.0";
-export const RULE_VERSION = "0.2.0";
+export const RULE_VERSION = "0.3.0";
 export const PLAN_SCHEMA_VERSION = "7.0";
 export const TAXONOMY_VERSION = "strength-2.0";
 export const TEMPLATE_CATALOG_VERSION = "2.0";
@@ -84,6 +84,7 @@ export const athleteProfileSchema = z.object({
   maxSessionMinutes: z.number().int().min(15).max(240).default(60), trainingRhythm: trainingRhythmSchema.default({ kind: "flexible_week", targetDaysPerWeek: 4, minDaysPerWeek: 3, maxDaysPerWeek: 5 }),
   equipment: z.array(equipmentTypeSchema).default(equipmentTypeIds), injuries: profileNoteListSchema.default([]), constraintNotes: profileNoteListSchema.default([]), explicitRecoveryDays: z.number().int().min(1).max(7).nullable().default(null),
   unitSystem: unitSystemSchema.default("metric"),
+  mesocycleDurationWeeks: z.number().int().min(1).max(8).default(8),
 }).strict();
 export const dataQualitySchema = z.object({ completeness: z.number().min(0).max(1), sources: z.array(z.string()), missingFields: z.array(z.string()), anomalies: z.array(z.string()) });
 export const metricResultSchema = <T extends z.ZodTypeAny>(value: T) => z.object({ value, unit: z.string(), method: z.string(), formulaVersion: z.string(), timeRange: z.object({ start: z.string().nullable(), end: z.string().nullable() }), dataQuality: dataQualitySchema, limitations: z.array(z.string()) });
@@ -118,12 +119,12 @@ export const personalInformationWriteSchema = z.object({ preferredName: z.string
 export const planExerciseSchema = z.object({
   id: z.string().min(1), displayName: z.string().min(1), canonicalKey: z.string().min(1).nullable().default(null),
   classification: z.object({ primaryMovement: movementFactSchema, primaryMuscles: muscleFactSchema, secondaryMuscles: muscleFactSchema, equipment: equipmentFactSchema, impact: impactFactSchema, laterality: lateralityFactSchema }).strict(),
-  sets: z.number().int().min(1).max(20), repsMin: z.number().int().min(1).max(100), repsMax: z.number().int().min(1).max(100), targetRpe: z.number().min(1).max(10).nullable().default(null), targetRir: z.number().min(0).max(10).nullable().optional(), restSeconds: z.number().int().min(0).max(600).default(90), referenceLoad: z.number().min(0).nullable().default(null), referenceLoadUnit: weightUnitSchema.nullable().default(null), tempo: z.string().max(40).nullable().optional(), alternatives: z.array(z.string().min(1).max(100)).max(10).optional(), notes: z.string().max(1000).default(""),
+  sets: z.number().int().min(1).max(20), repsMin: z.number().int().min(1).max(100), repsMax: z.number().int().min(1).max(100), targetRpe: z.number().min(1).max(10).nullable().default(null).describe("Strength effort on the 1–10 RPE scale; primary effort notation for strength exercises."), targetRir: z.number().min(0).max(10).nullable().optional().describe("Optional RIR (reps in reserve) alternative effort notation for strength exercises."), restSeconds: z.number().int().min(0).max(600).default(90), referenceLoad: z.number().min(0).nullable().default(null), referenceLoadUnit: weightUnitSchema.nullable().default(null), tempo: z.string().max(40).nullable().optional(), alternatives: z.array(z.string().min(1).max(100)).max(10).optional(), notes: z.string().max(1000).default(""),
 }).strict().refine((value) => value.repsMax >= value.repsMin, { message: "repsMax must be >= repsMin" });
 export const strengthPrescriptionSchema = z.object({ kind: z.literal("strength"), exercises: z.array(planExerciseSchema).min(1).max(30) }).strict();
 export const durationOnlyPrescriptionSchema = z.object({ kind: z.literal("duration_only"), notes: z.string().max(4000).default("") }).strict();
 const effortTargetShape = {
-  durationSeconds: z.number().int().positive().optional(), distanceMeters: z.number().positive().optional(), pace: z.string().min(1).max(80).optional(), heartRateZone: z.string().min(1).max(40).optional(), powerWatts: z.string().min(1).max(40).optional(), cadence: z.string().min(1).max(40).optional(), rpe: z.string().min(1).max(40).optional(), talkTest: z.string().min(1).max(120).optional(), notes: z.string().max(1000).optional(),
+  durationSeconds: z.number().int().positive().optional(), distanceMeters: z.number().positive().optional(), pace: z.string().min(1).max(80).optional(), heartRateZone: z.string().min(1).max(40).optional().describe("Endurance effort: relative heart-rate zone label such as 'Zone 1–2'; primary effort notation for every endurance step, relative to the athlete's own baseline."), powerWatts: z.string().min(1).max(40).optional(), cadence: z.string().min(1).max(40).optional(), rpe: z.string().min(1).max(40).optional().describe("Secondary free-text effort note for endurance steps; heart-rate zone labels are the primary notation."), talkTest: z.string().min(1).max(120).optional(), notes: z.string().max(1000).optional(),
 };
 export const enduranceStepSchema = z.object({ type: z.literal("step"), name: z.string().min(1).max(100), role: z.enum(["warm_up", "steady", "work", "recovery", "cool_down"]), ...effortTargetShape }).strict();
 export const enduranceRepeatSchema = z.object({ type: z.literal("repeat"), name: z.string().min(1).max(100), repetitions: z.number().int().min(1).max(100), work: enduranceStepSchema, recovery: enduranceStepSchema.optional(), notes: z.string().max(1000).optional() }).strict();
