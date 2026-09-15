@@ -577,8 +577,38 @@ function McpSetup() {
   </>;
 }
 
-function Help() {
-  return <><Card title="Help & Support"><p>Athria is your local-first training companion. Use Connections to connect data sources, Profile to confirm your preferences, and Plan to review Agent-created training plans.</p><div className="help-grid"><section><strong>Need to update your profile?</strong><span>Open Profile and choose Edit, or explicitly confirm a profile change with your connected Agent.</span></section><section><strong>Having trouble with a connection?</strong><span>Open Connections, re-enter the connection details, then test or sync again.</span></section><section><strong>Protect your data</strong><span>Create a local backup from Settings before troubleshooting or moving Athria to another device.</span></section></div></Card><Card title="Connect Athria to your AI agent" className="mcp-card"><McpSetup/></Card></>;
+export function Help() {
+  return <>
+    <Card title="Help & Support">
+      <p>Athria is your local-first training companion. Use Connections to connect data sources, Profile to confirm your preferences, and Plan to review Agent-created training plans.</p>
+      <div className="help-grid">
+        <section><strong>How do I create a new plan?</strong><span>Plans are created by your connected AI agent. Connect an agent through MCP below, then ask it to build your plan — it uses your Profile, training history and synced workouts. Open Plan to review the Weekly Sessions it saves. Reusable Session Templates can be built in the Plan page's Template Library.</span></section>
+        <section><strong>How do I import my training data?</strong><span>Open Connections and pick a source: Hevy (import a CSV export), Intervals.icu (sync endurance activities) or Xunji (sync strength and training records). Then use Sync now whenever you want to pull in new workouts.</span></section>
+        <section><strong>How do I back up my data and sync it with my own cloud?</strong><span>Athria has no cloud of its own — every workout, plan and profile lives in one local database file. In Settings, create a backup and save the .sqlite3 file anywhere, including a folder synced by your own cloud drive (OneDrive, iCloud Drive, Google Drive, Dropbox). Restore from that file on another device. Saved credentials are never included, so re-enter them after restoring.</span></section>
+      </div>
+    </Card>
+    <Card title="Connect Athria to your AI agent through MCP" className="mcp-card"><McpSetup/></Card>
+    <Card title="Glossary">
+      <p>Plain-language definitions of the AI and training terms used across Athria. No prior background is needed.</p>
+      <h3 className="glossary-heading">AI &amp; data</h3>
+      <div className="help-grid glossary-grid">
+        <section><strong>AI agent</strong><span>A desktop AI app (Qoder, Claude Desktop, Codex, Trae or Cursor) that you connect to Athria. It reads your data and writes plans only when you ask.</span></section>
+        <section><strong>MCP</strong><span>Model Context Protocol — the open standard your AI agent uses to talk to Athria. The connection stays on this computer.</span></section>
+        <section><strong>Local-first</strong><span>All Athria data lives on this device and works without an account or an Athria server.</span></section>
+        <section><strong>SQLite database</strong><span>The single file where Athria keeps your Profile, plans and training history.</span></section>
+        <section><strong>Backup &amp; restore</strong><span>A backup is a self-contained copy of that database; restoring replaces your current data with the chosen copy.</span></section>
+      </div>
+      <h3 className="glossary-heading">Training</h3>
+      <div className="help-grid glossary-grid">
+        <section><strong>Mesocycle</strong><span>Your multi-week plan: start date, Weekly Sessions, phase progressions and adjustment rules.</span></section>
+        <section><strong>Weekly Session</strong><span>One planned workout with a complete prescription — what to do, for how long and how hard.</span></section>
+        <section><strong>Template</strong><span>A reusable single-domain pattern, such as "Lower Strength A". Templates carry structure only — no exercises or sets.</span></section>
+        <section><strong>Training domain</strong><span>The five training types Athria plans around: strength, endurance, sport skill, mind-body and recovery.</span></section>
+        <section><strong>RPE / RIR</strong><span>Two effort scales: RPE rates how hard a set felt (usually 1–10); RIR counts the good reps still left in reserve.</span></section>
+        <section><strong>Sync vs import</strong><span>Sync keeps pulling new workouts from a connected service; import adds a file once, such as a Hevy CSV export.</span></section>
+      </div>
+    </Card>
+  </>;
 }
 
 const views: Record<Page, () => React.ReactElement> = { Overview, Training: Timeline, Profile, Plan: CurrentPlanPage, Connections, Settings, Help };
@@ -593,5 +623,5 @@ export function App() {
   const navIcons: Record<Page, IconName> = { Overview: "overview", Training: "training", Profile: "profile", Plan: "plan", Connections: "devices", Settings: "settings", Help: "help" };
   const NavItems = ({ items }: { items: typeof dashboardPages[number][] }) => <>{items.map((item) => <button key={item.id} className={item.id === page ? "active" : ""} aria-current={item.id === page ? "page" : undefined} onClick={() => setPage(item.id)}><AppIcon name={navIcons[item.id]}/>{item.label}</button>)}</>;
   const preferredName = profile.data?.preferredName || "Athlete";
-  return <div className="shell"><aside><div className="brand"><img src="/athria-logo.svg" alt="Athria" /></div><nav aria-label="Main navigation"><NavItems items={primaryPages}/></nav><div className="sidebar-lower"><nav className="support-nav" aria-label="Support navigation"><NavItems items={supportPages}/></nav></div></aside><main className="primary-main">{page !== "Plan" && page !== "Profile" && <PrimaryPageHeader preferredName={preferredName} subtitle={page === "Overview" ? "Let's keep the momentum going. Here's your overview for today." : page === "Connections" ? "Sync your data from the apps and devices you use. Keep everything in one place." : page === "Settings" ? "Your personal information, system status, and local backups." : page === "Help" ? "Guides for setting up Athria and connecting your AI agent." : "Your AI fitness hub. Local-first. Data you own."}/>}{serviceCrash && <div className="error">The local service stopped unexpectedly. Close and reopen Athria. If the problem continues, create a backup before troubleshooting.</div>}<View/></main></div>;
+  return <div className="shell"><aside><div className="brand"><img src="/athria-logo.svg" alt="Athria" /></div><nav aria-label="Main navigation"><NavItems items={primaryPages}/></nav><div className="sidebar-lower"><nav className="support-nav" aria-label="Support navigation"><NavItems items={supportPages}/></nav></div></aside><main className="primary-main">{page !== "Plan" && page !== "Profile" && <PrimaryPageHeader preferredName={preferredName} subtitle={page === "Overview" ? "Let's keep the momentum going. Here's your overview for today." : page === "Connections" ? "Sync your data from the apps and devices you use. Keep everything in one place." : page === "Settings" ? "Your personal information, system status, and local backups." : page === "Help" ? "Guides for plans, training data, backups and connecting your AI agent through MCP." : "Your AI fitness hub. Local-first. Data you own."}/>}{serviceCrash && <div className="error">The local service stopped unexpectedly. Close and reopen Athria. If the problem continues, create a backup before troubleshooting.</div>}<View/></main></div>;
 }
