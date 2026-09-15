@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="apps/desktop/public/athria-logo.png" alt="Athria logo" width="120">
+  <img src="apps/desktop/public/athria-logo.svg" alt="Athria logo" width="120">
 
 # Athria
 

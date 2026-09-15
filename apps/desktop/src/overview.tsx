@@ -1,12 +1,9 @@
-import { useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { formatDistance, formatDuration, friendlyLabel, type CalendarSession, type TrainingHistorySession, type TrainingSummary, type WellnessRecord } from "./view-models";
 import { addDays, weekdayIndex } from "./plan/view";
 
 const domainOrder = ["strength", "endurance", "sport_skill", "mind_body", "recovery"] as const;
 const weekdayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const domainColors: Record<(typeof domainOrder)[number], string> = {
-  strength: "#ff7548", endurance: "#ffc84f", sport_skill: "#5687ef", mind_body: "#9775e8", recovery: "#59b878",
-};
 
 function localDay(startAt: string, timezone: string) {
   const parts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(startAt));
@@ -36,7 +33,7 @@ export function calendarDays(anchorDay: string, history: TrainingHistorySession[
     const markers: Marker[] = [...(completed.has(day) ? ["completed" as const] : []), ...(scheduled.has(day) ? ["planned" as const] : []), ...(skipped.has(day) ? ["skipped" as const] : [])];
     result.push({ day, marker: markers[0] ?? null, markers });
   }
-  while (result.length % 7) result.push({ day: null, marker: null, markers: [] });
+  while (result.length < 42) result.push({ day: null, marker: null, markers: [] });
   return result;
 }
 
@@ -100,6 +97,12 @@ export function weeklyOverview(today: string, history: TrainingHistorySession[],
   return { current, sessionDelta: current.length - previous.length, currentMinutes, durationPercent: previousMinutes > 0 ? Math.round(((currentMinutes - previousMinutes) / previousMinutes) * 100) : null, completedPlans: weekPlan.filter((session) => session.status === "completed").length, planTotal: weekPlan.length, unrecordedPlans: weekPlan.filter((session) => session.displayState === "unrecorded").length, skippedPlans: planned.filter((session) => session.scheduledDate >= weekStart && session.scheduledDate <= weekEnd && session.status === "skipped").length };
 }
 
+export function mesocycleProgress(planned: CalendarSession[]) {
+  const total = planned.length;
+  const completed = planned.filter((session) => session.status === "completed").length;
+  return { completed, total, percent: total ? Math.round((completed / total) * 100) : 0 };
+}
+
 export function weeklyLoad(today: string, history: TrainingHistorySession[], planned: CalendarSession[], timezone: string) {
   const weekStart = overviewDateRange(today).weekStart;
   return weekdayLabels.map((label, index) => {
@@ -160,10 +163,19 @@ export function sparklineGeometry(input: number[]) {
 }
 
 function Sparkline({ values }: { values: number[] }) {
+  const uid = useId().replace(/[^a-zA-Z0-9_-]/g, "");
+  const gradientId = `wellness-spark-${uid}`;
+  const sideFadeId = `wellness-spark-side-${uid}`;
+  const maskId = `wellness-spark-mask-${uid}`;
   const geometry = sparklineGeometry(values);
   if (!geometry) return <span className="sparkline-empty" data-chart="wellness-trend-empty" aria-hidden="true"/>;
   return <svg className="sparkline" data-chart="wellness-trend" data-points={geometry.points.length} viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true">
-    {geometry.areaPath && <path className="sparkline-area" d={geometry.areaPath}/>} 
+    <defs>
+      <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="currentColor" stopOpacity="0.25"/><stop offset="1" stopColor="currentColor" stopOpacity="0"/></linearGradient>
+      <linearGradient id={sideFadeId} x1="0" y1="0" x2="1" y2="0"><stop offset="0" stopColor="#fff" stopOpacity="0"/><stop offset="0.16" stopColor="#fff" stopOpacity="1"/><stop offset="0.84" stopColor="#fff" stopOpacity="1"/><stop offset="1" stopColor="#fff" stopOpacity="0"/></linearGradient>
+      <mask id={maskId} maskUnits="userSpaceOnUse" x="0" y="0" width="100" height="40"><rect x="0" y="0" width="100" height="40" fill={`url(#${sideFadeId})`}/></mask>
+    </defs>
+    {geometry.areaPath && <path className="sparkline-area" fill={`url(#${gradientId})`} mask={`url(#${maskId})`} d={geometry.areaPath}/>} 
     {geometry.points.length === 1 ? <circle cx={geometry.points[0]!.x} cy={geometry.points[0]!.y} r="2.2"/> : <path className="sparkline-line" d={geometry.linePath}/>} 
   </svg>;
 }
@@ -174,9 +186,8 @@ function wellnessDeltaTone(key: WellnessKey, delta: number | null) {
   return favorable ? "favorable" : "unfavorable";
 }
 
-function OverviewIcon({ kind }: { kind: "workout" | "time" | "target" | "recovery" | (typeof domainOrder)[number] }) {
+function OverviewIcon({ kind }: { kind: "workout" | "target" | "recovery" | (typeof domainOrder)[number] }) {
   const icon = kind === "workout" || kind === "strength" ? <><path d="M5 9v6M3 10v4M19 9v6M21 10v4M5 12h14"/><path d="M7 8v8M17 8v8"/></>
-    : kind === "time" ? <><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5h4"/></>
     : kind === "target" ? <><circle cx="11" cy="13" r="7"/><circle cx="11" cy="13" r="3.2"/><path d="m13.5 10.5 6-6M16 4.5h3.5V8"/></>
     : kind === "recovery" ? <><path d="M5 18c1-8 6-12 14-12-1 8-5 13-12 12"/><path d="M7 18c3-4 6-7 10-9"/></>
     : kind === "endurance" ? <><circle cx="14" cy="5" r="2"/><path d="m12 9 3 2 2 4M12 9l-3 4-4 1M10 13l-1 6M15 12l-4 3 4 4"/></>
@@ -185,7 +196,7 @@ function OverviewIcon({ kind }: { kind: "workout" | "time" | "target" | "recover
   return <span className={`overview-icon icon-${kind}`} data-icon={kind} aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{icon}</svg></span>;
 }
 
-function MiniBars({ values, tone, slots = 4 }: { values: number[]; tone: "coral" | "neutral" | "green"; slots?: number }) {
+function MiniBars({ values, tone, slots = 4 }: { values: number[]; tone: "coral" | "green"; slots?: number }) {
   const visible = values.slice(-slots);
   const padded: Array<number | null> = [...Array(Math.max(0, slots - visible.length)).fill(null), ...visible];
   const max = Math.max(1, ...visible);
@@ -202,7 +213,7 @@ function Change({ value, suffix = " from last week" }: { value: number | null; s
   return <small className={`metric-change ${direction}`}>{value > 0 ? "↑" : value < 0 ? "↓" : "→"} {Math.abs(value)}{suffix}</small>;
 }
 
-function SummaryCard({ icon, title, value, children, className = "" }: { icon: "workout" | "time" | "target" | "recovery"; title: string; value: ReactNode; children: ReactNode; className?: string }) {
+function SummaryCard({ icon, title, value, children, className = "" }: { icon: "workout" | "target" | "recovery"; title: string; value: ReactNode; children: ReactNode; className?: string }) {
   return <article className={`overview-summary-card ${className}`}><OverviewIcon kind={icon}/><div className="summary-card-copy"><span>{title}</span><strong>{value}</strong>{children}</div></article>;
 }
 
@@ -211,7 +222,7 @@ function ActivityDonut({ summary }: { summary: TrainingSummary }) {
   const total = values.reduce((sum, value) => sum + value, 0); let offset = 0;
   return <div className="activity-donut"><svg viewBox="0 0 42 42" aria-hidden="true"><circle className="donut-track" cx="21" cy="21" r="15.9"/>{total > 0 && values.map((value, index) => {
     const percent = value / total * 100; const start = offset; offset += percent;
-    return <circle key={domainOrder[index]} className="donut-segment" cx="21" cy="21" r="15.9" pathLength="100" stroke={domainColors[domainOrder[index]!]} strokeDasharray={`${percent} ${100 - percent}`} strokeDashoffset={-start}/>;
+    return <circle key={domainOrder[index]} className={`donut-segment domain-${domainOrder[index]}`} cx="21" cy="21" r="15.9" pathLength="100" strokeDasharray={`${percent} ${100 - percent}`} strokeDashoffset={-start}/>;
   })}</svg><span><strong>{summary.sessionCount}</strong><small>Workout{summary.sessionCount === 1 ? "" : "s"}</small></span></div>;
 }
 
@@ -224,10 +235,10 @@ export function OverviewDashboard({ summary, wellness, history, planned, today, 
   const monthLabel = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${visibleMonth}-01T12:00:00Z`));
   const monthCompleted = new Set(history.map((session) => localDay(session.startAt, timezone)).filter((day) => day.startsWith(`${visibleMonth}-`)));
   planned.filter((session) => session.status === "completed" && session.scheduledDate.startsWith(`${visibleMonth}-`)).forEach((session) => monthCompleted.add(session.scheduledDate));
-  const monthDays = Number(overviewDateRange(calendarAnchor).monthEnd.slice(-2)); const planPercent = week.planTotal ? Math.round((week.completedPlans / week.planTotal) * 100) : 0;
+  const monthDays = Number(overviewDateRange(calendarAnchor).monthEnd.slice(-2));
+  const meso = mesocycleProgress(planned);
   const readinessSeries = wellnessData?.values.find((item) => item.key === "readiness")?.series ?? []; const maxDomainDuration = Math.max(1, ...domainOrder.map((domain) => summary.durationMinutesByDomain[domain] ?? 0));
   const completedSeries = load.map((item) => week.current.filter((session) => localDay(session.startAt, timezone) === item.day).length);
-  const durationSeries = load.map((item) => item.completed);
   const consistencyDays = twelveWeekConsistency(today, history, timezone);
   const maxLoad = Math.max(60, ...load.map((item) => item.completed + item.scheduled)); const loadCeiling = Math.ceil(maxLoad / 60) * 60;
   const incomplete = summary.metrics.strength.workingSets.dataQuality.completeness < 1 || summary.metrics.endurance.distanceMeters.dataQuality.completeness < 1;
@@ -235,13 +246,12 @@ export function OverviewDashboard({ summary, wellness, history, planned, today, 
   return <div className="overview-dashboard">
     <section className="overview-summary-grid" aria-label="This week so far">
       <SummaryCard icon="workout" title="Completed workouts" value={summary.sessionCount} className="bars-summary"><Change value={week.sessionDelta}/><MiniBars values={completedSeries} tone="coral"/></SummaryCard>
-      <SummaryCard icon="time" title="Training time" value={formatDuration(summary.totalDurationMinutes)} className="bars-summary training-summary"><Change value={week.durationPercent} suffix="% from last week"/><MiniBars values={durationSeries} tone="neutral"/></SummaryCard>
-      <SummaryCard icon="target" title="Plan progress" value={`${week.completedPlans} / ${week.planTotal}`} className="plan-summary"><small>{week.unrecordedPlans} unrecorded · {week.skippedPlans} skipped</small><span className="progress-ring" style={{ "--progress": `${planPercent * 3.6}deg` } as React.CSSProperties}><b>{planPercent}%</b></span></SummaryCard>
+      <SummaryCard icon="target" title="Plan progress" value={`${meso.completed} / ${meso.total}`} className="plan-summary"><small>this mesocycle</small><span className="progress-ring" style={{ "--progress": `${meso.percent * 3.6}deg` } as React.CSSProperties}><b>{meso.percent}%</b></span></SummaryCard>
       <SummaryCard icon="recovery" title="Recovery" value={recovery.label} className="bars-summary recovery-summary"><small>{recovery.detail}</small><MiniBars values={readinessSeries} tone="green" slots={5}/></SummaryCard>
     </section>
 
-    <div className="overview-layout"><div className="overview-primary-column">
-      <section className="overview-panel overview-activity"><header><div><h2>Activity Mix</h2><p>Your workouts this week</p></div><span className="period-chip">This week⌄</span></header>
+    <div className="overview-layout">
+      <section className="overview-panel overview-activity"><header><div><h2>Activity Mix</h2><p>Your workouts this week</p></div><button type="button" className="activity-arrow" aria-label="Open Training" title="Open Training" onClick={() => window.dispatchEvent(new CustomEvent("athria-open-training"))}><span aria-hidden="true">›</span></button></header>
         {!summary.sessionCount ? <p className="overview-empty">No completed workouts yet this week.</p> : <div className="activity-content"><ActivityDonut summary={summary}/><div className="activity-list">{domainOrder.map((domain) => {
           const count = summary.byDomain[domain] ?? 0; const duration = summary.durationMinutesByDomain[domain] ?? 0;
           const detail = domain === "strength" ? `${formatDuration(duration)} · ${summary.metrics.strength.workingSets.value} sets` : domain === "endurance" ? `${formatDuration(duration)} · ${formatDistance(summary.metrics.endurance.distanceMeters.value)}` : domain === "sport_skill" && summary.sports.length ? `${formatDuration(duration)} · ${summary.sports.map((sport) => sport.name).join(", ")}` : formatDuration(duration);
@@ -250,21 +260,20 @@ export function OverviewDashboard({ summary, wellness, history, planned, today, 
         {summary.sessionCount > 0 && incomplete && <p className="overview-note">Some workout details were unavailable, so sport-specific totals may be incomplete.</p>}
       </section>
 
+      <section className="overview-panel overview-calendar"><header><h2>{monthLabel}</h2><div className="calendar-controls"><button type="button" aria-label="Previous month" onClick={() => setVisibleMonth((value) => monthShift(value, -1))}>‹</button><button type="button" aria-label="Next month" onClick={() => setVisibleMonth((value) => monthShift(value, 1))}>›</button></div></header>
+        <div className="mini-calendar" aria-label={`${monthLabel} training calendar`}>{weekdayLabels.map((label) => <span className="mini-weekday" key={label}>{label}</span>)}{days.map((item, index) => <span className={`mini-day ${item.day === today ? "today" : ""}`} key={item.day ?? `blank-${index}`}>{item.day ? Number(item.day.slice(-2)) : ""}{item.markers.length > 0 && <span className="mini-day-markers">{item.markers.map((marker) => <i key={marker} className={marker} aria-label={marker === "completed" ? "Completed training" : marker === "planned" ? "Scheduled training" : "Skipped plan"}/>)}</span>}</span>)}</div>
+        <div className="calendar-legend"><span><i className="completed"/>Completed</span><span><i className="planned"/>Scheduled</span><span><i className="skipped"/>Skipped plan</span></div>
+      </section>
+
       <div className="overview-lower-grid"><section className="overview-panel training-load"><header><div><h2>Training Load</h2><p>Your weekly training time</p></div><div className="panel-metric"><strong>{formatDuration(summary.totalDurationMinutes)}</strong><Change value={week.durationPercent} suffix="% from last week"/></div></header>
         <div className="load-chart"><div className="load-axis"><span>{loadCeiling / 60}h</span><span>{loadCeiling / 120}h</span><span>0h</span></div><div className="load-bars">{load.map((item) => <div className="load-day" key={item.day}><span className="load-stack" style={{ height: `${((item.completed + item.scheduled) / loadCeiling) * 100}%` }}><i className="load-planned" style={{ height: `${item.completed + item.scheduled ? item.scheduled / (item.completed + item.scheduled) * 100 : 0}%` }}/><i className="load-completed" style={{ height: `${item.completed + item.scheduled ? item.completed / (item.completed + item.scheduled) * 100 : 0}%` }}/></span><small>{item.label}</small></div>)}</div></div>
       </section>
       <section className="overview-panel consistency"><header><div><h2>Consistency</h2><p>Active days this month</p></div><strong>{monthCompleted.size} / {monthDays}</strong></header>
-        <div className="consistency-grid" data-range="twelve-weeks" aria-label="Training consistency over the last twelve weeks">{consistencyDays.map((item) => <i key={item.day} className={item.active ? "active" : item.future ? "future" : ""} title={item.day}/>)}</div>
+        <div className="consistency-grid" data-range="twelve-weeks" aria-label="Training consistency over the last twelve weeks">{consistencyDays.filter((item) => !item.future).map((item) => <i key={item.day} className={item.active ? "active" : ""} title={item.day}/>)}</div>
         <div className="consistency-note"><TrophyIcon/><div><strong>{monthCompleted.size ? "Nice consistency!" : "Your month starts here"}</strong><small>{monthCompleted.size ? `You've been active ${monthCompleted.size} day${monthCompleted.size === 1 ? "" : "s"} this month.` : "Complete a workout to begin your streak."}</small></div></div>
       </section></div>
-    </div>
-
-    <div className="overview-secondary-column"><section className="overview-panel overview-wellness"><header><h2>Wellness</h2>{wellnessData && <time dateTime={wellnessData.day}>{formatWellnessDate(wellnessData.day)}</time>}</header>
-      {!wellnessData ? <p className="overview-empty">No wellness data yet. Connect Intervals.icu or record a wellness check-in.</p> : <div className="wellness-grid">{wellnessData.values.map((item) => <article className={`wellness-${item.tone}`} key={item.key}><div className="wellness-copy"><span>{item.label}</span><strong>{item.display}</strong><small className={wellnessDeltaTone(item.key, item.delta)}>{item.delta === null ? "No earlier value" : `${item.delta > 0 ? "↑" : item.delta < 0 ? "↓" : "→"} ${Math.abs(item.delta)} from previous`}</small></div><Sparkline values={item.series}/></article>)}</div>}
-    </section>
-    <section className="overview-panel overview-calendar"><header><h2>{monthLabel}</h2><div className="calendar-controls"><button type="button" aria-label="Previous month" onClick={() => setVisibleMonth((value) => monthShift(value, -1))}>‹</button><button type="button" aria-label="Next month" onClick={() => setVisibleMonth((value) => monthShift(value, 1))}>›</button></div></header>
-      <div className="mini-calendar" aria-label={`${monthLabel} training calendar`}>{weekdayLabels.map((label) => <span className="mini-weekday" key={label}>{label}</span>)}{days.map((item, index) => <span className={`mini-day ${item.day === today ? "today" : ""}`} key={item.day ?? `blank-${index}`}>{item.day ? Number(item.day.slice(-2)) : ""}{item.markers.length > 0 && <span className="mini-day-markers">{item.markers.map((marker) => <i key={marker} className={marker} aria-label={marker === "completed" ? "Completed training" : marker === "planned" ? "Scheduled training" : "Skipped plan"}/>)}</span>}</span>)}</div>
-      <div className="calendar-legend"><span><i className="completed"/>Completed</span><span><i className="planned"/>Scheduled</span><span><i className="skipped"/>Skipped plan</span></div>
-    </section></div></div>
+      <section className="overview-panel overview-wellness"><header><h2>Wellness</h2>{wellnessData && <time dateTime={wellnessData.day}>{formatWellnessDate(wellnessData.day)}</time>}</header>
+        {!wellnessData ? <p className="overview-empty">No wellness data yet. Connect Intervals.icu or record a wellness check-in.</p> : <div className="wellness-grid">{wellnessData.values.map((item) => <article className={`wellness-${item.tone}`} key={item.key}><div className="wellness-copy"><span>{item.label}</span><strong>{item.display}</strong><small className={wellnessDeltaTone(item.key, item.delta)}>{item.delta === null ? "No earlier value" : `${item.delta > 0 ? "↑" : item.delta < 0 ? "↓" : "→"} ${Math.abs(item.delta)} from previous`}</small></div><Sparkline values={item.series}/></article>)}</div>}
+      </section></div>
   </div>;
 }

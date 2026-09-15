@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { OverviewDashboard, calendarDays, formatWellnessDate, overviewDateRange, recoveryStatus, sparklineGeometry, twelveWeekConsistency, weeklyLoad, weeklyOverview, wellnessHighlights } from "./overview";
+import { OverviewDashboard, calendarDays, formatWellnessDate, mesocycleProgress, overviewDateRange, recoveryStatus, sparklineGeometry, twelveWeekConsistency, weeklyLoad, weeklyOverview, wellnessHighlights } from "./overview";
 import type { CalendarSession, TrainingHistorySession, TrainingSummary, WellnessRecord } from "./view-models";
 
 const quality = { completeness: 1, missingFields: [], anomalies: [] };
@@ -30,6 +30,18 @@ describe("Overview", () => {
     const days = calendarDays("2026-09-11", history, planned, "Asia/Hong_Kong");
     expect(days.find((item) => item.day === "2026-09-11")?.marker).toBe("completed");
     expect(days.find((item) => item.day === "2026-09-12")?.marker).toBe("skipped");
+  });
+
+  it("always reserves six calendar weeks", () => {
+    const fiveWeekMonth = calendarDays("2026-09-11", [], []);
+    const sixWeekMonth = calendarDays("2026-08-11", [], []);
+
+    expect(fiveWeekMonth).toHaveLength(42);
+    expect(fiveWeekMonth.at(-1)?.day).toBeNull();
+    expect(sixWeekMonth).toHaveLength(42);
+    expect(sixWeekMonth.filter((item) => item.day === null)).toHaveLength(11);
+    expect(sixWeekMonth.findIndex((item) => item.day === "2026-08-01")).toBe(5);
+    expect(sixWeekMonth.findIndex((item) => item.day === "2026-08-31")).toBe(35);
   });
 
   it("selects four prioritized wellness fields and compares prior matching values", () => {
@@ -77,6 +89,18 @@ describe("Overview", () => {
     expect(load[1]).toMatchObject({ completed: 45, scheduled: 30 });
   });
 
+  it("counts mesocycle completion across all weeks for the plan progress card", () => {
+    const planned = [
+      { scheduledDate: "2026-09-07", status: "completed" },
+      { scheduledDate: "2026-09-11", status: "planned" },
+      { scheduledDate: "2026-09-14", status: "skipped" },
+    ] as CalendarSession[];
+    expect(mesocycleProgress(planned)).toEqual({ completed: 1, total: 3, percent: 33 });
+    const html = renderToStaticMarkup(createElement(OverviewDashboard, { summary, wellness: [], history: [], planned, today: "2026-09-11", timezone: "Asia/Hong_Kong" }));
+    expect(html).toContain("1 / 3");
+    expect(html).toContain("this mesocycle");
+  });
+
   it("builds a timezone-aware twelve-week consistency window", () => {
     const history = [{ id: "done", startAt: "2026-09-10T16:30:00Z" }] as TrainingHistorySession[];
     const days = twelveWeekConsistency("2026-09-11", history, "Asia/Hong_Kong");
@@ -84,6 +108,13 @@ describe("Overview", () => {
     expect(days[0]?.day).toBe("2026-06-22");
     expect(days.at(-1)).toMatchObject({ day: "2026-09-13", active: false, future: true });
     expect(days.find((item) => item.day === "2026-09-11")).toMatchObject({ active: true, future: false });
+  });
+
+  it("renders consistency squares only through today", () => {
+    const html = renderToStaticMarkup(createElement(OverviewDashboard, { summary, wellness: [], history: [], planned: [], today: "2026-09-11", timezone: "Asia/Hong_Kong" }));
+    expect(html).toContain('title="2026-09-11"');
+    expect(html).not.toContain('title="2026-09-12"');
+    expect(html).not.toContain('title="2026-09-13"');
   });
 
   it("maps readiness to recovery copy and handles missing data", () => {
@@ -101,19 +132,29 @@ describe("Overview", () => {
     expect(html).toContain("Training Load");
     expect(html).toContain("Consistency");
     expect(html).toContain("Skipped plan");
+    expect(html).toContain('class="activity-arrow"');
+    expect(html).toContain('aria-label="Open Training"');
     expect(html).toContain('data-icon="workout"');
-    expect(html).toContain('data-icon="time"');
     expect(html).toContain('data-icon="target"');
     expect(html).toContain('data-icon="recovery"');
     expect(html).toContain('data-chart="coral-bars"');
-    expect(html).toContain('data-chart="neutral-bars"');
     expect(html).toContain('data-chart="green-bars"');
+    expect(html).toContain("donut-segment domain-strength");
+    expect(html).toContain("donut-segment domain-endurance");
+    expect(html).toContain("donut-segment domain-sport_skill");
+    expect(html).toContain("donut-segment domain-mind_body");
+    expect(html).toContain("donut-segment domain-recovery");
     expect(html).toContain("progress-ring");
+    expect(html).toContain("this mesocycle");
     expect(html).toContain('data-icon="trophy"');
     expect(html).toContain('data-range="twelve-weeks"');
     expect(html).toContain('data-chart="wellness-trend"');
     expect(html).toContain('<path class="sparkline-line"');
+    expect(html).toContain("<linearGradient");
+    expect(html).toContain('fill="url(#wellness-spark-');
+    expect(html).toContain('mask="url(#wellness-spark-mask-');
     expect(html).toContain('<time dateTime="2026-09-10">Sep 10, 2026</time>');
+    expect(html.indexOf("September 2026")).toBeLessThan(html.indexOf("Wellness"));
     expect(html).toContain('class="favorable">↓ 1 from previous</small>');
     expect(html).not.toContain("Latest ·");
     expect(html).not.toContain("Latest status");

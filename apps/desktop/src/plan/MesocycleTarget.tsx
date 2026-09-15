@@ -25,10 +25,6 @@ function LineIcon({ children, className = "" }: { children: ReactNode; className
   return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{children}</svg>;
 }
 
-function TargetMark() {
-  return <span className="mt-mark" aria-hidden="true"><span /></span>;
-}
-
 function CalendarIcon() {
   return <LineIcon><rect x="4" y="5.5" width="16" height="14" rx="2"/><path d="M8 3.5v4M16 3.5v4M4 9.5h16"/><path d="M8 13h2M14 13h2M8 16h2"/></LineIcon>;
 }
@@ -75,7 +71,7 @@ function DetailSection({ kind, title, children }: { kind: "supporting" | "mainte
 }
 
 export function MesocycleTarget({ plan, today, currentWeek, currentPhaseNames, status = "current" }: MesocycleTargetProps) {
-  const [detailsOpen, setDetailsOpen] = useState(true);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const target = plan.target;
   const durationWeeks = Math.max(1, plan.mesocycle.durationWeeks);
   const endDate = addDays(plan.effectiveStartDate, durationWeeks * 7 - 1);
@@ -89,7 +85,7 @@ export function MesocycleTarget({ plan, today, currentWeek, currentPhaseNames, s
   return <section className="mesocycle-card mt-card">
     <span className="sr-only">{statusLabels[status]}</span>
     <header className="mt-heading">
-      <div className="mt-title-group"><TargetMark/><div className="mt-heading-text"><h2>{plan.title}</h2><p>{range}</p></div></div>
+      <div className="mt-title-group"><div className="mt-heading-text"><h2>{plan.title}</h2><p>{range}</p></div></div>
       <span className="mt-duration"><CalendarIcon/><strong>{durationWeeks} weeks</strong></span>
     </header>
 

@@ -8,7 +8,7 @@ type Action = "dev" | "service" | "debug" | "app" | "release" | "msi";
 interface HostBuild {
   platform: "windows" | "macos";
   rustTarget: "x86_64-pc-windows-msvc" | "aarch64-apple-darwin";
-  bunTarget: "bun-windows-x64-baseline" | "bun-darwin-arm64";
+  bunTarget: "bun-windows-x64" | "bun-darwin-arm64";
   sidecarName: string;
   nativeDependency: string;
 }
@@ -29,7 +29,7 @@ function hostBuild(): HostBuild {
     return {
       platform: "windows",
       rustTarget: "x86_64-pc-windows-msvc",
-      bunTarget: "bun-windows-x64-baseline",
+      bunTarget: "bun-windows-x64",
       sidecarName: "athria-service-x86_64-pc-windows-msvc.exe",
       nativeDependency: "@tauri-apps+cli-win32-x64-msvc@",
     };

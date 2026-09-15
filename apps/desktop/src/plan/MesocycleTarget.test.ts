@@ -30,7 +30,7 @@ const plan: CurrentPlan = {
 };
 
 describe("MesocycleTarget", () => {
-  it("renders the reference-style plan details expanded by default", () => {
+  it("renders the plan details collapsed by default", () => {
     const html = renderToStaticMarkup(createElement(MesocycleTarget, {
       plan,
       today: "2026-09-07",
@@ -38,11 +38,14 @@ describe("MesocycleTarget", () => {
       currentPhaseNames: [],
     }));
 
-    expect(html).toContain('aria-expanded="true"');
+    expect(html).toContain('aria-expanded="false"');
     expect(html).toContain("Plan details");
-    expect(html).toContain('id="mt-details-panel"');
-    expect(html).toContain("Maintain twice weekly");
-    expect(html).toContain('id="mt-supporting-panel"');
+    expect(html).not.toContain('id="mt-details-panel"');
+    expect(html).not.toContain("Maintain twice weekly");
+    expect(html).not.toContain('id="mt-supporting-panel"');
+    expect(html).toContain("10K Build");
+    expect(html).toContain("Sep 7 – Sep 13");
+    expect(html).not.toContain("mt-mark");
   });
 
   it("keeps legacy plans readable without rendering an empty details shell", () => {

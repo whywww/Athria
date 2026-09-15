@@ -845,12 +845,13 @@ Template 是次要入口，不能成为创建计划的强制第一步。
 
 ### 16.1 颜色
 
-建议每个 domain 使用稳定的辅助颜色，但同时提供文字或 icon：
+建议每个 domain 使用稳定的辅助颜色，但同时提供文字或 icon。标准配色如下（唯一来源为 `apps/desktop/src/styles.css` 中的 `--domain-*` token，所有页面必须引用，不得另行定义）：
 
-- Strength。
-- Endurance。
-- Sport / Skill。
-- Recovery / Mind-body。
+- Strength：绿色（solid `#10ad64`，ink `#099855`，soft `#e9f9f1`）。
+- Endurance：蓝色（solid `#1478ee`，ink `#0f6ed9`，soft `#ebf4ff`）。
+- Sport / Skill：橙色（solid `#f06425`，ink `#e45a1d`，soft `#fff2e9`）。
+- Mind-body：玫红色（solid `#ec2483`，ink `#dc1470`，soft `#fff0f7`）。
+- Recovery：紫色（solid `#704bf2`，ink `#6841e6`，soft `#f3efff`）。
 
 颜色用于快速扫描，不代表强度。High intensity 不能简单用与 Endurance 相同的颜色深浅表达，以免混淆运动类型和训练强度。
 

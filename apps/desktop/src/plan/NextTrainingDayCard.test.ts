@@ -53,10 +53,13 @@ function render(value: NextTrainingDay) {
 describe("NextTrainingDayCard", () => {
   it("renders the full prescription inline instead of an open-details drawer", () => {
     const html = render(strengthDay);
+    expect(html).not.toContain("session-heading");
     expect(html).toContain("Main lifts");
     expect(html).toContain("Strength");
     expect(html).toContain("Back Squat");
     expect(html).toContain("4 × 5");
+    expect(html).toContain("Maintain squat strength.");
+    expect(html).toContain("45 min");
     expect(html.match(/>Prescription</g)).toHaveLength(1);
     expect(html).toContain("Add as completed workout");
     expect(html).not.toContain("Open details");
