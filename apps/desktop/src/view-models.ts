@@ -228,6 +228,7 @@ export function parseSyncRange(value: string): SyncRange { return value === "inc
 export interface HevyImportStatus { fileName: string; importedAt: string; status: string; counts: { sessions?: number; sets?: number; rows?: number } }
 export interface IntervalsConnectionStatus {
   configured: boolean;
+  locked: boolean;
   athleteId: string;
   sync: null | {
     lastAttemptAt: string;
@@ -240,6 +241,7 @@ export interface IntervalsConnectionStatus {
 }
 export interface XunjiConnectionStatus {
   configured: boolean;
+  locked: boolean;
   sync: null | {
     lastAttemptAt: string;
     lastSuccessAt: string | null;
@@ -259,6 +261,7 @@ export interface DoctorResult { databasePath: string }
 export interface BackupPreview {
   path: string;
   counts: { workouts: number; templates: number; plans: number };
+  includesCredentials: boolean;
 }
 export const dashboardPages = [
   { id: "Overview", label: "Overview", icon: "⌂", group: "primary" },

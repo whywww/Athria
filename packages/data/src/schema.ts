@@ -100,6 +100,44 @@ export const connectionSyncState = sqliteTable("connection_sync_state", {
   data: text("data", { mode: "json" }).notNull(),
 }, (table) => [uniqueIndex("connection_sync_owner_source").on(table.ownerId, table.source)]);
 
+// One database is one local Athria user and therefore owns exactly one vault
+// identity. The UUID is an identifier, never encryption key material.
+export const vaultMeta = sqliteTable("vault_meta", {
+  id: integer("id").primaryKey(),
+  databaseUuid: text("database_uuid").notNull().unique(),
+  formatVersion: integer("format_version").notNull(),
+  kdfAlgorithm: text("kdf_algorithm"),
+  kdfMemoryKib: integer("kdf_memory_kib"),
+  kdfIterations: integer("kdf_iterations"),
+  kdfParallelism: integer("kdf_parallelism"),
+  salt: text("salt"),
+  wrapNonce: text("wrap_nonce"),
+  wrappedMasterKey: text("wrapped_master_key"),
+  checkNonce: text("check_nonce"),
+  checkCiphertext: text("check_ciphertext"),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const connectionSecrets = sqliteTable("connection_secrets", {
+  source: text("source").primaryKey(),
+  config: text("config", { mode: "json" }).notNull(),
+  cipherVersion: integer("cipher_version").notNull(),
+  nonce: text("nonce").notNull(),
+  ciphertext: text("ciphertext").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+// Created by the v23 migration for an early credential-export design that
+// wrote plaintext credentials into backup files. The v24 connection vault
+// superseded it: this table is never written and stays empty, and connection
+// keys only ever exist as ciphertext in connection_secrets.
+export const connectionCredentials = sqliteTable("connection_credentials", {
+  ownerId: text("owner_id").notNull(),
+  source: text("source").notNull(),
+  data: text("data", { mode: "json" }).notNull(),
+  exportedAt: text("exported_at").notNull(),
+}, (table) => [uniqueIndex("connection_credentials_owner_source").on(table.ownerId, table.source)]);
+
 export const sessionTemplates = sqliteTable("session_templates", {
   id: text("id").primaryKey(),
   ownerId: text("owner_id").notNull(),

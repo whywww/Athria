@@ -6,7 +6,7 @@ import {
   type AthleteProfile, type CalendarSession, type CurrentPlan, type NextTrainingDay,
   type SessionTemplate, type StoredSessionTemplate, type TemplateComponentDomain, type TrainingTaxonomy,
 } from "../view-models";
-import { Empty, ErrorBanner, Loading, PrimaryPageHeader, weekdays } from "../components";
+import { EmptyState, ErrorBanner, Loading, PrimaryPageHeader, weekdays } from "../components";
 import { domainIconPath } from "../domain-icons";
 import { MesocycleTarget } from "./MesocycleTarget";
 import { ProgressionByDomain } from "./ProgressionByDomain";
@@ -95,7 +95,7 @@ function TemplateLibrary({ onBack, preferredName }: { onBack: () => void; prefer
   return <div className="plan-page template-library">
     <PrimaryPageHeader preferredName={preferredName} subtitle="Reusable workout patterns you can create, edit or delete." actions={<div className="actions"><button type="button" className="secondary template-library-back" onClick={onBack}><TemplateBackIcon/>Back to plan</button><button type="button" className="template-library-create" onClick={() => begin(emptyTemplate(), "create")}><TemplatePlusIcon/>Create template</button></div>}/>
     <ErrorBanner error={query.error ?? (editing ? undefined : error)}/>
-    {query.isPending ? <Loading/> : !query.data?.length ? <Empty>No templates yet.</Empty> : <div className="template-library-grid">{query.data.map((item) => <TemplateCard key={item.id} item={item} onEdit={(value) => begin(value, "edit")} onRemove={remove}/>)}</div>}
+    {query.isPending ? <Loading/> : !query.data?.length ? <EmptyState title="No templates yet."/> : <div className="template-library-grid">{query.data.map((item) => <TemplateCard key={item.id} item={item} onEdit={(value) => begin(value, "edit")} onRemove={remove}/>)}</div>}
     {editing && <TemplateEditorModal value={{ template: editing.template, mode: editing.mode }} taxonomy={taxonomy.data} error={error ?? taxonomy.error} busy={saving} onChange={(template) => setEditing((current) => current ? { ...current, template } : current)} onClose={() => setEditing(null)} onSave={() => void save()}/>}
   </div>;
 }
@@ -168,6 +168,18 @@ export function NextTrainingDayCard({ value, plan }: { value: NextTrainingDay | 
     </article>)}</div></section>;
 }
 
+export function PlanEmptyState() {
+  return <section className="plan-empty">
+    <h2>No current plan</h2>
+    <p>Plans are created by your connected AI Agent — not inside Athria.</p>
+    <ol className="plan-empty-steps">
+      <li><span aria-hidden="true">1</span><div><strong>Connect your AI agent</strong><p>Set up MCP from Help &amp; Support, then enable the Athria server in your agent.</p></div></li>
+      <li><span aria-hidden="true">2</span><div><strong>Ask it to build your plan</strong><p>It creates complete Weekly Sessions from your profile, training history and synced workouts.</p></div></li>
+      <li><span aria-hidden="true">3</span><div><strong>Review it here</strong><p>Phases, progressions and the weekly calendar open on this page.</p></div></li>
+    </ol>
+  </section>;
+}
+
 export function CurrentPlanPage() {
   const [library, setLibrary] = useState(false);
   const planQuery = useQuery({ queryKey: ["current-plan"], queryFn: () => api<CurrentPlan | null>("/api/plans/current") });
@@ -178,5 +190,5 @@ export function CurrentPlanPage() {
   if (library) return <TemplateLibrary onBack={() => setLibrary(false)} preferredName={profileQuery.data?.preferredName}/>;
   const templates = templatesQuery.data ?? [];
   const loading = planQuery.isPending || templatesQuery.isPending || profileQuery.isPending;
-  return <div className="plan-page"><PrimaryPageHeader preferredName={profileQuery.data?.preferredName} subtitle="Your AI-guided training plan — tailored to you, covering every domain." actions={<div className="actions"><button className="secondary plan-templates-button" onClick={() => setLibrary(true)}>View all templates<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div>}/><ErrorBanner error={planQuery.error ?? templatesQuery.error ?? profileQuery.error ?? nextDay.error}/>{loading ? <Loading/> : !planQuery.data ? <div className="card empty-plan"><h2>No current plan</h2><p>Ask your connected AI Agent to create a plan using your profile, training history and complete Weekly Sessions.</p><button type="button" className="secondary" onClick={() => setLibrary(true)}>Browse templates</button></div> : <CurrentPlanView plan={planQuery.data} templates={templates} profile={profileQuery.data!}/>}</div>;
+  return <div className="plan-page"><PrimaryPageHeader preferredName={profileQuery.data?.preferredName} subtitle="Your AI-guided training plan — tailored to you, covering every domain." actions={<div className="actions"><button className="secondary plan-templates-button" onClick={() => setLibrary(true)}>View all templates<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div>}/><ErrorBanner error={planQuery.error ?? templatesQuery.error ?? profileQuery.error ?? nextDay.error}/>{loading ? <Loading/> : !planQuery.data ? <PlanEmptyState/> : <CurrentPlanView plan={planQuery.data} templates={templates} profile={profileQuery.data!}/>}</div>;
 }

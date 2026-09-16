@@ -40,7 +40,7 @@ Athria's deterministic Core performs calculations and validation; the connected 
 The current MCP MVP provides:
 
 - A Tauri 2 and React desktop dashboard for setup, history, training state, devices, templates, and the current mesocycle.
-- Local SQLite persistence with migrations, WAL, backup, and restore.
+- Local SQLite persistence with migrations, WAL, and restore; back up manually by copying the database file.
 - MCP v2 over stdio, plus authenticated Streamable HTTP on a loopback-only address.
 - Deterministic strength and endurance metrics with formula versions and explicit data-quality indicators.
 - Plan Schema v7 validation with fixed-week, flexible-week, and interval rhythms, authoritative Weekly Sessions, structured multi-sport prescriptions, and independent phase timelines by domain.
@@ -67,7 +67,7 @@ See [Known limitations](docs/KNOWN_LIMITATIONS.md) for the current technical and
 - **Safer writes:** schema checks, blocker rules, snapshot freshness, ownership, and revisions protect persisted state.
 - **Honest uncertainty:** validation reports missing facts and unknown outcomes instead of inventing inputs.
 - **Inspectable workflows:** the dashboard and MCP server use the same application-service boundary.
-- **Portable data:** open or back up a standalone SQLite database; credentials remain in the operating-system credential manager.
+- **Portable data:** open or back up one standalone SQLite database; one database password gates access inside Athria and encrypts the connection keys that travel with the file.
 
 ## Quick start
 
@@ -201,7 +201,7 @@ Set `ATHRIA_DATABASE_PATH` when an isolated development database is needed. Do n
 ```text
 apps/
   desktop/       Tauri shell and React dashboard
-  service/       Bun sidecar, local HTTP API, MCP entry point, and backup
+  service/       Bun sidecar, local HTTP API, and MCP entry point
 packages/
   application/   Shared use cases and tool registry
   core/          Deterministic calculations and validation
@@ -221,7 +221,8 @@ The dashboard and MCP server call the same application-service boundary. Busines
 - The service listens only on `127.0.0.1`, validates the Host header, and restricts browser origins.
 - Streamable HTTP requires a bearer token; the dashboard-managed MCP token is stored in the operating-system credential manager and is not exposed through MCP tools.
 - MCP does not expose arbitrary SQL, arbitrary file reads, secrets, database deletion, or validation bypasses.
-- Backups are self-contained `.sqlite3` copies and exclude credentials.
+- One database password gates access inside Athria (the app asks for it before showing data whenever this computer has not unlocked the database) and wraps the master key that encrypts saved connection keys.
+- Backups are self-contained `.sqlite3` file copies made by the user and include connection keys only as authenticated ciphertext protected by the database password.
 - Pre-v0.1 databases are not migrated into this MVP.
 
 Read [Backup and restore](docs/BACKUP.md) before moving or restoring data.
@@ -282,7 +283,7 @@ Athria 的确定性 Core 负责计算和校验；连接的 MCP 客户端负责�
 当前 MCP MVP 提供：
 
 - 基于 Tauri 2 和 React 的桌面 Dashboard，用于初始设置、训练历史、训练状态、设备连接、训练模板和当前训练周期管理。
-- 使用 SQLite、migration 和 WAL 的本地数据持久化，以及备份与恢复能力。
+- 使用 SQLite、migration 和 WAL 的本地数据持久化与恢复能力；备份即手动复制数据库文件。
 - 基于 stdio 的 MCP v2，以及仅在本机回环地址提供、需要身份验证的 Streamable HTTP。
 - 可复现的力量与耐力训练指标，并明确标记公式版本和数据质量。
 - 基于 Plan Schema v7 的计划校验，支持固定周、灵活周和间隔节奏、权威周处方、结构化多运动内容和各领域独立 phase timeline。
@@ -309,7 +310,7 @@ Athria 不诊断伤病、不提供治疗方案、不作医疗决定，也不保�
 - **写入更安全：** Schema、阻断规则、快照时效、数据归属和 revision 共同保护持久化状态。
 - **如实呈现不确定性：** 校验会报告缺失事实和未知结果，而不是编造输入。
 - **工作流可检查：** Dashboard 和 MCP 服务器共用同一个 Application Service 边界。
-- **数据可迁移：** 本地备份包含数据库和保留的导入文件，但不包含凭据。
+- **数据可迁移：** 手动复制的数据库文件即完整备份，连接凭据仅以密文形式包含其中。
 
 ## 快速开始
 
@@ -442,7 +443,7 @@ bun run perf:smoke
 ```text
 apps/
   desktop/       Tauri 外壳和 React Dashboard
-  service/       Bun sidecar、本地 HTTP API、MCP 入口和备份
+  service/       Bun sidecar、本地 HTTP API 和 MCP 入口
 packages/
   application/   共用的 use case 和工具注册表
   core/          确定性计算和校验
@@ -462,7 +463,7 @@ Dashboard 和 MCP 服务器调用同一个 Application Service 边界。业务�
 - 服务仅监听 `127.0.0.1`，校验 Host header，并限制浏览器 Origin。
 - Streamable HTTP 需要 Bearer Token；Dashboard 管理的 MCP Token 保存在操作系统凭据管理器中，且不会通过 MCP 工具暴露。
 - MCP 不提供任意 SQL、任意文件读取、密钥访问、数据库删除或绕过校验的能力。
-- 备份包含 SQLite 数据库和保留的导入文件，但不包含凭据。
+- 备份为用户手动复制的 `.sqlite3` 数据库文件；连接凭据仅以受数据库密码保护的密文形式包含其中。
 - 早于 v0.1 的数据库不会迁移至当前 MVP。
 
 移动或恢复数据之前，请阅读[备份与恢复](docs/BACKUP.md)。

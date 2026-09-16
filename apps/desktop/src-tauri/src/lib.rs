@@ -14,6 +14,10 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_shell::{process::CommandChild, ShellExt};
 use uuid::Uuid;
+use zeroize::Zeroizing;
+
+mod vault;
+use vault::{EncryptedSecret, VaultBundle};
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -26,6 +30,7 @@ struct ServiceInfo {
 struct RuntimeState {
     service: ServiceInfo,
     child: Mutex<Option<CommandChild>>,
+    vault_key: Mutex<Option<Zeroizing<Vec<u8>>>>,
 }
 
 #[derive(Deserialize)]
@@ -41,6 +46,10 @@ struct ApiError {
 fn credential(name: &str) -> Result<keyring::Entry, String> {
     keyring::Entry::new("Athria", &format!("local-user:{name}"))
         .map_err(|error| error.to_string())
+}
+
+fn vault_credential(database_uuid: &str) -> Result<keyring::Entry, String> {
+    keyring::Entry::new("Athria", &format!("vault:{database_uuid}:v1")).map_err(|error| error.to_string())
 }
 
 fn new_runtime_token() -> String { Uuid::new_v4().simple().to_string() }
@@ -223,48 +232,201 @@ async fn service_get(state: &RuntimeState, path: &str) -> Result<Value, String> 
     }
 }
 
+async fn service_delete(state: &RuntimeState, path: &str) -> Result<Value, String> {
+    let response = reqwest::Client::new().delete(format!("{}{}", state.service.base_url, path)).bearer_auth(&state.service.token)
+        .send().await.map_err(|error| error.to_string())?;
+    let status = response.status();
+    let value: Value = response.json().await.map_err(|error| error.to_string())?;
+    if status.is_success() { Ok(value) } else {
+        let envelope: ApiErrorEnvelope = serde_json::from_value(value).unwrap_or(ApiErrorEnvelope { error: None });
+        Err(envelope.error.map(|error| error.message).unwrap_or_else(|| format!("Athria service returned HTTP {status}")))
+    }
+}
+
+async fn vault_bundle(state: &RuntimeState) -> Result<VaultBundle, String> {
+    serde_json::from_value(service_get(state, "/api/system/vault").await?).map_err(|error| format!("Athria could not read the database vault: {error}"))
+}
+
+fn cache_master_key(state: &RuntimeState, database_uuid: &str, master_key: &[u8], persist: Option<bool>) -> Result<(), String> {
+    match persist {
+        Some(true) => { vault_credential(database_uuid)?.set_password(&vault::encode_master_key(master_key)).map_err(|error| error.to_string())?; }
+        Some(false) => { if let Ok(entry) = vault_credential(database_uuid) { let _ = entry.delete_credential(); } }
+        None => {}
+    }
+    *state.vault_key.lock().expect("runtime state poisoned") = Some(Zeroizing::new(master_key.to_vec()));
+    Ok(())
+}
+
+fn cached_master_key(state: &RuntimeState, bundle: &VaultBundle) -> Option<Zeroizing<Vec<u8>>> {
+    if let Some(key) = state.vault_key.lock().expect("runtime state poisoned").as_ref() {
+        if bundle.envelope.as_ref().is_some_and(|envelope| vault::verify_master_key(&bundle.database_uuid, key, envelope).is_ok()) {
+            return Some(Zeroizing::new(key.to_vec()));
+        }
+    }
+    let encoded = vault_credential(&bundle.database_uuid).ok()?.get_password().ok()?;
+    let key = vault::decode_master_key(&encoded).ok()?;
+    if bundle.envelope.as_ref().is_some_and(|envelope| vault::verify_master_key(&bundle.database_uuid, &key, envelope).is_ok()) {
+        *state.vault_key.lock().expect("runtime state poisoned") = Some(Zeroizing::new(key.to_vec()));
+        Some(key)
+    } else { None }
+}
+
+fn secret_for<'a>(bundle: &'a VaultBundle, source: &str) -> Option<&'a EncryptedSecret> {
+    bundle.secrets.iter().find(|secret| secret.source == source)
+}
+
+async fn decrypted_connection_key(state: &RuntimeState, source: &str) -> Result<Zeroizing<String>, String> {
+    let bundle = vault_bundle(state).await?;
+    let envelope = bundle.envelope.as_ref().ok_or_else(|| "This database has no password set yet.".to_string())?;
+    let master = cached_master_key(state, &bundle).ok_or_else(|| "This database is locked. Enter its database password to continue.".to_string())?;
+    vault::verify_master_key(&bundle.database_uuid, &master, envelope)?;
+    let secret = secret_for(&bundle, source).ok_or_else(|| format!("{source} is not configured."))?;
+    vault::decrypt_secret(&bundle.database_uuid, secret, &master)
+}
+
+async fn save_connection_key(state: &RuntimeState, source: &str, config: Value, plaintext: &str, password: Option<&str>) -> Result<(), String> {
+    let bundle = vault_bundle(state).await?;
+    if let Some(envelope) = bundle.envelope.as_ref() {
+        let master = if let Some(key) = cached_master_key(state, &bundle) { key }
+            else if let Some(password) = password { vault::unlock(&bundle.database_uuid, password, envelope)? }
+            else { return Err("This database is locked. Enter its database password to continue.".to_string()); };
+        let secret = vault::encrypt_secret(&bundle.database_uuid, source, config, plaintext, &master)?;
+        service_post(state, &format!("/api/system/vault/secrets/{source}"), json!({ "secret": secret })).await?;
+        cache_master_key(state, &bundle.database_uuid, &master, None)?;
+        return Ok(());
+    }
+    let password = password.ok_or_else(|| "Set a database password before saving the first connection.".to_string())?;
+    let master = vault::new_master_key();
+    let envelope = vault::create_envelope(&bundle.database_uuid, password, &master)?;
+    let secret = vault::encrypt_secret(&bundle.database_uuid, source, config, plaintext, &master)?;
+    service_post(state, "/api/system/vault/initialize", json!({ "envelope": envelope, "secrets": [secret] })).await?;
+    cache_master_key(state, &bundle.database_uuid, &master, None)
+}
+
 #[tauri::command]
-async fn test_intervals_credentials(state: State<'_, RuntimeState>, api_key: String, athlete_id: String) -> Result<Value, String> {
+async fn vault_status(state: State<'_, RuntimeState>) -> Result<Value, String> {
+    let bundle = vault_bundle(&state).await?;
+    let initialized = bundle.envelope.is_some();
+    let locked = initialized && cached_master_key(&state, &bundle).is_none();
+    let legacy_sources: Vec<&str> = [("intervals", "intervals-api-key"), ("xunji", "xunji-api-key")].into_iter()
+        .filter_map(|(source, name)| credential(name).ok()?.get_password().ok().filter(|value| !value.is_empty()).map(|_| source)).collect();
+    Ok(json!({ "databaseUuid": bundle.database_uuid, "initialized": initialized, "locked": locked, "legacySources": legacy_sources }))
+}
+
+#[tauri::command]
+async fn setup_vault(state: State<'_, RuntimeState>, password: String) -> Result<Value, String> {
+    let bundle = vault_bundle(&state).await?;
+    if bundle.envelope.is_some() { return Err("This database already has a password.".to_string()); }
+    let master = vault::new_master_key();
+    let envelope = vault::create_envelope(&bundle.database_uuid, &password, &master)?;
+    let mut secrets = Vec::new();
+    if let Ok(api_key) = credential("intervals-api-key").and_then(|entry| entry.get_password().map_err(|error| error.to_string())) {
+        if !api_key.is_empty() {
+            let athlete_id = credential("intervals-athlete-id").ok().and_then(|entry| entry.get_password().ok()).unwrap_or_else(|| "0".to_string());
+            secrets.push(vault::encrypt_secret(&bundle.database_uuid, "intervals", json!({ "athleteId": athlete_id }), &api_key, &master)?);
+        }
+    }
+    if let Ok(api_key) = credential("xunji-api-key").and_then(|entry| entry.get_password().map_err(|error| error.to_string())) {
+        if !api_key.is_empty() { secrets.push(vault::encrypt_secret(&bundle.database_uuid, "xunji", json!({}), &api_key, &master)?); }
+    }
+    service_post(&state, "/api/system/vault/initialize", json!({ "envelope": envelope, "secrets": secrets })).await?;
+    cache_master_key(&state, &bundle.database_uuid, &master, Some(true))?;
+    for name in ["intervals-api-key", "intervals-athlete-id", "xunji-api-key"] {
+        if let Ok(entry) = credential(name) { let _ = entry.delete_credential(); }
+    }
+    Ok(json!({ "status": "unlocked" }))
+}
+
+#[tauri::command]
+async fn unlock_vault(state: State<'_, RuntimeState>, password: String, remember: bool) -> Result<Value, String> {
+    let bundle = vault_bundle(&state).await?;
+    let envelope = bundle.envelope.as_ref().ok_or_else(|| "This database has no password set yet.".to_string())?;
+    let master = vault::unlock(&bundle.database_uuid, &password, envelope)?;
+    cache_master_key(&state, &bundle.database_uuid, &master, Some(remember))?;
+    Ok(json!({ "status": "unlocked" }))
+}
+
+#[tauri::command]
+async fn change_vault_password(state: State<'_, RuntimeState>, current_password: Option<String>, new_password: String) -> Result<Value, String> {
+    let bundle = vault_bundle(&state).await?;
+    let old_envelope = bundle.envelope.as_ref().ok_or_else(|| "This database has no password set yet.".to_string())?;
+    let master = if let Some(key) = cached_master_key(&state, &bundle) { key }
+        else { vault::unlock(&bundle.database_uuid, current_password.as_deref().ok_or_else(|| "Enter the current database password.".to_string())?, old_envelope)? };
+    let envelope = vault::create_envelope(&bundle.database_uuid, &new_password, &master)?;
+    service_post(&state, "/api/system/vault/envelope", json!({ "envelope": envelope })).await?;
+    cache_master_key(&state, &bundle.database_uuid, &master, None)?;
+    Ok(json!({ "status": "changed" }))
+}
+
+#[tauri::command]
+async fn reset_vault_password(state: State<'_, RuntimeState>, password: String) -> Result<Value, String> {
+    let bundle = vault_bundle(&state).await?;
+    if bundle.envelope.is_none() { return Err("This database has no password set yet.".to_string()); }
+    let master = vault::new_master_key();
+    let envelope = vault::create_envelope(&bundle.database_uuid, &password, &master)?;
+    service_post(&state, "/api/system/vault/reset", json!({ "envelope": envelope })).await?;
+    cache_master_key(&state, &bundle.database_uuid, &master, Some(true))?;
+    Ok(json!({ "status": "reset" }))
+}
+
+#[tauri::command]
+async fn disconnect_connection(state: State<'_, RuntimeState>, source: String) -> Result<Value, String> {
+    if !matches!(source.as_str(), "intervals" | "xunji") { return Err("Unsupported connection source.".to_string()); }
+    service_delete(&state, &format!("/api/system/vault/secrets/{source}")).await
+}
+
+#[tauri::command]
+async fn test_intervals_credentials(state: State<'_, RuntimeState>, mut api_key: String, athlete_id: String, vault_password: Option<String>) -> Result<Value, String> {
     let result = service_post(&state, "/api/connections/intervals/test", json!({ "apiKey": api_key, "athleteId": athlete_id })).await?;
-    credential("intervals-api-key")?.set_password(&api_key).map_err(|error| error.to_string())?;
-    credential("intervals-athlete-id")?.set_password(&athlete_id).map_err(|error| error.to_string())?;
+    let saved = save_connection_key(&state, "intervals", json!({ "athleteId": athlete_id }), &api_key, vault_password.as_deref()).await;
+    vault::clear_string(&mut api_key);
+    saved?;
     Ok(result)
 }
 
 #[tauri::command]
 async fn sync_intervals(state: State<'_, RuntimeState>, range: Option<Value>) -> Result<Value, String> {
-    let api_key = credential("intervals-api-key")?.get_password().map_err(|_| "Intervals.icu is not configured".to_string())?;
-    let athlete_id = credential("intervals-athlete-id")?.get_password().unwrap_or_else(|_| "0".to_string());
-    service_post(&state, "/api/connections/intervals/sync", json!({ "apiKey": api_key, "athleteId": athlete_id, "range": range.unwrap_or_else(|| json!("incremental")) })).await
+    let bundle = vault_bundle(&state).await?;
+    let secret = secret_for(&bundle, "intervals").ok_or_else(|| "Intervals.icu is not configured".to_string())?;
+    let athlete_id = secret.config.get("athleteId").and_then(Value::as_str).unwrap_or("0").to_string();
+    let api_key = decrypted_connection_key(&state, "intervals").await?;
+    service_post(&state, "/api/connections/intervals/sync", json!({ "apiKey": api_key.as_str(), "athleteId": athlete_id, "range": range.unwrap_or_else(|| json!("incremental")) })).await
 }
 
 #[tauri::command]
 async fn intervals_status(state: State<'_, RuntimeState>) -> Result<Value, String> {
-    let configured = credential("intervals-api-key").and_then(|entry| entry.get_password().map_err(|error| error.to_string())).is_ok();
-    let athlete_id = credential("intervals-athlete-id").ok().and_then(|entry| entry.get_password().ok()).unwrap_or_else(|| "0".to_string());
+    let bundle = vault_bundle(&state).await?;
+    let secret = secret_for(&bundle, "intervals");
+    let configured = secret.is_some();
+    let athlete_id = secret.and_then(|value| value.config.get("athleteId")).and_then(Value::as_str).unwrap_or("0").to_string();
+    let locked = bundle.envelope.is_some() && cached_master_key(&state, &bundle).is_none();
     let sync = service_get(&state, "/api/connections/intervals/status").await?;
-    Ok(json!({ "configured": configured, "athleteId": athlete_id, "sync": sync }))
+    Ok(json!({ "configured": configured, "athleteId": athlete_id, "locked": locked, "sync": sync }))
 }
 
 #[tauri::command]
-async fn import_xunji_skill(state: State<'_, RuntimeState>, skill_text: String) -> Result<Value, String> {
-    let api_key = extract_xunji_api_key(&skill_text)?;
+async fn import_xunji_skill(state: State<'_, RuntimeState>, skill_text: String, vault_password: Option<String>) -> Result<Value, String> {
+    let mut api_key = extract_xunji_api_key(&skill_text)?;
     let result = service_post(&state, "/api/connections/xunji/sync", json!({ "apiKey": api_key, "days": 90, "replaceCredential": true })).await?;
-    credential("xunji-api-key")?.set_password(&api_key).map_err(|error| error.to_string())?;
+    let saved = save_connection_key(&state, "xunji", json!({}), &api_key, vault_password.as_deref()).await;
+    vault::clear_string(&mut api_key);
+    saved?;
     Ok(result)
 }
 
 #[tauri::command]
 async fn sync_xunji(state: State<'_, RuntimeState>, range: Option<Value>) -> Result<Value, String> {
-    let api_key = credential("xunji-api-key")?.get_password().map_err(|_| "Xunji is not configured. Import the Skill from Xunji first.".to_string())?;
-    service_post(&state, "/api/connections/xunji/sync", json!({ "apiKey": api_key, "range": range.unwrap_or_else(|| json!("incremental")) })).await
+    let api_key = decrypted_connection_key(&state, "xunji").await.map_err(|_| "Xunji is not configured or its saved key is locked.".to_string())?;
+    service_post(&state, "/api/connections/xunji/sync", json!({ "apiKey": api_key.as_str(), "range": range.unwrap_or_else(|| json!("incremental")) })).await
 }
 
 #[tauri::command]
 async fn xunji_status(state: State<'_, RuntimeState>) -> Result<Value, String> {
-    let configured = credential("xunji-api-key").and_then(|entry| entry.get_password().map_err(|error| error.to_string())).is_ok();
+    let bundle = vault_bundle(&state).await?;
+    let configured = secret_for(&bundle, "xunji").is_some();
+    let locked = bundle.envelope.is_some() && cached_master_key(&state, &bundle).is_none();
     let sync = service_get(&state, "/api/connections/xunji/status").await?;
-    Ok(json!({ "configured": configured, "sync": sync }))
+    Ok(json!({ "configured": configured, "locked": locked, "sync": sync }))
 }
 
 #[tauri::command]
@@ -289,8 +451,8 @@ async fn pick_restore_file(app: AppHandle) -> Option<String> {
 }
 
 #[tauri::command]
-async fn pick_backup_destination(app: AppHandle) -> Option<String> {
-    app.dialog().file().add_filter("Athria database", &["sqlite3"]).set_file_name("athria-backup.sqlite3")
+async fn pick_new_profile_destination(app: AppHandle) -> Option<String> {
+    app.dialog().file().add_filter("Athria database", &["sqlite3"]).set_file_name("athria-profile.sqlite3")
         .blocking_save_file().and_then(|file| file.into_path().ok()).map(|path| path.to_string_lossy().into_owned())
 }
 
@@ -309,6 +471,39 @@ async fn restore_backup(app: AppHandle, state: State<'_, RuntimeState>, path: St
     service_post(&state, "/api/system/backup/preview", json!({ "path": selected })).await?;
     if let Some(child) = state.child.lock().expect("runtime state poisoned").take() { let _ = child.kill(); std::thread::sleep(Duration::from_millis(600)); }
     write_config_to(&platform_config_root()?, &selected)?;
+    app.restart()
+}
+
+// The save dialog may return a path whose file does not exist yet, so the
+// target is resolved through its parent folder. Existing files are rejected so
+// a mistyped name can never replace a backup or another database.
+fn validate_new_profile_target(path: &str, current: &Path) -> Result<PathBuf, String> {
+    let selected = PathBuf::from(path);
+    if !selected.is_absolute() { return Err("The selected path must be absolute.".to_string()); }
+    if selected.extension().and_then(|value| value.to_str()).is_none_or(|value| !value.eq_ignore_ascii_case("sqlite3")) {
+        return Err("The new database file must end in .sqlite3.".to_string());
+    }
+    let parent = selected.parent().ok_or_else(|| "The selected path has no parent folder.".to_string())?;
+    let file_name = selected.file_name().ok_or_else(|| "The selected path has no file name.".to_string())?;
+    let canonical_parent = fs::canonicalize(parent).map_err(|error| format!("Athria could not open the selected folder: {error}"))?;
+    let target = simplify_path(&canonical_parent.join(file_name));
+    if let Ok(current) = fs::canonicalize(current) {
+        if target == simplify_path(&current) { return Err("That is the active Athria database. Choose a different file name.".to_string()); }
+    }
+    if target.exists() { return Err("A file already exists at this path. Choose a different file name.".to_string()); }
+    Ok(target)
+}
+
+#[tauri::command]
+async fn create_new_profile(app: AppHandle, state: State<'_, RuntimeState>, path: String, password: String) -> Result<Value, String> {
+    let target = validate_new_profile_target(&path, &current_database_path())?;
+    let database_uuid = Uuid::new_v4().to_string();
+    let master = vault::new_master_key();
+    let envelope = vault::create_envelope(&database_uuid, &password, &master)?;
+    service_post(&state, "/api/system/profile/create", json!({ "path": target, "databaseUuid": database_uuid, "envelope": envelope })).await?;
+    cache_master_key(&state, &database_uuid, &master, Some(true))?;
+    if let Some(child) = state.child.lock().expect("runtime state poisoned").take() { let _ = child.kill(); std::thread::sleep(Duration::from_millis(600)); }
+    write_config_to(&platform_config_root()?, &target)?;
     app.restart()
 }
 
@@ -331,8 +526,8 @@ pub fn run() -> i32 {
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
-        .manage(RuntimeState { service, child: Mutex::new(None) })
-        .invoke_handler(tauri::generate_handler![get_service_info, test_intervals_credentials, sync_intervals, intervals_status, import_xunji_skill, sync_xunji, xunji_status, mcp_status, pick_backup_destination, pick_restore_file, restore_backup])
+        .manage(RuntimeState { service, child: Mutex::new(None), vault_key: Mutex::new(None) })
+        .invoke_handler(tauri::generate_handler![get_service_info, vault_status, setup_vault, unlock_vault, change_vault_password, reset_vault_password, disconnect_connection, test_intervals_credentials, sync_intervals, intervals_status, import_xunji_skill, sync_xunji, xunji_status, mcp_status, pick_restore_file, pick_new_profile_destination, restore_backup, create_new_profile])
         .setup(move |app| {
             #[cfg(feature = "dev-service")]
             let command = {
@@ -388,7 +583,7 @@ pub fn run() -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{activate_restore, extract_xunji_api_key, mcp_status, new_runtime_token, read_config_from, simplify_path, write_config_to};
+    use super::{extract_xunji_api_key, mcp_status, new_runtime_token, read_config_from, simplify_path, validate_new_profile_target, write_config_to};
     use uuid::Uuid;
 
     fn temp_root(prefix: &str) -> std::path::PathBuf {
@@ -480,17 +675,36 @@ mod tests {
     }
 
     #[test]
-    fn activates_a_prepared_restore_and_preserves_the_old_database() {
-        let root = temp_root("athria-restore");
-        let current = root.join("current.sqlite3");
-        let stage = root.join(".athria-restore-test.sqlite3");
-        std::fs::write(&current, b"old").unwrap();
-        std::fs::write(&stage, b"restored").unwrap();
-        std::fs::write(format!("{}-wal", current.display()), b"wal").unwrap();
-        let rollback = activate_restore(&current, &stage).unwrap();
-        assert_eq!(std::fs::read(&current).unwrap(), b"restored");
-        assert_eq!(std::fs::read(&rollback).unwrap(), b"old");
-        assert!(!std::path::Path::new(&format!("{}-wal", current.display())).exists());
+    fn accepts_a_new_profile_path_beside_the_active_database() {
+        let root = temp_root("athria-profile");
+        let current = root.join("athria.sqlite3");
+        std::fs::write(&current, b"active").unwrap();
+        let target = root.join("fresh.sqlite3");
+        assert_eq!(validate_new_profile_target(target.to_str().unwrap(), &current), Ok(target));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn rejects_non_sqlite_and_relative_new_profile_targets() {
+        let root = temp_root("athria-profile-name");
+        let current = root.join("athria.sqlite3");
+        std::fs::write(&current, b"active").unwrap();
+        let wrong_extension = root.join("fresh.txt");
+        assert!(validate_new_profile_target(wrong_extension.to_str().unwrap(), &current).unwrap_err().contains(".sqlite3"));
+        assert!(validate_new_profile_target("fresh.sqlite3", &current).unwrap_err().contains("absolute"));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn rejects_existing_or_active_new_profile_targets() {
+        let root = temp_root("athria-profile-conflict");
+        let current = root.join("athria.sqlite3");
+        std::fs::write(&current, b"active").unwrap();
+        let existing = root.join("existing.sqlite3");
+        std::fs::write(&existing, b"keep").unwrap();
+        assert!(validate_new_profile_target(existing.to_str().unwrap(), &current).unwrap_err().contains("already exists"));
+        assert!(validate_new_profile_target(current.to_str().unwrap(), &current).unwrap_err().contains("active Athria database"));
+        assert_eq!(std::fs::read(&existing).unwrap(), b"keep");
         std::fs::remove_dir_all(&root).unwrap();
     }
 }

@@ -50,4 +50,14 @@ describe("Training history", () => {
     expect(html).not.toContain("training-row-editor");
     expect(html).toContain("Showing 1–3 of 3 sessions");
   });
+  it("renders the unified empty state when no workouts exist", () => {
+    const client = new QueryClient();
+    client.setQueryData(["sessions"], []);
+    client.setQueryData(["calendar", "timeline"], []);
+    client.setQueryData(["current-plan"], null);
+    client.setQueryData(["profile"], profile);
+    const html = renderToStaticMarkup(createElement(QueryClientProvider, { client }, createElement(Timeline)));
+    expect(html).toContain('<div class="empty-state"><strong>No workouts imported yet.</strong></div>');
+    expect(html).not.toContain("No workouts match your search.");
+  });
 });

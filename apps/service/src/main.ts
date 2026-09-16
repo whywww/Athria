@@ -2,11 +2,12 @@ import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { AthriaApplication, AthriaError } from "@athria/application";
-import { AthriaRepository } from "@athria/data";
+import { AthriaRepository, type VaultEnvelope } from "@athria/data";
 import { XUNJI_SYNC_DAYS, XunjiAuthenticationError, fetchIntervals, fetchXunjiTraining, syncDateWindow } from "@athria/integrations";
 import { createMcpHttpHandler, serveMcpStdio } from "@athria/mcp";
 import { applyCors, corsPreflightResponse, isAllowedOrigin } from "./http-security";
-import { createBackup, previewBackup } from "./backup";
+import { previewBackup } from "./backup";
+import { createProfileDatabase } from "./profile";
 
 const VERSION = "0.2.0";
 function platformDataRoot(): string {
@@ -30,8 +31,6 @@ async function body(request: Request): Promise<Record<string, unknown>> {
   catch { throw new AthriaError("INVALID_JSON", "Request body must be valid JSON."); }
 }
 
-const backupDatabase = (target: string) => createBackup(repository, databasePath, target);
-
 async function main(): Promise<void> {
   const command = process.argv[2] ?? "serve";
   if (command === "mcp") {
@@ -41,13 +40,6 @@ async function main(): Promise<void> {
   if (command === "doctor") {
     const executable = process.platform === "win32" ? "Athria.exe" : "Athria.app/Contents/MacOS/Athria";
     console.log(JSON.stringify({ status: "ok", version: VERSION, databasePath, database: repository.counts(), mcpStdioCommand: `${executable} mcp` }, null, 2));
-    repository.close();
-    return;
-  }
-  if (command === "backup") {
-    const target = process.argv[3];
-    if (!target) throw new Error("Usage: athria-service backup TARGET.sqlite3");
-    console.log(backupDatabase(target));
     repository.close();
     return;
   }
@@ -153,8 +145,31 @@ async function main(): Promise<void> {
           }
         }
         if (url.pathname === "/api/system/doctor" && request.method === "GET") return json({ status: "ok", version: VERSION, databasePath, database: repository.counts() });
-        if (url.pathname === "/api/system/backup" && request.method === "POST") { const value = await body(request); return json({ path: backupDatabase(String(value.path)) }); }
+        if (url.pathname === "/api/system/vault" && request.method === "GET") return json(repository.getVault());
+        if (url.pathname === "/api/system/vault/initialize" && request.method === "POST") {
+          const value = await body(request);
+          repository.initializeVault(value.envelope as Parameters<typeof repository.initializeVault>[0], Array.isArray(value.secrets) ? value.secrets as Parameters<typeof repository.initializeVault>[1] : []);
+          return json({ status: "ok" });
+        }
+        if (url.pathname === "/api/system/vault/envelope" && request.method === "PUT") {
+          const value = await body(request);
+          repository.updateVaultEnvelope(value.envelope as Parameters<typeof repository.updateVaultEnvelope>[0]);
+          return json({ status: "ok" });
+        }
+        const vaultSecret = url.pathname.match(/^\/api\/system\/vault\/secrets\/(intervals|xunji)$/);
+        if (vaultSecret && request.method === "PUT") {
+          const value = await body(request);
+          repository.upsertConnectionSecret({ ...(value.secret as object), source: vaultSecret[1]! } as Parameters<typeof repository.upsertConnectionSecret>[0]);
+          return json({ status: "ok" });
+        }
+        if (vaultSecret && request.method === "DELETE") return json({ deleted: repository.deleteConnectionSecret(vaultSecret[1]!) });
+        if (url.pathname === "/api/system/vault/reset" && request.method === "POST") {
+          const value = await body(request);
+          repository.resetVault(value.envelope as Parameters<typeof repository.resetVault>[0]);
+          return json({ status: "ok" });
+        }
         if (url.pathname === "/api/system/backup/preview" && request.method === "POST") { const value = await body(request); return json(previewBackup(String(value.path), databasePath)); }
+        if (url.pathname === "/api/system/profile/create" && request.method === "POST") { const value = await body(request); return json({ path: createProfileDatabase(databasePath, String(value.path), value.envelope ? { databaseUuid: String(value.databaseUuid), envelope: value.envelope as VaultEnvelope } : undefined) }); }
         return json({ error: { code: "NOT_FOUND", message: "Route not found." } }, 404);
         } catch (error) {
           const athriaError = error instanceof AthriaError ? error : new AthriaError("INTERNAL_ERROR", error instanceof Error ? error.message : String(error), 500);

@@ -5,7 +5,7 @@ export const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
 export const Card = ({ title, children, className = "", action }: { title: React.ReactNode; children: React.ReactNode; className?: string; action?: React.ReactNode }) => <section className={`card ${className}`}><div className="card-heading"><h2>{title}</h2>{action}</div>{children}</section>;
 export const ErrorBanner = ({ error }: { error: unknown }) => error ? <div className="error" role="alert">{error instanceof Error ? error.message : String(error)}</div> : null;
 export const Loading = () => <p className="muted">Loading…</p>;
-export const Empty = ({ children }: { children: React.ReactNode }) => <div className="empty">{children}</div>;
+export const EmptyState = ({ title, description }: { title: string; description?: string }) => <div className="empty-state"><strong>{title}</strong>{description && <p>{description}</p>}</div>;
 
 export function PrimaryPageHeader({ preferredName, subtitle, actions }: { preferredName?: string | null | undefined; subtitle: string; actions?: React.ReactNode }) {
   return <header className="primary-page-header"><div><h1>Hi, {preferredName || "Athlete"}! <span aria-hidden="true">👋</span></h1><p>{subtitle}</p></div>{actions}</header>;

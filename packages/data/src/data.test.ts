@@ -26,6 +26,7 @@ describe("v7 planning resets", () => {
     expect(repository.sqlite.query("SELECT version FROM athria_migrations WHERE version=20").get()).toEqual({ version: 20 });
     expect(repository.sqlite.query("SELECT version FROM athria_migrations WHERE version=21").get()).toEqual({ version: 21 });
     expect(repository.sqlite.query("SELECT version FROM athria_migrations WHERE version=22").get()).toEqual({ version: 22 });
+    expect(repository.sqlite.query("SELECT version FROM athria_migrations WHERE version=23").get()).toEqual({ version: 23 });
     expect(repository.counts()).toMatchObject({ session_templates: 0, current_mesocycles: 0, template_dismissals: 0 });
   });
   it("removes duplicate, history, approval, proposal, raw and catalog tables", () => {
@@ -62,6 +63,37 @@ describe("v7 planning resets", () => {
     repository = new AthriaRepository(path);
     expect(repository.sqlite.query("SELECT version FROM athria_migrations WHERE version = 22").get()).toEqual({ version: 22 });
     expect(repository.getProfile().raceDays).toEqual([]);
+  });
+  it("upgrades a v22 database with backup credential storage", () => {
+    directory = mkdtempSync(join(tmpdir(), "athria-credentials-v23-")); const path = join(directory, "athria.sqlite3");
+    repository = new AthriaRepository(path); repository.close(); repository = undefined;
+    const sqlite = new Database(path); sqlite.exec("DROP TABLE connection_credentials; DELETE FROM athria_migrations WHERE version = 23;"); sqlite.close();
+    repository = new AthriaRepository(path);
+    expect(repository.sqlite.query("SELECT version FROM athria_migrations WHERE version = 23").get()).toEqual({ version: 23 });
+    expect(repository.sqlite.query("SELECT name FROM sqlite_master WHERE type='table' AND name='connection_credentials'").get()).toEqual({ name: "connection_credentials" });
+  });
+  it("creates one stable database UUID and stores only encrypted connection envelopes", () => {
+    directory = mkdtempSync(join(tmpdir(), "athria-vault-v24-")); const path = join(directory, "athria.sqlite3");
+    repository = new AthriaRepository(path);
+    const databaseUuid = repository.getVault().databaseUuid;
+    expect(databaseUuid).toMatch(/^[0-9a-f-]{36}$/);
+    repository.initializeVault({ formatVersion: 1, kdfAlgorithm: "argon2id", kdfMemoryKib: 65536, kdfIterations: 3, kdfParallelism: 1, salt: "salt", wrapNonce: "wrap", wrappedMasterKey: "wrapped", checkNonce: "check", checkCiphertext: "checked" }, [
+      { source: "xunji", config: {}, cipherVersion: 1, nonce: "nonce", ciphertext: "opaque" },
+    ]);
+    expect(repository.getVault()).toMatchObject({ databaseUuid, secrets: [{ source: "xunji", ciphertext: "opaque" }] });
+    repository.close(); repository = new AthriaRepository(path);
+    expect(repository.getVault().databaseUuid).toBe(databaseUuid);
+  });
+  it("resets the vault envelope for a forgotten password and drops saved secrets", () => {
+    directory = mkdtempSync(join(tmpdir(), "athria-vault-reset-")); const path = join(directory, "athria.sqlite3");
+    repository = new AthriaRepository(path);
+    const databaseUuid = repository.getVault().databaseUuid;
+    const envelope = { formatVersion: 1, kdfAlgorithm: "argon2id", kdfMemoryKib: 65536, kdfIterations: 3, kdfParallelism: 1, salt: "salt", wrapNonce: "wrap", wrappedMasterKey: "wrapped", checkNonce: "check", checkCiphertext: "checked" };
+    expect(() => repository?.resetVault(envelope)).toThrow("The connection vault is not initialized.");
+    repository.initializeVault(envelope, [{ source: "xunji", config: {}, cipherVersion: 1, nonce: "nonce", ciphertext: "opaque" }]);
+    const replacement = { ...envelope, salt: "next-salt", wrapNonce: "next-wrap", wrappedMasterKey: "rewrapped", checkNonce: "next-check", checkCiphertext: "rechecked" };
+    repository.resetVault(replacement);
+    expect(repository.getVault()).toEqual({ databaseUuid, envelope: replacement, secrets: [] });
   });
   it("backs up and clears incompatible planning rows while preserving Profile data", () => {
     directory = mkdtempSync(join(tmpdir(), "athria-v8-")); const path = join(directory, "athria.sqlite3");

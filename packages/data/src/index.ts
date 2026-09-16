@@ -461,6 +461,27 @@ function migrateBuiltinTemplateRefs(value: unknown): void {
   Object.values(record).forEach(migrateBuiltinTemplateRefs);
 }
 
+export interface VaultEnvelope {
+  formatVersion: number;
+  kdfAlgorithm: string;
+  kdfMemoryKib: number;
+  kdfIterations: number;
+  kdfParallelism: number;
+  salt: string;
+  wrapNonce: string;
+  wrappedMasterKey: string;
+  checkNonce: string;
+  checkCiphertext: string;
+}
+
+export interface EncryptedConnectionSecret {
+  source: string;
+  config: Record<string, unknown>;
+  cipherVersion: number;
+  nonce: string;
+  ciphertext: string;
+}
+
 export class AthriaRepository {
   readonly sqlite: Database;
   readonly db: ReturnType<typeof drizzle<typeof schema>>;
@@ -491,6 +512,8 @@ export class AthriaRepository {
       this.migrateTrainingSessionTypeOverridesV20();
       this.migrateTemplateDismissalsV21();
       this.migrateProfileRaceDaysV22();
+      this.migrateConnectionCredentialsV23();
+      this.migrateConnectionVaultV24();
     } catch (error) {
       this.sqlite.close();
       throw error;
@@ -1024,6 +1047,114 @@ export class AthriaRepository {
       }
       this.sqlite.query("INSERT INTO athria_migrations(version, applied_at) VALUES (22, CURRENT_TIMESTAMP)").run();
     })();
+  }
+
+  private migrateConnectionCredentialsV23(): void {
+    if (this.sqlite.query("SELECT version FROM athria_migrations WHERE version = 23").get()) return;
+    // Kept for schema continuity. The v24 connection vault superseded the
+    // original plaintext credential-export design, so this table is never
+    // written and stays empty.
+    this.sqlite.transaction(() => {
+      this.sqlite.exec(`
+        CREATE TABLE IF NOT EXISTS connection_credentials (owner_id TEXT NOT NULL, source TEXT NOT NULL, data TEXT NOT NULL, exported_at TEXT NOT NULL);
+        CREATE UNIQUE INDEX IF NOT EXISTS connection_credentials_owner_source ON connection_credentials(owner_id, source);
+        INSERT INTO athria_migrations(version, applied_at) VALUES (23, CURRENT_TIMESTAMP);
+      `);
+    })();
+  }
+
+  private migrateConnectionVaultV24(): void {
+    if (this.sqlite.query("SELECT version FROM athria_migrations WHERE version = 24").get()) return;
+    this.sqlite.transaction(() => {
+      this.sqlite.exec(`
+        CREATE TABLE IF NOT EXISTS vault_meta (
+          id INTEGER PRIMARY KEY CHECK (id = 1),
+          database_uuid TEXT NOT NULL UNIQUE,
+          format_version INTEGER NOT NULL,
+          kdf_algorithm TEXT,
+          kdf_memory_kib INTEGER,
+          kdf_iterations INTEGER,
+          kdf_parallelism INTEGER,
+          salt TEXT,
+          wrap_nonce TEXT,
+          wrapped_master_key TEXT,
+          check_nonce TEXT,
+          check_ciphertext TEXT,
+          updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS connection_secrets (
+          source TEXT PRIMARY KEY,
+          config TEXT NOT NULL,
+          cipher_version INTEGER NOT NULL,
+          nonce TEXT NOT NULL,
+          ciphertext TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+      `);
+      this.sqlite.query("INSERT OR IGNORE INTO vault_meta(id,database_uuid,format_version,updated_at) VALUES (1,?,1,CURRENT_TIMESTAMP)").run(crypto.randomUUID());
+      this.sqlite.query("INSERT INTO athria_migrations(version, applied_at) VALUES (24, CURRENT_TIMESTAMP)").run();
+    })();
+  }
+
+  getVault(): { databaseUuid: string; envelope: VaultEnvelope | null; secrets: EncryptedConnectionSecret[] } {
+    const meta = this.sqlite.query("SELECT * FROM vault_meta WHERE id = 1").get() as Record<string, unknown>;
+    const envelope = meta.wrapped_master_key === null ? null : {
+      formatVersion: Number(meta.format_version),
+      kdfAlgorithm: String(meta.kdf_algorithm),
+      kdfMemoryKib: Number(meta.kdf_memory_kib),
+      kdfIterations: Number(meta.kdf_iterations),
+      kdfParallelism: Number(meta.kdf_parallelism),
+      salt: String(meta.salt),
+      wrapNonce: String(meta.wrap_nonce),
+      wrappedMasterKey: String(meta.wrapped_master_key),
+      checkNonce: String(meta.check_nonce),
+      checkCiphertext: String(meta.check_ciphertext),
+    } satisfies VaultEnvelope;
+    const secrets = (this.sqlite.query("SELECT source,config,cipher_version,nonce,ciphertext FROM connection_secrets ORDER BY source").all() as Array<Record<string, unknown>>).map((row) => ({
+      source: String(row.source), config: parseJson(row.config) as Record<string, unknown>, cipherVersion: Number(row.cipher_version), nonce: String(row.nonce), ciphertext: String(row.ciphertext),
+    }));
+    return { databaseUuid: String(meta.database_uuid), envelope, secrets };
+  }
+
+  initializeVault(envelope: VaultEnvelope, secrets: EncryptedConnectionSecret[]): void {
+    if (this.getVault().envelope) throw new Error("The connection vault is already initialized.");
+    this.sqlite.transaction(() => {
+      this.sqlite.query(`UPDATE vault_meta SET format_version=?,kdf_algorithm=?,kdf_memory_kib=?,kdf_iterations=?,kdf_parallelism=?,salt=?,wrap_nonce=?,wrapped_master_key=?,check_nonce=?,check_ciphertext=?,updated_at=CURRENT_TIMESTAMP WHERE id=1 AND wrapped_master_key IS NULL`).run(
+        envelope.formatVersion, envelope.kdfAlgorithm, envelope.kdfMemoryKib, envelope.kdfIterations, envelope.kdfParallelism, envelope.salt, envelope.wrapNonce, envelope.wrappedMasterKey, envelope.checkNonce, envelope.checkCiphertext,
+      );
+      for (const secret of secrets) this.upsertConnectionSecret(secret);
+    })();
+  }
+
+  updateVaultEnvelope(envelope: VaultEnvelope): void {
+    const result = this.sqlite.query(`UPDATE vault_meta SET format_version=?,kdf_algorithm=?,kdf_memory_kib=?,kdf_iterations=?,kdf_parallelism=?,salt=?,wrap_nonce=?,wrapped_master_key=?,check_nonce=?,check_ciphertext=?,updated_at=CURRENT_TIMESTAMP WHERE id=1 AND wrapped_master_key IS NOT NULL`).run(
+      envelope.formatVersion, envelope.kdfAlgorithm, envelope.kdfMemoryKib, envelope.kdfIterations, envelope.kdfParallelism, envelope.salt, envelope.wrapNonce, envelope.wrappedMasterKey, envelope.checkNonce, envelope.checkCiphertext,
+    );
+    if (result.changes !== 1) throw new Error("The connection vault is not initialized.");
+  }
+
+  // Forgot-password reset: swaps in a fresh envelope for the new password and
+  // drops every saved secret, which only the retired password could unlock.
+  resetVault(envelope: VaultEnvelope): void {
+    this.sqlite.transaction(() => {
+      const result = this.sqlite.query(`UPDATE vault_meta SET format_version=?,kdf_algorithm=?,kdf_memory_kib=?,kdf_iterations=?,kdf_parallelism=?,salt=?,wrap_nonce=?,wrapped_master_key=?,check_nonce=?,check_ciphertext=?,updated_at=CURRENT_TIMESTAMP WHERE id=1 AND wrapped_master_key IS NOT NULL`).run(
+        envelope.formatVersion, envelope.kdfAlgorithm, envelope.kdfMemoryKib, envelope.kdfIterations, envelope.kdfParallelism, envelope.salt, envelope.wrapNonce, envelope.wrappedMasterKey, envelope.checkNonce, envelope.checkCiphertext,
+      );
+      if (result.changes !== 1) throw new Error("The connection vault is not initialized.");
+      this.sqlite.query("DELETE FROM connection_secrets").run();
+    })();
+  }
+
+  upsertConnectionSecret(secret: EncryptedConnectionSecret): void {
+    if (!this.getVault().envelope) throw new Error("The connection vault is not initialized.");
+    this.sqlite.query(`INSERT INTO connection_secrets(source,config,cipher_version,nonce,ciphertext,updated_at) VALUES (?,?,?,?,?,CURRENT_TIMESTAMP)
+      ON CONFLICT(source) DO UPDATE SET config=excluded.config,cipher_version=excluded.cipher_version,nonce=excluded.nonce,ciphertext=excluded.ciphertext,updated_at=CURRENT_TIMESTAMP`).run(
+      secret.source, JSON.stringify(secret.config), secret.cipherVersion, secret.nonce, secret.ciphertext,
+    );
+  }
+
+  deleteConnectionSecret(source: string): boolean {
+    return this.sqlite.query("DELETE FROM connection_secrets WHERE source = ?").run(source).changes === 1;
   }
 
   close(): void { this.sqlite.close(); }

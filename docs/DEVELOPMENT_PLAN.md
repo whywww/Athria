@@ -573,6 +573,7 @@ Provider-specific request、response 和错误类型不得进入 Core、公共 S
 - API key 只存入操作系统密钥库；
 - SQLite 仅保存 Provider、模型和 secret reference；
 - key 不进入前端持久化、日志、诊断包或备份；
+- 修订：连接凭据（Intervals/Xunji）以 XChaCha20-Poly1305 密文保存于数据库内（connection_secrets），由数据库密码（Argon2id 包裹的 master key）保护；选择「记住密码」时 master key 缓存在操作系统凭据管理器；备份仅包含密文；打开未在本机解锁的数据库前需输入数据库密码；
 - sidecar 只在需要调用 Provider 时获得短生命周期凭据；
 - 删除 Provider 配置时同时删除对应密钥。
 

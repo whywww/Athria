@@ -1,4 +1,4 @@
-import { copyFileSync, mkdirSync, rmSync, statSync } from "node:fs";
+import { copyFileSync, rmSync, statSync } from "node:fs";
 import { dirname, extname, resolve } from "node:path";
 import { Database } from "bun:sqlite";
 import { AthriaError } from "@athria/application";
@@ -7,6 +7,7 @@ import { AthriaRepository } from "@athria/data";
 export interface BackupPreview {
   path: string;
   counts: { workouts: number; templates: number; plans: number };
+  includesCredentials: boolean;
 }
 
 function requireSqliteFile(path: string): string {
@@ -40,21 +41,11 @@ function validateStaged(path: string, sourcePath: string): BackupPreview {
     if (integrity?.integrity_check !== "ok") throw new Error("SQLite integrity check failed");
     restored.checkpoint();
     const counts = restored.counts();
-    return { path: sourcePath, counts: { workouts: counts.training_sessions ?? 0, templates: counts.session_templates ?? 0, plans: counts.current_mesocycles ?? 0 } };
+    const credentials = restored.sqlite.query("SELECT COUNT(*) AS count FROM connection_secrets").get() as { count: number } | null;
+    return { path: sourcePath, counts: { workouts: counts.training_sessions ?? 0, templates: counts.session_templates ?? 0, plans: counts.current_mesocycles ?? 0 }, includesCredentials: Number(credentials?.count ?? 0) > 0 };
   } catch (error) {
     throw new AthriaError("INVALID_BACKUP", `The selected database could not be opened: ${error instanceof Error ? error.message : String(error)}`);
   } finally { restored?.close(); }
-}
-
-export function createBackup(repository: AthriaRepository, databasePath: string, targetPath: string): string {
-  const source = resolve(databasePath);
-  const target = resolve(targetPath);
-  if (extname(target).toLowerCase() !== ".sqlite3") throw new AthriaError("INVALID_BACKUP_PATH", "Backup filenames must end in .sqlite3.");
-  if (source === target) throw new AthriaError("INVALID_BACKUP_PATH", "The active Athria database cannot be overwritten by a backup.");
-  mkdirSync(dirname(target), { recursive: true });
-  repository.checkpoint();
-  copyFileSync(source, target);
-  return target;
 }
 
 function stagedPath(databasePath: string): string {
@@ -67,3 +58,4 @@ export function previewBackup(path: string, databasePath: string): BackupPreview
   try { copyFileSync(source, target); return validateStaged(target, source); }
   finally { rmSync(target, { force: true }); rmSync(`${target}-wal`, { force: true }); rmSync(`${target}-shm`, { force: true }); }
 }
+

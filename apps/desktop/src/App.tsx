@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { api, getIntervalsStatus, getMcpStatus, getXunjiStatus, importXunjiSkill, pickBackupDestination, pickRestoreFile, restoreBackup, syncIntervals, syncXunji, testIntervals } from "./api";
+import { api, changeVaultPassword, createNewProfile, disconnectConnection, getIntervalsStatus, getMcpStatus, getVaultStatus, getXunjiStatus, importXunjiSkill, pickNewProfileDestination, pickRestoreFile, resetVaultPassword, restoreBackup, setupVault, syncIntervals, syncXunji, testIntervals, unlockVault } from "./api";
 import { mcpConfig, mcpGuides } from "./mcp-guides";
 import {
   cmToImperialHeight, connectionSources, dashboardPages, deviceTimezone, equipmentGroupState, filterAndSortTrainingHistory, formatDateTime, formatDuration, formatPersonalHeight, formatPersonalWeight, formatRaceCountdown, formatRaceDateShort, formatTimezoneLabel, formatTrainingRhythm, formatTrainingSource, friendlyLabel, imperialHeightToCm, isUntouchedDefaultProfile, kgToPounds, nextRaceDay, poundsToKg,
@@ -10,7 +10,7 @@ import {
   type AthleteProfile, type BackupPreview, type CurrentPlan, type DoctorResult, type HevyImportStatus, type ImportPreview,
   type CalendarSession, type EquipmentCategory, type ImportResult, type NextTrainingDay, type PersonalInformation, type SyncRange, type TrainingHistorySession, type TrainingHistorySort, type TrainingTaxonomy, type TrainingSummary, type UnitSystem, type WellnessRecord, type XunjiConnectionStatus,
 } from "./view-models";
-import { Card, Empty, ErrorBanner, Loading, PrimaryPageHeader, weekdays } from "./components";
+import { Card, EmptyState, ErrorBanner, Loading, PrimaryPageHeader, weekdays } from "./components";
 import { CurrentPlanPage, NextTrainingDayCard } from "./plan/CurrentPlanPage";
 import { localDateForTimezone } from "./plan/view";
 import { OverviewDashboard, overviewDateRange } from "./overview";
@@ -87,7 +87,7 @@ function Overview() {
   if (error || !query.data || !profile.data || !today) return <ErrorBanner error={error}/>;
   return <>
     <OverviewDashboard summary={query.data} wellness={wellness.data ?? []} history={history.data ?? []} planned={calendar.data ?? []} today={today} timezone={profile.data.timezone}/>
-    <div className="overview-next-day" id="overview-next-day">{plan.data && !nextDay.isPending && nextDay.data ? <NextTrainingDayCard value={nextDay.data} plan={plan.data} /> : !plan.data ? <div className="overview-plan-empty"><strong>No current plan</strong><span>Create a plan to see your next training day here.</span></div> : null}</div>
+    <div className="overview-next-day" id="overview-next-day">{plan.data && !nextDay.isPending && nextDay.data ? <NextTrainingDayCard value={nextDay.data} plan={plan.data} /> : !plan.data ? <EmptyState title="No current plan" description="Plans are created by your connected AI Agent — build one to see your next training day here."/> : null}</div>
   </>;
 }
 
@@ -233,7 +233,7 @@ export function AgentManagedDetails({ profile }: { profile: AthleteProfile }) {
     const count = `${profile.raceDays.length} ${profile.raceDays.length === 1 ? "race" : "races"}`;
     rows.push({ label: "Race Focus", description: "Target races shape peaking and tapering in your plan.", icon: "trophy", value: nextRace ? `${count} on record. Next: ${nextRace.sport} on ${formatRaceDateShort(nextRace.date)}.` : `${count} on record, none upcoming.` });
   }
-  if (!rows.length) return <div className="agent-managed-empty">No injuries or training constraints recorded.</div>;
+  if (!rows.length) return <EmptyState title="No injuries or training constraints recorded."/>;
   return <div className="agent-managed-grid">{rows.map((row) => <article className="agent-managed-card" key={row.label}><span className={"agent-card-icon" + (row.tone ? " " + row.tone : "")}><AppIcon name={row.icon}/></span><div><strong>{row.label}</strong><p>{row.description}</p>{row.notes ? <ol className="agent-note-list">{row.notes.map((note, index) => <li key={index}>{note}</li>)}</ol> : <span className="agent-value">{row.value}</span>}</div></article>)}</div>;
 }
 
@@ -301,22 +301,27 @@ function Connections() {
   const refreshXunjiViews = async () => { await Promise.all([client.invalidateQueries({ queryKey: ["xunji-status"] }), client.invalidateQueries({ queryKey: ["sessions"] }), client.invalidateQueries({ queryKey: ["summary"] }), client.invalidateQueries({ queryKey: ["state"] })]); };
   const connectXunji = async () => { try { setXunjiBusy(true); setXunjiError(undefined); const result = await importXunjiSkill(xunjiSkill) as ImportResult & { sync?: { status?: string } }; setXunjiMessage(`Sync ${result.sync?.status ?? "complete"}: ${result.added ?? 0} added, ${result.updated ?? 0} updated.`); setXunjiSkill(""); setDialog(null); await refreshXunjiViews(); } catch (value) { setXunjiError(value); } finally { setXunjiBusy(false); } };
   const runXunjiSync = async (range: SyncRange = "incremental", closeOnSuccess = false) => { try { setXunjiBusy(true); setXunjiError(undefined); const result = await syncXunji(range) as ImportResult & { sync?: { status?: string } }; setXunjiMessage(`Sync ${result.sync?.status ?? "complete"}: ${result.added ?? 0} added, ${result.updated ?? 0} updated.`); await refreshXunjiViews(); if (closeOnSuccess) setDialog(null); } catch (value) { setXunjiError(value); } finally { setXunjiBusy(false); } };
+  const disconnect = async (source: "intervals" | "xunji") => {
+    if (!window.confirm(`Disconnect ${source === "intervals" ? "Intervals.icu" : "Xunji"}? The encrypted API key will be removed.`)) return;
+    try { await disconnectConnection(source); setDialog(null); await client.invalidateQueries({ queryKey: [source === "intervals" ? "intervals-status" : "xunji-status"] }); }
+    catch (value) { source === "intervals" ? setIntervalsError(value) : setXunjiError(value); }
+  };
   const intervals = intervalsStatus.data; const xunji = xunjiStatus.data;
   const sources = connectionSources(Boolean(intervals?.configured), Boolean(xunji?.configured), Boolean(hevyStatus.data));
   return <section className="connections-page">
     <section className="connections-section"><h2>Connected ({sources.added.length})</h2><div className="connected-sources-grid">
       {hevyStatus.data && <SourceCard source="hevy" title="Hevy" description="Strength training workouts" lastSyncLabel="Last imported" lastSync={formatDateTime(hevyStatus.data.importedAt)} feedback={<><ErrorBanner error={hevyStatus.error ?? hevyError}/>{importResult && <div className="source-feedback success">Import complete: {importResult.added ?? 0} added, {importResult.updated ?? 0} updated.</div>}</>} action={<button type="button" className="source-action primary" onClick={() => setDialog("hevy")}><AppIcon name="upload"/>Import again</button>} menuLabel="Choose another CSV" onMenuAction={() => setDialog("hevy")}/>}
-      {intervals?.configured && <SourceCard source="intervals" title="Intervals.icu" description="Endurance activities and performance metrics." lastSyncLabel="Last synced" lastSync={intervals.sync?.lastSuccessAt ? formatDateTime(intervals.sync.lastSuccessAt) : "Not yet completed"} feedback={<><ErrorBanner error={intervalsStatus.error ?? intervalsError}/>{intervalsMessage && <div className="source-feedback success">{intervalsMessage}</div>}</>} action={<button type="button" className="source-action primary" disabled={intervalsBusy} onClick={() => void sync()}><AppIcon name="refresh"/>{intervalsBusy ? "Syncing…" : "Sync now"}</button>} menuLabel="Edit connection" onMenuAction={openIntervals}/>}
-      {xunji?.configured && <SourceCard source="xunji" title="Xunji" description="Strength and training records" lastSyncLabel="Last synced" lastSync={xunji.sync?.lastSuccessAt ? formatDateTime(xunji.sync.lastSuccessAt) : "Not yet completed"} feedback={<><ErrorBanner error={xunjiStatus.error ?? xunjiError}/>{xunjiMessage && <div className="source-feedback success">{xunjiMessage}</div>}</>} action={<button type="button" className="source-action primary" disabled={xunjiBusy} onClick={() => void runXunjiSync()}><AppIcon name="refresh"/>{xunjiBusy ? "Syncing…" : "Sync now"}</button>} menuLabel="Edit connection" onMenuAction={() => setDialog("xunji")}/>}
-      {!intervalsStatus.isPending && !xunjiStatus.isPending && !hevyStatus.isPending && sources.added.length === 0 && <div className="connections-empty"><span><AppIcon name="plus"/></span><strong>No connections yet</strong><p>Choose one of the available connections below to get started.</p></div>}
+      {intervals?.configured && <SourceCard source="intervals" title="Intervals.icu" description="Endurance activities and performance metrics." lastSyncLabel="Last synced" lastSync={intervals.sync?.lastSuccessAt ? formatDateTime(intervals.sync.lastSuccessAt) : "Not yet completed"} feedback={<><ErrorBanner error={intervalsStatus.error ?? intervalsError}/>{intervalsMessage && <div className="source-feedback success">{intervalsMessage}</div>}</>} action={<button type="button" className="source-action primary" disabled={intervalsBusy || intervals.locked} onClick={() => void sync()}><AppIcon name="refresh"/>{intervals.locked ? "Database locked" : intervalsBusy ? "Syncing…" : "Sync now"}</button>} menuLabel="Edit connection" onMenuAction={openIntervals}/>}
+      {xunji?.configured && <SourceCard source="xunji" title="Xunji" description="Strength and training records" lastSyncLabel="Last synced" lastSync={xunji.sync?.lastSuccessAt ? formatDateTime(xunji.sync.lastSuccessAt) : "Not yet completed"} feedback={<><ErrorBanner error={xunjiStatus.error ?? xunjiError}/>{xunjiMessage && <div className="source-feedback success">{xunjiMessage}</div>}</>} action={<button type="button" className="source-action primary" disabled={xunjiBusy || xunji.locked} onClick={() => void runXunjiSync()}><AppIcon name="refresh"/>{xunji.locked ? "Database locked" : xunjiBusy ? "Syncing…" : "Sync now"}</button>} menuLabel="Edit connection" onMenuAction={() => setDialog("xunji")}/>}
+      {!intervalsStatus.isPending && !xunjiStatus.isPending && !hevyStatus.isPending && sources.added.length === 0 && <EmptyState title="No connections yet" description="Choose one of the available connections below to get started."/>}
     </div></section>
     <section className="connections-section available-connections"><h2>Available Connections</h2>{sources.available.length ? <div className="available-sources-grid">
       {sources.available.includes("hevy") && <AvailableSourceCard source="hevy" title="Hevy" description="Import strength workouts from a CSV export." onConnect={() => setDialog("hevy")}/>}
       {sources.available.includes("intervals") && <AvailableSourceCard source="intervals" title="Intervals.icu" description="Sync endurance activities and wellness data." onConnect={openIntervals}/>}
       {sources.available.includes("xunji") && <AvailableSourceCard source="xunji" title="Xunji" description="Sync strength and training records." onConnect={() => setDialog("xunji")}/>}
-    </div> : <div className="available-sources-empty"><span>✓</span><div><strong>All supported connections are connected</strong><p>Manage or sync them from the cards above.</p></div></div>}</section>
-    {dialog === "intervals" && <ConnectionModal title={intervals?.configured ? "Edit Intervals.icu" : "Connect Intervals.icu"} description="Your credentials are stored securely on this device." onClose={closeDialog}><label>API key<input type="password" autoComplete="off" autoFocus placeholder={intervals?.configured ? "Enter a new key to replace the saved key" : "Enter API key"} value={key} onChange={(event) => setKey(event.target.value)}/></label><label>Athlete ID<input value={athleteId} onChange={(event) => setAthleteId(event.target.value)}/></label><label>Sync range<select aria-label="Intervals.icu sync range" value={intervalsRange} onChange={(event) => setIntervalsRange(parseSyncRange(event.target.value))}>{syncRangeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><p className="helper">Find your API key and Athlete ID in Intervals.icu → Settings → Developer Settings.</p><ErrorBanner error={intervalsError}/><div className="modal-actions"><button type="button" className="secondary" onClick={closeDialog}>Cancel</button>{intervals?.configured && <button type="button" className="secondary" disabled={intervalsBusy} onClick={() => void sync(intervalsRange, true)}>{intervalsBusy ? "Syncing…" : "Sync selected range"}</button>}<button type="button" disabled={!key} onClick={() => void saveIntervals()}>Test and save</button></div></ConnectionModal>}
-    {dialog === "xunji" && <ConnectionModal title={xunji?.configured ? "Edit Xunji" : "Connect Xunji"} description="Paste the complete training-data Skill exported by Xunji." onClose={closeDialog}><label>Xunji exported Skill<textarea rows={8} autoComplete="off" autoFocus spellCheck={false} placeholder="Paste the complete Skill exported by Xunji" value={xunjiSkill} onChange={(event) => setXunjiSkill(event.target.value)}/></label><label>Sync range<select aria-label="Xunji sync range" value={xunjiRange} onChange={(event) => setXunjiRange(parseSyncRange(event.target.value))}>{syncRangeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><p className="helper">Athria extracts only the API key. The pasted text is never stored.</p><ErrorBanner error={xunjiError}/><div className="modal-actions"><button type="button" className="secondary" onClick={closeDialog}>Cancel</button>{xunji?.configured && <button type="button" className="secondary" disabled={xunjiBusy} onClick={() => void runXunjiSync(xunjiRange, true)}>{xunjiBusy ? "Syncing…" : "Sync selected range"}</button>}<button type="button" disabled={!xunjiSkill.trim() || xunjiBusy} onClick={() => void connectXunji()}>{xunjiBusy ? "Connecting and syncing…" : "Connect and sync"}</button></div></ConnectionModal>}
+    </div> : <EmptyState title="All supported connections are connected" description="Manage or sync them from the cards above."/>}</section>
+    {dialog === "intervals" && <ConnectionModal title={intervals?.configured ? "Edit Intervals.icu" : "Connect Intervals.icu"} description="The API key is encrypted inside this database." onClose={closeDialog}><label>API key<input type="password" autoComplete="off" autoFocus placeholder={intervals?.configured ? "Enter a new key to replace the saved key" : "Enter API key"} value={key} onChange={(event) => setKey(event.target.value)}/></label><label>Athlete ID<input value={athleteId} onChange={(event) => setAthleteId(event.target.value)}/></label><label>Sync range<select aria-label="Intervals.icu sync range" value={intervalsRange} onChange={(event) => setIntervalsRange(parseSyncRange(event.target.value))}>{syncRangeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><p className="helper">Find your API key and Athlete ID in Intervals.icu → Settings → Developer Settings.</p><ErrorBanner error={intervalsError}/><div className="modal-actions">{intervals?.configured && <button type="button" className="danger-text" onClick={() => void disconnect("intervals")}>Disconnect</button>}<button type="button" className="secondary" onClick={closeDialog}>Cancel</button>{intervals?.configured && <button type="button" className="secondary" disabled={intervalsBusy || intervals.locked} onClick={() => void sync(intervalsRange, true)}>{intervalsBusy ? "Syncing…" : "Sync selected range"}</button>}<button type="button" disabled={!key} onClick={() => void saveIntervals()}>Test and save</button></div></ConnectionModal>}
+    {dialog === "xunji" && <ConnectionModal title={xunji?.configured ? "Edit Xunji" : "Connect Xunji"} description="Paste the complete training-data Skill exported by Xunji." onClose={closeDialog}><label>Xunji exported Skill<textarea rows={8} autoComplete="off" autoFocus spellCheck={false} placeholder="Paste the complete Skill exported by Xunji" value={xunjiSkill} onChange={(event) => setXunjiSkill(event.target.value)}/></label><label>Sync range<select aria-label="Xunji sync range" value={xunjiRange} onChange={(event) => setXunjiRange(parseSyncRange(event.target.value))}>{syncRangeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><p className="helper">Athria extracts only the API key, encrypts it in this database, and never stores the pasted Skill.</p><ErrorBanner error={xunjiError}/><div className="modal-actions">{xunji?.configured && <button type="button" className="danger-text" onClick={() => void disconnect("xunji")}>Disconnect</button>}<button type="button" className="secondary" onClick={closeDialog}>Cancel</button>{xunji?.configured && <button type="button" className="secondary" disabled={xunjiBusy || xunji.locked} onClick={() => void runXunjiSync(xunjiRange, true)}>{xunjiBusy ? "Syncing…" : "Sync selected range"}</button>}<button type="button" disabled={!xunjiSkill.trim() || xunjiBusy} onClick={() => void connectXunji()}>{xunjiBusy ? "Connecting and syncing…" : "Connect and sync"}</button></div></ConnectionModal>}
     {dialog === "hevy" && <ConnectionModal title="Import from Hevy" description="Select a CSV export, review it, then import the workouts." onClose={closeDialog}><label>Hevy CSV export<input type="file" accept=".csv,text/csv" onChange={(event) => event.target.files?.[0] && void onFile(event.target.files[0])}/></label>{preview && <ImportSummary value={preview}><button type="button" onClick={() => void commit()}>Import reviewed workouts</button></ImportSummary>}<ErrorBanner error={hevyError}/></ConnectionModal>}
   </section>;
 }
@@ -420,16 +425,18 @@ export function Timeline() {
   return <section className="card training-history">
     <div className="training-history-header"><div><h2>Training History</h2><p>Your recent workouts, sessions and activities.</p></div><div className="training-history-tools"><label className="training-search"><span className="sr-only">Search workouts</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg><input type="search" placeholder="Search workouts..." value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }}/></label><label className="training-sort"><span className="sr-only">Sort training history</span><select aria-label="Sort training history" value={sort} onChange={(event) => { setSort(event.target.value as TrainingHistorySort); setPage(1); }}><option value="newest">Newest first</option><option value="oldest">Oldest first</option></select></label></div></div>
     <ErrorBanner error={error}/>
-    {loading ? <Loading/> : <><div className="training-table-scroll"><div className="training-table"><div className="training-table-heading" aria-hidden="true"><span>Workout</span><span>Date &amp; time</span><span>Type</span><span>Duration</span><span>Source</span><span className="training-plan-heading">Plan Matched</span><span/></div><div className="training-table-body">{pagination.items.map((item) => <TimelineWorkout key={item.id} item={item} planned={calendar.data ?? []} revision={plan.data?.revision ?? 0} timezone={profile.data?.timezone ?? "UTC"} onMutated={refresh}/>)}{!query.data?.length ? <Empty>No workouts imported yet.</Empty> : !filtered.length ? <Empty>No workouts match your search.</Empty> : null}</div></div></div><footer className="training-history-footer"><span>{filtered.length ? `Showing ${pagination.start}–${pagination.end} of ${filtered.length} sessions` : "Showing 0 sessions"}</span><div><button type="button" aria-label="Previous page" disabled={pagination.page === 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>‹</button><button type="button" aria-label="Next page" disabled={pagination.page === pagination.totalPages} onClick={() => setPage((current) => Math.min(pagination.totalPages, current + 1))}>›</button></div></footer></>}
+    {loading ? <Loading/> : <><div className="training-table-scroll"><div className="training-table"><div className="training-table-heading" aria-hidden="true"><span>Workout</span><span>Date &amp; time</span><span>Type</span><span>Duration</span><span>Source</span><span className="training-plan-heading">Plan Matched</span><span/></div><div className="training-table-body">{pagination.items.map((item) => <TimelineWorkout key={item.id} item={item} planned={calendar.data ?? []} revision={plan.data?.revision ?? 0} timezone={profile.data?.timezone ?? "UTC"} onMutated={refresh}/>)}{!query.data?.length ? <EmptyState title="No workouts imported yet."/> : !filtered.length ? <EmptyState title="No workouts match your search."/> : null}</div></div></div><footer className="training-history-footer"><span>{filtered.length ? `Showing ${pagination.start}–${pagination.end} of ${filtered.length} sessions` : "Showing 0 sessions"}</span><div><button type="button" aria-label="Previous page" disabled={pagination.page === 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>‹</button><button type="button" aria-label="Next page" disabled={pagination.page === pagination.totalPages} onClick={() => setPage((current) => Math.min(pagination.totalPages, current + 1))}>›</button></div></footer></>}
   </section>;
 }
 
 export function Backup() {
   const doctor = useQuery({ queryKey: ["backup-doctor"], queryFn: () => api<DoctorResult>("/api/system/doctor") });
+  const vault = useQuery({ queryKey: ["vault-status"], queryFn: getVaultStatus });
   const databasePath = (doctor.data as DoctorResult | undefined)?.databasePath;
   const [message, setMessage] = useState(""); const [error, setError] = useState<unknown>();
-  const [preview, setPreview] = useState<BackupPreview>(); const [restoring, setRestoring] = useState(false);
-  const createBackup = async () => { setError(undefined); setMessage(""); try { const path = await pickBackupDestination(); if (path) { const result = await api<{ path: string }>("/api/system/backup", { method: "POST", body: JSON.stringify({ path }) }); setMessage(`Backup created at ${result.path}`); } } catch (value) { setError(value); } };
+  const [preview, setPreview] = useState<BackupPreview>(); const [restoring, setRestoring] = useState(false); const [creating, setCreating] = useState(false);
+  const [passwordModal, setPasswordModal] = useState(false); const [changing, setChanging] = useState(false); const [passwordDraft, setPasswordDraft] = useState({ password: "", confirmation: "" });
+  const [profileTarget, setProfileTarget] = useState<string>(); const [profilePassword, setProfilePassword] = useState(""); const [profileConfirmation, setProfileConfirmation] = useState("");
   const chooseBackup = async () => {
     setError(undefined); setMessage(""); setPreview(undefined);
     try {
@@ -442,10 +449,31 @@ export function Backup() {
     try { setRestoring(true); setError(undefined); await restoreBackup(preview.path); }
     catch (value) { setRestoring(false); setError(value); }
   };
+  const chooseProfileDestination = async () => {
+    setError(undefined); setMessage("");
+    try {
+      const path = await pickNewProfileDestination();
+      if (path) { setProfilePassword(""); setProfileConfirmation(""); setProfileTarget(path); }
+    } catch (value) { setError(value); }
+  };
+  const createProfile = async () => {
+    if (!profileTarget) return;
+    try { setCreating(true); setError(undefined); await createNewProfile(profileTarget, profilePassword); }
+    catch (value) { setCreating(false); setError(value); }
+  };
+  const openChangePassword = () => { setError(undefined); setPasswordDraft({ password: "", confirmation: "" }); setPasswordModal(true); };
+  const closeChangePassword = () => { setPasswordModal(false); setError(undefined); setPasswordDraft({ password: "", confirmation: "" }); };
+  const updateVaultPassword = async () => {
+    try {
+      setChanging(true); setError(undefined); setMessage("");
+      if (passwordDraft.password !== passwordDraft.confirmation) throw new Error("Passwords do not match.");
+      await changeVaultPassword(passwordDraft.password);
+      closeChangePassword(); setMessage("Database password updated. Saved connection keys remain encrypted.");
+    } catch (value) { setError(value); } finally { setChanging(false); }
+  };
   return <Card title="Backup and Restore">
-    <p>Your training data is stored in one local SQLite database. Account credentials are never included.</p>
+    <p>Your training data and connection keys are stored in one portable SQLite database. The database password protects access inside Athria and unlocks those keys on another computer.</p>
     {databasePath && <p className="data-location">Local Database: <code>{databasePath}</code> <CopyButton label="Local Database" value={databasePath}/></p>}
-    <div className="section"><h3>Create a Backup</h3><p>Save a self-contained copy of your active SQLite database.</p><button onClick={() => void createBackup()}>Create backup</button></div>
     <div className="section"><h3>Restore a Backup</h3><p>Choose an Athria .sqlite3 file and switch to it as your active database.</p>
       {!preview
         ? <button type="button" className="secondary" onClick={() => void chooseBackup()}>Choose backup</button>
@@ -458,15 +486,33 @@ export function Backup() {
             <span><b>{preview.counts.plans}</b><small>plans</small></span>
           </div>
           <p>Athria will open this file as its active database. The current database file is left untouched. Athria will restart to complete the restore.</p>
+          {preview.includesCredentials && <p>This backup includes encrypted connections. Athria will ask for this database's password when it is opened on another computer.</p>}
           <div className="restore-actions">
             <button type="button" className="secondary compact" disabled={restoring} onClick={() => setPreview(undefined)}>Cancel</button>
             <button type="button" className="compact" disabled={restoring} onClick={() => void confirmRestore()}>{restoring ? "Preparing restore…" : "Restore and restart"}</button>
           </div>
         </div>}
     </div>
+    {vault.data?.initialized && !vault.data.locked && <div className="section"><h3>Change Database Password</h3><p>This re-wraps the database master key; your saved connection keys do not need to be entered again.</p><button type="button" className="secondary" onClick={openChangePassword}>Change password</button></div>}
+    <div className="section"><h3>Create a New Profile</h3><p>Start fresh with an empty Athria database at a location you choose. You will set its database password before it is created. Athria will switch to it and restart; the current database file is left untouched on disk.</p><button type="button" className="secondary" disabled={creating} onClick={() => void chooseProfileDestination()}>Create a new profile</button></div>
+    {profileTarget && <div className="modal-backdrop"><section className="connection-modal" role="dialog" aria-modal="true" aria-labelledby="new-profile-title"><header><div><h2 id="new-profile-title">Create a New Profile</h2><p>Set the database password for the new profile. It protects that database's data and connection keys, and it cannot be recovered.</p></div></header><div className="modal-body"><p className="restore-path">{profileTarget}</p><label>Database password<input type="password" autoFocus autoComplete="new-password" value={profilePassword} onChange={(event) => setProfilePassword(event.target.value)}/></label><label>Confirm password<input type="password" className={profilePassword !== profileConfirmation ? "invalid" : undefined} autoComplete="new-password" value={profileConfirmation} onChange={(event) => setProfileConfirmation(event.target.value)}/>{profilePassword !== profileConfirmation && <span className="field-error">Passwords do not match.</span>}</label><ErrorBanner error={error}/><div className="modal-actions"><button type="button" className="secondary" disabled={creating} onClick={() => setProfileTarget(undefined)}>Cancel</button><button type="button" disabled={creating || profilePassword.length === 0 || profilePassword !== profileConfirmation} onClick={() => void createProfile()}>{creating ? "Creating profile…" : "Create and restart"}</button></div></div></section></div>}
+    {passwordModal && <ChangePasswordModal value={passwordDraft} error={error} busy={changing} onChange={setPasswordDraft} onClose={closeChangePassword} onSubmit={() => void updateVaultPassword()}/>}
     {message && <div className="success">{message}</div>}
     <ErrorBanner error={doctor.error ?? error}/>
   </Card>;
+}
+
+export function ChangePasswordModal({ value, error, busy, onChange, onClose, onSubmit }: { value: { password: string; confirmation: string }; error: unknown; busy: boolean; onChange: (value: { password: string; confirmation: string }) => void; onClose: () => void; onSubmit: () => void; }) {
+  const mismatch = value.password !== value.confirmation;
+  return <div className="modal-backdrop"><section className="connection-modal" role="dialog" aria-modal="true" aria-labelledby="change-password-title">
+    <header><div><h2 id="change-password-title">Change Database Password</h2><p>This re-wraps the database master key; your saved connection keys do not need to be entered again.</p></div></header>
+    <div className="modal-body">
+      <label>New password<input type="password" autoFocus autoComplete="new-password" value={value.password} onChange={(event) => onChange({ ...value, password: event.target.value })}/></label>
+      <label>Confirm password<input type="password" className={mismatch ? "invalid" : undefined} autoComplete="new-password" value={value.confirmation} onChange={(event) => onChange({ ...value, confirmation: event.target.value })}/>{mismatch && <span className="field-error">Passwords do not match.</span>}</label>
+      <ErrorBanner error={error}/>
+      <div className="modal-actions"><button type="button" className="secondary" disabled={busy} onClick={onClose}>Cancel</button><button type="button" disabled={busy || value.password.length === 0 || mismatch} onClick={onSubmit}>{busy ? "Changing password…" : "Change password"}</button></div>
+    </div>
+  </section></div>;
 }
 
 function PersonalInformationCard() {
@@ -592,7 +638,7 @@ export function Help() {
       <div className="help-faq">
         <details className="faq-item"><summary><span>How do I create a new plan?</span></summary><div className="faq-answer"><p>Plans are created by your connected AI agent. Connect an agent through MCP below, then ask it to build your plan — it uses your Profile, training history and synced workouts. Open Plan to review the Weekly Sessions it saves. Reusable Session Templates can be built in the Plan page's Template Library.</p></div></details>
         <details className="faq-item"><summary><span>How do I import my training data?</span></summary><div className="faq-answer"><p>Open Connections and pick a source: Hevy (import a CSV export), Intervals.icu (sync endurance activities) or Xunji (sync strength and training records). Then use Sync now whenever you want to pull in new workouts.</p></div></details>
-        <details className="faq-item"><summary><span>How do I back up my data and sync it with my own cloud?</span></summary><div className="faq-answer"><p>Athria has no cloud of its own — every workout, plan and profile lives in one local database file. In Settings, create a backup and save the .sqlite3 file anywhere, including a folder synced by your own cloud drive (OneDrive, iCloud Drive, Google Drive, Dropbox). Restore from that file on another device. Saved credentials are never included, so re-enter them after restoring.</p></div></details>
+        <details className="faq-item"><summary><span>How do I back up my data and sync it with my own cloud?</span></summary><div className="faq-answer"><p>Athria has no cloud of its own — every workout, plan, profile and encrypted connection key lives in one local database file, whose path is shown in Settings. Copy the file anywhere, including a folder synced by your own cloud drive. On another computer, restore the file; Athria asks for that database's password before it shows your data and uses it to unlock saved connections.</p></div></details>
       </div>
     </Card>
     <Card title="Connect Athria to Your AI Agent through MCP" className="mcp-card"><McpSetup/></Card>
@@ -618,6 +664,42 @@ export function Help() {
 
 const views: Record<Page, () => React.ReactElement> = { Overview, Training: Timeline, Profile, Plan: CurrentPlanPage, Connections, Settings, Help };
 
+function DatabaseGate() {
+  const client = useQueryClient();
+  const vault = useQuery({ queryKey: ["vault-status"], queryFn: getVaultStatus });
+  const [password, setPassword] = useState(""); const [confirmation, setConfirmation] = useState(""); const [remember, setRemember] = useState(true);
+  const [error, setError] = useState<unknown>(); const [busy, setBusy] = useState(false); const [resetting, setResetting] = useState(false);
+  if (!vault.data || (vault.data.initialized && !vault.data.locked)) return null;
+  const setup = !vault.data.initialized;
+  const mismatch = (setup || resetting) && password !== confirmation;
+  const submit = async () => {
+    try {
+      setBusy(true); setError(undefined);
+      if (setup) {
+        if (password !== confirmation) throw new Error("Passwords do not match.");
+        await setupVault(password);
+      } else if (resetting) {
+        if (password !== confirmation) throw new Error("Passwords do not match.");
+        await resetVaultPassword(password);
+      } else await unlockVault(password, remember);
+      setPassword(""); setConfirmation("");
+      await Promise.all([client.invalidateQueries({ queryKey: ["vault-status"] }), client.invalidateQueries({ queryKey: ["intervals-status"] }), client.invalidateQueries({ queryKey: ["xunji-status"] })]);
+    } catch (value) { setError(value); } finally { setBusy(false); }
+  };
+  return <div className="modal-backdrop"><section className="connection-modal database-gate" role="dialog" aria-modal="true" aria-labelledby="database-gate-title">
+    <header><div><h2 id="database-gate-title">{setup ? "Protect this database" : resetting ? "Reset the database password" : "Unlock this database"}</h2><p>{setup ? "Set the password that protects your data in Athria and encrypts your saved connection keys. Keep it safe: if you forget it, saved connection keys cannot be recovered." : resetting ? "Set a new database password. Your training data stays intact, but saved connection keys are protected by the old password and will be removed — reconnect them in Connections afterwards." : "This database has not been unlocked on this computer. Enter its database password to continue."}</p></div></header>
+    <div className="modal-body">
+      <label>{resetting ? "New password" : "Database password"}<input type="password" autoFocus autoComplete={setup || resetting ? "new-password" : "current-password"} value={password} onChange={(event) => setPassword(event.target.value)}/></label>
+      {(setup || resetting) && <label>Confirm password<input type="password" className={mismatch ? "invalid" : undefined} autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)}/></label>}
+      {!setup && !resetting && <label className="remember-field"><input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)}/>Remember on this computer</label>}
+      {mismatch && <p className="field-error">Passwords do not match.</p>}
+      {setup && vault.data.legacySources.length > 0 && <p className="helper">Credentials saved on this computer by an earlier Athria version will be moved into this database securely.</p>}
+      <ErrorBanner error={error}/>
+      <div className="modal-actions">{!setup && !resetting && <button type="button" className="text-button gate-forgot" onClick={() => { setResetting(true); setPassword(""); setConfirmation(""); setError(undefined); }}>Forgot password?</button>}{resetting && <button type="button" className="text-button gate-forgot" onClick={() => { setResetting(false); setPassword(""); setConfirmation(""); setError(undefined); }}>Back to unlock</button>}<button type="button" disabled={busy || ((setup || resetting) && (password.length === 0 || password !== confirmation))} onClick={() => void submit()}>{busy ? "Working…" : setup ? "Set password" : resetting ? "Reset password" : "Unlock"}</button></div>
+    </div>
+  </section></div>;
+}
+
 export function App() {
   const [page, setPage] = useState<Page>("Overview"); const [serviceCrash, setServiceCrash] = useState(false); const View = views[page];
   const profile = useQuery({ queryKey: ["profile"], queryFn: () => api<AthleteProfile>("/api/profile") });
@@ -628,5 +710,5 @@ export function App() {
   const navIcons: Record<Page, IconName> = { Overview: "overview", Training: "training", Profile: "profile", Plan: "plan", Connections: "devices", Settings: "settings", Help: "help" };
   const NavItems = ({ items }: { items: typeof dashboardPages[number][] }) => <>{items.map((item) => <button key={item.id} className={item.id === page ? "active" : ""} aria-current={item.id === page ? "page" : undefined} onClick={() => setPage(item.id)}><AppIcon name={navIcons[item.id]}/>{item.label}</button>)}</>;
   const preferredName = profile.data?.preferredName || "Athlete";
-  return <div className="shell"><aside><div className="brand"><img src="/athria-logo.svg" alt="Athria" /></div><nav aria-label="Main navigation"><NavItems items={primaryPages}/></nav><div className="sidebar-lower"><nav className="support-nav" aria-label="Support navigation"><NavItems items={supportPages}/></nav></div></aside><main className="primary-main">{page !== "Plan" && page !== "Profile" && <PrimaryPageHeader preferredName={preferredName} subtitle={page === "Overview" ? "Let's keep the momentum going. Here's your overview for today." : page === "Training" ? "All your training in one place — every domain, every workout." : page === "Connections" ? "Sync your data from the apps and devices you use. Keep everything in one place." : page === "Settings" ? "Your personal information, system status, and local backups." : page === "Help" ? "Guides for plans, training data, backups and connecting your AI agent through MCP." : "Your AI fitness hub. Local-first. Data you own."}/>}{serviceCrash && <div className="error">The local service stopped unexpectedly. Close and reopen Athria. If the problem continues, create a backup before troubleshooting.</div>}<View/></main></div>;
+  return <><DatabaseGate/><div className="shell"><aside><div className="brand"><img src="/athria-logo.svg" alt="Athria" /></div><nav aria-label="Main navigation"><NavItems items={primaryPages}/></nav><div className="sidebar-lower"><nav className="support-nav" aria-label="Support navigation"><NavItems items={supportPages}/></nav></div></aside><main className="primary-main">{page !== "Plan" && page !== "Profile" && <PrimaryPageHeader preferredName={preferredName} subtitle={page === "Overview" ? "Let's keep the momentum going. Here's your overview for today." : page === "Training" ? "All your training in one place — every domain, every workout." : page === "Connections" ? "Sync your data from the apps and devices you use. Keep everything in one place." : page === "Settings" ? "Your personal information, system status, and local database." : page === "Help" ? "Guides for plans, training data, backups and connecting your AI agent through MCP." : "Your AI fitness hub. Local-first. Data you own."}/>}{serviceCrash && <div className="error">The local service stopped unexpectedly. Close and reopen Athria. If the problem continues, back up your database file before troubleshooting.</div>}<View/></main></div></>;
 }

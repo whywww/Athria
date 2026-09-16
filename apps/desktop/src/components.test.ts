@@ -1,7 +1,16 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { PrimaryPageHeader } from "./components";
+import { EmptyState, PrimaryPageHeader } from "./components";
+
+describe("EmptyState", () => {
+  it("renders a title with an optional description", () => {
+    const withDescription = renderToStaticMarkup(createElement(EmptyState, { title: "No connections yet", description: "Choose one of the available connections below to get started." }));
+    expect(withDescription).toContain('<div class="empty-state"><strong>No connections yet</strong><p>Choose one of the available connections below to get started.</p></div>');
+    const titleOnly = renderToStaticMarkup(createElement(EmptyState, { title: "No templates yet." }));
+    expect(titleOnly).toContain('<div class="empty-state"><strong>No templates yet.</strong></div>');
+  });
+});
 
 describe("PrimaryPageHeader", () => {
   it("renders the preferred name and optional actions", () => {
