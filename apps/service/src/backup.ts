@@ -57,28 +57,13 @@ export function createBackup(repository: AthriaRepository, databasePath: string,
   return target;
 }
 
-function stagedPath(databasePath: string, purpose: "preview" | "restore"): string {
-  return resolve(dirname(databasePath), `.athria-${purpose}-${crypto.randomUUID()}.sqlite3`);
+function stagedPath(databasePath: string): string {
+  return resolve(dirname(databasePath), `.athria-preview-${crypto.randomUUID()}.sqlite3`);
 }
 
 export function previewBackup(path: string, databasePath: string): BackupPreview {
   const source = requireSqliteFile(path);
-  const target = stagedPath(databasePath, "preview");
+  const target = stagedPath(databasePath);
   try { copyFileSync(source, target); return validateStaged(target, source); }
   finally { rmSync(target, { force: true }); rmSync(`${target}-wal`, { force: true }); rmSync(`${target}-shm`, { force: true }); }
-}
-
-export function prepareRestore(path: string, repository: AthriaRepository, databasePath: string): { stagePath: string; preview: BackupPreview } {
-  const source = requireSqliteFile(path);
-  if (source === resolve(databasePath)) throw new AthriaError("INVALID_BACKUP", "The selected database is already active.");
-  const stagePath = stagedPath(databasePath, "restore");
-  try {
-    copyFileSync(source, stagePath);
-    const preview = validateStaged(stagePath, source);
-    repository.checkpoint();
-    return { stagePath, preview };
-  } catch (error) {
-    rmSync(stagePath, { force: true }); rmSync(`${stagePath}-wal`, { force: true }); rmSync(`${stagePath}-shm`, { force: true });
-    throw error;
-  }
 }

@@ -41,7 +41,7 @@ const endurance: PlanComponent = {
 describe("Prescription", () => {
   it("renders the Apple-style strength table with layered exercise details", () => {
     const html = render(strength);
-    for (const value of ["Prescription", "Strength main block", "2 exercises", "🏋", "Sets × Reps", "Effort", "Romanian Deadlift", "rx-movement-pill", "Hinge", "3 × 8–10", "60 kg", "RPE 7", "RIR 2", "2 min", "Tempo 3-1-1", "Alternatives: Good Morning", "Controlled", "rx-strength-details"]) expect(html).toContain(value);
+    for (const value of ["Prescription", "Strength main block", "2 exercises", 'data-domain-icon="strength"', "Sets × Reps", "Effort", "Romanian Deadlift", "rx-movement-pill", "Hinge", "3 × 8–10", "60 kg", "RPE 7", "RIR 2", "2 min", "Tempo 3-1-1", "Alternatives: Good Morning", "Controlled", "rx-strength-details"]) expect(html).toContain(value);
     expect(html).not.toContain('role="columnheader">Notes');
   });
 

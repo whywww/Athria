@@ -13,19 +13,6 @@ export type DomainValue = NonNullable<PlanComponent["domain"]["value"]>;
 /** Monday-based short weekday labels, indexed by `weekdayIndex()` (0 = Mon). */
 export const weekdayShort: string[] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-const domainGlyphs: Record<DomainValue, string> = {
-  strength: "🏋",
-  endurance: "🏃",
-  sport_skill: "🎯",
-  mind_body: "🧘",
-  recovery: "❋",
-};
-
-/** Short glyph used as the sport-type icon on a session chip (§7.4). */
-export function domainGlyph(domain: DomainValue): string {
-  return domainGlyphs[domain];
-}
-
 /** Resolve domain-aware phase labels carried by a materialized session. */
 export function phaseLabelsForSession(progressions: Mesocycle["domainProgressions"], session: Pick<CalendarSession, "phaseRefs">): string[] {
   return session.phaseRefs.flatMap((ref) => {

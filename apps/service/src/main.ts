@@ -6,7 +6,7 @@ import { AthriaRepository } from "@athria/data";
 import { XUNJI_SYNC_DAYS, XunjiAuthenticationError, fetchIntervals, fetchXunjiTraining, syncDateWindow } from "@athria/integrations";
 import { createMcpHttpHandler, serveMcpStdio } from "@athria/mcp";
 import { applyCors, corsPreflightResponse, isAllowedOrigin } from "./http-security";
-import { createBackup, prepareRestore, previewBackup } from "./backup";
+import { createBackup, previewBackup } from "./backup";
 
 const VERSION = "0.2.0";
 function platformDataRoot(): string {
@@ -48,13 +48,6 @@ async function main(): Promise<void> {
     const target = process.argv[3];
     if (!target) throw new Error("Usage: athria-service backup TARGET.sqlite3");
     console.log(backupDatabase(target));
-    repository.close();
-    return;
-  }
-  if (command === "restore") {
-    const source = process.argv[3];
-    if (!source) throw new Error("Usage: athria-service restore BACKUP_PATH");
-    console.log(JSON.stringify(prepareRestore(source, repository, databasePath), null, 2));
     repository.close();
     return;
   }
@@ -110,7 +103,7 @@ async function main(): Promise<void> {
         const template = url.pathname.match(/^\/api\/templates\/([^/]+)$/);
         if (template && request.method === "GET") return json(application.getTemplate(decodeURIComponent(template[1]!)));
         if (template && request.method === "PUT") return json(application.updateTemplate(await body(request)));
-        if (template && request.method === "DELETE") { const value = await body(request); return json(application.deleteTemplate(decodeURIComponent(template[1]!), Number(value.expectedRevision))); }
+        if (template && request.method === "DELETE") { const value = await body(request); const revision = value.expectedRevision === undefined ? undefined : Number(value.expectedRevision); return json(application.deleteTemplate(decodeURIComponent(template[1]!), revision)); }
         if (url.pathname === "/api/plans/current" && request.method === "GET") return json(application.getCurrentPlan());
         if (url.pathname === "/api/plans/current" && request.method === "PUT") return json(application.saveCurrentPlan(await body(request)));
         if (url.pathname === "/api/plans/current/validate" && request.method === "POST") return json(application.validateCurrentPlan(await body(request)));
@@ -162,7 +155,6 @@ async function main(): Promise<void> {
         if (url.pathname === "/api/system/doctor" && request.method === "GET") return json({ status: "ok", version: VERSION, databasePath, database: repository.counts() });
         if (url.pathname === "/api/system/backup" && request.method === "POST") { const value = await body(request); return json({ path: backupDatabase(String(value.path)) }); }
         if (url.pathname === "/api/system/backup/preview" && request.method === "POST") { const value = await body(request); return json(previewBackup(String(value.path), databasePath)); }
-        if (url.pathname === "/api/system/restore/prepare" && request.method === "POST") { const value = await body(request); return json(prepareRestore(String(value.path), repository, databasePath)); }
         return json({ error: { code: "NOT_FOUND", message: "Route not found." } }, 404);
         } catch (error) {
           const athriaError = error instanceof AthriaError ? error : new AthriaError("INTERNAL_ERROR", error instanceof Error ? error.message : String(error), 500);

@@ -24,12 +24,14 @@ describe("v7 planning resets", () => {
     expect(repository.sqlite.query("SELECT version FROM athria_migrations WHERE version=18").get()).toEqual({ version: 18 });
     expect(repository.sqlite.query("SELECT version FROM athria_migrations WHERE version=19").get()).toEqual({ version: 19 });
     expect(repository.sqlite.query("SELECT version FROM athria_migrations WHERE version=20").get()).toEqual({ version: 20 });
-    expect(repository.counts()).toMatchObject({ session_templates: 0, current_mesocycles: 0 });
+    expect(repository.sqlite.query("SELECT version FROM athria_migrations WHERE version=21").get()).toEqual({ version: 21 });
+    expect(repository.sqlite.query("SELECT version FROM athria_migrations WHERE version=22").get()).toEqual({ version: 22 });
+    expect(repository.counts()).toMatchObject({ session_templates: 0, current_mesocycles: 0, template_dismissals: 0 });
   });
   it("removes duplicate, history, approval, proposal, raw and catalog tables", () => {
     repository = new AthriaRepository(":memory:");
     const names = repository.sqlite.query("SELECT name FROM sqlite_master WHERE type='table'").all().map((row) => String((row as { name: string }).name));
-    expect(names).toEqual(expect.arrayContaining(["profiles", "training_sessions", "training_session_sources", "training_session_type_overrides", "plan_workout_matches", "workout_plan_exclusions", "planned_session_events", "wellness", "session_templates", "current_mesocycles"]));
+    expect(names).toEqual(expect.arrayContaining(["profiles", "training_sessions", "training_session_sources", "training_session_type_overrides", "plan_workout_matches", "workout_plan_exclusions", "planned_session_events", "wellness", "session_templates", "template_dismissals", "current_mesocycles"]));
     expect(names).not.toEqual(expect.arrayContaining(["preferences", "exercises", "planned_sessions", "planned_session_changes", "raw_records", "approvals", "profile_update_proposals"]));
   });
   it("upgrades a v19 database with workout type override storage", () => {
@@ -39,6 +41,27 @@ describe("v7 planning resets", () => {
     repository = new AthriaRepository(path);
     expect(repository.sqlite.query("SELECT version FROM athria_migrations WHERE version=20").get()).toEqual({ version: 20 });
     expect(repository.sqlite.query("SELECT name FROM sqlite_master WHERE type='table' AND name='training_session_type_overrides'").get()).toEqual({ name: "training_session_type_overrides" });
+  });
+  it("upgrades a v20 database with template dismissal storage", () => {
+    directory = mkdtempSync(join(tmpdir(), "athria-dismissal-v21-")); const path = join(directory, "athria.sqlite3");
+    repository = new AthriaRepository(path); repository.close(); repository = undefined;
+    const sqlite = new Database(path); sqlite.exec("DROP TABLE template_dismissals; DELETE FROM athria_migrations WHERE version=21;"); sqlite.close();
+    repository = new AthriaRepository(path);
+    expect(repository.sqlite.query("SELECT version FROM athria_migrations WHERE version=21").get()).toEqual({ version: 21 });
+    expect(repository.sqlite.query("SELECT name FROM sqlite_master WHERE type='table' AND name='template_dismissals'").get()).toEqual({ name: "template_dismissals" });
+  });
+  it("upgrades a v21 database with race-day profile storage", () => {
+    directory = mkdtempSync(join(tmpdir(), "athria-racedays-v22-")); const path = join(directory, "athria.sqlite3");
+    repository = new AthriaRepository(path); repository.saveProfile(defaultProfile()); repository.close(); repository = undefined;
+    const sqlite = new Database(path);
+    const legacy = { ...defaultProfile() } as Record<string, unknown>;
+    delete legacy.raceDays;
+    sqlite.query("UPDATE profiles SET data = ? WHERE owner_id = ?").run(JSON.stringify(legacy), "local-user");
+    sqlite.exec("DELETE FROM athria_migrations WHERE version = 22;");
+    sqlite.close();
+    repository = new AthriaRepository(path);
+    expect(repository.sqlite.query("SELECT version FROM athria_migrations WHERE version = 22").get()).toEqual({ version: 22 });
+    expect(repository.getProfile().raceDays).toEqual([]);
   });
   it("backs up and clears incompatible planning rows while preserving Profile data", () => {
     directory = mkdtempSync(join(tmpdir(), "athria-v8-")); const path = join(directory, "athria.sqlite3");
@@ -101,6 +124,16 @@ describe("v7 planning resets", () => {
     const row = repository.sqlite.query("SELECT id, owner_id, revision, data FROM session_templates WHERE id='easy'").get() as Record<string, unknown>;
     expect(JSON.parse(String(row.data))).toEqual({ name: "Easy", intent: "Build aerobic capacity.", domain: "endurance", nodes: [{ role: "steady", variables: ["duration"], optionalVariables: ["distance"] }] });
     expect(row).toMatchObject({ id: "easy", owner_id: "local-user", revision: 1 });
+  });
+  it("persists dismissed built-in template ids across restarts", () => {
+    directory = mkdtempSync(join(tmpdir(), "athria-dismissal-")); const path = join(directory, "athria.sqlite3");
+    repository = new AthriaRepository(path);
+    expect(repository.listDismissedTemplateIds()).toEqual([]);
+    repository.dismissTemplate("builtin.easy-run"); repository.dismissTemplate("builtin.easy-run");
+    expect(repository.listDismissedTemplateIds()).toEqual(["builtin.easy-run"]);
+    repository.close(); repository = new AthriaRepository(path);
+    expect(repository.listDismissedTemplateIds()).toEqual(["builtin.easy-run"]);
+    expect(repository.counts().template_dismissals).toBe(1);
   });
   it("migrates legacy templates and built-in references to catalog v2 without changing prescriptions", () => {
     directory = mkdtempSync(join(tmpdir(), "athria-template-v11-")); const path = join(directory, "athria.sqlite3");

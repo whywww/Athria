@@ -31,6 +31,7 @@ describe("Help", () => {
   it("explains AI and training terms in the glossary", () => {
     const html = renderHelp();
     expect(html).toContain("Model Context Protocol");
+    expect(html).toContain("e.g., Claude, ChatGPT");
     expect(html).toContain("Mesocycle");
     expect(html).toContain("RPE / RIR");
     expect(html).toContain("Heart rate zone");

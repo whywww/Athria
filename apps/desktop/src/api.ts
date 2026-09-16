@@ -34,8 +34,6 @@ export async function syncXunji(range: SyncRange): Promise<unknown> { return inv
 export async function getXunjiStatus<T>(): Promise<T> { return invoke("xunji_status"); }
 export async function getMcpStatus(): Promise<McpStatus> { return invoke("mcp_status"); }
 
-export async function pickDatabaseFile(): Promise<string | null> { return invoke<string | null>("pick_database_file"); }
-export async function changeDatabaseFile(newPath: string): Promise<void> { return invoke("change_database_file", { newPath }); }
 export async function pickBackupDestination(): Promise<string | null> { return invoke<string | null>("pick_backup_destination"); }
 export async function pickRestoreFile(): Promise<string | null> { return invoke<string | null>("pick_restore_file"); }
 export async function restoreBackup(path: string): Promise<void> { return invoke("restore_backup", { path }); }

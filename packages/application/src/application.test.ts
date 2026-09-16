@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { AthriaRepository } from "@athria/data";
 import { PLAN_SCHEMA_VERSION, TAXONOMY_VERSION, equipmentTypeIds, trainingSessionSchema, type CurrentPlanWrite } from "@athria/schemas";
-import { AthriaApplication, AthriaError } from "./index";
+import { AthriaApplication, AthriaError, builtinSessionTemplates } from "./index";
 
 let repository: AthriaRepository | undefined;
 afterEach(() => repository?.close());
@@ -28,12 +28,29 @@ describe("v7 application boundary", () => {
     expect(summary.metrics.strength.workingSets.value).toBe(1);
     expect(summary.metrics.endurance.distanceMeters.value).toBe(5000);
   });
-  it("merges built-ins with local templates and protects built-ins", () => {
+  it("derives user-owned replacements for built-ins and hides deleted ones", () => {
     repository = new AthriaRepository(":memory:"); const app = new AthriaApplication(repository);
     expect(app.listTemplates().some((item) => item.origin === "builtin")).toBe(true);
     expect(app.createTemplate(template())).toMatchObject({ origin: "user", revision: 1 });
-    expect(() => app.updateTemplate({ template: { ...template(), id: "builtin.easy-run" }, expectedRevision: 1 })).toThrow(/read-only/i);
-    expect(() => app.deleteTemplate("builtin.easy-run", 1)).toThrow(/built-in/i);
+    // Posting a built-in ID derives a user-owned replacement that shadows the original.
+    expect(app.createTemplate({ ...template(), id: "builtin.lower-strength-a" })).toMatchObject({ id: "builtin.lower-strength-a", origin: "user", revision: 1 });
+    expect(app.listTemplates().filter((item) => item.id === "builtin.lower-strength-a")).toEqual([expect.objectContaining({ origin: "user", revision: 1 })]);
+    // The derived row keeps the built-in's catalog slot instead of appending to the end.
+    const ids = app.listTemplates().map((item) => item.id);
+    expect(ids.indexOf("builtin.lower-strength-a")).toBe(builtinSessionTemplates.findIndex((item) => item.id === "builtin.lower-strength-a"));
+    expect(ids[ids.length - 1]).toBe("lower");
+    expect(app.getTemplate("builtin.lower-strength-a")).toMatchObject({ origin: "user", revision: 1 });
+    expect(app.updateTemplate({ template: { ...template(), id: "builtin.lower-strength-a" }, expectedRevision: 1 })).toMatchObject({ template: { origin: "user", revision: 2 } });
+    // Deleting the derived row keeps the built-in hidden; the code-defined original stays resolvable.
+    expect(app.deleteTemplate("builtin.lower-strength-a", 2)).toEqual({ deleted: true, id: "builtin.lower-strength-a" });
+    expect(app.listTemplates().some((item) => item.id === "builtin.lower-strength-a")).toBe(false);
+    expect(app.getTemplate("builtin.lower-strength-a")).toMatchObject({ origin: "builtin" });
+    // Deleting an untouched built-in only hides it.
+    expect(app.deleteTemplate("builtin.easy-run")).toEqual({ deleted: true, id: "builtin.easy-run" });
+    expect(app.listTemplates().some((item) => item.id === "builtin.easy-run")).toBe(false);
+    expect(app.getTemplate("builtin.easy-run")).toMatchObject({ origin: "builtin" });
+    // A built-in original that was never derived has no stored row to update.
+    expect(() => app.updateTemplate({ template: { ...template(), id: "builtin.easy-run" }, expectedRevision: 1 })).toThrow(/not found/i);
   });
   it("keeps template updates independent from saved Session prescriptions", () => {
     repository = new AthriaRepository(":memory:"); const app = new AthriaApplication(repository, "local-user", () => new Date("2026-09-07T00:00:00Z"));

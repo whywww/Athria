@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { AthriaRepository } from "@athria/data";
-import { createBackup, prepareRestore, previewBackup } from "./backup";
+import { createBackup, previewBackup } from "./backup";
 
 let root = "";
 let repository: AthriaRepository | undefined;
@@ -25,15 +25,12 @@ describe("Athria backup validation", () => {
     expect(preview.counts).toEqual({ workouts: 0, templates: 0, plans: 0 });
   });
 
-  test("preview and restore preparation do not modify the selected source", () => {
+  test("preview does not modify the selected source", () => {
     const { databasePath } = setup();
     const source = createBackup(repository!, databasePath, join(root, "source.sqlite3"));
     const before = readFileSync(source);
-    previewBackup(source, databasePath);
-    const prepared = prepareRestore(source, repository!, databasePath);
+    expect(previewBackup(source, databasePath).path).toBe(source);
     expect(readFileSync(source)).toEqual(before);
-    expect(prepared.preview.path).toBe(source);
-    expect(readFileSync(prepared.stagePath).byteLength).toBeGreaterThan(0);
   });
 
   test.each(["not-sqlite.txt", "invalid.sqlite3"])("rejects invalid source %s", (name) => {

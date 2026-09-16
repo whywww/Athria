@@ -40,6 +40,7 @@ import {
   wellnessPatchSchema,
   wellnessRecordSchema,
   type AthleteProfile,
+  type BuiltinSessionTemplate,
   type CurrentPlan,
   type CurrentPlanWrite,
   type PhaseRef,
@@ -49,6 +50,7 @@ import {
   type PlannedSessionAction,
   type PersonalInformationWrite,
   type SessionTemplate,
+  type StoredSessionTemplate,
   type TrainingSession,
   type WellnessPatch,
 } from "@athria/schemas";
@@ -237,9 +239,22 @@ export class AthriaApplication {
     return validatePlan(this.getProfile(), { mesocycle: input.mesocycle, effectiveStartDate: input.effectiveStartDate }, this.now());
   }
 
-  listTemplates() { return [...builtinSessionTemplates, ...this.repository.listTemplates(this.ownerId)]; }
+  listTemplates() {
+    const user = this.repository.listTemplates(this.ownerId);
+    const dismissed = new Set(this.repository.listDismissedTemplateIds(this.ownerId));
+    const userById = new Map(user.map((row) => [row.id, row]));
+    // A user row with a built-in ID is the derived replacement of that built-in: it keeps the
+    // built-in's catalog slot instead of being appended. Dismissals hide removed built-ins.
+    const merged = builtinSessionTemplates.flatMap<BuiltinSessionTemplate | StoredSessionTemplate>((item) => {
+      const replacement = userById.get(item.id);
+      if (replacement) return [replacement];
+      return dismissed.has(item.id) ? [] : [item];
+    });
+    const builtinIds = new Set(builtinSessionTemplates.map((item) => item.id));
+    return [...merged, ...user.filter((row) => !builtinIds.has(row.id))];
+  }
   getTemplate(id: string) {
-    const template = builtinSessionTemplates.find((item) => item.id === id) ?? this.repository.getTemplate(id, this.ownerId);
+    const template = this.repository.getTemplate(id, this.ownerId) ?? builtinSessionTemplates.find((item) => item.id === id);
     if (!template) throw new AthriaError("TEMPLATE_NOT_FOUND", "The session template was not found.", 404);
     return template;
   }
@@ -247,23 +262,28 @@ export class AthriaApplication {
     const parsed = sessionTemplateCreateSchema.parse(value);
     const { clientRequestId: _request, ...candidate } = parsed;
     const template = sessionTemplateSchema.parse(candidate);
-    if (builtinSessionTemplates.some((item) => item.id === template.id)) throw new AthriaError("TEMPLATE_ALREADY_EXISTS", "That ID belongs to a built-in template.", 409);
     try { return this.repository.createTemplate(template, this.ownerId); }
     catch (error) { if (error instanceof Error && error.message === "TEMPLATE_ALREADY_EXISTS") throw new AthriaError(error.message, "A template with this ID already exists.", 409); throw error; }
   }
   updateTemplate(value: unknown) {
     const input = sessionTemplateUpdateSchema.parse(value);
-    if (builtinSessionTemplates.some((item) => item.id === input.template.id)) throw new AthriaError("TEMPLATE_READ_ONLY", "Built-in templates are read-only; copy one to create a user template.", 409);
     try { return { template: this.repository.updateTemplate(input.template, input.expectedRevision, this.ownerId), impact: { affectedCount: 0, updatedCount: 0 } }; }
     catch (error) { if (error instanceof Error && ["TEMPLATE_NOT_FOUND", "REVISION_CONFLICT"].includes(error.message)) throw new AthriaError(error.message, error.message === "REVISION_CONFLICT" ? "The template changed. Refresh and try again." : "The session template was not found.", error.message === "REVISION_CONFLICT" ? 409 : 404); throw error; }
   }
-  deleteTemplate(id: string, expectedRevision: number) {
-    if (builtinSessionTemplates.some((item) => item.id === id)) throw new AthriaError("TEMPLATE_READ_ONLY", "Built-in templates cannot be deleted.", 409);
+  deleteTemplate(id: string, expectedRevision?: number) {
+    const stored = this.repository.getTemplate(id, this.ownerId);
+    // Deleting a built-in that has no derived row only hides it; the code-defined original
+    // remains and existing plan references keep resolving against the catalog.
+    if (!stored && builtinSessionTemplates.some((item) => item.id === id)) { this.repository.dismissTemplate(id, this.ownerId); return { deleted: true, id }; }
     const current = this.repository.getCurrentPlan(this.ownerId);
     const references = current?.mesocycle.weeks.flatMap((week) => week.sessions.filter((session) => session.templateRef?.source === "user" && session.templateRef.id === id).map((session) => session.id)) ?? [];
     if (references.length) throw new AthriaError("TEMPLATE_IN_USE", "Remove this template reference from the current plan before deleting it.", 409);
-    try { this.repository.deleteTemplate(id, expectedRevision, this.ownerId); return { deleted: true, id }; }
+    if (expectedRevision === undefined) throw new AthriaError("REVISION_REQUIRED", "expectedRevision is required to delete a stored template.", 400);
+    try { this.repository.deleteTemplate(id, expectedRevision, this.ownerId); }
     catch (error) { if (error instanceof Error && ["TEMPLATE_NOT_FOUND", "REVISION_CONFLICT"].includes(error.message)) throw new AthriaError(error.message, error.message === "REVISION_CONFLICT" ? "The template changed. Refresh and try again." : "The session template was not found.", error.message === "REVISION_CONFLICT" ? 409 : 404); throw error; }
+    // Removing the derived replacement of a built-in keeps that built-in hidden.
+    if (builtinSessionTemplates.some((item) => item.id === id)) this.repository.dismissTemplate(id, this.ownerId);
+    return { deleted: true, id };
   }
 
   getCurrentPlan() { return this.repository.getCurrentPlan(this.ownerId); }
@@ -577,7 +597,7 @@ export class AthriaApplication {
       read("get_xunji_sync_status", "Get the local Athria Devices sync status for 训记/Xunji without exposing its API key.", z.object({}), () => this.getXunjiSyncStatus()),
       read("get_training_summary", "Get domain-separated recent training metrics.", z.object({ days: z.number().int().min(1).max(365).default(7) }), (input) => this.getTrainingSummary((input as { days: number }).days)),
       read("get_current_plan", "Get the user's single editable current mesocycle.", z.object({}), () => this.getCurrentPlan()),
-      read("list_session_templates", "List built-in read-only and local user-owned single-domain training archetypes. Templates never contain an executable dose.", z.object({}), () => this.listTemplates()),
+      read("list_session_templates", "List available built-in and local user-owned single-domain training archetypes. Built-ins that were edited or removed are no longer listed. Templates never contain an executable dose.", z.object({}), () => this.listTemplates()),
       read("get_session_template", "Get one stable single-domain training archetype by ID.", z.object({ id: z.string().min(1) }), (input) => this.getTemplate((input as { id: string }).id)),
       read("get_training_taxonomy", "Get the authoritative versioned template vocabularies. Read this before writing a template and use only returned movement and muscle IDs.", z.object({}), () => this.getTrainingTaxonomy()),
       read("calculate_training_metrics", "Calculate deterministic strength and endurance metrics.", z.object({ days: z.number().int().min(1).max(365).default(90) }), (input) => calculateTrainingMetrics(this.listSessions((input as { days: number }).days))),
@@ -591,9 +611,9 @@ export class AthriaApplication {
       read("get_next_training_day", "Get the first unfinished scheduled training day on or after a local date.", z.object({ onOrAfterDate: dateSchema.optional() }).strict(), (input) => this.getNextTrainingDay(input as { onOrAfterDate?: string })),
       read("list_planned_sessions", "List planned sessions across the current plan, optionally filtered by an inclusive scheduledDate window.", z.object({ from: dateSchema.optional(), to: dateSchema.optional() }).strict(), (input) => this.getCalendar(input as { from?: string; to?: string })),
       read("validate_next_training_day_sessions", "Validate one or more sessions for the current next training day without saving them.", nextTrainingDayWriteSchema, (input) => this.validateNextTrainingDaySessions(input)),
-      { name: "create_session_template", description: "Create a local reusable single-domain archetype. Read get_training_taxonomy first. Do not include exercises, sets, reps, distance, duration, load, or recovery demand.", inputSchema: sessionTemplateCreateSchema, readOnly: false, idempotent: true, handler: (input) => this.createTemplate(input) },
-      { name: "update_session_template", description: "Update a local archetype. Built-ins are read-only and template edits never rewrite Weekly Sessions.", inputSchema: sessionTemplateUpdateSchema, readOnly: false, idempotent: false, handler: (input) => this.updateTemplate(input) },
-      { name: "delete_session_template", description: "Delete an unreferenced template only after the user explicitly requests deletion.", inputSchema: z.object({ id: z.string().min(1), expectedRevision: z.number().int().positive(), confirmedExplicitRequest: z.literal(true) }), readOnly: false, idempotent: false, handler: (input) => { const value = input as { id: string; expectedRevision: number }; return this.deleteTemplate(value.id, value.expectedRevision); } },
+      { name: "create_session_template", description: "Create a local reusable single-domain archetype. Submitting a built-in template ID derives a user-owned replacement with that ID and hides the original in the library. Read get_training_taxonomy first. Do not include exercises, sets, reps, distance, duration, load, or recovery demand.", inputSchema: sessionTemplateCreateSchema, readOnly: false, idempotent: true, handler: (input) => this.createTemplate(input) },
+      { name: "update_session_template", description: "Update a local archetype. A built-in original cannot be updated directly; derive it first by creating a template with its ID. Template edits never rewrite Weekly Sessions.", inputSchema: sessionTemplateUpdateSchema, readOnly: false, idempotent: false, handler: (input) => this.updateTemplate(input) },
+      { name: "delete_session_template", description: "Delete an unreferenced user template, or hide a built-in template (the code-defined original is retained), only after the user explicitly requests deletion.", inputSchema: z.object({ id: z.string().min(1), expectedRevision: z.number().int().positive().optional(), confirmedExplicitRequest: z.literal(true) }), readOnly: false, idempotent: false, handler: (input) => { const value = input as { id: string; expectedRevision?: number }; return this.deleteTemplate(value.id, value.expectedRevision); } },
       { name: "save_current_plan", description: "Validate and directly replace the single current mesocycle. No approval step follows.", inputSchema: currentPlanWriteSchema, readOnly: false, idempotent: false, handler: (input) => { const saved = this.saveCurrentPlan(input); return { revision: saved.plan.revision, impact: saved.impact, blockerSummary: blockerSummaryFor(saved.validation) }; } },
       { name: "save_next_training_day_sessions", description: "After explicit confirmation, append or replace complete executable Session prescriptions on the next training day. A templateRef is optional provenance and never supplies missing fields.", inputSchema: nextTrainingDayWriteSchema, readOnly: false, idempotent: true, handler: (input) => this.saveNextTrainingDaySessions(input) },
       { name: "update_planned_session", description: "Add a manual completed workout, skip, restore, or move the current planned training occurrence after explicit user confirmation.", inputSchema: z.object({ id: z.string().min(1), update: plannedSessionActionSchema }).strict(), readOnly: false, idempotent: false, handler: (input) => { const value = input as { id: string; update: PlannedSessionAction }; return this.updatePlannedSession(value.id, value.update); } },
@@ -603,7 +623,7 @@ export class AthriaApplication {
       { name: "update_manual_training_session", description: "After explicit user confirmation, update the exact start time or duration of a canonical workout that contains a manual source.", inputSchema: z.object({ id: z.string().min(1), startAt: z.string().datetime({ offset: true }).optional(), durationMinutes: z.number().int().min(1).max(1440).optional(), confirmed: z.literal(true) }).strict(), readOnly: false, idempotent: false, handler: (input) => { const value = input as { id: string; startAt?: string; durationMinutes?: number; confirmed: true }; return this.updateManualTrainingSession(value.id, { ...(value.startAt ? { startAt: value.startAt } : {}), ...(value.durationMinutes ? { durationMinutes: value.durationMinutes } : {}), confirmed: value.confirmed }); } },
       { name: "remove_manual_training_source", description: "After explicit user confirmation, remove the manual source from a canonical workout. Synced source observations are never deleted.", inputSchema: z.object({ id: z.string().min(1), confirmed: z.literal(true) }).strict(), readOnly: false, idempotent: false, handler: (input) => { const value = input as { id: string; confirmed: true }; return this.deleteManualTrainingSession(value.id, { confirmed: value.confirmed }); } },
       { name: "update_wellness", description: "Directly update one wellness day only after the user explicitly confirms the values.", inputSchema: z.object({ day: dateSchema, update: wellnessPatchSchema }).strict(), readOnly: false, idempotent: false, handler: (input) => { const value = input as { day: string; update: WellnessPatch }; return this.updateWellness(value.day, value.update); } },
-      { name: "update_athlete_profile", description: "Directly apply a Profile patch only after the user explicitly confirms it. explicitRecoveryDays is the minimum day gap between high-recovery-demand sessions. injuries record known injuries or diagnoses (the factual why) and constraintNotes record movement-level restrictions (the what): notes may be derived from injuries but must never restate the diagnosis. Both are advisory context only: at most 10 entries of up to 200 characters each, one issue per entry, no duplicates. mesocycleDurationWeeks is the athlete's preferred mesocycle length in weeks (1-8); use it as the default durationWeeks for a new plan unless the user requests a specific length.", inputSchema: profileUpdateSchema, readOnly: false, idempotent: false, handler: (input) => this.updateProfile(input) },
+      { name: "update_athlete_profile", description: "Directly apply a Profile patch only after the user explicitly confirms it. explicitRecoveryDays is the minimum day gap between high-recovery-demand sessions. injuries record known injuries or diagnoses (the factual why) and constraintNotes record movement-level restrictions (the what): notes may be derived from injuries but must never restate the diagnosis. Both are advisory context only: at most 10 entries of up to 200 characters each, one issue per entry, no duplicates. mesocycleDurationWeeks is the athlete's preferred mesocycle length in weeks (1-8); use it as the default durationWeeks for a new plan unless the user requests a specific length. raceDays records upcoming or past target races as { date (YYYY-MM-DD), sport } entries; use them to shape mesocycle peaking. Advisory only, up to 50 entries.", inputSchema: profileUpdateSchema, readOnly: false, idempotent: false, handler: (input) => this.updateProfile(input) },
     ];
   }
 }

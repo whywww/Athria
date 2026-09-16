@@ -1,6 +1,7 @@
 import { useEffect, useId, useState, type ReactNode } from "react";
 import { formatDistance, formatDuration, friendlyLabel, type CalendarSession, type TrainingHistorySession, type TrainingSummary, type WellnessRecord } from "./view-models";
 import { addDays, weekdayIndex } from "./plan/view";
+import { domainIconPath } from "./domain-icons";
 
 const domainOrder = ["strength", "endurance", "sport_skill", "mind_body", "recovery"] as const;
 const weekdayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -149,6 +150,11 @@ export function recoveryStatus(records: WellnessRecord[]) {
   return { label: "Rest", detail: "Prioritize recovery", value: score, series };
 }
 
+// The readiness ring colour follows the verdict: green when ready, amber for caution, red for rest.
+export function recoveryRingTone(label: string) {
+  return label === "Ready" ? "ready" : label === "Caution" ? "caution" : label === "Rest" ? "rest" : "empty";
+}
+
 export function weeklyOverview(today: string, history: TrainingHistorySession[], planned: CalendarSession[], timezone: string) {
   const weekStart = overviewDateRange(today).weekStart;
   const elapsed = weekdayIndex(today) + 1;
@@ -261,12 +267,9 @@ function wellnessDeltaTone(key: WellnessKey, delta: number | null) {
 }
 
 function OverviewIcon({ kind }: { kind: "workout" | "target" | "recovery" | (typeof domainOrder)[number] }) {
-  const icon = kind === "workout" || kind === "strength" ? <><path d="M5 9v6M3 10v4M19 9v6M21 10v4M5 12h14"/><path d="M7 8v8M17 8v8"/></>
+  const icon = kind === "workout" ? domainIconPath("strength")
     : kind === "target" ? <><circle cx="11" cy="13" r="7"/><circle cx="11" cy="13" r="3.2"/><path d="m13.5 10.5 6-6M16 4.5h3.5V8"/></>
-    : kind === "recovery" ? <><path d="M5 18c1-8 6-12 14-12-1 8-5 13-12 12"/><path d="M7 18c3-4 6-7 10-9"/></>
-    : kind === "endurance" ? <><circle cx="14" cy="5" r="2"/><path d="m12 9 3 2 2 4M12 9l-3 4-4 1M10 13l-1 6M15 12l-4 3 4 4"/></>
-    : kind === "sport_skill" ? <><circle cx="12" cy="12" r="8.5"/><path d="m12 3.5 3 4-1 4-4 1-3-3M14 11.5l4 2 1 4M10 12.5l1 4-3 3M7 9.5 4 9"/></>
-    : <><path d="M7 18c2-2 2-5 1-7M17 18c-2-2-2-5-1-7M9 8c1 2 5 2 6 0"/><circle cx="12" cy="5" r="2"/><path d="M8 19h8"/></>;
+    : domainIconPath(kind);
   return <span className={`overview-icon icon-${kind}`} data-icon={kind} aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{icon}</svg></span>;
 }
 
@@ -354,9 +357,9 @@ export function OverviewDashboard({ summary, wellness, history, planned, today, 
 
   return <div className="overview-dashboard">
     <section className="overview-summary-grid" aria-label="This week so far">
-      <SummaryCard icon="workout" title="Completed Workouts" value={summary.sessionCount} className="bars-summary"><Change value={week.sessionDelta}/><MiniBars values={completedSeries} tone="coral"/></SummaryCard>
+      <SummaryCard icon="workout" title="Completed Workouts" value={summary.sessionCount} className="bars-summary"><Change value={week.sessionDelta}/><MiniBars values={completedSeries} tone="green"/></SummaryCard>
       <SummaryCard icon="target" title="Plan Progress" value={`${meso.completed} / ${meso.total}`} className="plan-summary"><small>this mesocycle</small><span className="progress-ring" style={{ "--progress": `${meso.percent * 3.6}deg` } as React.CSSProperties}><b>{meso.percent}%</b></span></SummaryCard>
-      <SummaryCard icon="recovery" title="Overall Readiness" value={recovery.label} className="recovery-summary"><small>{recovery.detail}</small><button type="button" className="recovery-help" aria-haspopup="dialog" onClick={() => setHelpOpen(true)}>How do we calculate?<span aria-hidden="true">→</span></button><span className="progress-ring" style={{ "--progress": `${(recovery.value ?? 0) * 3.6}deg` } as React.CSSProperties}><b>{recovery.value ?? "—"}</b></span></SummaryCard>
+      <SummaryCard icon="recovery" title="Overall Readiness" value={recovery.label} className="recovery-summary"><small>{recovery.detail}</small><button type="button" className="recovery-help" aria-haspopup="dialog" onClick={() => setHelpOpen(true)}>How do we calculate?<span aria-hidden="true">→</span></button><span className={`progress-ring ${recoveryRingTone(recovery.label)}`} style={{ "--progress": `${(recovery.value ?? 0) * 3.6}deg` } as React.CSSProperties}><b>{recovery.value ?? "—"}</b></span></SummaryCard>
     </section>
 
     <div className="overview-layout">

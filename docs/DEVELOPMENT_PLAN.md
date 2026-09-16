@@ -423,6 +423,8 @@ Schema 变更遵循以下规则：
 
 Profile 保存稳定、明确且经过用户确认的事实，例如目标、经验水平、长期频率、器械、固定时间限制和训练限制。Agent 只能创建 `ProfileUpdateProposal`，不能直接修改 Profile。
 
+Race Days 是 Profile 中的目标比赛列表（`raceDays`: `{ date: "YYYY-MM-DD", sport }`，最多 50 条，sport 支持预设与自由文本，允许历史条目），通过 `update_athlete_profile` 暴露给 Agent，用于影响 mesocycle 的峰值与减量安排（advisory only）。Profile 页将 Race Days 放在顶部摘要卡片中 Training Rhythm 单元格内、正下方同一列：只读态仅优先显示最近一场未来比赛（如 `Mar 21, 2026 · Marathon` + countdown chip `In 12 days`），无未来比赛时显示 `No upcoming races`；编辑态以紧凑列表管理全部条目并支持内联新增与删除。
+
 ### 10.2 Preference
 
 Preference 保存动作喜好、训练时长、常用训练日和替代偏好。Preference 的修改仍需通过 application service，但可以采用比 Profile 更轻量的确认流程。

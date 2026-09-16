@@ -1,51 +1,21 @@
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import {
-  editableTemplate, formatDuration, friendlyLabel, templateEditorErrors,
+  editableTemplate, formatDuration, friendlyLabel,
   type AthleteProfile, type CalendarSession, type CurrentPlan, type NextTrainingDay,
-  type SessionTemplate, type StoredSessionTemplate, type StrengthTemplateSlot, type TemplateBlock, type TemplateComponentDomain, type TrainingTaxonomy,
+  type SessionTemplate, type StoredSessionTemplate, type TemplateComponentDomain, type TrainingTaxonomy,
 } from "../view-models";
-import { Card, Empty, ErrorBanner, Loading, PrimaryPageHeader, weekdays } from "../components";
+import { Empty, ErrorBanner, Loading, PrimaryPageHeader, weekdays } from "../components";
+import { domainIconPath } from "../domain-icons";
 import { MesocycleTarget } from "./MesocycleTarget";
 import { ProgressionByDomain } from "./ProgressionByDomain";
+import { TemplateEditorModal, emptyTemplate, type TemplateEditorMode } from "./TemplateEditorModal";
 import { TemplateNodes } from "./TemplateNodes";
 import { WeeklyCalendar } from "./WeeklyCalendar";
 import { SessionDetailDrawer } from "./SessionDetailDrawer";
 import { Prescription } from "./Prescription";
 import { addDays, localDateForTimezone, planPosition } from "./view";
-
-const componentDomains: TemplateComponentDomain[] = ["strength", "endurance", "sport_skill", "mind_body", "recovery"];
-const roles: Record<TemplateComponentDomain, string[]> = { strength: ["primary", "secondary", "accessory", "trunk"], endurance: ["warm_up", "steady", "repeat_work_recovery", "cool_down"], sport_skill: ["preparation", "technical", "tactical", "small_sided_game", "match", "competition", "conditioning", "cool_down"], recovery: ["down_regulation", "mobility", "easy_movement"], mind_body: ["centering", "practice_flow", "breathing", "down_regulation"] };
-const emptyTemplate = (domain: TemplateComponentDomain = "strength"): SessionTemplate => {
-  const variable = domain === "strength" ? "exercise_selection" : domain === "sport_skill" ? "drill" : domain === "mind_body" ? "technique" : domain === "recovery" ? "movement" : "duration";
-  return { id: crypto.randomUUID(), name: "", intent: "", domain, nodes: [{ role: roles[domain][0]!, variables: [variable] }] } as SessionTemplate;
-};
-const selectedValues = (event: ChangeEvent<HTMLSelectElement>) => [...event.currentTarget.selectedOptions].map((option) => option.value);
-
-function TemplateEditor({ template, taxonomy, onChange }: { template: SessionTemplate; taxonomy: TrainingTaxonomy; onChange: (value: SessionTemplate) => void }) {
-  const nodes = template.nodes;
-  type NodePatch = { [Key in keyof StrengthTemplateSlot]?: StrengthTemplateSlot[Key] | undefined };
-  const updateNodes = (next: Array<TemplateBlock | StrengthTemplateSlot>) => onChange({ ...template, nodes: next });
-  const updateNode = (index: number, patch: NodePatch) => updateNodes(nodes.map((item, itemIndex) => {
-    if (itemIndex !== index) return item;
-    const next = { ...item } as Record<string, unknown>;
-    Object.entries(patch).forEach(([key, value]) => { if (value === undefined) delete next[key]; else next[key] = value; });
-    return next as unknown as StrengthTemplateSlot;
-  }));
-  const variableOptions = taxonomy.templateVariables[template.domain] ?? [];
-  return <Card title="Template Details" className="template-editor">
-    <div className="template-basics"><label>Name<input required placeholder="e.g. Lower Strength A" value={template.name} onChange={(event) => onChange({ ...template, name: event.target.value })}/></label><label>Single training domain<select value={template.domain} onChange={(event) => onChange(emptyTemplate(event.target.value as TemplateComponentDomain))}>{componentDomains.map((domain) => <option key={domain} value={domain}>{friendlyLabel(domain)}</option>)}</select></label></div>
-    <label>Purpose<textarea rows={2} value={template.intent} onChange={(event) => onChange({ ...template, intent: event.target.value })}/></label>
-    <div className="component-heading"><div><h3>Stable structure</h3><p>Describe ordered roles and variables, never a concrete workout.</p></div><button type="button" className="secondary compact" onClick={() => updateNodes([...nodes, { role: roles[template.domain][0]!, variables: [variableOptions[0]!] }])}>+ Add node</button></div>
-    <div className="template-components">{nodes.map((node, index) => <section className="template-component-editor" key={`${template.id}:${index}`}><div className="component-title"><span className={`phase-number tone-${index % 4}`}>{index + 1}</span><label>Node name (optional)<input value={node.name ?? ""} placeholder={friendlyLabel(node.role)} onChange={(event) => updateNode(index, { name: event.target.value.trim() ? event.target.value : undefined })}/></label><label>Role<select value={node.role} onChange={(event) => updateNode(index, { role: event.target.value })}>{roles[template.domain].map((role) => <option key={role} value={role}>{friendlyLabel(role)}</option>)}</select></label><label><input type="checkbox" checked={!node.optional} onChange={(event) => updateNode(index, { optional: event.target.checked ? undefined : true })}/> Required</label><button type="button" className="icon-button remove-button" disabled={nodes.length === 1} onClick={() => updateNodes(nodes.filter((_item, itemIndex) => itemIndex !== index))}>×</button></div>
-      {template.domain === "strength" && <div className="custom-classification"><label>Movement patterns<select multiple value={(node as StrengthTemplateSlot).movementPatternIds ?? []} onChange={(event) => { const values = selectedValues(event); updateNode(index, { movementPatternIds: values.length ? values : undefined }); }}>{taxonomy.strength.movementPatterns.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label><label>Target muscles<select multiple value={(node as StrengthTemplateSlot).targetMuscleIds ?? []} onChange={(event) => { const values = selectedValues(event); updateNode(index, { targetMuscleIds: values.length ? values : undefined }); }}>{taxonomy.strength.muscleGroups.map((item) => <option key={item.id} value={item.id}>{item.parentId ? `  ${item.label}` : item.label}</option>)}</select></label><label>Match policy<select value={(node as StrengthTemplateSlot).matchPolicy ?? "any"} onChange={(event) => updateNode(index, { matchPolicy: event.target.value === "all" ? "all" : undefined })}><option value="any">Any selector</option><option value="all">All selectors</option></select></label></div>}
-      <fieldset><legend>Required weekly variables</legend><div className="choice-grid">{variableOptions.map((key) => <label key={key}><input type="checkbox" checked={node.variables.includes(key)} onChange={(event) => updateNode(index, { variables: event.target.checked ? [...node.variables, key] : node.variables.filter((item) => item !== key), optionalVariables: node.optionalVariables?.filter((item) => item !== key) })}/>{friendlyLabel(key)}</label>)}</div></fieldset>
-      <fieldset><legend>Optional weekly variables</legend><div className="choice-grid">{variableOptions.map((key) => <label key={key}><input type="checkbox" checked={node.optionalVariables?.includes(key) ?? false} onChange={(event) => { const optionalVariables = event.target.checked ? [...(node.optionalVariables ?? []), key] : node.optionalVariables?.filter((item) => item !== key); updateNode(index, { variables: node.variables.filter((item) => item !== key), optionalVariables: optionalVariables?.length ? optionalVariables : undefined }); }}/>{friendlyLabel(key)}</label>)}</div></fieldset>
-    </section>)}</div>
-    {templateEditorErrors(template).length > 0 && <div className="editor-errors" role="alert"><strong>Complete these template details</strong><ul>{templateEditorErrors(template).map((message) => <li key={message}>{message}</li>)}</ul></div>}
-  </Card>;
-}
 
 function TemplateBackIcon() {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>;
@@ -56,24 +26,15 @@ function TemplatePlusIcon() {
 }
 
 function TemplateDomainIcon({ domain }: { domain: TemplateComponentDomain }) {
-  const icon = domain === "strength"
-    ? <><path d="M6.5 9v6M3.5 10.5v3M17.5 9v6M20.5 10.5v3M6.5 12h11"/><path d="M9 8v8M15 8v8"/></>
-    : domain === "endurance"
-      ? <><circle cx="14" cy="5" r="1.8"/><path d="m12 9 3 2 2 4M12 9l-3 4-4 1M10 13l-1 6M15 12l-4 3 4 4"/></>
-      : domain === "sport_skill"
-        ? <><circle cx="12" cy="12" r="7.5"/><path d="M12 4.5v15M4.5 12h15"/></>
-        : domain === "mind_body"
-          ? <><circle cx="12" cy="6" r="1.8"/><path d="M12 8v4M12 10l-4 3M12 10l4 3M12 12l-3 5M12 12l3 5"/></>
-          : <><path d="M5 18c1-8 6-12 14-12-1 8-5 13-12 12"/><path d="M7 18c3-4 6-7 10-9"/></>;
-  return <span className="template-library-icon" data-domain={domain}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{icon}</svg></span>;
+  return <span className="template-library-icon" data-domain={domain}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{domainIconPath(domain)}</svg></span>;
 }
 
-function TemplateCard({ item, onCopy, onEdit, onRemove }: {
+function TemplateCard({ item, onEdit, onRemove }: {
   item: StoredSessionTemplate;
-  onCopy: (item: StoredSessionTemplate) => void;
   onEdit: (item: StoredSessionTemplate) => void;
-  onRemove: (item: StoredSessionTemplate & { origin: "user"; revision: number }) => void;
+  onRemove: (item: StoredSessionTemplate) => void;
 }) {
+  const closeMenu = (event: MouseEvent<HTMLButtonElement>) => event.currentTarget.closest("details")?.removeAttribute("open");
   return <article className="card template-library-card">
     <div className="template-library-card-header">
       <TemplateDomainIcon domain={item.domain}/>
@@ -82,9 +43,13 @@ function TemplateCard({ item, onCopy, onEdit, onRemove }: {
         <h2>{item.name}</h2>
         <p>{item.intent}</p>
       </div>
-      <div className="template-library-actions">
-        {item.origin === "builtin" ? <button type="button" className="template-library-action" onClick={() => onCopy(item)}>Copy to my templates</button> : <><button type="button" className="template-library-action" onClick={() => onEdit(item)}>Edit</button><button type="button" className="template-library-action danger" onClick={() => void onRemove(item)}>Delete</button></>}
-      </div>
+      <details className="template-library-menu">
+        <summary aria-label={`More options for ${item.name}`}>•••</summary>
+        <div>
+          <button type="button" onClick={(event) => { closeMenu(event); onEdit(item); }}>Edit</button>
+          <button type="button" className="danger" onClick={(event) => { closeMenu(event); void onRemove(item); }}>Delete</button>
+        </div>
+      </details>
     </div>
     <TemplateNodes template={item}/>
   </article>;
@@ -94,17 +59,18 @@ function TemplateLibrary({ onBack, preferredName }: { onBack: () => void; prefer
   const client = useQueryClient();
   const query = useQuery({ queryKey: ["templates"], queryFn: () => api<StoredSessionTemplate[]>("/api/templates") });
   const taxonomy = useQuery({ queryKey: ["training-taxonomy"], queryFn: () => api<TrainingTaxonomy>("/api/training-taxonomy") });
-  const [editing, setEditing] = useState<{ template: SessionTemplate; revision?: number } | null>(null);
+  const [editing, setEditing] = useState<{ template: SessionTemplate; revision?: number; mode: TemplateEditorMode } | null>(null);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<unknown>();
-  const begin = (value: StoredSessionTemplate | SessionTemplate) => {
+  const begin = (value: StoredSessionTemplate | SessionTemplate, mode: TemplateEditorMode) => {
     const template = editableTemplate(value);
     const revision = "origin" in value && value.origin === "user" ? value.revision : undefined;
-    setEditing(revision === undefined ? { template } : { template, revision });
+    setEditing(revision === undefined ? { template, mode } : { template, revision, mode });
     setError(undefined);
   };
-  const copy = (value: StoredSessionTemplate) => begin({ ...editableTemplate(value), id: crypto.randomUUID(), name: `${value.name} Copy` });
   const save = async () => {
     if (!editing) return;
+    setSaving(true);
     try {
       const payload = editing.template;
       const revision = editing.revision;
@@ -114,17 +80,23 @@ function TemplateLibrary({ onBack, preferredName }: { onBack: () => void; prefer
       }
       setEditing(null); await client.invalidateQueries({ queryKey: ["templates"] }); await client.invalidateQueries({ queryKey: ["current-plan"] });
     } catch (value) { setError(value); }
+    finally { setSaving(false); }
   };
-  const remove = async (item: StoredSessionTemplate & { origin: "user"; revision: number }) => {
+  const remove = async (item: StoredSessionTemplate) => {
     if (!window.confirm(`Delete “${item.name}”? This cannot be undone.`)) return;
-    try { await api(`/api/templates/${encodeURIComponent(item.id)}`, { method: "DELETE", body: JSON.stringify({ expectedRevision: item.revision }) }); await client.invalidateQueries({ queryKey: ["templates"] }); }
+    try {
+      // Built-ins have no stored revision; deleting one only hides the code-defined original.
+      const init = item.origin === "user" ? { method: "DELETE", body: JSON.stringify({ expectedRevision: item.revision }) } : { method: "DELETE" };
+      await api(`/api/templates/${encodeURIComponent(item.id)}`, init);
+      await client.invalidateQueries({ queryKey: ["templates"] });
+    }
     catch (value) { setError(value); }
   };
-  if (editing) { const errors = templateEditorErrors(editing.template); return <div className="plan-page"><PrimaryPageHeader preferredName={preferredName} subtitle="Define a stable single-domain pattern. Weekly Sessions own every executable dose." actions={<div className="actions"><button className="secondary" onClick={() => setEditing(null)}>Cancel</button><button disabled={errors.length > 0 || taxonomy.isPending} onClick={() => void save()}>Save template</button></div>}/><ErrorBanner error={error ?? taxonomy.error}/>{taxonomy.data ? <TemplateEditor template={editing.template} taxonomy={taxonomy.data} onChange={(template) => setEditing((current) => current ? { ...current, template } : current)}/> : <Loading/>}</div>; }
   return <div className="plan-page template-library">
-    <PrimaryPageHeader preferredName={preferredName} subtitle="Stable archetypes only—no exercises, distance, duration or dose." actions={<div className="actions"><button type="button" className="secondary template-library-back" onClick={onBack}><TemplateBackIcon/>Back to plan</button><button type="button" className="template-library-create" onClick={() => begin(emptyTemplate())}><TemplatePlusIcon/>Create template</button></div>}/>
-    <ErrorBanner error={query.error ?? error}/>
-    {query.isPending ? <Loading/> : !query.data?.length ? <Empty>No templates yet.</Empty> : <div className="template-library-grid">{query.data.map((item) => <TemplateCard key={item.id} item={item} onCopy={copy} onEdit={begin} onRemove={remove}/>)}</div>}
+    <PrimaryPageHeader preferredName={preferredName} subtitle="Reusable workout patterns you can create, edit or delete." actions={<div className="actions"><button type="button" className="secondary template-library-back" onClick={onBack}><TemplateBackIcon/>Back to plan</button><button type="button" className="template-library-create" onClick={() => begin(emptyTemplate(), "create")}><TemplatePlusIcon/>Create template</button></div>}/>
+    <ErrorBanner error={query.error ?? (editing ? undefined : error)}/>
+    {query.isPending ? <Loading/> : !query.data?.length ? <Empty>No templates yet.</Empty> : <div className="template-library-grid">{query.data.map((item) => <TemplateCard key={item.id} item={item} onEdit={(value) => begin(value, "edit")} onRemove={remove}/>)}</div>}
+    {editing && <TemplateEditorModal value={{ template: editing.template, mode: editing.mode }} taxonomy={taxonomy.data} error={error ?? taxonomy.error} busy={saving} onChange={(template) => setEditing((current) => current ? { ...current, template } : current)} onClose={() => setEditing(null)} onSave={() => void save()}/>}
   </div>;
 }
 
@@ -206,5 +178,5 @@ export function CurrentPlanPage() {
   if (library) return <TemplateLibrary onBack={() => setLibrary(false)} preferredName={profileQuery.data?.preferredName}/>;
   const templates = templatesQuery.data ?? [];
   const loading = planQuery.isPending || templatesQuery.isPending || profileQuery.isPending;
-  return <div className="plan-page"><PrimaryPageHeader preferredName={profileQuery.data?.preferredName} subtitle="Sessions are complete prescriptions; templates are optional provenance." actions={<div className="actions"><button className="secondary plan-templates-button" onClick={() => setLibrary(true)}>View all templates<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div>}/><ErrorBanner error={planQuery.error ?? templatesQuery.error ?? profileQuery.error ?? nextDay.error}/>{loading ? <Loading/> : !planQuery.data ? <div className="card empty-plan"><h2>No current plan</h2><p>Ask your connected AI Agent to create a plan using your profile, training history and complete Weekly Sessions.</p><button type="button" className="secondary" onClick={() => setLibrary(true)}>Browse templates</button></div> : <CurrentPlanView plan={planQuery.data} templates={templates} profile={profileQuery.data!}/>}</div>;
+  return <div className="plan-page"><PrimaryPageHeader preferredName={profileQuery.data?.preferredName} subtitle="Your AI-guided training plan — tailored to you, covering every domain." actions={<div className="actions"><button className="secondary plan-templates-button" onClick={() => setLibrary(true)}>View all templates<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div>}/><ErrorBanner error={planQuery.error ?? templatesQuery.error ?? profileQuery.error ?? nextDay.error}/>{loading ? <Loading/> : !planQuery.data ? <div className="card empty-plan"><h2>No current plan</h2><p>Ask your connected AI Agent to create a plan using your profile, training history and complete Weekly Sessions.</p><button type="button" className="secondary" onClick={() => setLibrary(true)}>Browse templates</button></div> : <CurrentPlanView plan={planQuery.data} templates={templates} profile={profileQuery.data!}/>}</div>;
 }

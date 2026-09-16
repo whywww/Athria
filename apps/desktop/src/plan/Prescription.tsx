@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { friendlyLabel, type EnduranceStep, type PlanComponent } from "../view-models";
 import { formatRest } from "../components";
-import { domainGlyph } from "./calendar-utils";
+import { domainIconPath } from "../domain-icons";
 
 function duration(seconds?: number) {
   if (!seconds) return null;
@@ -31,7 +31,7 @@ function PrescriptionPanel({ component, summary, meta, children }: { component: 
       <span className="rx-eyebrow">Prescription</span>
       <div className="rx-panel-title-row">
         <div className="rx-panel-copy"><h4>{component.name}</h4>{summary && <span className="rx-panel-summary">{summary}</span>}</div>
-        {(domain || meta) && <span className="rx-panel-aside">{domain && <span className="rx-domain" title={friendlyLabel(domain)}><span aria-hidden="true">{domainGlyph(domain)}</span><span>{friendlyLabel(domain)}</span></span>}{meta && <span className="rx-panel-meta">{meta}</span>}</span>}
+        {(domain || meta) && <span className="rx-panel-aside">{domain && <span className="rx-domain" title={friendlyLabel(domain)}><svg className="rx-domain-glyph" data-domain-icon={domain} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{domainIconPath(domain)}</svg><span>{friendlyLabel(domain)}</span></span>}{meta && <span className="rx-panel-meta">{meta}</span>}</span>}
       </div>
     </header>
     {children}

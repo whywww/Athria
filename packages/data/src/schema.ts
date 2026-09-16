@@ -109,6 +109,12 @@ export const sessionTemplates = sqliteTable("session_templates", {
   updatedAt: text("updated_at").notNull(),
 }, (table) => [uniqueIndex("templates_owner_id").on(table.ownerId, table.id)]);
 
+export const templateDismissals = sqliteTable("template_dismissals", {
+  ownerId: text("owner_id").notNull(),
+  templateId: text("template_id").notNull(),
+  createdAt: text("created_at").notNull(),
+}, (table) => [uniqueIndex("template_dismissals_owner_template").on(table.ownerId, table.templateId)]);
+
 export const currentMesocycles = sqliteTable("current_mesocycles", {
   ownerId: text("owner_id").primaryKey(),
   data: text("data", { mode: "json" }).notNull(),

@@ -10,13 +10,13 @@
 .plan-templates-button:hover { border-color: #c4cad3 !important; background: var(--surface-hover, #f2f2f7) !important; }
 
 .mt-card {
-  margin-bottom: 14px; padding: 0 24px 14px; border-color: var(--line, #e5e5ea);
+  margin-bottom: 14px; padding: 0 18px 13px; border-color: var(--line, #e5e5ea);
   border-radius: 16px; background: var(--surface, #fff);
   box-shadow: 0 12px 34px rgba(55,65,81,.045);
 }
 .mt-heading {
   min-height: 0; display: flex; align-items: flex-start; justify-content: space-between;
-  gap: 20px; margin: 0 -4px; padding: 19px 0 14px;
+  gap: 20px; margin: 0; padding: 16px 0 14px;
 }
 .mt-title-group { min-width: 0; display: flex; align-items: flex-start; }
 .mt-heading-text { min-width: 0; display: grid; gap: 0; }
@@ -62,7 +62,7 @@
   align-items: center; gap: 12px; padding: 5px 2px; border: 0; border-radius: 11px;
   color: #111827; background: transparent; text-align: left;
 }
-.mt-details-toggle > span:nth-child(2), .mt-detail-toggle > span:nth-child(2) { font-size: 14px; font-weight: 750; letter-spacing: -.015em; }
+.mt-details-toggle > span:nth-child(2), .mt-detail-toggle > span:nth-child(2) { font-size: 14px; font-weight: 600; letter-spacing: -.015em; }
 .mt-detail-icon {
   width: 34px; height: 34px; display: grid; place-items: center; flex: 0 0 auto;
   border-radius: 10px; color: #1f3151; background: var(--surface-hover, #f2f2f7);
@@ -93,11 +93,11 @@
    ========================================================================= */
 
 .pdb-section {
-  min-width: 0; display: grid; gap: 12px; margin-bottom: 14px; padding: 18px 20px 16px;
+  min-width: 0; display: grid; gap: 12px; margin-bottom: 14px; padding: 16px 18px 13px;
   border: 1px solid var(--line, #e5e5ea); border-radius: 16px; background: var(--surface, #fff);
   box-shadow: 0 8px 28px rgba(35,57,91,.05);
 }
-.pdb-heading { margin: 0; color: #0f1d47; font-size: 20px; font-weight: 750; line-height: 1.15; letter-spacing: -.025em; }
+.pdb-heading { margin: 0; color: #0f1d47; font-size: 20px; font-weight: 600; line-height: 1.15; letter-spacing: -.025em; }
 .pdb-subheading { margin: 0; color: #7188ad; font-size: 12px; line-height: 1.35; }
 .pdb-domains { display: grid; gap: 10px; }
 .pdb-domain {
@@ -111,7 +111,7 @@
 .pdb-domain[data-domain="mind_body"] { --pdb-color: var(--domain-mind_body); --pdb-soft: var(--domain-mind_body-soft); }
 .pdb-domain[data-domain="recovery"] { --pdb-color: var(--domain-recovery); --pdb-soft: var(--domain-recovery-soft); }
 .pdb-domain-info { flex: 0 0 144px; min-width: 0; display: flex; align-items: center; gap: 14px; padding-right: 20px; }
-.pdb-domain-name { margin: 0; color: #101827; font-size: 14px; font-weight: 750; line-height: 1.25; letter-spacing: -.01em; }
+.pdb-domain-name { margin: 0; color: #101827; font-size: 14px; font-weight: 600; line-height: 1.25; letter-spacing: -.01em; }
 .pdb-domain-icon { width: 40px; height: 40px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 10px; color: var(--pdb-color); background: var(--pdb-soft); }
 .pdb-domain-icon svg { width: 21px; height: 21px; stroke-width: 2; }
 .pdb-track {
@@ -135,8 +135,8 @@
 .pdb-phase[aria-current="true"] .pdb-phase-marker::after { background: var(--pdb-color); }
 .pdb-phase[aria-current="true"] .pdb-phase-line { background: var(--pdb-color); }
 .pdb-phase-name-row { width: 100%; margin-top: 10px; display: flex; align-items: center; gap: 8px; }
-.pdb-phase-name { min-width: 0; overflow-wrap: anywhere; color: #101827; font-size: 14px; font-weight: 750; line-height: 1.2; letter-spacing: -.015em; }
-.pdb-phase-range { display: inline-flex; align-items: center; flex: 0 0 auto; min-height: 22px; padding: 0 10px; border-radius: 999px; color: #636366; background: var(--surface-hover, #f2f2f7); font-size: 10px; font-weight: 750; line-height: 1; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pdb-phase-name { min-width: 0; overflow-wrap: anywhere; color: #101827; font-size: 14px; font-weight: 600; line-height: 1.2; letter-spacing: -.015em; }
+.pdb-phase-range { display: inline-flex; align-items: center; flex: 0 0 auto; min-height: 22px; padding: 0 10px; border-radius: 999px; color: #636366; background: var(--surface-hover, #f2f2f7); font-size: 10px; font-weight: 600; line-height: 1; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .pdb-phase-progression { margin-top: 6px; color: #637189; font-size: 12px; line-height: 1.35; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .pdb-phase:hover .pdb-phase-marker { border-color: #9aa2b1; }
 .pdb-phase[aria-current="true"]:hover .pdb-phase-marker { border-color: var(--pdb-color); }
@@ -160,7 +160,6 @@ button.pdb-nav-back:focus-visible { outline: 2px solid #567fb8; outline-offset: 
    Narrow-window responsiveness (§5.4, §6, §17)
    ========================================================================= */
 @media (max-width: 1250px) {
-  .mt-card { padding-inline: 20px; }
   .mt-progress { gap: 9px 13px; }
   .mt-progress-phase { padding-inline: 11px; }
 }

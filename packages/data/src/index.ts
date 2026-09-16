@@ -139,6 +139,7 @@ function migrateLegacyProfileFields(raw: Record<string, unknown>): Record<string
     profile.constraintNotes = sanitizeProfileNotes(profile.constraintNotes);
   }
   if (Array.isArray(profile.injuries)) profile.injuries = sanitizeProfileNotes(profile.injuries);
+  if ("raceDays" in profile && !Array.isArray(profile.raceDays)) delete profile.raceDays;
   return profile;
 }
 
@@ -488,6 +489,8 @@ export class AthriaRepository {
       this.migrateWorkoutReconciliationV18();
       this.migratePlanReconciliationUxV19();
       this.migrateTrainingSessionTypeOverridesV20();
+      this.migrateTemplateDismissalsV21();
+      this.migrateProfileRaceDaysV22();
     } catch (error) {
       this.sqlite.close();
       throw error;
@@ -995,6 +998,34 @@ export class AthriaRepository {
     })();
   }
 
+  // Built-in templates stay in code; dismissing one hides it from the library
+  // without deleting the immutable original that plan references still resolve.
+  private migrateTemplateDismissalsV21(): void {
+    if (this.sqlite.query("SELECT version FROM athria_migrations WHERE version = 21").get()) return;
+    this.sqlite.transaction(() => {
+      this.sqlite.exec(`
+        CREATE TABLE template_dismissals (
+          owner_id TEXT NOT NULL, template_id TEXT NOT NULL, created_at TEXT NOT NULL
+        );
+        CREATE UNIQUE INDEX template_dismissals_owner_template ON template_dismissals(owner_id, template_id);
+      `);
+      this.sqlite.query("INSERT INTO athria_migrations(version, applied_at) VALUES (21, CURRENT_TIMESTAMP)").run();
+    })();
+  }
+
+  // Profiles gain optional race-day targets; stored rows predating the field
+  // default to an empty list via the schema default.
+  private migrateProfileRaceDaysV22(): void {
+    if (this.sqlite.query("SELECT version FROM athria_migrations WHERE version = 22").get()) return;
+    this.sqlite.transaction(() => {
+      for (const row of this.sqlite.query("SELECT owner_id, data FROM profiles").all() as Array<{ owner_id: string; data: string }>) {
+        const profile = migrateLegacyProfileFields(parseJson(row.data) as Record<string, unknown>);
+        this.sqlite.query("UPDATE profiles SET data = ? WHERE owner_id = ?").run(JSON.stringify(athleteProfileSchema.parse(profile)), row.owner_id);
+      }
+      this.sqlite.query("INSERT INTO athria_migrations(version, applied_at) VALUES (22, CURRENT_TIMESTAMP)").run();
+    })();
+  }
+
   close(): void { this.sqlite.close(); }
 
   getProfile(ownerId = "local-user"): AthleteProfile {
@@ -1264,6 +1295,14 @@ export class AthriaRepository {
     this.db.delete(schema.sessionTemplates).where(and(eq(schema.sessionTemplates.id, id), eq(schema.sessionTemplates.ownerId, ownerId))).run();
   }
 
+  listDismissedTemplateIds(ownerId = "local-user"): string[] {
+    return this.db.select().from(schema.templateDismissals).where(eq(schema.templateDismissals.ownerId, ownerId)).all().map((row) => row.templateId);
+  }
+
+  dismissTemplate(id: string, ownerId = "local-user"): void {
+    this.db.insert(schema.templateDismissals).values({ ownerId, templateId: id, createdAt: this.now().toISOString() }).onConflictDoNothing().run();
+  }
+
   getCurrentPlan(ownerId = "local-user"): CurrentPlan | null {
     const row = this.db.select().from(schema.currentMesocycles).where(eq(schema.currentMesocycles.ownerId, ownerId)).get();
     return row ? currentPlanSchema.parse(parseJson(row.data)) : null;
@@ -1430,7 +1469,7 @@ export class AthriaRepository {
   }
 
   counts(): Record<string, number> {
-    const names = ["profiles", "training_sessions", "training_session_sources", "training_session_type_overrides", "plan_workout_matches", "workout_plan_exclusions", "planned_session_events", "wellness", "import_batches", "connection_sync_state", "session_templates", "current_mesocycles"];
+    const names = ["profiles", "training_sessions", "training_session_sources", "training_session_type_overrides", "plan_workout_matches", "workout_plan_exclusions", "planned_session_events", "wellness", "import_batches", "connection_sync_state", "session_templates", "template_dismissals", "current_mesocycles"];
     return Object.fromEntries(names.map((name) => [name, Number((this.sqlite.query(`SELECT COUNT(*) AS count FROM ${name}`).get() as { count: number }).count)]));
   }
 

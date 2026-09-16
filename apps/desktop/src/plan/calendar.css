@@ -14,7 +14,7 @@
   display: grid;
   gap: 12px;
   margin-bottom: 14px;
-  padding: 18px 20px 16px;
+  padding: 16px 18px 13px;
   border: 1px solid var(--wc-line);
   border-radius: 16px;
   background: var(--surface, #fff);
@@ -25,7 +25,7 @@
 .wc-toolbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
 .wc-toolbar-text { display: grid; gap: 4px; min-width: 0; }
 .wc-heading { margin: 0; color: var(--wc-ink); font-size: 20px; line-height: 1.15; letter-spacing: -0.025em; }
-.wc-subheading { color: var(--wc-muted); font-size: 12px; font-weight: 600; }
+.wc-subheading { color: var(--wc-muted); font-size: 12px; font-weight: 400; }
 .wc-status-legend { display: flex; align-items: center; gap: 22px; padding-top: 7px; color: var(--wc-muted); font-size: 11px; font-weight: 600; }
 .wc-status-legend > span { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
 
@@ -58,8 +58,8 @@
 .wc-week-chevron { flex: 0 0 auto; width: 16px; height: 16px; color: var(--wc-ink); transform: rotate(-90deg); transition: transform 150ms ease; }
 .wc-week-chevron svg { display: block; width: 100%; height: 100%; }
 .wc-week.is-expanded .wc-week-chevron { transform: rotate(0); }
-.wc-week-title { min-width: 0; color: var(--wc-ink); font-size: 14px; letter-spacing: -0.01em; overflow-wrap: anywhere; }
-.wc-week-summary { margin-left: auto; flex: 0 0 auto; color: var(--wc-muted); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.wc-week-title { min-width: 0; color: var(--wc-ink); font-size: 14px; font-weight: 600; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.wc-week-summary { margin-left: auto; flex: 0 0 auto; color: var(--wc-muted); font-size: 12px; font-weight: 400; white-space: nowrap; }
 
 /* --- Week body / grid ----------------------------------------------------- */
 .wc-week-body { padding: 10px 12px 12px; }
@@ -115,7 +115,7 @@
 .wc-chip-domain { display: inline-flex; align-items: center; flex: 0 0 auto; color: inherit; }
 .wc-domain-icon { width: 19px; height: 19px; }
 .wc-chip-meta { min-width: 0; max-width: 100%; display: inline-flex; align-items: center; align-self: start; gap: 5px; }
-.wc-chip-name { min-width: 0; overflow: hidden; overflow-wrap: anywhere; color: var(--wc-ink); font-size: 12px; font-weight: 750; line-height: 1.3; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.wc-chip-name { min-width: 0; overflow: hidden; overflow-wrap: anywhere; color: var(--wc-ink); font-size: 12px; font-weight: 600; line-height: 1.3; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .wc-duration { min-width: 0; max-width: 100%; color: #637cad; font-size: 10px; font-weight: 600; white-space: nowrap; }
 .wc-status-light { flex: 0 0 auto; display: inline-block; width: 7px; height: 7px; margin: 3px; border-radius: 50%; box-shadow: 0 0 0 3px currentColor; }
 .wc-status-light.status-completed { color: rgba(14, 193, 65, .13); background: #0ec141; }
@@ -257,7 +257,7 @@
 .rx-panel-aside { display: inline-flex; align-items: center; flex: 0 0 auto; gap: 10px; }
 .rx-panel-meta { color: #4a5766; font-size: 12px; font-weight: 650; white-space: nowrap; }
 .rx-domain { display: inline-flex; align-items: center; flex: 0 0 auto; gap: 7px; padding: 6px 11px; border: 1px solid rgba(229, 234, 240, .92); border-radius: 999px; color: #3b4b65; background: linear-gradient(180deg, #f7f9fc, #eef2f7); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .92); font-size: 11px; font-weight: 650; white-space: nowrap; }
-.rx-domain > span:first-child { font-size: 15px; line-height: 1; }
+.rx-domain-glyph { flex: 0 0 auto; width: 15px; height: 15px; }
 .rx-table { min-width: 0; }
 .rx-table-row { min-width: 0; display: grid; align-items: center; column-gap: var(--rx-column-gap, 16px); padding-inline: 20px; border-top: 1px solid #edf0f4; }
 .rx-table-header { min-height: 36px; border-top: 0; color: #62728b; background: rgba(249, 251, 253, .62); font-size: 10px; font-weight: 650; letter-spacing: .015em; }

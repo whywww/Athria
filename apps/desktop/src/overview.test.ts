@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { OverviewDashboard, RecoveryHelpModal, calendarDays, formatWellnessDate, formatWellnessRange, loadAxisLabel, mesocycleProgress, overviewDateRange, recoveryStatus, sparklineGeometry, twelveWeekConsistency, weeklyLoad, weeklyOverview, wellnessHighlights } from "./overview";
+import { OverviewDashboard, RecoveryHelpModal, calendarDays, formatWellnessDate, formatWellnessRange, loadAxisLabel, mesocycleProgress, overviewDateRange, recoveryRingTone, recoveryStatus, sparklineGeometry, twelveWeekConsistency, weeklyLoad, weeklyOverview, wellnessHighlights } from "./overview";
 import type { CalendarSession, TrainingHistorySession, TrainingSummary, WellnessRecord } from "./view-models";
 
 const quality = { completeness: 1, missingFields: [], anomalies: [] };
@@ -185,6 +185,13 @@ describe("Overview", () => {
     expect(recoveryStatus([])).toMatchObject({ label: "No data", value: null });
   });
 
+  it("maps recovery verdicts to readiness ring tones", () => {
+    expect(recoveryRingTone("Ready")).toBe("ready");
+    expect(recoveryRingTone("Caution")).toBe("caution");
+    expect(recoveryRingTone("Rest")).toBe("rest");
+    expect(recoveryRingTone("No data")).toBe("empty");
+  });
+
   it("renders the recovery help dialog with the plain-language calculation", () => {
     const html = renderToStaticMarkup(createElement(RecoveryHelpModal, { onClose: () => undefined }));
     expect(html).toContain('role="dialog"');
@@ -229,7 +236,7 @@ describe("Overview", () => {
     expect(html).toContain('data-icon="workout"');
     expect(html).toContain('data-icon="target"');
     expect(html).toContain('data-icon="recovery"');
-    expect(html).toContain('data-chart="coral-bars"');
+    expect(html).toContain('data-chart="green-bars"');
     expect(html).toContain("Overall Readiness");
     expect(html).toContain("<b>75</b>");
     expect(html).toContain("donut-segment domain-strength");
@@ -238,6 +245,7 @@ describe("Overview", () => {
     expect(html).toContain("donut-segment domain-mind_body");
     expect(html).toContain("donut-segment domain-recovery");
     expect(html).toContain("progress-ring");
+    expect(html).toContain('class="progress-ring ready"');
     expect(html).toContain("this mesocycle");
     expect(html).toContain('data-icon="trophy"');
     expect(html).toContain('data-range="twelve-weeks"');

@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import type { CurrentPlan } from "../view-models";
+import { domainIconPath, type DomainIconId } from "../domain-icons";
 import { addDays, formatShortDate, formatWeekRange } from "./view";
 import "./target.css";
 
@@ -45,18 +46,10 @@ function DetailIcon({ kind }: { kind: "details" | "supporting" | "maintenance" |
 }
 
 function DomainIcon({ label }: { label: string }) {
-  const domain = label.split("·", 1)[0]?.trim().toLowerCase() ?? "";
-  const icon = domain.includes("strength")
-    ? <><path d="M6.5 9v6M3.5 10.5v3M17.5 9v6M20.5 10.5v3M6.5 12h11"/><path d="M9 8v8M15 8v8"/></>
-    : domain.includes("endurance")
-      ? <><circle cx="14" cy="5" r="1.8"/><path d="m12 9 3 2 2 4M12 9l-3 4-4 1M10 13l-1 6M15 12l-4 3 4 4"/></>
-      : domain.includes("sport")
-        ? <><circle cx="12" cy="12" r="7.5"/><path d="M12 4.5v15M4.5 12h15"/></>
-        : domain.includes("mind")
-          ? <><circle cx="12" cy="6" r="1.8"/><path d="M12 8v4M12 10l-4 3M12 10l4 3M12 12l-3 5M12 12l3 5"/></>
-          : <><path d="M5 18c1-8 6-12 14-12-1 8-5 13-12 12"/><path d="M7 18c3-4 6-7 10-9"/></>;
-  const tone = domain.includes("strength") ? "strength" : domain.includes("endurance") ? "endurance" : domain.includes("sport") ? "sport" : domain.includes("mind") ? "mind" : "recovery";
-  return <span className={`mt-domain-icon mt-domain-${tone}`}><LineIcon>{icon}</LineIcon></span>;
+  const key = label.split("·", 1)[0]?.trim().toLowerCase() ?? "";
+  const domain: DomainIconId = key.includes("strength") ? "strength" : key.includes("endurance") ? "endurance" : key.includes("sport") ? "sport_skill" : key.includes("mind") ? "mind_body" : "recovery";
+  const tone = domain === "sport_skill" ? "sport" : domain === "mind_body" ? "mind" : domain;
+  return <span className={`mt-domain-icon mt-domain-${tone}`}><LineIcon>{domainIconPath(domain)}</LineIcon></span>;
 }
 
 function DetailSection({ kind, title, children }: { kind: "supporting" | "maintenance" | "coordination"; title: string; children: ReactNode }) {

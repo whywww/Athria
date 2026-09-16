@@ -21,6 +21,8 @@ export interface TrainingSummary {
 
 export type UnitSystem = "metric" | "imperial";
 
+export interface RaceDay { date: string; sport: string }
+
 export interface AthleteProfile {
   ownerId: string;
   preferredName: string;
@@ -41,6 +43,7 @@ export interface AthleteProfile {
   constraintNotes: string[];
   explicitRecoveryDays: number | null;
   unitSystem: UnitSystem;
+  raceDays: RaceDay[];
 }
 
 export interface PlanExercise {
@@ -362,6 +365,30 @@ export function formatTrainingRhythm(rhythm: AthleteProfile["trainingRhythm"]): 
   return `Every ${rhythm.intervalDays} ${rhythm.intervalDays === 1 ? "day" : "days"}`;
 }
 
+// Keep in sync with packages/schemas/src/index.ts:raceSportPresets.
+export const RACE_SPORT_PRESETS = ["Marathon", "Half Marathon", "10K", "5K", "Triathlon", "Cycling", "Swimming", "Trail Run", "Obstacle"];
+
+// Race dates are date-only values; parsing at local noon keeps the displayed
+// day stable across device timezones.
+export function raceDateInstant(date: string): Date { return new Date(`${date}T12:00:00`); }
+
+export function nextRaceDay(raceDays: RaceDay[], today: string): RaceDay | null {
+  const upcoming = raceDays.filter((race) => race.date >= today).sort((left, right) => left.date.localeCompare(right.date));
+  return upcoming[0] ?? null;
+}
+
+export function formatRaceCountdown(date: string, today: string): string {
+  const days = Math.round((raceDateInstant(date).getTime() - raceDateInstant(today).getTime()) / 86_400_000);
+  if (days <= 0) return "Today";
+  if (days === 1) return "Tomorrow";
+  if (days < 14) return `In ${days} days`;
+  return `In ${Math.round(days / 7)} weeks`;
+}
+
+export function formatRaceDateShort(date: string): string {
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(raceDateInstant(date));
+}
+
 export function validationMessage(result: ValidationResult): string {
   const details = [...Object.values(result.evidence), ...result.missingFacts].filter((value) => value !== null && value !== undefined).map(String).join(", ");
   const label = friendlyLabel(result.reasonCode);
@@ -395,7 +422,7 @@ export function timezoneOptions(current: string): string[] {
 export function isUntouchedDefaultProfile(profile: AthleteProfile): boolean {
   return profile.preferredName === "Athlete" && profile.timezone === "Asia/Hong_Kong" && profile.goals.length === 1 && profile.goals[0] === "general_fitness"
     && profile.trainingRhythm.kind === "flexible_week" && profile.trainingRhythm.targetDaysPerWeek === 4 && profile.trainingRhythm.minDaysPerWeek === 3 && profile.trainingRhythm.maxDaysPerWeek === 5
-    && profile.equipment.length === 30 && profile.injuries.length === 0 && profile.constraintNotes.length === 0 && profile.explicitRecoveryDays === null && profile.mesocycleDurationWeeks === 8;
+    && profile.equipment.length === 30 && profile.injuries.length === 0 && profile.constraintNotes.length === 0 && profile.explicitRecoveryDays === null && profile.mesocycleDurationWeeks === 8 && profile.raceDays.length === 0;
 }
 
 export function profilePayload(current: AthleteProfile, edits: AthleteProfile = current): AthleteProfile {
@@ -411,6 +438,7 @@ export function profilePayload(current: AthleteProfile, edits: AthleteProfile = 
       ? { ...edits.trainingRhythm, days: [...new Set(edits.trainingRhythm.days)].sort((a, b) => a - b) }
       : { ...edits.trainingRhythm },
     equipment: edits.equipment,
+    raceDays: edits.raceDays.map((race) => ({ date: race.date, sport: race.sport.trim() })).filter((race) => race.date && race.sport).slice(0, 50),
   };
 }
 

@@ -78,6 +78,12 @@ export const trainingRhythmSchema = z.discriminatedUnion("kind", [
 ]);
 export const genderSchema = z.enum(["female", "male", "non_binary", "prefer_not_to_say"]);
 export const birthDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => value <= new Date().toISOString().slice(0, 10), { message: "birth date must not be in the future" });
+// UI-facing suggestions for race sports; free text stays valid for anything else.
+export const raceSportPresets = ["Marathon", "Half Marathon", "10K", "5K", "Triathlon", "Cycling", "Swimming", "Trail Run", "Obstacle"] as const;
+export const raceDaySchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  sport: z.string().trim().min(1).max(80),
+}).strict();
 export const athleteProfileSchema = z.object({
   ownerId: z.string().default(OWNER_ID), preferredName: z.string().trim().min(1).max(100).default("Athlete"), gender: genderSchema.nullable().default(null), heightCm: z.number().min(50).max(250).nullable().default(null), birthDate: birthDateSchema.nullable().default(null), timezone: z.string().min(1).default("Asia/Hong_Kong"), goals: z.array(z.string()).default(["general_fitness"]),
   preference: z.string().trim().max(80).default(""), // keep in sync with apps/desktop/src/view-models.ts:PREFERENCE_MAX_LENGTH
@@ -85,6 +91,7 @@ export const athleteProfileSchema = z.object({
   equipment: z.array(equipmentTypeSchema).default(equipmentTypeIds), injuries: profileNoteListSchema.default([]), constraintNotes: profileNoteListSchema.default([]), explicitRecoveryDays: z.number().int().min(1).max(7).nullable().default(null),
   unitSystem: unitSystemSchema.default("metric"),
   mesocycleDurationWeeks: z.number().int().min(1).max(8).default(8),
+  raceDays: z.array(raceDaySchema).max(50).default([]),
 }).strict();
 export const dataQualitySchema = z.object({ completeness: z.number().min(0).max(1), sources: z.array(z.string()), missingFields: z.array(z.string()), anomalies: z.array(z.string()) });
 export const metricResultSchema = <T extends z.ZodTypeAny>(value: T) => z.object({ value, unit: z.string(), method: z.string(), formulaVersion: z.string(), timeRange: z.object({ start: z.string().nullable(), end: z.string().nullable() }), dataQuality: dataQualitySchema, limitations: z.array(z.string()) });
@@ -271,6 +278,7 @@ export const validationCoverageSchema = z.object({ hardChecksResolved: z.number(
 export const planValidationSchema = z.object({ valid: z.boolean(), results: z.array(ruleResultSchema), dataGaps: z.array(dataGapSchema), validatedAt: z.string().datetime({ offset: true }), inputHash: z.string(), coverage: validationCoverageSchema });
 export const planVersionSchema = z.object({ id: z.string(), parentVersionId: z.string().nullable(), versionNumber: z.number().int().positive(), plan: planDraftSchema, validation: planValidationSchema, approvedAt: z.string().datetime({ offset: true }), approvedBy: z.string(), changeReason: z.string() });
 export type AthleteProfile = z.infer<typeof athleteProfileSchema>;
+export type RaceDay = z.infer<typeof raceDaySchema>;
 export type TrainingSession = z.infer<typeof trainingSessionSchema>;
 export type TrainingSessionWrite = z.infer<typeof trainingSessionWriteSchema>;
 export type WellnessRecord = z.infer<typeof wellnessRecordSchema>;

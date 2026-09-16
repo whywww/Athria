@@ -90,6 +90,16 @@ describe("profile note boundaries", () => {
     for (const weeks of [1, 8]) expect(athleteProfileSchema.parse({ mesocycleDurationWeeks: weeks }).mesocycleDurationWeeks).toBe(weeks);
     for (const weeks of [0, 9, 4.5]) expect(athleteProfileSchema.safeParse({ mesocycleDurationWeeks: weeks }).success).toBe(false);
   });
+  it("defaults raceDays to an empty list and validates date and sport entries", () => {
+    expect(athleteProfileSchema.parse({}).raceDays).toEqual([]);
+    expect(athleteProfileSchema.safeParse({ raceDays: [{ date: "bad", sport: "Marathon" }] }).success).toBe(false);
+    expect(athleteProfileSchema.safeParse({ raceDays: [{ date: "2027-01-01", sport: "" }] }).success).toBe(false);
+    expect(athleteProfileSchema.safeParse({ raceDays: [{ date: "2027-01-01", sport: "y".repeat(81) }] }).success).toBe(false);
+    expect(athleteProfileSchema.parse({ raceDays: [{ date: "2027-01-01", sport: "Marathon" }] }).raceDays).toEqual([{ date: "2027-01-01", sport: "Marathon" }]);
+    const capped = Array.from({ length: 50 }, (_, index) => ({ date: "2027-01-01", sport: `Race ${index}` }));
+    expect(athleteProfileSchema.safeParse({ raceDays: capped }).success).toBe(true);
+    expect(athleteProfileSchema.safeParse({ raceDays: [...capped, { date: "2027-01-02", sport: "One more" }] }).success).toBe(false);
+  });
   it("caps injuries and constraintNotes and rejects normalized duplicates", () => {
     const ten = Array.from({ length: 10 }, (_, index) => `Note ${index}`);
     for (const field of ["injuries", "constraintNotes"] as const) {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { cmToImperialHeight, connectionSources, dashboardPages, editableTemplate, equipmentGroupState, filterAndSortTrainingHistory, formatDistance, formatDuration, formatPersonalHeight, formatPersonalWeight, formatTimezoneLabel, formatTrainingSource, imperialHeightToCm, kgToPounds, paginateTrainingHistory, parseSyncRange, poundsToKg, profilePayload, referencedTemplates, syncRangeOptions, templateEditorErrors, templateNodeName, toggleEquipmentGroup, PREFERENCE_MAX_LENGTH, type AthleteProfile, type Mesocycle, type SessionTemplate, type StoredSessionTemplate, type TrainingHistorySession } from "./view-models";
+import { cmToImperialHeight, connectionSources, dashboardPages, editableTemplate, equipmentGroupState, filterAndSortTrainingHistory, formatDistance, formatDuration, formatPersonalHeight, formatPersonalWeight, formatRaceCountdown, formatRaceDateShort, formatTimezoneLabel, formatTrainingSource, imperialHeightToCm, kgToPounds, nextRaceDay, paginateTrainingHistory, parseSyncRange, poundsToKg, profilePayload, referencedTemplates, syncRangeOptions, templateEditorErrors, templateNodeName, toggleEquipmentGroup, PREFERENCE_MAX_LENGTH, type AthleteProfile, type Mesocycle, type SessionTemplate, type StoredSessionTemplate, type TrainingHistorySession } from "./view-models";
 
-const profile: AthleteProfile = { ownerId: "local-user", preferredName: "Athlete", gender: null, heightCm: null, birthDate: null, timezone: "Asia/Hong_Kong", goals: ["general_fitness"], preference: "", maxSessionMinutes: 60, trainingRhythm: { kind: "flexible_week", targetDaysPerWeek: 4, minDaysPerWeek: 3, maxDaysPerWeek: 5 }, equipment: ["dumbbell"], injuries: [], constraintNotes: [], explicitRecoveryDays: null, mesocycleDurationWeeks: 8, unitSystem: "metric" };
+const profile: AthleteProfile = { ownerId: "local-user", preferredName: "Athlete", gender: null, heightCm: null, birthDate: null, timezone: "Asia/Hong_Kong", goals: ["general_fitness"], preference: "", maxSessionMinutes: 60, trainingRhythm: { kind: "flexible_week", targetDaysPerWeek: 4, minDaysPerWeek: 3, maxDaysPerWeek: 5 }, equipment: ["dumbbell"], injuries: [], constraintNotes: [], explicitRecoveryDays: null, mesocycleDurationWeeks: 8, unitSystem: "metric", raceDays: [] };
 
 const template: SessionTemplate = { id: "lower", name: "Lower", intent: "Lower-body pattern", domain: "strength", nodes: [{ name: "Squat pattern", role: "primary", movementPatternIds: ["squat"], targetMuscleIds: ["quadriceps"], matchPolicy: "all", variables: ["exercise_selection"] }] };
 const history = [
@@ -78,6 +78,21 @@ describe("dashboard v7 view models", () => {
   it("passes the mesocycle length through the profile payload", () => {
     expect(profilePayload(profile, profile).mesocycleDurationWeeks).toBe(8);
     expect(profilePayload(profile, { ...profile, mesocycleDurationWeeks: 4 }).mesocycleDurationWeeks).toBe(4);
+  });
+  it("trims and filters race days when building the profile payload", () => {
+    expect(profilePayload(profile, { ...profile, raceDays: [{ date: "2027-03-21", sport: "  Marathon " }, { date: "", sport: "10K" }, { date: "2027-04-01", sport: "" }] }).raceDays).toEqual([{ date: "2027-03-21", sport: "Marathon" }]);
+  });
+  it("picks the nearest upcoming race and formats race countdowns", () => {
+    const races = [{ date: "2026-09-01", sport: "10K" }, { date: "2026-09-20", sport: "Marathon" }, { date: "2026-09-22", sport: "5K" }];
+    expect(nextRaceDay(races, "2026-09-15")).toEqual({ date: "2026-09-20", sport: "Marathon" });
+    expect(nextRaceDay(races, "2026-10-01")).toBeNull();
+    expect(nextRaceDay([], "2026-09-15")).toBeNull();
+    expect(formatRaceCountdown("2026-09-15", "2026-09-15")).toBe("Today");
+    expect(formatRaceCountdown("2026-09-16", "2026-09-15")).toBe("Tomorrow");
+    expect(formatRaceCountdown("2026-09-28", "2026-09-15")).toBe("In 13 days");
+    expect(formatRaceCountdown("2026-10-05", "2026-09-15")).toBe("In 3 weeks");
+    expect(formatRaceCountdown("2026-10-13", "2026-09-15")).toBe("In 4 weeks");
+    expect(formatRaceDateShort("2026-03-21")).toBe("Mar 21, 2026");
   });
   it("converts and formats metric and imperial measurements", () => {
     expect(cmToImperialHeight(172.7)).toEqual({ feet: 5, inches: 8 });

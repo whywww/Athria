@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { friendlyLabel, type Mesocycle } from "../view-models";
+import { domainIconPath } from "../domain-icons";
 import "./target.css";
 
 type Domain = Mesocycle["domainProgressions"][number]["domain"];
@@ -22,16 +23,7 @@ function LineIcon({ children, className = "" }: { children: ReactNode; className
 }
 
 function DomainIcon({ domain }: { domain: Domain }) {
-  const icon = domain === "strength"
-    ? <><path d="M6.5 9v6M3.5 10.5v3M17.5 9v6M20.5 10.5v3M6.5 12h11"/><path d="M9 8v8M15 8v8"/></>
-    : domain === "endurance"
-      ? <><circle cx="14" cy="5" r="1.8"/><path d="m12 9 3 2 2 4M12 9l-3 4-4 1M10 13l-1 6M15 12l-4 3 4 4"/></>
-      : domain === "sport_skill"
-        ? <><circle cx="12" cy="12" r="7.5"/><path d="M12 4.5v15M4.5 12h15"/></>
-        : domain === "mind_body"
-          ? <><circle cx="12" cy="6" r="1.8"/><path d="M12 8v4M12 10l-4 3M12 10l4 3M12 12l-3 5M12 12l3 5"/></>
-          : <><path d="M5 18c1-8 6-12 14-12-1 8-5 13-12 12"/><path d="M7 18c3-4 6-7 10-9"/></>;
-  return <span className="pdb-domain-icon"><LineIcon>{icon}</LineIcon></span>;
+  return <span className="pdb-domain-icon"><LineIcon>{domainIconPath(domain)}</LineIcon></span>;
 }
 
 function ArrowIcon({ className = "" }: { className?: string }) {
