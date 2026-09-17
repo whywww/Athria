@@ -3,6 +3,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { AthriaApplication, AthriaError } from "@athria/application";
 import { AthriaRepository } from "@athria/data";
 import { ZodError } from "zod";
+import * as z from "zod";
 import { createMcpServer, describeToolError } from "./index";
 
 let repository: AthriaRepository | undefined;
@@ -16,6 +17,18 @@ describe("MCP registry", () => {
     await server.connect(serverTransport);
     expect(clientTransport).toBeDefined();
     await server.close();
+  });
+
+  it("matches the Rust shared tool contract fixture", async () => {
+    repository = new AthriaRepository(":memory:");
+    const tools = new AthriaApplication(repository).toolRegistry().map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: z.toJSONSchema(tool.inputSchema),
+      annotations: { readOnlyHint: tool.readOnly, destructiveHint: false, idempotentHint: tool.idempotent, openWorldHint: false },
+    }));
+    const fixture = await Bun.file(new URL("../contract.json", import.meta.url)).json() as { tools: unknown[] };
+    expect(tools).toEqual(fixture.tools);
   });
 });
 
