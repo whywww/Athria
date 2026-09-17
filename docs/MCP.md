@@ -1,6 +1,6 @@
 # MCP setup
 
-Athria uses the official MCP v2 transports. The installed desktop executable preserves the stable stdio entry point:
+Athria's shared Rust runtime implements the MCP v2 JSON-RPC contract. The installed desktop executable preserves the stable stdio entry point without spawning Bun or Node:
 
 ```json
 {
@@ -15,7 +15,7 @@ Athria uses the official MCP v2 transports. The installed desktop executable pre
 
 Restart the MCP host after changing its configuration. stdout is reserved for JSON-RPC; diagnostics go to stderr.
 
-The Dashboard-managed service also exposes Streamable HTTP at `http://127.0.0.1:<random-port>/mcp`. It validates the Host header and requires `Authorization: Bearer <token>`. The MCP HTTP token is stored in Windows Credential Manager and is not available through MCP tools.
+The Dashboard runtime also exposes JSON-response Streamable HTTP at `http://127.0.0.1:<random-port>/mcp`. It binds only to loopback, validates the Host and Origin headers, and requires `Authorization: Bearer <runtime-token>`. The token is never exposed through MCP tools or written to the database or logs.
 
 ## Write boundary
 

@@ -2,14 +2,11 @@ use std::{
     fs,
     net::{TcpListener, TcpStream},
     path::{Path, PathBuf},
-    process::{Command, Stdio},
     sync::Mutex,
     time::Duration,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_shell::{process::CommandChild, ShellExt};
@@ -20,6 +17,7 @@ mod vault;
 mod application_ipc;
 use application_ipc::{DesktopApplication, dispatch as dispatch_application};
 use athria_application::AthriaApplication;
+use athria_mcp::{McpService, serve_http, serve_stdio};
 use athria_store::SqliteStore;
 use vault::{EncryptedSecret, VaultBundle};
 
@@ -175,37 +173,9 @@ fn resolve_dev_bun(project_root: &Path) -> Result<PathBuf, String> {
     Err("Bun was not found. Set ATHRIA_BUN to the native Bun executable, install the host portable Bun under .tools/bun, or add Bun to PATH.".to_string())
 }
 
-fn candidate_sidecars(executable: &Path) -> Vec<PathBuf> {
-    let directory = executable.parent().unwrap_or_else(|| Path::new("."));
-    vec![
-        directory.join("athria-service"),
-        directory.join("athria-service.exe"),
-        directory.join("athria-service-aarch64-apple-darwin"),
-        directory.join("athria-service-x86_64-pc-windows-msvc.exe"),
-        directory.join("resources").join("athria-service"),
-        directory.join("resources").join("athria-service.exe"),
-        directory.join("resources").join("athria-service-aarch64-apple-darwin"),
-        directory.join("resources").join("athria-service-x86_64-pc-windows-msvc.exe"),
-        directory.join("..").join("binaries").join("athria-service-aarch64-apple-darwin"),
-        directory.join("..").join("binaries").join("athria-service-x86_64-pc-windows-msvc.exe"),
-    ]
-}
-
-fn run_mcp_passthrough() -> i32 {
-    let executable = match std::env::current_exe() { Ok(path) => path, Err(error) => { eprintln!("{error}"); return 1; } };
-    let sidecar = match candidate_sidecars(&executable).into_iter().find(|path| path.exists()) {
-        Some(path) => path,
-        None => { eprintln!("Athria service sidecar was not found next to {}", executable.display()); return 1; }
-    };
-    let mut command = Command::new(sidecar);
-    command.arg("mcp").stdin(Stdio::inherit()).stdout(Stdio::inherit()).stderr(Stdio::inherit());
-    command.env("ATHRIA_DATABASE_PATH", current_database_path());
-    #[cfg(windows)]
-    command.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    match command.status() {
-        Ok(status) => status.code().unwrap_or(1),
-        Err(error) => { eprintln!("Failed to start Athria MCP: {error}"); 1 }
-    }
+fn run_mcp_stdio() -> i32 {
+    let store = match SqliteStore::open(current_database_path()) { Ok(store) => store, Err(error) => { eprintln!("Athria could not open the MCP database: {error}"); return 1; } };
+    match serve_stdio(McpService::new(AthriaApplication::new(store))) { Ok(()) => 0, Err(error) => { eprintln!("Athria MCP stdio failed: {error}"); 1 } }
 }
 
 #[tauri::command]
@@ -523,7 +493,7 @@ async fn create_new_profile(app: AppHandle, state: State<'_, RuntimeState>, path
 }
 
 pub fn run() -> i32 {
-    if std::env::args().nth(1).as_deref() == Some("mcp") { return run_mcp_passthrough(); }
+    if std::env::args().nth(1).as_deref() == Some("mcp") { return run_mcp_stdio(); }
 
     #[cfg(feature = "dev-service")]
     let dev_service = {
@@ -533,15 +503,19 @@ pub fn run() -> i32 {
         (project_root, bun, service_entry)
     };
     let port = match free_port() { Ok(value) => value, Err(error) => { eprintln!("{error}"); return 1; } };
+    let mcp_listener = match TcpListener::bind("127.0.0.1:0") { Ok(value) => value, Err(error) => { eprintln!("Athria could not bind MCP HTTP: {error}"); return 1; } };
+    let mcp_port = match mcp_listener.local_addr() { Ok(value) => value.port(), Err(error) => { eprintln!("Athria could not read the MCP HTTP address: {error}"); return 1; } };
     let token = new_runtime_token();
     let mcp_token = new_runtime_token();
-    let service = ServiceInfo { base_url: format!("http://127.0.0.1:{port}"), token: token.clone(), mcp_url: format!("http://127.0.0.1:{port}/mcp") };
+    let service = ServiceInfo { base_url: format!("http://127.0.0.1:{port}"), token: token.clone(), mcp_url: format!("http://127.0.0.1:{mcp_port}/mcp") };
     let service_for_setup = service.clone();
     let database_path = current_database_path();
     let application = match SqliteStore::open(&database_path) {
         Ok(store) => AthriaApplication::new(store),
         Err(error) => { eprintln!("Athria could not open the database: {error}"); return 1; }
     };
+    let mcp_application = match SqliteStore::open(&database_path) { Ok(store) => AthriaApplication::new(store), Err(error) => { eprintln!("Athria could not open the MCP database: {error}"); return 1; } };
+    let rust_mcp_token = mcp_token.clone();
 
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -549,6 +523,7 @@ pub fn run() -> i32 {
         .manage(RuntimeState { service, child: Mutex::new(None), vault_key: Mutex::new(None), application: Mutex::new(application), database_path: database_path.clone() })
         .invoke_handler(tauri::generate_handler![athria_request, get_service_info, vault_status, setup_vault, unlock_vault, change_vault_password, reset_vault_password, disconnect_connection, test_intervals_credentials, sync_intervals, intervals_status, import_xunji_skill, sync_xunji, xunji_status, mcp_status, pick_restore_file, pick_new_profile_destination, restore_backup, create_new_profile])
         .setup(move |app| {
+            std::thread::spawn(move || { if let Err(error) = serve_http(mcp_listener, McpService::new(mcp_application), &rust_mcp_token) { eprintln!("Athria MCP HTTP stopped: {error}"); } });
             #[cfg(feature = "dev-service")]
             let command = {
                 let (project_root, bun, service_entry) = dev_service;
