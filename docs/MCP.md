@@ -15,6 +15,16 @@ Athria's shared Rust runtime implements the MCP v2 JSON-RPC contract. The instal
 
 Restart the MCP host after changing its configuration. stdout is reserved for JSON-RPC; diagnostics go to stderr.
 
+The standalone Rust CLI exposes the same runtime without Tauri:
+
+```text
+athria doctor --database C:\path\to\athria.sqlite3
+athria mcp --database C:\path\to\athria.sqlite3
+ATHRIA_MCP_TOKEN=<token> athria serve --database C:\path\to\athria.sqlite3
+```
+
+`athria serve` binds to `127.0.0.1:37373` by default and serves MCP HTTP at `/mcp`. Set `ATHRIA_ADDRESS` to another loopback address when needed.
+
 The Dashboard runtime also exposes JSON-response Streamable HTTP at `http://127.0.0.1:<random-port>/mcp`. It binds only to loopback, validates the Host and Origin headers, and requires `Authorization: Bearer <runtime-token>`. The token is never exposed through MCP tools or written to the database or logs.
 
 ## Write boundary

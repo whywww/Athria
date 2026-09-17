@@ -54,6 +54,7 @@ dependencies = [
  "athria-integrations",
  "athria-mcp",
  "athria-store",
+ "serde_json",
 ]
 
 [[package]]
