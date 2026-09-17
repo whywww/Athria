@@ -11,6 +11,7 @@
     "dev": "bun run scripts/desktop-build.ts dev",
     "service": "bun run apps/service/src/main.ts",
     "test": "bun --bun vitest run --configLoader runner",
+    "test:compat:store": "bun run scripts/store-compat.ts",
     "typecheck": "bun --bun tsc -b",
     "build:service": "bun run scripts/desktop-build.ts service",
     "build:debug": "bun run scripts/desktop-build.ts debug",
