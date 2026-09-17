@@ -1,5 +1,5 @@
 //! Static taxonomy vocabularies and profile defaults, ported from
-//! `packages/schemas/src/index.ts` and exposed to the application layer.
+//! `packages/schemas/src/index.ts` and exposed to every runtime crate.
 //!
 //! The TypeScript taxonomy is a hardcoded, versioned vocabulary (see
 //! `TAXONOMY_VERSION`), so the Rust runtime keeps the same literals instead of
@@ -7,7 +7,7 @@
 
 use serde_json::{Value, json};
 
-use crate::store::DEFAULT_OWNER_ID;
+use crate::DEFAULT_OWNER_ID;
 
 /// `athleteProfileSchema` default `timezone`.
 pub const DEFAULT_TIMEZONE: &str = "Asia/Hong_Kong";
@@ -20,6 +20,10 @@ pub const MOVEMENT_PATTERN_IDS: [&str; 33] = [
     "rotation", "anti_rotation", "trunk_flexion", "trunk_extension", "lateral_flexion", "anti_extension", "anti_lateral_flexion", "jump", "throw", "locomotion",
     "olympic_lift", "isolation", "other",
 ];
+
+/// The `factSources` list `getTrainingTaxonomy` returns; `factSourceSchema`
+/// also accepts the internal `catalog` and `migration` sources.
+pub const FACT_SOURCES: [&str; 4] = ["structured_source", "exact_alias", "ai_inferred", "user_confirmed"];
 
 pub const MUSCLE_GROUP_IDS: [&str; 47] = [
     "chest", "upper_back", "back", "lats", "shoulders", "arms", "biceps", "triceps", "forearms", "quadriceps",

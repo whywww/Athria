@@ -7,15 +7,18 @@ name = "athria-application"
 version = "0.1.0"
 dependencies = [
  "athria-core",
- "athria-store",
+ "serde_json",
+ "uuid",
 ]
 
 [[package]]
 name = "athria-core"
 version = "0.1.0"
 dependencies = [
+ "jiff",
  "serde",
  "serde_json",
+ "time",
 ]
 
 [[package]]
@@ -48,12 +51,11 @@ dependencies = [
 name = "athria-store"
 version = "0.1.0"
 dependencies = [
+ "athria-application",
  "athria-core",
- "jiff",
  "rusqlite",
  "serde_json",
  "tempfile",
- "time",
  "uuid",
 ]
 

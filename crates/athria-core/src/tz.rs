@@ -7,12 +7,13 @@
 //! `jiff`'s bundled timezone database so desktop, CLI, MCP and mobile builds
 //! agree with each other without depending on the host zoneinfo.
 
-use athria_core::{AthriaError, AthriaErrorCode, Result};
 use jiff::Timestamp;
 use jiff::civil::{Date, Weekday};
 use jiff::tz::TimeZone;
 use time::OffsetDateTime;
 use time::macros::format_description;
+
+use crate::{AthriaError, AthriaErrorCode, Result};
 
 /// JavaScript `new Date().toISOString()` shape: `2026-09-10T04:00:00.000Z`.
 pub fn iso_from_millis(milliseconds: i64) -> String {
@@ -66,7 +67,7 @@ pub fn local_weekday(iso: &str, time_zone_name: &str) -> Result<i64> {
 /// TypeScript `localNoon` two-pass offset resolution. Noon is never inside a
 /// DST gap or fold for real zones, so the offset resolution is unambiguous.
 pub fn local_noon(date: &str, time_zone_name: &str) -> Result<String> {
-    let (year, month, day) = athria_core::date::parse_iso_date(date);
+    let (year, month, day) = crate::date::parse_iso_date(date);
     let civil = Date::new(year as i16, month as i8, day as i8).map_err(|_| AthriaError::new(AthriaErrorCode::InvalidData, format!("invalid date `{date}`")))?;
     let zoned = civil.at(12, 0, 0, 0).to_zoned(time_zone(time_zone_name)?).map_err(|_| invalid_instant(date))?;
     Ok(iso_from_millis(zoned.timestamp().as_millisecond()))

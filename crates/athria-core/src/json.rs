@@ -1,5 +1,5 @@
-//! Internal helpers for reading the schema-validated JSON documents that cross
-//! the core boundary and for building JSON-only results.
+//! Helpers for reading the schema-validated JSON documents that cross the core
+//! boundary and for building JSON-only results.
 //!
 //! The TypeScript core is duck-typed over Zod-parsed objects; the port keeps
 //! the same contract by reading [`serde_json::Value`] directly. Inputs are
@@ -13,8 +13,10 @@ use serde_json::{Map, Value};
 pub(crate) static NULL: Value = Value::Null;
 
 /// Builds a JSON number that matches `JSON.stringify` formatting for doubles:
-/// integral values become integers (`3`, not `3.0`).
-pub(crate) fn number(value: f64) -> Value {
+/// integral values become integers (`3`, not `3.0`). Every store write and
+/// application response funnels through this so a Rust-produced document is
+/// byte-identical to its TypeScript equivalent.
+pub fn number(value: f64) -> Value {
     if value.fract() == 0.0 && value.abs() < 9_007_199_254_740_992.0 {
         Value::from(value as i64)
     } else {

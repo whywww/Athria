@@ -11,6 +11,7 @@ use std::cell::Cell;
 use std::path::Path;
 use std::rc::Rc;
 
+use athria_application::RecordImportBatchInput;
 use athria_core::{AthriaError, AthriaErrorCode, Result};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Map, Value, json};
@@ -19,8 +20,7 @@ use uuid::Uuid;
 use crate::clock::{Clock, SystemClock};
 use crate::sessions::js_number_value;
 
-/// Owner id used by the single-user desktop application.
-pub const DEFAULT_OWNER_ID: &str = "local-user";
+pub use athria_core::DEFAULT_OWNER_ID;
 
 /// Latest schema version this store opens and creates.
 pub const SUPPORTED_SCHEMA_VERSION: i64 = 24;
@@ -77,18 +77,6 @@ fn stored_template(id: &str, data: &Value, revision: i64) -> Result<Value> {
     stored.insert("origin".to_string(), Value::String("user".to_string()));
     stored.insert("revision".to_string(), Value::Number(revision.into()));
     Ok(Value::Object(stored))
-}
-
-/// Wellness import input, the Rust port of `recordImportBatch`'s argument.
-#[derive(Debug, Clone)]
-pub struct RecordImportBatchInput<'a> {
-    pub owner_id: &'a str,
-    pub source: &'a str,
-    pub content_hash: &'a str,
-    pub file_name: &'a str,
-    pub parser_version: &'a str,
-    pub status: &'a str,
-    pub data: &'a Value,
 }
 
 /// JavaScript `String(value)` for the JSON scalars wellness payloads carry.

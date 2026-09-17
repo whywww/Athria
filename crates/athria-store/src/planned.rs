@@ -9,38 +9,13 @@
 
 use std::collections::HashMap;
 
+use athria_application::{SaveCurrentPlannedSessionsInput, UpdateCurrentPlannedSessionsInput};
 use athria_core::{AthriaError, AthriaErrorCode, Result, js_locale_compare};
 use rusqlite::{OptionalExtension, params};
 use serde_json::{Value, json};
 
 use crate::sessions::{array, integer, text_or};
 use crate::store::{SqliteStore, database_error, parse_json_column};
-
-/// `updateCurrentPlannedSessions` input.
-#[derive(Debug)]
-pub struct UpdateCurrentPlannedSessionsInput<'a> {
-    pub owner_id: &'a str,
-    pub expected_revision: i64,
-    /// Occurrence action recorded on `planned_session_events` (`complete`,
-    /// `skip`, `restore`, `move_occurrence`, ...).
-    pub mode: &'a str,
-    pub sessions: &'a [Value],
-    pub reason_code: Option<&'a str>,
-    pub reason_note: Option<&'a str>,
-}
-
-/// `saveCurrentPlannedSessions` input. `client_request_id` is accepted for
-/// interface parity; this store has no replay-cache table, so the response
-/// always reports `idempotentReplay: false` like the TypeScript store.
-#[derive(Debug)]
-pub struct SaveCurrentPlannedSessionsInput<'a> {
-    pub owner_id: &'a str,
-    pub client_request_id: &'a str,
-    pub scheduled_date: &'a str,
-    pub expected_revision: i64,
-    pub mode: &'a str,
-    pub sessions: &'a [Value],
-}
 
 /// The weekly-session shape stored inside `current_mesocycles.data`.
 fn weekly_session_projection(session: &Value, status: &str) -> Value {

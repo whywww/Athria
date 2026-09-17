@@ -15,43 +15,16 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+use athria_application::{ReplaceSourceSessionsInput, WriteCounts};
 use athria_core::{AthriaError, AthriaErrorCode, Result, js_locale_compare};
 use rusqlite::{OptionalExtension, params};
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::store::{DEFAULT_OWNER_ID, SqliteStore, database_error, parse_json_column};
 
 /// Algorithm identifier recorded on `plan_workout_matches` rows.
 pub const RECONCILIATION_VERSION: &str = "workout-reconciliation-v1";
-
-/// `{ added, updated }` write counts from `upsertSessions` and
-/// `replaceSourceSessions`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct WriteCounts {
-    pub added: i64,
-    pub updated: i64,
-}
-
-impl WriteCounts {
-    pub fn to_json(self) -> Value {
-        json!({ "added": self.added, "updated": self.updated })
-    }
-}
-
-/// `replaceSourceSessions` input.
-#[derive(Debug)]
-pub struct ReplaceSourceSessionsInput<'a> {
-    pub owner_id: &'a str,
-    pub source: &'a str,
-    pub sessions: &'a [Value],
-    /// Replace only these local dates (`dates` in TypeScript).
-    pub dates: Option<&'a [String]>,
-    /// Per-`externalId` local dates supplied by the importer.
-    pub local_dates: Option<&'a Map<String, Value>>,
-    pub range_start: Option<&'a str>,
-    pub range_end: Option<&'a str>,
-}
 
 pub(crate) fn text<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
     value.get(key).and_then(Value::as_str)
