@@ -1159,6 +1159,13 @@ export class AthriaRepository {
 
   close(): void { this.sqlite.close(); }
 
+  /** Immediate (BEGIN IMMEDIATE) write transaction; the persistence port of AthriaApplication. */
+  transaction<T>(work: () => T): T {
+    let result!: T;
+    this.sqlite.transaction(() => { result = work(); }).immediate();
+    return result;
+  }
+
   getProfile(ownerId = "local-user"): AthleteProfile {
     const row = this.db.select().from(schema.profiles).where(eq(schema.profiles.ownerId, ownerId)).get();
     if (!row) return defaultProfile();
