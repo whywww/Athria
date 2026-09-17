@@ -1,0 +1,15 @@
+{
+  "kind": "double_progression",
+  "name": "error_rep_max_below_min",
+  "input": {
+    "completedReps": [
+      10
+    ],
+    "repMin": 8,
+    "repMax": 5,
+    "currentLoad": 60,
+    "loadIncrement": 2.5,
+    "unit": "kg"
+  },
+  "error": "invalid repetition range"
+}

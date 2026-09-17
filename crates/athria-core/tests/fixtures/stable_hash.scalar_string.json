@@ -1,0 +1,8 @@
+{
+  "kind": "stable_hash",
+  "name": "scalar_string",
+  "input": {
+    "value": "hello"
+  },
+  "expected": "fnv1a-df47ee8b"
+}

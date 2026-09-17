@@ -1,0 +1,114 @@
+{
+  "kind": "schedule",
+  "name": "flexible_week_seven_days",
+  "input": {
+    "effectiveStartDate": "2026-09-07",
+    "durationWeeks": 2,
+    "schedule": {
+      "kind": "flexible_week",
+      "targetDaysPerWeek": 7,
+      "minDaysPerWeek": 7,
+      "maxDaysPerWeek": 7
+    }
+  },
+  "expected": [
+    {
+      "ordinal": 0,
+      "slotId": "flex-1-1",
+      "scheduledDate": "2026-09-07",
+      "dayOfWeek": 0,
+      "weekNumber": 1
+    },
+    {
+      "ordinal": 1,
+      "slotId": "flex-1-2",
+      "scheduledDate": "2026-09-08",
+      "dayOfWeek": 1,
+      "weekNumber": 1
+    },
+    {
+      "ordinal": 2,
+      "slotId": "flex-1-3",
+      "scheduledDate": "2026-09-09",
+      "dayOfWeek": 2,
+      "weekNumber": 1
+    },
+    {
+      "ordinal": 3,
+      "slotId": "flex-1-4",
+      "scheduledDate": "2026-09-10",
+      "dayOfWeek": 3,
+      "weekNumber": 1
+    },
+    {
+      "ordinal": 4,
+      "slotId": "flex-1-5",
+      "scheduledDate": "2026-09-11",
+      "dayOfWeek": 4,
+      "weekNumber": 1
+    },
+    {
+      "ordinal": 5,
+      "slotId": "flex-1-6",
+      "scheduledDate": "2026-09-12",
+      "dayOfWeek": 5,
+      "weekNumber": 1
+    },
+    {
+      "ordinal": 6,
+      "slotId": "flex-1-7",
+      "scheduledDate": "2026-09-13",
+      "dayOfWeek": 6,
+      "weekNumber": 1
+    },
+    {
+      "ordinal": 7,
+      "slotId": "flex-2-1",
+      "scheduledDate": "2026-09-14",
+      "dayOfWeek": 0,
+      "weekNumber": 2
+    },
+    {
+      "ordinal": 8,
+      "slotId": "flex-2-2",
+      "scheduledDate": "2026-09-15",
+      "dayOfWeek": 1,
+      "weekNumber": 2
+    },
+    {
+      "ordinal": 9,
+      "slotId": "flex-2-3",
+      "scheduledDate": "2026-09-16",
+      "dayOfWeek": 2,
+      "weekNumber": 2
+    },
+    {
+      "ordinal": 10,
+      "slotId": "flex-2-4",
+      "scheduledDate": "2026-09-17",
+      "dayOfWeek": 3,
+      "weekNumber": 2
+    },
+    {
+      "ordinal": 11,
+      "slotId": "flex-2-5",
+      "scheduledDate": "2026-09-18",
+      "dayOfWeek": 4,
+      "weekNumber": 2
+    },
+    {
+      "ordinal": 12,
+      "slotId": "flex-2-6",
+      "scheduledDate": "2026-09-19",
+      "dayOfWeek": 5,
+      "weekNumber": 2
+    },
+    {
+      "ordinal": 13,
+      "slotId": "flex-2-7",
+      "scheduledDate": "2026-09-20",
+      "dayOfWeek": 6,
+      "weekNumber": 2
+    }
+  ]
+}

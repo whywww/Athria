@@ -1,0 +1,31 @@
+{
+  "kind": "one_rep_max",
+  "name": "tofixed_float_artifact",
+  "input": {
+    "load": 1.005,
+    "reps": 1,
+    "unit": "kg"
+  },
+  "expected": {
+    "value": 1,
+    "unit": "kg",
+    "method": "epley",
+    "formulaVersion": "0.2.0",
+    "timeRange": {
+      "start": null,
+      "end": null
+    },
+    "dataQuality": {
+      "completeness": 1,
+      "sources": [
+        "explicit_input"
+      ],
+      "missingFields": [],
+      "anomalies": []
+    },
+    "limitations": [
+      "Estimated 1RM is not a measured maximal lift.",
+      "The formula is restricted to sets of 1-12 repetitions."
+    ]
+  }
+}

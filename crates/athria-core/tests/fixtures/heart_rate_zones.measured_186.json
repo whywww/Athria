@@ -1,0 +1,50 @@
+{
+  "kind": "heart_rate_zones",
+  "name": "measured_186",
+  "input": {
+    "maxHeartRate": 186
+  },
+  "expected": {
+    "value": {
+      "zone1": {
+        "min": 93,
+        "max": 111
+      },
+      "zone2": {
+        "min": 112,
+        "max": 129
+      },
+      "zone3": {
+        "min": 130,
+        "max": 148
+      },
+      "zone4": {
+        "min": 149,
+        "max": 166
+      },
+      "zone5": {
+        "min": 167,
+        "max": 186
+      }
+    },
+    "unit": "bpm",
+    "method": "five_zone_percent_max_hr",
+    "formulaVersion": "0.2.0",
+    "timeRange": {
+      "start": null,
+      "end": null
+    },
+    "dataQuality": {
+      "completeness": 1,
+      "sources": [
+        "explicit_max_hr"
+      ],
+      "missingFields": [],
+      "anomalies": []
+    },
+    "limitations": [
+      "Zones are descriptive training ranges, not medical thresholds.",
+      "Age-predicted maximum heart rate is not used."
+    ]
+  }
+}

@@ -1,0 +1,700 @@
+{
+  "kind": "validate_plan",
+  "name": "flexible_rhythm_pass",
+  "input": {
+    "profile": {
+      "ownerId": "local-user",
+      "preferredName": "Athlete",
+      "gender": null,
+      "heightCm": null,
+      "birthDate": null,
+      "timezone": "Asia/Hong_Kong",
+      "goals": [
+        "general_fitness"
+      ],
+      "preference": "",
+      "maxSessionMinutes": 60,
+      "trainingRhythm": {
+        "kind": "flexible_week",
+        "targetDaysPerWeek": 3,
+        "minDaysPerWeek": 2,
+        "maxDaysPerWeek": 4
+      },
+      "equipment": [
+        "dumbbell",
+        "barbell",
+        "kettlebell",
+        "cable",
+        "smith_machine",
+        "machine",
+        "landmine",
+        "pull_up_bar",
+        "trx",
+        "bench",
+        "plyo_box",
+        "resistance_band",
+        "medicine_ball",
+        "sandbag",
+        "sled",
+        "treadmill",
+        "exercise_bike",
+        "rowing_machine",
+        "elliptical",
+        "stepper",
+        "ski_erg",
+        "jump_rope",
+        "battle_rope",
+        "yoga_mat",
+        "foam_roller",
+        "massage_ball",
+        "reformer",
+        "pilates_ring",
+        "mini_stability_ball",
+        "ball_machine"
+      ],
+      "injuries": [],
+      "constraintNotes": [],
+      "explicitRecoveryDays": null,
+      "unitSystem": "metric",
+      "mesocycleDurationWeeks": 8,
+      "raceDays": []
+    },
+    "draft": {
+      "mesocycle": {
+        "durationWeeks": 2,
+        "schedule": {
+          "kind": "flexible_week",
+          "targetDaysPerWeek": 3,
+          "minDaysPerWeek": 2,
+          "maxDaysPerWeek": 4
+        },
+        "domainProgressions": [
+          {
+            "domain": "recovery",
+            "phases": [
+              {
+                "id": "recovery-base",
+                "phaseType": "foundation",
+                "name": "Base",
+                "startWeek": 1,
+                "endWeek": 2,
+                "focus": "Base",
+                "progression": []
+              }
+            ]
+          }
+        ],
+        "weeks": [
+          {
+            "weekNumber": 1,
+            "focus": null,
+            "sessions": [
+              {
+                "id": "w1-flex-1-1",
+                "scheduledDate": "2026-09-08",
+                "order": 0,
+                "status": "planned",
+                "templateRef": null,
+                "name": "w1-flex-1-1 session",
+                "intent": "Golden fixture session",
+                "durationMinutes": 60,
+                "recoveryDemand": "normal",
+                "keySession": false,
+                "components": [
+                  {
+                    "id": "flush",
+                    "name": "Recovery",
+                    "domain": {
+                      "value": "recovery",
+                      "source": "user_confirmed",
+                      "confidence": 1,
+                      "evidence": "golden fixture",
+                      "taxonomyVersion": "strength-2.0"
+                    },
+                    "prescription": {
+                      "kind": "duration_only",
+                      "notes": ""
+                    }
+                  }
+                ],
+                "progressionNote": null,
+                "schedulingRationale": null,
+                "legacySnapshot": false
+              },
+              {
+                "id": "w1-flex-1-2",
+                "scheduledDate": "2026-09-09",
+                "order": 1,
+                "status": "planned",
+                "templateRef": null,
+                "name": "w1-flex-1-2 session",
+                "intent": "Golden fixture session",
+                "durationMinutes": 60,
+                "recoveryDemand": "normal",
+                "keySession": false,
+                "components": [
+                  {
+                    "id": "flush",
+                    "name": "Recovery",
+                    "domain": {
+                      "value": "recovery",
+                      "source": "user_confirmed",
+                      "confidence": 1,
+                      "evidence": "golden fixture",
+                      "taxonomyVersion": "strength-2.0"
+                    },
+                    "prescription": {
+                      "kind": "duration_only",
+                      "notes": ""
+                    }
+                  }
+                ],
+                "progressionNote": null,
+                "schedulingRationale": null,
+                "legacySnapshot": false
+              },
+              {
+                "id": "w1-flex-1-3",
+                "scheduledDate": "2026-09-11",
+                "order": 2,
+                "status": "planned",
+                "templateRef": null,
+                "name": "w1-flex-1-3 session",
+                "intent": "Golden fixture session",
+                "durationMinutes": 60,
+                "recoveryDemand": "normal",
+                "keySession": false,
+                "components": [
+                  {
+                    "id": "flush",
+                    "name": "Recovery",
+                    "domain": {
+                      "value": "recovery",
+                      "source": "user_confirmed",
+                      "confidence": 1,
+                      "evidence": "golden fixture",
+                      "taxonomyVersion": "strength-2.0"
+                    },
+                    "prescription": {
+                      "kind": "duration_only",
+                      "notes": ""
+                    }
+                  }
+                ],
+                "progressionNote": null,
+                "schedulingRationale": null,
+                "legacySnapshot": false
+              }
+            ]
+          },
+          {
+            "weekNumber": 2,
+            "focus": null,
+            "sessions": [
+              {
+                "id": "w2-flex-2-1",
+                "scheduledDate": "2026-09-15",
+                "order": 0,
+                "status": "planned",
+                "templateRef": null,
+                "name": "w2-flex-2-1 session",
+                "intent": "Golden fixture session",
+                "durationMinutes": 60,
+                "recoveryDemand": "normal",
+                "keySession": false,
+                "components": [
+                  {
+                    "id": "flush",
+                    "name": "Recovery",
+                    "domain": {
+                      "value": "recovery",
+                      "source": "user_confirmed",
+                      "confidence": 1,
+                      "evidence": "golden fixture",
+                      "taxonomyVersion": "strength-2.0"
+                    },
+                    "prescription": {
+                      "kind": "duration_only",
+                      "notes": ""
+                    }
+                  }
+                ],
+                "progressionNote": null,
+                "schedulingRationale": null,
+                "legacySnapshot": false
+              },
+              {
+                "id": "w2-flex-2-2",
+                "scheduledDate": "2026-09-16",
+                "order": 1,
+                "status": "planned",
+                "templateRef": null,
+                "name": "w2-flex-2-2 session",
+                "intent": "Golden fixture session",
+                "durationMinutes": 60,
+                "recoveryDemand": "normal",
+                "keySession": false,
+                "components": [
+                  {
+                    "id": "flush",
+                    "name": "Recovery",
+                    "domain": {
+                      "value": "recovery",
+                      "source": "user_confirmed",
+                      "confidence": 1,
+                      "evidence": "golden fixture",
+                      "taxonomyVersion": "strength-2.0"
+                    },
+                    "prescription": {
+                      "kind": "duration_only",
+                      "notes": ""
+                    }
+                  }
+                ],
+                "progressionNote": null,
+                "schedulingRationale": null,
+                "legacySnapshot": false
+              },
+              {
+                "id": "w2-flex-2-3",
+                "scheduledDate": "2026-09-18",
+                "order": 2,
+                "status": "planned",
+                "templateRef": null,
+                "name": "w2-flex-2-3 session",
+                "intent": "Golden fixture session",
+                "durationMinutes": 60,
+                "recoveryDemand": "normal",
+                "keySession": false,
+                "components": [
+                  {
+                    "id": "flush",
+                    "name": "Recovery",
+                    "domain": {
+                      "value": "recovery",
+                      "source": "user_confirmed",
+                      "confidence": 1,
+                      "evidence": "golden fixture",
+                      "taxonomyVersion": "strength-2.0"
+                    },
+                    "prescription": {
+                      "kind": "duration_only",
+                      "notes": ""
+                    }
+                  }
+                ],
+                "progressionNote": null,
+                "schedulingRationale": null,
+                "legacySnapshot": false
+              }
+            ]
+          }
+        ],
+        "adjustmentRules": []
+      },
+      "effectiveStartDate": "2026-09-07"
+    },
+    "now": "2026-09-17T10:30:00.000Z"
+  },
+  "expected": {
+    "valid": true,
+    "results": [
+      {
+        "enforcement": "blocker",
+        "reasonCode": "COMPONENT_IDS",
+        "status": "pass",
+        "rulePackId": "structure",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [],
+        "evidence": {
+          "componentIds": [
+            "flush",
+            "flush",
+            "flush",
+            "flush",
+            "flush",
+            "flush"
+          ]
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "blocker",
+        "reasonCode": "EXERCISE_IDS",
+        "status": "pass",
+        "rulePackId": "structure",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [],
+        "evidence": {
+          "exerciseIds": []
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "blocker",
+        "reasonCode": "MESOCYCLE_SCHEDULE",
+        "status": "pass",
+        "rulePackId": "structure",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [],
+        "evidence": {
+          "kind": "flexible_week",
+          "weekdays": [],
+          "occurrenceCount": 6
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "blocker",
+        "reasonCode": "PROFILE_TRAINING_RHYTHM",
+        "status": "pass",
+        "rulePackId": "structure",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [],
+        "evidence": {
+          "profileRhythm": {
+            "kind": "flexible_week",
+            "targetDaysPerWeek": 3,
+            "minDaysPerWeek": 2,
+            "maxDaysPerWeek": 4
+          },
+          "planSchedule": {
+            "kind": "flexible_week",
+            "targetDaysPerWeek": 3,
+            "minDaysPerWeek": 2,
+            "maxDaysPerWeek": 4
+          },
+          "scheduledDates": [
+            "2026-09-08",
+            "2026-09-09",
+            "2026-09-11",
+            "2026-09-15",
+            "2026-09-16",
+            "2026-09-18"
+          ]
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "blocker",
+        "reasonCode": "DOMAIN_PROGRESSION",
+        "status": "pass",
+        "rulePackId": "structure",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [],
+        "evidence": {
+          "durationWeeks": 2,
+          "sessionDomains": [
+            "recovery"
+          ],
+          "progressions": [
+            {
+              "domain": "recovery",
+              "phases": [
+                {
+                  "id": "recovery-base",
+                  "phaseType": "foundation",
+                  "name": "Base",
+                  "startWeek": 1,
+                  "endWeek": 2,
+                  "focus": "Base",
+                  "progression": []
+                }
+              ]
+            }
+          ]
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "blocker",
+        "reasonCode": "MAX_SESSION_DURATION",
+        "status": "pass",
+        "rulePackId": "structure",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [
+          "w1-flex-1-1"
+        ],
+        "evidence": {
+          "durationMinutes": 60,
+          "maximum": 60
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "blocker",
+        "reasonCode": "COMPONENT_PRESCRIPTION",
+        "status": "pass",
+        "rulePackId": "structure",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [
+          "w1-flex-1-1",
+          "flush"
+        ],
+        "evidence": {
+          "domain": "recovery",
+          "prescription": "duration_only"
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "blocker",
+        "reasonCode": "MAX_SESSION_DURATION",
+        "status": "pass",
+        "rulePackId": "structure",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [
+          "w1-flex-1-2"
+        ],
+        "evidence": {
+          "durationMinutes": 60,
+          "maximum": 60
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "blocker",
+        "reasonCode": "COMPONENT_PRESCRIPTION",
+        "status": "pass",
+        "rulePackId": "structure",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [
+          "w1-flex-1-2",
+          "flush"
+        ],
+        "evidence": {
+          "domain": "recovery",
+          "prescription": "duration_only"
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "blocker",
+        "reasonCode": "MAX_SESSION_DURATION",
+        "status": "pass",
+        "rulePackId": "structure",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [
+          "w1-flex-1-3"
+        ],
+        "evidence": {
+          "durationMinutes": 60,
+          "maximum": 60
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "blocker",
+        "reasonCode": "COMPONENT_PRESCRIPTION",
+        "status": "pass",
+        "rulePackId": "structure",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [
+          "w1-flex-1-3",
+          "flush"
+        ],
+        "evidence": {
+          "domain": "recovery",
+          "prescription": "duration_only"
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "blocker",
+        "reasonCode": "MAX_SESSION_DURATION",
+        "status": "pass",
+        "rulePackId": "structure",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [
+          "w2-flex-2-1"
+        ],
+        "evidence": {
+          "durationMinutes": 60,
+          "maximum": 60
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "blocker",
+        "reasonCode": "COMPONENT_PRESCRIPTION",
+        "status": "pass",
+        "rulePackId": "structure",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [
+          "w2-flex-2-1",
+          "flush"
+        ],
+        "evidence": {
+          "domain": "recovery",
+          "prescription": "duration_only"
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "blocker",
+        "reasonCode": "MAX_SESSION_DURATION",
+        "status": "pass",
+        "rulePackId": "structure",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [
+          "w2-flex-2-2"
+        ],
+        "evidence": {
+          "durationMinutes": 60,
+          "maximum": 60
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "blocker",
+        "reasonCode": "COMPONENT_PRESCRIPTION",
+        "status": "pass",
+        "rulePackId": "structure",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [
+          "w2-flex-2-2",
+          "flush"
+        ],
+        "evidence": {
+          "domain": "recovery",
+          "prescription": "duration_only"
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "blocker",
+        "reasonCode": "MAX_SESSION_DURATION",
+        "status": "pass",
+        "rulePackId": "structure",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [
+          "w2-flex-2-3"
+        ],
+        "evidence": {
+          "durationMinutes": 60,
+          "maximum": 60
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "blocker",
+        "reasonCode": "COMPONENT_PRESCRIPTION",
+        "status": "pass",
+        "rulePackId": "structure",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [
+          "w2-flex-2-3",
+          "flush"
+        ],
+        "evidence": {
+          "domain": "recovery",
+          "prescription": "duration_only"
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "info",
+        "reasonCode": "STRENGTH_VOLUME_DISTRIBUTION",
+        "status": "pass",
+        "rulePackId": "strength",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [],
+        "evidence": {
+          "directSetsByMuscle": {},
+          "indirectParticipationsByMuscle": {},
+          "setsByPattern": {}
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "advisory",
+        "reasonCode": "STRENGTH_PUSH_PULL_BALANCE",
+        "status": "not_applicable",
+        "rulePackId": "strength",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [],
+        "evidence": {
+          "pushSets": 0,
+          "pullSets": 0,
+          "boundary": 2
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "advisory",
+        "reasonCode": "STRENGTH_KNEE_HINGE_BALANCE",
+        "status": "not_applicable",
+        "rulePackId": "strength",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [],
+        "evidence": {
+          "kneeDominantSets": 0,
+          "hingeSets": 0,
+          "boundary": 2
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "advisory",
+        "reasonCode": "STRENGTH_EFFORT_RPE",
+        "status": "not_applicable",
+        "rulePackId": "strength",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [],
+        "evidence": {
+          "exerciseCount": 0,
+          "missingEffort": []
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "advisory",
+        "reasonCode": "ENDURANCE_EFFORT_ZONE",
+        "status": "not_applicable",
+        "rulePackId": "structure",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [],
+        "evidence": {
+          "stepCount": 0,
+          "missingZone": []
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      }
+    ],
+    "dataGaps": [],
+    "validatedAt": "2026-09-17T10:30:00.000Z",
+    "inputHash": "fnv1a-2c4d995d",
+    "coverage": {
+      "hardChecksResolved": 17,
+      "hardChecksTotal": 17,
+      "movementFactsResolved": 0,
+      "movementFactsTotal": 0,
+      "muscleFactsResolved": 0,
+      "muscleFactsTotal": 0,
+      "equipmentFactsResolved": 0,
+      "equipmentFactsTotal": 0
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "kind": "one_rep_max",
+  "name": "epley_twelve_reps",
+  "input": {
+    "load": 80,
+    "reps": 12,
+    "unit": "lb"
+  },
+  "expected": {
+    "value": 112,
+    "unit": "lb",
+    "method": "epley",
+    "formulaVersion": "0.2.0",
+    "timeRange": {
+      "start": null,
+      "end": null
+    },
+    "dataQuality": {
+      "completeness": 1,
+      "sources": [
+        "explicit_input"
+      ],
+      "missingFields": [],
+      "anomalies": []
+    },
+    "limitations": [
+      "Estimated 1RM is not a measured maximal lift.",
+      "The formula is restricted to sets of 1-12 repetitions."
+    ]
+  }
+}

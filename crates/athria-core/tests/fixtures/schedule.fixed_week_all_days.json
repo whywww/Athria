@@ -1,0 +1,169 @@
+{
+  "kind": "schedule",
+  "name": "fixed_week_all_days",
+  "input": {
+    "effectiveStartDate": "2026-09-07",
+    "durationWeeks": 3,
+    "schedule": {
+      "kind": "fixed_week",
+      "days": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ]
+    }
+  },
+  "expected": [
+    {
+      "ordinal": 0,
+      "slotId": "weekday-0",
+      "scheduledDate": "2026-09-07",
+      "dayOfWeek": 0,
+      "weekNumber": 1
+    },
+    {
+      "ordinal": 1,
+      "slotId": "weekday-1",
+      "scheduledDate": "2026-09-08",
+      "dayOfWeek": 1,
+      "weekNumber": 1
+    },
+    {
+      "ordinal": 2,
+      "slotId": "weekday-2",
+      "scheduledDate": "2026-09-09",
+      "dayOfWeek": 2,
+      "weekNumber": 1
+    },
+    {
+      "ordinal": 3,
+      "slotId": "weekday-3",
+      "scheduledDate": "2026-09-10",
+      "dayOfWeek": 3,
+      "weekNumber": 1
+    },
+    {
+      "ordinal": 4,
+      "slotId": "weekday-4",
+      "scheduledDate": "2026-09-11",
+      "dayOfWeek": 4,
+      "weekNumber": 1
+    },
+    {
+      "ordinal": 5,
+      "slotId": "weekday-5",
+      "scheduledDate": "2026-09-12",
+      "dayOfWeek": 5,
+      "weekNumber": 1
+    },
+    {
+      "ordinal": 6,
+      "slotId": "weekday-6",
+      "scheduledDate": "2026-09-13",
+      "dayOfWeek": 6,
+      "weekNumber": 1
+    },
+    {
+      "ordinal": 7,
+      "slotId": "weekday-0",
+      "scheduledDate": "2026-09-14",
+      "dayOfWeek": 0,
+      "weekNumber": 2
+    },
+    {
+      "ordinal": 8,
+      "slotId": "weekday-1",
+      "scheduledDate": "2026-09-15",
+      "dayOfWeek": 1,
+      "weekNumber": 2
+    },
+    {
+      "ordinal": 9,
+      "slotId": "weekday-2",
+      "scheduledDate": "2026-09-16",
+      "dayOfWeek": 2,
+      "weekNumber": 2
+    },
+    {
+      "ordinal": 10,
+      "slotId": "weekday-3",
+      "scheduledDate": "2026-09-17",
+      "dayOfWeek": 3,
+      "weekNumber": 2
+    },
+    {
+      "ordinal": 11,
+      "slotId": "weekday-4",
+      "scheduledDate": "2026-09-18",
+      "dayOfWeek": 4,
+      "weekNumber": 2
+    },
+    {
+      "ordinal": 12,
+      "slotId": "weekday-5",
+      "scheduledDate": "2026-09-19",
+      "dayOfWeek": 5,
+      "weekNumber": 2
+    },
+    {
+      "ordinal": 13,
+      "slotId": "weekday-6",
+      "scheduledDate": "2026-09-20",
+      "dayOfWeek": 6,
+      "weekNumber": 2
+    },
+    {
+      "ordinal": 14,
+      "slotId": "weekday-0",
+      "scheduledDate": "2026-09-21",
+      "dayOfWeek": 0,
+      "weekNumber": 3
+    },
+    {
+      "ordinal": 15,
+      "slotId": "weekday-1",
+      "scheduledDate": "2026-09-22",
+      "dayOfWeek": 1,
+      "weekNumber": 3
+    },
+    {
+      "ordinal": 16,
+      "slotId": "weekday-2",
+      "scheduledDate": "2026-09-23",
+      "dayOfWeek": 2,
+      "weekNumber": 3
+    },
+    {
+      "ordinal": 17,
+      "slotId": "weekday-3",
+      "scheduledDate": "2026-09-24",
+      "dayOfWeek": 3,
+      "weekNumber": 3
+    },
+    {
+      "ordinal": 18,
+      "slotId": "weekday-4",
+      "scheduledDate": "2026-09-25",
+      "dayOfWeek": 4,
+      "weekNumber": 3
+    },
+    {
+      "ordinal": 19,
+      "slotId": "weekday-5",
+      "scheduledDate": "2026-09-26",
+      "dayOfWeek": 5,
+      "weekNumber": 3
+    },
+    {
+      "ordinal": 20,
+      "slotId": "weekday-6",
+      "scheduledDate": "2026-09-27",
+      "dayOfWeek": 6,
+      "weekNumber": 3
+    }
+  ]
+}

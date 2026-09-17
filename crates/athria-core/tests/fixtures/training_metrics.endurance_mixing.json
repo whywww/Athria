@@ -1,0 +1,285 @@
+{
+  "kind": "training_metrics",
+  "name": "endurance_mixing",
+  "input": {
+    "sessions": [
+      {
+        "id": "e-1",
+        "ownerId": "local-user",
+        "source": "intervals_icu",
+        "externalId": "e-1",
+        "modality": "endurance",
+        "domains": [
+          "endurance"
+        ],
+        "sport": null,
+        "name": "e-1",
+        "startAt": "2026-09-07T06:00:00Z",
+        "endAt": "2026-09-07T07:00:00Z",
+        "durationMinutes": 60,
+        "status": "completed",
+        "timezone": null,
+        "plannedSessionId": null,
+        "timePrecision": "exact",
+        "sources": [],
+        "planMatch": null,
+        "isPlanMatchExcluded": false,
+        "strengthSets": [],
+        "endurance": {
+          "distanceMeters": 10000,
+          "averageHeartRate": null,
+          "maxHeartRate": null,
+          "averagePowerWatts": null,
+          "maxPowerWatts": null,
+          "heartRateZoneSeconds": {
+            "zone1": 600,
+            "zone2": 1200
+          }
+        },
+        "missingFields": []
+      },
+      {
+        "id": "e-2",
+        "ownerId": "local-user",
+        "source": "intervals_icu",
+        "externalId": "e-2",
+        "modality": "endurance",
+        "domains": [
+          "endurance"
+        ],
+        "sport": null,
+        "name": "e-2",
+        "startAt": "2026-09-08T06:00:00Z",
+        "endAt": "2026-09-08T06:40:00Z",
+        "durationMinutes": 40,
+        "status": "completed",
+        "timezone": null,
+        "plannedSessionId": null,
+        "timePrecision": "exact",
+        "sources": [],
+        "planMatch": null,
+        "isPlanMatchExcluded": false,
+        "strengthSets": [],
+        "endurance": {
+          "distanceMeters": null,
+          "averageHeartRate": null,
+          "maxHeartRate": null,
+          "averagePowerWatts": null,
+          "maxPowerWatts": null,
+          "heartRateZoneSeconds": {}
+        },
+        "missingFields": []
+      },
+      {
+        "id": "e-3",
+        "ownerId": "local-user",
+        "source": "manual",
+        "externalId": "e-3",
+        "modality": "recovery",
+        "domains": [
+          "recovery"
+        ],
+        "sport": null,
+        "name": "e-3",
+        "startAt": "2026-09-09T07:00:00Z",
+        "endAt": "2026-09-09T07:30:00Z",
+        "durationMinutes": 30,
+        "status": "completed",
+        "timezone": null,
+        "plannedSessionId": null,
+        "timePrecision": "exact",
+        "sources": [],
+        "planMatch": null,
+        "isPlanMatchExcluded": false,
+        "strengthSets": [],
+        "endurance": null,
+        "missingFields": []
+      }
+    ]
+  },
+  "expected": {
+    "strength": {
+      "workingSets": {
+        "value": 0,
+        "unit": "sets",
+        "method": "completed_working_sets",
+        "formulaVersion": "0.2.0",
+        "timeRange": {
+          "start": null,
+          "end": null
+        },
+        "dataQuality": {
+          "completeness": 1,
+          "sources": [
+            "intervals_icu",
+            "manual"
+          ],
+          "missingFields": [],
+          "anomalies": []
+        },
+        "limitations": [
+          "Strength and endurance metrics are intentionally not combined into a single load score."
+        ]
+      },
+      "rawVolume": {
+        "value": 0,
+        "unit": "load_repetitions",
+        "method": "sum_load_times_reps",
+        "formulaVersion": "0.2.0",
+        "timeRange": {
+          "start": null,
+          "end": null
+        },
+        "dataQuality": {
+          "completeness": 1,
+          "sources": [
+            "intervals_icu",
+            "manual"
+          ],
+          "missingFields": [],
+          "anomalies": []
+        },
+        "limitations": [
+          "Volumes in different weight units must not be compared until normalized."
+        ]
+      },
+      "directSetsByMuscle": {
+        "value": {},
+        "unit": "sets",
+        "method": "primary_muscle_set_count",
+        "formulaVersion": "0.2.0",
+        "timeRange": {
+          "start": null,
+          "end": null
+        },
+        "dataQuality": {
+          "completeness": 1,
+          "sources": [
+            "intervals_icu",
+            "manual"
+          ],
+          "missingFields": [],
+          "anomalies": []
+        },
+        "limitations": []
+      },
+      "indirectSetsByMuscle": {
+        "value": {},
+        "unit": "participations",
+        "method": "secondary_muscle_participation_count",
+        "formulaVersion": "0.2.0",
+        "timeRange": {
+          "start": null,
+          "end": null
+        },
+        "dataQuality": {
+          "completeness": 1,
+          "sources": [
+            "intervals_icu",
+            "manual"
+          ],
+          "missingFields": [],
+          "anomalies": []
+        },
+        "limitations": [
+          "Indirect participation is not treated as equivalent to a direct set."
+        ]
+      }
+    },
+    "endurance": {
+      "durationMinutes": {
+        "value": 130,
+        "unit": "min",
+        "method": "sum_duration",
+        "formulaVersion": "0.2.0",
+        "timeRange": {
+          "start": "2026-09-07T06:00:00Z",
+          "end": "2026-09-09T07:30:00Z"
+        },
+        "dataQuality": {
+          "completeness": 1,
+          "sources": [
+            "intervals_icu",
+            "manual"
+          ],
+          "missingFields": [],
+          "anomalies": []
+        },
+        "limitations": [
+          "Strength and endurance metrics are intentionally not combined into a single load score."
+        ]
+      },
+      "distanceMeters": {
+        "value": 10000,
+        "unit": "m",
+        "method": "sum_distance",
+        "formulaVersion": "0.2.0",
+        "timeRange": {
+          "start": "2026-09-07T06:00:00Z",
+          "end": "2026-09-09T07:30:00Z"
+        },
+        "dataQuality": {
+          "completeness": 0,
+          "sources": [
+            "intervals_icu",
+            "manual"
+          ],
+          "missingFields": [
+            "distanceMeters"
+          ],
+          "anomalies": []
+        },
+        "limitations": []
+      },
+      "paceSecondsPerKm": {
+        "value": 780,
+        "unit": "s/km",
+        "method": "elapsed_duration_per_kilometer",
+        "formulaVersion": "0.2.0",
+        "timeRange": {
+          "start": "2026-09-07T06:00:00Z",
+          "end": "2026-09-09T07:30:00Z"
+        },
+        "dataQuality": {
+          "completeness": 1,
+          "sources": [
+            "intervals_icu",
+            "manual"
+          ],
+          "missingFields": [],
+          "anomalies": []
+        },
+        "limitations": [
+          "Elapsed pace may include stopped time depending on the source."
+        ]
+      },
+      "timeInZoneSeconds": {
+        "value": {
+          "zone1": 600,
+          "zone2": 1200
+        },
+        "unit": "s",
+        "method": "sum_source_zone_durations",
+        "formulaVersion": "0.2.0",
+        "timeRange": {
+          "start": "2026-09-07T06:00:00Z",
+          "end": "2026-09-09T07:30:00Z"
+        },
+        "dataQuality": {
+          "completeness": 0,
+          "sources": [
+            "intervals_icu",
+            "manual"
+          ],
+          "missingFields": [
+            "heartRateZoneSeconds"
+          ],
+          "anomalies": []
+        },
+        "limitations": [
+          "Zone totals retain the source method and require a configured heart-rate basis."
+        ]
+      }
+    }
+  }
+}

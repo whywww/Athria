@@ -1,0 +1,10 @@
+{
+  "kind": "one_rep_max",
+  "name": "error_negative_load",
+  "input": {
+    "load": -50,
+    "reps": 5,
+    "unit": "kg"
+  },
+  "error": "load must be greater than zero"
+}

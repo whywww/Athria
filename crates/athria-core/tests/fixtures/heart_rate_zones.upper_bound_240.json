@@ -1,0 +1,50 @@
+{
+  "kind": "heart_rate_zones",
+  "name": "upper_bound_240",
+  "input": {
+    "maxHeartRate": 240
+  },
+  "expected": {
+    "value": {
+      "zone1": {
+        "min": 120,
+        "max": 143
+      },
+      "zone2": {
+        "min": 144,
+        "max": 167
+      },
+      "zone3": {
+        "min": 168,
+        "max": 191
+      },
+      "zone4": {
+        "min": 192,
+        "max": 215
+      },
+      "zone5": {
+        "min": 216,
+        "max": 240
+      }
+    },
+    "unit": "bpm",
+    "method": "five_zone_percent_max_hr",
+    "formulaVersion": "0.2.0",
+    "timeRange": {
+      "start": null,
+      "end": null
+    },
+    "dataQuality": {
+      "completeness": 1,
+      "sources": [
+        "explicit_max_hr"
+      ],
+      "missingFields": [],
+      "anomalies": []
+    },
+    "limitations": [
+      "Zones are descriptive training ranges, not medical thresholds.",
+      "Age-predicted maximum heart rate is not used."
+    ]
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "kind": "schedule",
+  "name": "interval_daily_one_week",
+  "input": {
+    "effectiveStartDate": "2026-09-07",
+    "durationWeeks": 1,
+    "schedule": {
+      "kind": "interval",
+      "intervalDays": 1
+    }
+  },
+  "expected": [
+    {
+      "ordinal": 0,
+      "slotId": "interval-1",
+      "scheduledDate": "2026-09-07",
+      "dayOfWeek": 0,
+      "weekNumber": 1
+    },
+    {
+      "ordinal": 1,
+      "slotId": "interval-2",
+      "scheduledDate": "2026-09-08",
+      "dayOfWeek": 1,
+      "weekNumber": 1
+    },
+    {
+      "ordinal": 2,
+      "slotId": "interval-3",
+      "scheduledDate": "2026-09-09",
+      "dayOfWeek": 2,
+      "weekNumber": 1
+    },
+    {
+      "ordinal": 3,
+      "slotId": "interval-4",
+      "scheduledDate": "2026-09-10",
+      "dayOfWeek": 3,
+      "weekNumber": 1
+    },
+    {
+      "ordinal": 4,
+      "slotId": "interval-5",
+      "scheduledDate": "2026-09-11",
+      "dayOfWeek": 4,
+      "weekNumber": 1
+    },
+    {
+      "ordinal": 5,
+      "slotId": "interval-6",
+      "scheduledDate": "2026-09-12",
+      "dayOfWeek": 5,
+      "weekNumber": 1
+    },
+    {
+      "ordinal": 6,
+      "slotId": "interval-7",
+      "scheduledDate": "2026-09-13",
+      "dayOfWeek": 6,
+      "weekNumber": 1
+    }
+  ]
+}

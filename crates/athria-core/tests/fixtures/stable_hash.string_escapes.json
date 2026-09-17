@@ -1,0 +1,12 @@
+{
+  "kind": "stable_hash",
+  "name": "string_escapes",
+  "input": {
+    "value": {
+      "text": "a\"b\\c\nd\te",
+      "control": "\u0001\u001f",
+      "json": "{}[]:"
+    }
+  },
+  "expected": "fnv1a-3d1bb7a0"
+}

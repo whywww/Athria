@@ -1,0 +1,45 @@
+{
+  "kind": "schedule",
+  "name": "fixed_week_two_days",
+  "input": {
+    "effectiveStartDate": "2026-09-07",
+    "durationWeeks": 2,
+    "schedule": {
+      "kind": "fixed_week",
+      "days": [
+        0,
+        4
+      ]
+    }
+  },
+  "expected": [
+    {
+      "ordinal": 0,
+      "slotId": "weekday-0",
+      "scheduledDate": "2026-09-07",
+      "dayOfWeek": 0,
+      "weekNumber": 1
+    },
+    {
+      "ordinal": 1,
+      "slotId": "weekday-4",
+      "scheduledDate": "2026-09-11",
+      "dayOfWeek": 4,
+      "weekNumber": 1
+    },
+    {
+      "ordinal": 2,
+      "slotId": "weekday-0",
+      "scheduledDate": "2026-09-14",
+      "dayOfWeek": 0,
+      "weekNumber": 2
+    },
+    {
+      "ordinal": 3,
+      "slotId": "weekday-4",
+      "scheduledDate": "2026-09-18",
+      "dayOfWeek": 4,
+      "weekNumber": 2
+    }
+  ]
+}

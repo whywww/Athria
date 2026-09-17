@@ -1,0 +1,31 @@
+{
+  "kind": "schedule",
+  "name": "fixed_week_boundary_clip",
+  "input": {
+    "effectiveStartDate": "2026-09-09",
+    "durationWeeks": 1,
+    "schedule": {
+      "kind": "fixed_week",
+      "days": [
+        0,
+        6
+      ]
+    }
+  },
+  "expected": [
+    {
+      "ordinal": 0,
+      "slotId": "weekday-6",
+      "scheduledDate": "2026-09-13",
+      "dayOfWeek": 6,
+      "weekNumber": 1
+    },
+    {
+      "ordinal": 1,
+      "slotId": "weekday-0",
+      "scheduledDate": "2026-09-14",
+      "dayOfWeek": 0,
+      "weekNumber": 1
+    }
+  ]
+}

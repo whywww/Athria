@@ -1,0 +1,45 @@
+{
+  "kind": "schedule",
+  "name": "fixed_week_year_boundary",
+  "input": {
+    "effectiveStartDate": "2026-12-28",
+    "durationWeeks": 2,
+    "schedule": {
+      "kind": "fixed_week",
+      "days": [
+        0,
+        4
+      ]
+    }
+  },
+  "expected": [
+    {
+      "ordinal": 0,
+      "slotId": "weekday-0",
+      "scheduledDate": "2026-12-28",
+      "dayOfWeek": 0,
+      "weekNumber": 1
+    },
+    {
+      "ordinal": 1,
+      "slotId": "weekday-4",
+      "scheduledDate": "2027-01-01",
+      "dayOfWeek": 4,
+      "weekNumber": 1
+    },
+    {
+      "ordinal": 2,
+      "slotId": "weekday-0",
+      "scheduledDate": "2027-01-04",
+      "dayOfWeek": 0,
+      "weekNumber": 2
+    },
+    {
+      "ordinal": 3,
+      "slotId": "weekday-4",
+      "scheduledDate": "2027-01-08",
+      "dayOfWeek": 4,
+      "weekNumber": 2
+    }
+  ]
+}

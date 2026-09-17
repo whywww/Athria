@@ -1,0 +1,42 @@
+{
+  "kind": "schedule",
+  "name": "interval_ten_days_clipped",
+  "input": {
+    "effectiveStartDate": "2026-01-05",
+    "durationWeeks": 5,
+    "schedule": {
+      "kind": "interval",
+      "intervalDays": 10
+    }
+  },
+  "expected": [
+    {
+      "ordinal": 0,
+      "slotId": "interval-1",
+      "scheduledDate": "2026-01-05",
+      "dayOfWeek": 0,
+      "weekNumber": 1
+    },
+    {
+      "ordinal": 1,
+      "slotId": "interval-2",
+      "scheduledDate": "2026-01-15",
+      "dayOfWeek": 3,
+      "weekNumber": 2
+    },
+    {
+      "ordinal": 2,
+      "slotId": "interval-3",
+      "scheduledDate": "2026-01-25",
+      "dayOfWeek": 6,
+      "weekNumber": 3
+    },
+    {
+      "ordinal": 3,
+      "slotId": "interval-4",
+      "scheduledDate": "2026-02-04",
+      "dayOfWeek": 2,
+      "weekNumber": 5
+    }
+  ]
+}

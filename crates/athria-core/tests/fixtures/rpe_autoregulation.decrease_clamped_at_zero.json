@@ -1,0 +1,18 @@
+{
+  "kind": "rpe_autoregulation",
+  "name": "decrease_clamped_at_zero",
+  "input": {
+    "actualRpe": 10,
+    "targetRpe": 5,
+    "load": 2,
+    "increment": 5,
+    "unit": "kg"
+  },
+  "expected": {
+    "action": "decrease",
+    "proposedLoad": 0,
+    "unit": "kg",
+    "reasonCode": "RPE_ABOVE_TARGET",
+    "formulaVersion": "0.2.0"
+  }
+}

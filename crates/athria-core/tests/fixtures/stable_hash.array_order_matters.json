@@ -1,0 +1,23 @@
+{
+  "kind": "stable_hash",
+  "name": "array_order_matters",
+  "input": {
+    "value": {
+      "list": [
+        3,
+        1,
+        2
+      ],
+      "nested": [
+        [
+          1
+        ],
+        [
+          2,
+          3
+        ]
+      ]
+    }
+  },
+  "expected": "fnv1a-a9eaf60e"
+}

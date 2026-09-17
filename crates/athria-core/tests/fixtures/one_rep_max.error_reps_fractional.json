@@ -1,0 +1,10 @@
+{
+  "kind": "one_rep_max",
+  "name": "error_reps_fractional",
+  "input": {
+    "load": 100,
+    "reps": 2.5,
+    "unit": "kg"
+  },
+  "error": "reps must be an integer from 1 to 12"
+}

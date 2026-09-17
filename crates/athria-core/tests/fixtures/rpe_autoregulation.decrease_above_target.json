@@ -1,0 +1,18 @@
+{
+  "kind": "rpe_autoregulation",
+  "name": "decrease_above_target",
+  "input": {
+    "actualRpe": 9,
+    "targetRpe": 7,
+    "load": 100,
+    "increment": 5,
+    "unit": "kg"
+  },
+  "expected": {
+    "action": "decrease",
+    "proposedLoad": 95,
+    "unit": "kg",
+    "reasonCode": "RPE_ABOVE_TARGET",
+    "formulaVersion": "0.2.0"
+  }
+}

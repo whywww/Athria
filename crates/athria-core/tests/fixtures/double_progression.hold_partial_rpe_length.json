@@ -1,0 +1,27 @@
+{
+  "kind": "double_progression",
+  "name": "hold_partial_rpe_length",
+  "input": {
+    "completedReps": [
+      10,
+      10
+    ],
+    "repMin": 8,
+    "repMax": 10,
+    "currentLoad": 60,
+    "loadIncrement": 2.5,
+    "unit": "kg",
+    "rpeValues": [
+      7
+    ],
+    "rpeCeiling": 8
+  },
+  "expected": {
+    "action": "hold",
+    "proposedLoad": 60,
+    "unit": "kg",
+    "reasonCode": "RPE_DATA_MISSING",
+    "formulaVersion": "0.2.0",
+    "confidenceLimit": "RPE ceiling could not be evaluated."
+  }
+}

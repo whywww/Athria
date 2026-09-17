@@ -1,0 +1,16 @@
+{
+  "kind": "stable_hash",
+  "name": "numbers_and_null",
+  "input": {
+    "value": {
+      "int": 42,
+      "float": 119.58,
+      "negative": -3.5,
+      "zero": 0,
+      "flag": true,
+      "disabled": false,
+      "nothing": null
+    }
+  },
+  "expected": "fnv1a-5769aeb7"
+}

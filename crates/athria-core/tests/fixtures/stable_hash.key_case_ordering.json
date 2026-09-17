@@ -1,0 +1,13 @@
+{
+  "kind": "stable_hash",
+  "name": "key_case_ordering",
+  "input": {
+    "value": {
+      "aB": 1,
+      "Ac": 2,
+      "a": 3,
+      "B": 4
+    }
+  },
+  "expected": "fnv1a-43522807"
+}

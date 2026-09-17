@@ -1,0 +1,28 @@
+{
+  "kind": "double_progression",
+  "name": "review_beats_ceiling_hold",
+  "input": {
+    "completedReps": [
+      5,
+      10
+    ],
+    "repMin": 8,
+    "repMax": 10,
+    "currentLoad": 60,
+    "loadIncrement": 2.5,
+    "unit": "kg",
+    "rpeValues": [
+      9,
+      9
+    ],
+    "rpeCeiling": 8
+  },
+  "expected": {
+    "action": "review",
+    "proposedLoad": 60,
+    "unit": "kg",
+    "reasonCode": "BELOW_REP_FLOOR",
+    "formulaVersion": "0.2.0",
+    "confidenceLimit": null
+  }
+}

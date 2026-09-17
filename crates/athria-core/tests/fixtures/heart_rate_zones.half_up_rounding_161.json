@@ -1,0 +1,50 @@
+{
+  "kind": "heart_rate_zones",
+  "name": "half_up_rounding_161",
+  "input": {
+    "maxHeartRate": 161
+  },
+  "expected": {
+    "value": {
+      "zone1": {
+        "min": 81,
+        "max": 96
+      },
+      "zone2": {
+        "min": 97,
+        "max": 112
+      },
+      "zone3": {
+        "min": 113,
+        "max": 128
+      },
+      "zone4": {
+        "min": 129,
+        "max": 144
+      },
+      "zone5": {
+        "min": 145,
+        "max": 161
+      }
+    },
+    "unit": "bpm",
+    "method": "five_zone_percent_max_hr",
+    "formulaVersion": "0.2.0",
+    "timeRange": {
+      "start": null,
+      "end": null
+    },
+    "dataQuality": {
+      "completeness": 1,
+      "sources": [
+        "explicit_max_hr"
+      ],
+      "missingFields": [],
+      "anomalies": []
+    },
+    "limitations": [
+      "Zones are descriptive training ranges, not medical thresholds.",
+      "Age-predicted maximum heart rate is not used."
+    ]
+  }
+}

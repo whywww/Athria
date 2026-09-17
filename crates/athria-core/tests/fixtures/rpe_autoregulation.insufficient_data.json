@@ -1,0 +1,17 @@
+{
+  "kind": "rpe_autoregulation",
+  "name": "insufficient_data",
+  "input": {
+    "actualRpe": null,
+    "targetRpe": 8,
+    "load": 100,
+    "increment": 5,
+    "unit": "kg"
+  },
+  "expected": {
+    "action": "insufficient_data",
+    "proposedLoad": 100,
+    "reasonCode": "RPE_DATA_MISSING",
+    "formulaVersion": "0.2.0"
+  }
+}

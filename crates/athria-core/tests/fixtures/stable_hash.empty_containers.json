@@ -1,0 +1,15 @@
+{
+  "kind": "stable_hash",
+  "name": "empty_containers",
+  "input": {
+    "value": {
+      "object": {},
+      "array": [],
+      "nested": [
+        {},
+        []
+      ]
+    }
+  },
+  "expected": "fnv1a-891e09a6"
+}

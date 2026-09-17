@@ -1,0 +1,671 @@
+{
+  "kind": "validate_plan",
+  "name": "duplicate_component_and_exercise_ids",
+  "input": {
+    "profile": {
+      "ownerId": "local-user",
+      "preferredName": "Athlete",
+      "gender": null,
+      "heightCm": null,
+      "birthDate": null,
+      "timezone": "Asia/Hong_Kong",
+      "goals": [
+        "general_fitness"
+      ],
+      "preference": "",
+      "maxSessionMinutes": 60,
+      "trainingRhythm": {
+        "kind": "fixed_week",
+        "days": [
+          0
+        ]
+      },
+      "equipment": [
+        "dumbbell",
+        "barbell",
+        "kettlebell",
+        "cable",
+        "smith_machine",
+        "machine",
+        "landmine",
+        "pull_up_bar",
+        "trx",
+        "bench",
+        "plyo_box",
+        "resistance_band",
+        "medicine_ball",
+        "sandbag",
+        "sled",
+        "treadmill",
+        "exercise_bike",
+        "rowing_machine",
+        "elliptical",
+        "stepper",
+        "ski_erg",
+        "jump_rope",
+        "battle_rope",
+        "yoga_mat",
+        "foam_roller",
+        "massage_ball",
+        "reformer",
+        "pilates_ring",
+        "mini_stability_ball",
+        "ball_machine"
+      ],
+      "injuries": [],
+      "constraintNotes": [],
+      "explicitRecoveryDays": null,
+      "unitSystem": "metric",
+      "mesocycleDurationWeeks": 8,
+      "raceDays": []
+    },
+    "draft": {
+      "mesocycle": {
+        "durationWeeks": 1,
+        "schedule": {
+          "kind": "fixed_week",
+          "days": [
+            0
+          ]
+        },
+        "domainProgressions": [
+          {
+            "domain": "strength",
+            "phases": [
+              {
+                "id": "strength-base",
+                "phaseType": "foundation",
+                "name": "Base",
+                "startWeek": 1,
+                "endWeek": 1,
+                "focus": "Base",
+                "progression": []
+              }
+            ]
+          },
+          {
+            "domain": "recovery",
+            "phases": [
+              {
+                "id": "recovery-base",
+                "phaseType": "foundation",
+                "name": "Base",
+                "startWeek": 1,
+                "endWeek": 1,
+                "focus": "Base",
+                "progression": []
+              }
+            ]
+          }
+        ],
+        "weeks": [
+          {
+            "weekNumber": 1,
+            "focus": null,
+            "sessions": [
+              {
+                "id": "mon-strength",
+                "scheduledDate": "2026-09-07",
+                "order": 0,
+                "status": "planned",
+                "templateRef": null,
+                "name": "mon-strength session",
+                "intent": "Golden fixture session",
+                "durationMinutes": 60,
+                "recoveryDemand": "normal",
+                "keySession": false,
+                "components": [
+                  {
+                    "id": "dup-component",
+                    "name": "Strength",
+                    "domain": {
+                      "value": "strength",
+                      "source": "user_confirmed",
+                      "confidence": 1,
+                      "evidence": "golden fixture",
+                      "taxonomyVersion": "strength-2.0"
+                    },
+                    "prescription": {
+                      "kind": "strength",
+                      "exercises": [
+                        {
+                          "id": "dup-exercise",
+                          "displayName": "dup-exercise",
+                          "canonicalKey": null,
+                          "classification": {
+                            "primaryMovement": {
+                              "value": "squat",
+                              "source": "user_confirmed",
+                              "confidence": 1,
+                              "evidence": "golden fixture",
+                              "taxonomyVersion": "strength-2.0"
+                            },
+                            "primaryMuscles": {
+                              "value": [
+                                "quadriceps"
+                              ],
+                              "source": "user_confirmed",
+                              "confidence": 1,
+                              "evidence": "golden fixture",
+                              "taxonomyVersion": "strength-2.0"
+                            },
+                            "secondaryMuscles": {
+                              "value": [
+                                "glutes"
+                              ],
+                              "source": "user_confirmed",
+                              "confidence": 1,
+                              "evidence": "golden fixture",
+                              "taxonomyVersion": "strength-2.0"
+                            },
+                            "equipment": {
+                              "value": [
+                                "barbell"
+                              ],
+                              "source": "user_confirmed",
+                              "confidence": 1,
+                              "evidence": "golden fixture",
+                              "taxonomyVersion": "strength-2.0"
+                            },
+                            "impact": {
+                              "value": "moderate",
+                              "source": "user_confirmed",
+                              "confidence": 1,
+                              "evidence": "golden fixture",
+                              "taxonomyVersion": "strength-2.0"
+                            },
+                            "laterality": {
+                              "value": "bilateral",
+                              "source": "user_confirmed",
+                              "confidence": 1,
+                              "evidence": "golden fixture",
+                              "taxonomyVersion": "strength-2.0"
+                            }
+                          },
+                          "sets": 4,
+                          "repsMin": 5,
+                          "repsMax": 8,
+                          "targetRpe": 8,
+                          "restSeconds": 150,
+                          "referenceLoad": 100,
+                          "referenceLoadUnit": "kg",
+                          "notes": ""
+                        },
+                        {
+                          "id": "dup-exercise",
+                          "displayName": "dup-exercise",
+                          "canonicalKey": null,
+                          "classification": {
+                            "primaryMovement": {
+                              "value": "squat",
+                              "source": "user_confirmed",
+                              "confidence": 1,
+                              "evidence": "golden fixture",
+                              "taxonomyVersion": "strength-2.0"
+                            },
+                            "primaryMuscles": {
+                              "value": [
+                                "quadriceps"
+                              ],
+                              "source": "user_confirmed",
+                              "confidence": 1,
+                              "evidence": "golden fixture",
+                              "taxonomyVersion": "strength-2.0"
+                            },
+                            "secondaryMuscles": {
+                              "value": [
+                                "glutes"
+                              ],
+                              "source": "user_confirmed",
+                              "confidence": 1,
+                              "evidence": "golden fixture",
+                              "taxonomyVersion": "strength-2.0"
+                            },
+                            "equipment": {
+                              "value": [
+                                "barbell"
+                              ],
+                              "source": "user_confirmed",
+                              "confidence": 1,
+                              "evidence": "golden fixture",
+                              "taxonomyVersion": "strength-2.0"
+                            },
+                            "impact": {
+                              "value": "moderate",
+                              "source": "user_confirmed",
+                              "confidence": 1,
+                              "evidence": "golden fixture",
+                              "taxonomyVersion": "strength-2.0"
+                            },
+                            "laterality": {
+                              "value": "bilateral",
+                              "source": "user_confirmed",
+                              "confidence": 1,
+                              "evidence": "golden fixture",
+                              "taxonomyVersion": "strength-2.0"
+                            }
+                          },
+                          "sets": 4,
+                          "repsMin": 5,
+                          "repsMax": 8,
+                          "targetRpe": 8,
+                          "restSeconds": 150,
+                          "referenceLoad": 100,
+                          "referenceLoadUnit": "kg",
+                          "notes": ""
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "id": "dup-component",
+                    "name": "Recovery",
+                    "domain": {
+                      "value": "recovery",
+                      "source": "user_confirmed",
+                      "confidence": 1,
+                      "evidence": "golden fixture",
+                      "taxonomyVersion": "strength-2.0"
+                    },
+                    "prescription": {
+                      "kind": "duration_only",
+                      "notes": ""
+                    }
+                  }
+                ],
+                "progressionNote": null,
+                "schedulingRationale": null,
+                "legacySnapshot": false
+              }
+            ]
+          }
+        ],
+        "adjustmentRules": []
+      },
+      "effectiveStartDate": "2026-09-07"
+    },
+    "now": "2026-09-17T10:30:00.000Z"
+  },
+  "expected": {
+    "valid": false,
+    "results": [
+      {
+        "enforcement": "blocker",
+        "reasonCode": "COMPONENT_IDS",
+        "status": "fail",
+        "rulePackId": "structure",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [],
+        "evidence": {
+          "componentIds": [
+            "dup-component",
+            "dup-component"
+          ]
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "blocker",
+        "reasonCode": "EXERCISE_IDS",
+        "status": "fail",
+        "rulePackId": "structure",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [],
+        "evidence": {
+          "exerciseIds": [
+            "dup-exercise",
+            "dup-exercise"
+          ]
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "blocker",
+        "reasonCode": "MESOCYCLE_SCHEDULE",
+        "status": "pass",
+        "rulePackId": "structure",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [],
+        "evidence": {
+          "kind": "fixed_week",
+          "weekdays": [
+            0
+          ],
+          "occurrenceCount": 1
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "blocker",
+        "reasonCode": "PROFILE_TRAINING_RHYTHM",
+        "status": "pass",
+        "rulePackId": "structure",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [],
+        "evidence": {
+          "profileRhythm": {
+            "kind": "fixed_week",
+            "days": [
+              0
+            ]
+          },
+          "planSchedule": {
+            "kind": "fixed_week",
+            "days": [
+              0
+            ]
+          },
+          "scheduledDates": [
+            "2026-09-07"
+          ]
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "blocker",
+        "reasonCode": "DOMAIN_PROGRESSION",
+        "status": "pass",
+        "rulePackId": "structure",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [],
+        "evidence": {
+          "durationWeeks": 1,
+          "sessionDomains": [
+            "strength",
+            "recovery"
+          ],
+          "progressions": [
+            {
+              "domain": "strength",
+              "phases": [
+                {
+                  "id": "strength-base",
+                  "phaseType": "foundation",
+                  "name": "Base",
+                  "startWeek": 1,
+                  "endWeek": 1,
+                  "focus": "Base",
+                  "progression": []
+                }
+              ]
+            },
+            {
+              "domain": "recovery",
+              "phases": [
+                {
+                  "id": "recovery-base",
+                  "phaseType": "foundation",
+                  "name": "Base",
+                  "startWeek": 1,
+                  "endWeek": 1,
+                  "focus": "Base",
+                  "progression": []
+                }
+              ]
+            }
+          ]
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "blocker",
+        "reasonCode": "MAX_SESSION_DURATION",
+        "status": "pass",
+        "rulePackId": "structure",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [
+          "mon-strength"
+        ],
+        "evidence": {
+          "durationMinutes": 60,
+          "maximum": 60
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "blocker",
+        "reasonCode": "COMPONENT_PRESCRIPTION",
+        "status": "pass",
+        "rulePackId": "structure",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [
+          "mon-strength",
+          "dup-component"
+        ],
+        "evidence": {
+          "domain": "strength",
+          "prescription": "strength"
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "blocker",
+        "reasonCode": "EXERCISE_EQUIPMENT",
+        "status": "pass",
+        "rulePackId": "constraints",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [
+          "mon-strength",
+          "dup-component",
+          "dup-exercise"
+        ],
+        "evidence": {
+          "required": [
+            "barbell"
+          ],
+          "available": [
+            "dumbbell",
+            "barbell",
+            "kettlebell",
+            "cable",
+            "smith_machine",
+            "machine",
+            "landmine",
+            "pull_up_bar",
+            "trx",
+            "bench",
+            "plyo_box",
+            "resistance_band",
+            "medicine_ball",
+            "sandbag",
+            "sled",
+            "treadmill",
+            "exercise_bike",
+            "rowing_machine",
+            "elliptical",
+            "stepper",
+            "ski_erg",
+            "jump_rope",
+            "battle_rope",
+            "yoga_mat",
+            "foam_roller",
+            "massage_ball",
+            "reformer",
+            "pilates_ring",
+            "mini_stability_ball",
+            "ball_machine"
+          ],
+          "source": "user_confirmed",
+          "conflict": false
+        },
+        "missingFacts": [],
+        "confidenceLimit": {
+          "required": 0.9,
+          "observed": 1
+        }
+      },
+      {
+        "enforcement": "blocker",
+        "reasonCode": "EXERCISE_EQUIPMENT",
+        "status": "pass",
+        "rulePackId": "constraints",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [
+          "mon-strength",
+          "dup-component",
+          "dup-exercise"
+        ],
+        "evidence": {
+          "required": [
+            "barbell"
+          ],
+          "available": [
+            "dumbbell",
+            "barbell",
+            "kettlebell",
+            "cable",
+            "smith_machine",
+            "machine",
+            "landmine",
+            "pull_up_bar",
+            "trx",
+            "bench",
+            "plyo_box",
+            "resistance_band",
+            "medicine_ball",
+            "sandbag",
+            "sled",
+            "treadmill",
+            "exercise_bike",
+            "rowing_machine",
+            "elliptical",
+            "stepper",
+            "ski_erg",
+            "jump_rope",
+            "battle_rope",
+            "yoga_mat",
+            "foam_roller",
+            "massage_ball",
+            "reformer",
+            "pilates_ring",
+            "mini_stability_ball",
+            "ball_machine"
+          ],
+          "source": "user_confirmed",
+          "conflict": false
+        },
+        "missingFacts": [],
+        "confidenceLimit": {
+          "required": 0.9,
+          "observed": 1
+        }
+      },
+      {
+        "enforcement": "blocker",
+        "reasonCode": "COMPONENT_PRESCRIPTION",
+        "status": "pass",
+        "rulePackId": "structure",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [
+          "mon-strength",
+          "dup-component"
+        ],
+        "evidence": {
+          "domain": "recovery",
+          "prescription": "duration_only"
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "info",
+        "reasonCode": "STRENGTH_VOLUME_DISTRIBUTION",
+        "status": "pass",
+        "rulePackId": "strength",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [],
+        "evidence": {
+          "directSetsByMuscle": {
+            "quadriceps": 8
+          },
+          "indirectParticipationsByMuscle": {
+            "glutes": 8
+          },
+          "setsByPattern": {
+            "squat": 8
+          }
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "advisory",
+        "reasonCode": "STRENGTH_PUSH_PULL_BALANCE",
+        "status": "not_applicable",
+        "rulePackId": "strength",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [],
+        "evidence": {
+          "pushSets": 0,
+          "pullSets": 0,
+          "boundary": 2
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "advisory",
+        "reasonCode": "STRENGTH_KNEE_HINGE_BALANCE",
+        "status": "fail",
+        "rulePackId": "strength",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [],
+        "evidence": {
+          "kneeDominantSets": 8,
+          "hingeSets": 0,
+          "boundary": 2
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "advisory",
+        "reasonCode": "STRENGTH_EFFORT_RPE",
+        "status": "pass",
+        "rulePackId": "strength",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [],
+        "evidence": {
+          "exerciseCount": 2,
+          "missingEffort": []
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "advisory",
+        "reasonCode": "ENDURANCE_EFFORT_ZONE",
+        "status": "not_applicable",
+        "rulePackId": "structure",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [],
+        "evidence": {
+          "stepCount": 0,
+          "missingZone": []
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      }
+    ],
+    "dataGaps": [],
+    "validatedAt": "2026-09-17T10:30:00.000Z",
+    "inputHash": "fnv1a-4a138924",
+    "coverage": {
+      "hardChecksResolved": 10,
+      "hardChecksTotal": 10,
+      "movementFactsResolved": 2,
+      "movementFactsTotal": 2,
+      "muscleFactsResolved": 2,
+      "muscleFactsTotal": 2,
+      "equipmentFactsResolved": 2,
+      "equipmentFactsTotal": 2
+    }
+  }
+}

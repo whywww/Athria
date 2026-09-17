@@ -1,0 +1,11 @@
+{
+  "kind": "stable_hash",
+  "name": "unicode_values",
+  "input": {
+    "value": {
+      "name": "Ångström 训练",
+      "note": "interval 🏃 done"
+    }
+  },
+  "expected": "fnv1a-32fa2ead"
+}

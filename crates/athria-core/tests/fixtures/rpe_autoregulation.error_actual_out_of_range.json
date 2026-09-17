@@ -1,0 +1,12 @@
+{
+  "kind": "rpe_autoregulation",
+  "name": "error_actual_out_of_range",
+  "input": {
+    "actualRpe": 10.5,
+    "targetRpe": 8,
+    "load": 100,
+    "increment": 5,
+    "unit": "kg"
+  },
+  "error": "RPE values must be valid"
+}

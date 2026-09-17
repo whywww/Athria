@@ -1,0 +1,230 @@
+{
+  "kind": "training_metrics",
+  "name": "mixed_domain_fallback",
+  "input": {
+    "sessions": [
+      {
+        "id": "m-1",
+        "ownerId": "local-user",
+        "source": "manual",
+        "externalId": "m-1",
+        "modality": "mixed",
+        "domains": [],
+        "sport": null,
+        "name": "m-1",
+        "startAt": "2026-09-07T08:00:00Z",
+        "endAt": "2026-09-07T08:45:00Z",
+        "durationMinutes": 45,
+        "status": "completed",
+        "timezone": null,
+        "plannedSessionId": null,
+        "timePrecision": "exact",
+        "sources": [],
+        "planMatch": null,
+        "isPlanMatchExcluded": false,
+        "strengthSets": [
+          {
+            "exerciseRaw": "Squat",
+            "exerciseKey": null,
+            "movement": null,
+            "primaryMuscles": [
+              "quadriceps"
+            ],
+            "secondaryMuscles": [],
+            "setIndex": 0,
+            "setType": "normal",
+            "weight": 50,
+            "weightUnit": null,
+            "reps": 10,
+            "rpe": null
+          }
+        ],
+        "endurance": {
+          "distanceMeters": 5000,
+          "averageHeartRate": null,
+          "maxHeartRate": null,
+          "averagePowerWatts": null,
+          "maxPowerWatts": null,
+          "heartRateZoneSeconds": {
+            "zone2": 300
+          }
+        },
+        "missingFields": []
+      }
+    ]
+  },
+  "expected": {
+    "strength": {
+      "workingSets": {
+        "value": 1,
+        "unit": "sets",
+        "method": "completed_working_sets",
+        "formulaVersion": "0.2.0",
+        "timeRange": {
+          "start": "2026-09-07T08:00:00Z",
+          "end": "2026-09-07T08:45:00Z"
+        },
+        "dataQuality": {
+          "completeness": 1,
+          "sources": [
+            "manual"
+          ],
+          "missingFields": [],
+          "anomalies": []
+        },
+        "limitations": [
+          "Strength and endurance metrics are intentionally not combined into a single load score."
+        ]
+      },
+      "rawVolume": {
+        "value": 500,
+        "unit": "load_repetitions",
+        "method": "sum_load_times_reps",
+        "formulaVersion": "0.2.0",
+        "timeRange": {
+          "start": "2026-09-07T08:00:00Z",
+          "end": "2026-09-07T08:45:00Z"
+        },
+        "dataQuality": {
+          "completeness": 1,
+          "sources": [
+            "manual"
+          ],
+          "missingFields": [],
+          "anomalies": []
+        },
+        "limitations": [
+          "Volumes in different weight units must not be compared until normalized."
+        ]
+      },
+      "directSetsByMuscle": {
+        "value": {
+          "quadriceps": 1
+        },
+        "unit": "sets",
+        "method": "primary_muscle_set_count",
+        "formulaVersion": "0.2.0",
+        "timeRange": {
+          "start": "2026-09-07T08:00:00Z",
+          "end": "2026-09-07T08:45:00Z"
+        },
+        "dataQuality": {
+          "completeness": 1,
+          "sources": [
+            "manual"
+          ],
+          "missingFields": [],
+          "anomalies": []
+        },
+        "limitations": []
+      },
+      "indirectSetsByMuscle": {
+        "value": {},
+        "unit": "participations",
+        "method": "secondary_muscle_participation_count",
+        "formulaVersion": "0.2.0",
+        "timeRange": {
+          "start": "2026-09-07T08:00:00Z",
+          "end": "2026-09-07T08:45:00Z"
+        },
+        "dataQuality": {
+          "completeness": 1,
+          "sources": [
+            "manual"
+          ],
+          "missingFields": [],
+          "anomalies": []
+        },
+        "limitations": [
+          "Indirect participation is not treated as equivalent to a direct set."
+        ]
+      }
+    },
+    "endurance": {
+      "durationMinutes": {
+        "value": 45,
+        "unit": "min",
+        "method": "sum_duration",
+        "formulaVersion": "0.2.0",
+        "timeRange": {
+          "start": "2026-09-07T08:00:00Z",
+          "end": "2026-09-07T08:45:00Z"
+        },
+        "dataQuality": {
+          "completeness": 1,
+          "sources": [
+            "manual"
+          ],
+          "missingFields": [],
+          "anomalies": []
+        },
+        "limitations": [
+          "Strength and endurance metrics are intentionally not combined into a single load score."
+        ]
+      },
+      "distanceMeters": {
+        "value": 5000,
+        "unit": "m",
+        "method": "sum_distance",
+        "formulaVersion": "0.2.0",
+        "timeRange": {
+          "start": "2026-09-07T08:00:00Z",
+          "end": "2026-09-07T08:45:00Z"
+        },
+        "dataQuality": {
+          "completeness": 1,
+          "sources": [
+            "manual"
+          ],
+          "missingFields": [],
+          "anomalies": []
+        },
+        "limitations": []
+      },
+      "paceSecondsPerKm": {
+        "value": 540,
+        "unit": "s/km",
+        "method": "elapsed_duration_per_kilometer",
+        "formulaVersion": "0.2.0",
+        "timeRange": {
+          "start": "2026-09-07T08:00:00Z",
+          "end": "2026-09-07T08:45:00Z"
+        },
+        "dataQuality": {
+          "completeness": 1,
+          "sources": [
+            "manual"
+          ],
+          "missingFields": [],
+          "anomalies": []
+        },
+        "limitations": [
+          "Elapsed pace may include stopped time depending on the source."
+        ]
+      },
+      "timeInZoneSeconds": {
+        "value": {
+          "zone2": 300
+        },
+        "unit": "s",
+        "method": "sum_source_zone_durations",
+        "formulaVersion": "0.2.0",
+        "timeRange": {
+          "start": "2026-09-07T08:00:00Z",
+          "end": "2026-09-07T08:45:00Z"
+        },
+        "dataQuality": {
+          "completeness": 1,
+          "sources": [
+            "manual"
+          ],
+          "missingFields": [],
+          "anomalies": []
+        },
+        "limitations": [
+          "Zone totals retain the source method and require a configured heart-rate basis."
+        ]
+      }
+    }
+  }
+}

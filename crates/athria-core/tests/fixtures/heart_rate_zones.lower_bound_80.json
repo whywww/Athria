@@ -1,0 +1,50 @@
+{
+  "kind": "heart_rate_zones",
+  "name": "lower_bound_80",
+  "input": {
+    "maxHeartRate": 80
+  },
+  "expected": {
+    "value": {
+      "zone1": {
+        "min": 40,
+        "max": 47
+      },
+      "zone2": {
+        "min": 48,
+        "max": 55
+      },
+      "zone3": {
+        "min": 56,
+        "max": 63
+      },
+      "zone4": {
+        "min": 64,
+        "max": 71
+      },
+      "zone5": {
+        "min": 72,
+        "max": 80
+      }
+    },
+    "unit": "bpm",
+    "method": "five_zone_percent_max_hr",
+    "formulaVersion": "0.2.0",
+    "timeRange": {
+      "start": null,
+      "end": null
+    },
+    "dataQuality": {
+      "completeness": 1,
+      "sources": [
+        "explicit_max_hr"
+      ],
+      "missingFields": [],
+      "anomalies": []
+    },
+    "limitations": [
+      "Zones are descriptive training ranges, not medical thresholds.",
+      "Age-predicted maximum heart rate is not used."
+    ]
+  }
+}

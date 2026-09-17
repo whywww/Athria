@@ -1,0 +1,24 @@
+{
+  "kind": "double_progression",
+  "name": "increase_without_ceiling",
+  "input": {
+    "completedReps": [
+      10,
+      10,
+      10
+    ],
+    "repMin": 8,
+    "repMax": 10,
+    "currentLoad": 60,
+    "loadIncrement": 2.5,
+    "unit": "kg"
+  },
+  "expected": {
+    "action": "increase",
+    "proposedLoad": 62.5,
+    "unit": "kg",
+    "reasonCode": "REP_RANGE_COMPLETE",
+    "formulaVersion": "0.2.0",
+    "confidenceLimit": null
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "kind": "stable_hash",
+  "name": "nested_plan_snapshot",
+  "input": {
+    "value": {
+      "planSchemaVersion": "7.0",
+      "title": "Base Block",
+      "revision": 3,
+      "effectiveStartDate": "2026-09-07",
+      "mesocycle": {
+        "durationWeeks": 4,
+        "schedule": {
+          "kind": "fixed_week",
+          "days": [
+            0,
+            3
+          ]
+        },
+        "weeks": [
+          {
+            "weekNumber": 1,
+            "sessions": [
+              {
+                "id": "w1-mon",
+                "durationMinutes": 60
+              }
+            ]
+          }
+        ]
+      },
+      "target": null
+    }
+  },
+  "expected": "fnv1a-804e6ae3"
+}

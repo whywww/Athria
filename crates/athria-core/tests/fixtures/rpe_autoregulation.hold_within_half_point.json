@@ -1,0 +1,18 @@
+{
+  "kind": "rpe_autoregulation",
+  "name": "hold_within_half_point",
+  "input": {
+    "actualRpe": 8.5,
+    "targetRpe": 8,
+    "load": 100,
+    "increment": 2.5,
+    "unit": "lb"
+  },
+  "expected": {
+    "action": "hold",
+    "proposedLoad": 100,
+    "unit": "lb",
+    "reasonCode": "RPE_ON_TARGET",
+    "formulaVersion": "0.2.0"
+  }
+}

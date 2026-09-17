@@ -1,0 +1,84 @@
+{
+  "kind": "schedule",
+  "name": "interval_three_days",
+  "input": {
+    "effectiveStartDate": "2026-09-07",
+    "durationWeeks": 4,
+    "schedule": {
+      "kind": "interval",
+      "intervalDays": 3
+    }
+  },
+  "expected": [
+    {
+      "ordinal": 0,
+      "slotId": "interval-1",
+      "scheduledDate": "2026-09-07",
+      "dayOfWeek": 0,
+      "weekNumber": 1
+    },
+    {
+      "ordinal": 1,
+      "slotId": "interval-2",
+      "scheduledDate": "2026-09-10",
+      "dayOfWeek": 3,
+      "weekNumber": 1
+    },
+    {
+      "ordinal": 2,
+      "slotId": "interval-3",
+      "scheduledDate": "2026-09-13",
+      "dayOfWeek": 6,
+      "weekNumber": 1
+    },
+    {
+      "ordinal": 3,
+      "slotId": "interval-4",
+      "scheduledDate": "2026-09-16",
+      "dayOfWeek": 2,
+      "weekNumber": 2
+    },
+    {
+      "ordinal": 4,
+      "slotId": "interval-5",
+      "scheduledDate": "2026-09-19",
+      "dayOfWeek": 5,
+      "weekNumber": 2
+    },
+    {
+      "ordinal": 5,
+      "slotId": "interval-6",
+      "scheduledDate": "2026-09-22",
+      "dayOfWeek": 1,
+      "weekNumber": 3
+    },
+    {
+      "ordinal": 6,
+      "slotId": "interval-7",
+      "scheduledDate": "2026-09-25",
+      "dayOfWeek": 4,
+      "weekNumber": 3
+    },
+    {
+      "ordinal": 7,
+      "slotId": "interval-8",
+      "scheduledDate": "2026-09-28",
+      "dayOfWeek": 0,
+      "weekNumber": 4
+    },
+    {
+      "ordinal": 8,
+      "slotId": "interval-9",
+      "scheduledDate": "2026-10-01",
+      "dayOfWeek": 3,
+      "weekNumber": 4
+    },
+    {
+      "ordinal": 9,
+      "slotId": "interval-10",
+      "scheduledDate": "2026-10-04",
+      "dayOfWeek": 6,
+      "weekNumber": 4
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "kind": "heart_rate_zones",
+  "name": "error_fractional_180_5",
+  "input": {
+    "maxHeartRate": 180.5
+  },
+  "error": "maxHeartRate must be an explicitly measured integer from 80 to 240"
+}

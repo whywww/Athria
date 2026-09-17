@@ -1,0 +1,50 @@
+{
+  "kind": "heart_rate_zones",
+  "name": "odd_ratio_rounding_187",
+  "input": {
+    "maxHeartRate": 187
+  },
+  "expected": {
+    "value": {
+      "zone1": {
+        "min": 94,
+        "max": 111
+      },
+      "zone2": {
+        "min": 112,
+        "max": 130
+      },
+      "zone3": {
+        "min": 131,
+        "max": 149
+      },
+      "zone4": {
+        "min": 150,
+        "max": 167
+      },
+      "zone5": {
+        "min": 168,
+        "max": 187
+      }
+    },
+    "unit": "bpm",
+    "method": "five_zone_percent_max_hr",
+    "formulaVersion": "0.2.0",
+    "timeRange": {
+      "start": null,
+      "end": null
+    },
+    "dataQuality": {
+      "completeness": 1,
+      "sources": [
+        "explicit_max_hr"
+      ],
+      "missingFields": [],
+      "anomalies": []
+    },
+    "limitations": [
+      "Zones are descriptive training ranges, not medical thresholds.",
+      "Age-predicted maximum heart rate is not used."
+    ]
+  }
+}

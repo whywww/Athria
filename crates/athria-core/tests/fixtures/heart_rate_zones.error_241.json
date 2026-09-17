@@ -1,0 +1,8 @@
+{
+  "kind": "heart_rate_zones",
+  "name": "error_241",
+  "input": {
+    "maxHeartRate": 241
+  },
+  "error": "maxHeartRate must be an explicitly measured integer from 80 to 240"
+}

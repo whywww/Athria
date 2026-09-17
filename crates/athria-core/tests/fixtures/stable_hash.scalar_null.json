@@ -1,0 +1,8 @@
+{
+  "kind": "stable_hash",
+  "name": "scalar_null",
+  "input": {
+    "value": null
+  },
+  "expected": "fnv1a-77074ba4"
+}

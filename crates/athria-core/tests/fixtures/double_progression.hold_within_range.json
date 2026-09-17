@@ -1,0 +1,23 @@
+{
+  "kind": "double_progression",
+  "name": "hold_within_range",
+  "input": {
+    "completedReps": [
+      8,
+      9
+    ],
+    "repMin": 8,
+    "repMax": 10,
+    "currentLoad": 60,
+    "loadIncrement": 2.5,
+    "unit": "lb"
+  },
+  "expected": {
+    "action": "hold",
+    "proposedLoad": 60,
+    "unit": "lb",
+    "reasonCode": "REP_RANGE_IN_PROGRESS",
+    "formulaVersion": "0.2.0",
+    "confidenceLimit": null
+  }
+}

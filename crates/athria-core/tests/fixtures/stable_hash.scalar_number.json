@@ -1,0 +1,8 @@
+{
+  "kind": "stable_hash",
+  "name": "scalar_number",
+  "input": {
+    "value": 2026.09
+  },
+  "expected": "fnv1a-17855544"
+}

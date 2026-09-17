@@ -1,0 +1,37 @@
+{
+  "kind": "schedule",
+  "name": "flexible_week_one_day_tie_break",
+  "input": {
+    "effectiveStartDate": "2026-09-07",
+    "durationWeeks": 3,
+    "schedule": {
+      "kind": "flexible_week",
+      "targetDaysPerWeek": 1,
+      "minDaysPerWeek": 1,
+      "maxDaysPerWeek": 1
+    }
+  },
+  "expected": [
+    {
+      "ordinal": 0,
+      "slotId": "flex-1-1",
+      "scheduledDate": "2026-09-09",
+      "dayOfWeek": 2,
+      "weekNumber": 1
+    },
+    {
+      "ordinal": 1,
+      "slotId": "flex-2-1",
+      "scheduledDate": "2026-09-16",
+      "dayOfWeek": 2,
+      "weekNumber": 2
+    },
+    {
+      "ordinal": 2,
+      "slotId": "flex-3-1",
+      "scheduledDate": "2026-09-23",
+      "dayOfWeek": 2,
+      "weekNumber": 3
+    }
+  ]
+}

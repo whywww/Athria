@@ -1,0 +1,18 @@
+{
+  "kind": "rpe_autoregulation",
+  "name": "increase_at_zero_boundary",
+  "input": {
+    "actualRpe": 0,
+    "targetRpe": 1,
+    "load": 50,
+    "increment": 2.5,
+    "unit": "kg"
+  },
+  "expected": {
+    "action": "increase",
+    "proposedLoad": 52.5,
+    "unit": "kg",
+    "reasonCode": "RPE_BELOW_TARGET",
+    "formulaVersion": "0.2.0"
+  }
+}

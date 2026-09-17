@@ -1,0 +1,28 @@
+{
+  "kind": "double_progression",
+  "name": "hold_when_ceiling_exceeded",
+  "input": {
+    "completedReps": [
+      10,
+      10
+    ],
+    "repMin": 8,
+    "repMax": 10,
+    "currentLoad": 60,
+    "loadIncrement": 2.5,
+    "unit": "kg",
+    "rpeValues": [
+      8.5,
+      7
+    ],
+    "rpeCeiling": 8
+  },
+  "expected": {
+    "action": "hold",
+    "proposedLoad": 60,
+    "unit": "kg",
+    "reasonCode": "REP_RANGE_IN_PROGRESS",
+    "formulaVersion": "0.2.0",
+    "confidenceLimit": null
+  }
+}

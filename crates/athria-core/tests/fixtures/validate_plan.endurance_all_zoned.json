@@ -1,0 +1,391 @@
+{
+  "kind": "validate_plan",
+  "name": "endurance_all_zoned",
+  "input": {
+    "profile": {
+      "ownerId": "local-user",
+      "preferredName": "Athlete",
+      "gender": null,
+      "heightCm": null,
+      "birthDate": null,
+      "timezone": "Asia/Hong_Kong",
+      "goals": [
+        "general_fitness"
+      ],
+      "preference": "",
+      "maxSessionMinutes": 60,
+      "trainingRhythm": {
+        "kind": "fixed_week",
+        "days": [
+          0
+        ]
+      },
+      "equipment": [
+        "dumbbell",
+        "barbell",
+        "kettlebell",
+        "cable",
+        "smith_machine",
+        "machine",
+        "landmine",
+        "pull_up_bar",
+        "trx",
+        "bench",
+        "plyo_box",
+        "resistance_band",
+        "medicine_ball",
+        "sandbag",
+        "sled",
+        "treadmill",
+        "exercise_bike",
+        "rowing_machine",
+        "elliptical",
+        "stepper",
+        "ski_erg",
+        "jump_rope",
+        "battle_rope",
+        "yoga_mat",
+        "foam_roller",
+        "massage_ball",
+        "reformer",
+        "pilates_ring",
+        "mini_stability_ball",
+        "ball_machine"
+      ],
+      "injuries": [],
+      "constraintNotes": [],
+      "explicitRecoveryDays": null,
+      "unitSystem": "metric",
+      "mesocycleDurationWeeks": 8,
+      "raceDays": []
+    },
+    "draft": {
+      "mesocycle": {
+        "durationWeeks": 1,
+        "schedule": {
+          "kind": "fixed_week",
+          "days": [
+            0
+          ]
+        },
+        "domainProgressions": [
+          {
+            "domain": "endurance",
+            "phases": [
+              {
+                "id": "endurance-base",
+                "phaseType": "foundation",
+                "name": "Base",
+                "startWeek": 1,
+                "endWeek": 1,
+                "focus": "Base",
+                "progression": []
+              }
+            ]
+          }
+        ],
+        "weeks": [
+          {
+            "weekNumber": 1,
+            "focus": null,
+            "sessions": [
+              {
+                "id": "mon-endurance",
+                "scheduledDate": "2026-09-07",
+                "order": 0,
+                "status": "planned",
+                "templateRef": null,
+                "name": "mon-endurance session",
+                "intent": "Golden fixture session",
+                "durationMinutes": 60,
+                "recoveryDemand": "normal",
+                "keySession": false,
+                "components": [
+                  {
+                    "id": "mon-run",
+                    "name": "Endurance",
+                    "domain": {
+                      "value": "endurance",
+                      "source": "user_confirmed",
+                      "confidence": 1,
+                      "evidence": "golden fixture",
+                      "taxonomyVersion": "strength-2.0"
+                    },
+                    "prescription": {
+                      "kind": "endurance",
+                      "segments": [
+                        {
+                          "type": "step",
+                          "name": "warm up",
+                          "role": "warm_up",
+                          "heartRateZone": "Zone 1"
+                        },
+                        {
+                          "type": "repeat",
+                          "name": "main set",
+                          "repetitions": 4,
+                          "work": {
+                            "type": "step",
+                            "name": "work interval",
+                            "role": "work",
+                            "heartRateZone": "Zone 4"
+                          },
+                          "recovery": {
+                            "type": "step",
+                            "name": "recover",
+                            "role": "recovery",
+                            "heartRateZone": "Zone 1"
+                          }
+                        },
+                        {
+                          "type": "step",
+                          "name": "cool down",
+                          "role": "cool_down",
+                          "heartRateZone": "Zone 1"
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "progressionNote": null,
+                "schedulingRationale": null,
+                "legacySnapshot": false
+              }
+            ]
+          }
+        ],
+        "adjustmentRules": []
+      },
+      "effectiveStartDate": "2026-09-07"
+    },
+    "now": "2026-09-17T10:30:00.000Z"
+  },
+  "expected": {
+    "valid": true,
+    "results": [
+      {
+        "enforcement": "blocker",
+        "reasonCode": "COMPONENT_IDS",
+        "status": "pass",
+        "rulePackId": "structure",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [],
+        "evidence": {
+          "componentIds": [
+            "mon-run"
+          ]
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "blocker",
+        "reasonCode": "EXERCISE_IDS",
+        "status": "pass",
+        "rulePackId": "structure",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [],
+        "evidence": {
+          "exerciseIds": []
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "blocker",
+        "reasonCode": "MESOCYCLE_SCHEDULE",
+        "status": "pass",
+        "rulePackId": "structure",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [],
+        "evidence": {
+          "kind": "fixed_week",
+          "weekdays": [
+            0
+          ],
+          "occurrenceCount": 1
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "blocker",
+        "reasonCode": "PROFILE_TRAINING_RHYTHM",
+        "status": "pass",
+        "rulePackId": "structure",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [],
+        "evidence": {
+          "profileRhythm": {
+            "kind": "fixed_week",
+            "days": [
+              0
+            ]
+          },
+          "planSchedule": {
+            "kind": "fixed_week",
+            "days": [
+              0
+            ]
+          },
+          "scheduledDates": [
+            "2026-09-07"
+          ]
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "blocker",
+        "reasonCode": "DOMAIN_PROGRESSION",
+        "status": "pass",
+        "rulePackId": "structure",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [],
+        "evidence": {
+          "durationWeeks": 1,
+          "sessionDomains": [
+            "endurance"
+          ],
+          "progressions": [
+            {
+              "domain": "endurance",
+              "phases": [
+                {
+                  "id": "endurance-base",
+                  "phaseType": "foundation",
+                  "name": "Base",
+                  "startWeek": 1,
+                  "endWeek": 1,
+                  "focus": "Base",
+                  "progression": []
+                }
+              ]
+            }
+          ]
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "blocker",
+        "reasonCode": "MAX_SESSION_DURATION",
+        "status": "pass",
+        "rulePackId": "structure",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [
+          "mon-endurance"
+        ],
+        "evidence": {
+          "durationMinutes": 60,
+          "maximum": 60
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "blocker",
+        "reasonCode": "COMPONENT_PRESCRIPTION",
+        "status": "pass",
+        "rulePackId": "structure",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [
+          "mon-endurance",
+          "mon-run"
+        ],
+        "evidence": {
+          "domain": "endurance",
+          "prescription": "endurance"
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "info",
+        "reasonCode": "STRENGTH_VOLUME_DISTRIBUTION",
+        "status": "pass",
+        "rulePackId": "strength",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [],
+        "evidence": {
+          "directSetsByMuscle": {},
+          "indirectParticipationsByMuscle": {},
+          "setsByPattern": {}
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "advisory",
+        "reasonCode": "STRENGTH_PUSH_PULL_BALANCE",
+        "status": "not_applicable",
+        "rulePackId": "strength",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [],
+        "evidence": {
+          "pushSets": 0,
+          "pullSets": 0,
+          "boundary": 2
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "advisory",
+        "reasonCode": "STRENGTH_KNEE_HINGE_BALANCE",
+        "status": "not_applicable",
+        "rulePackId": "strength",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [],
+        "evidence": {
+          "kneeDominantSets": 0,
+          "hingeSets": 0,
+          "boundary": 2
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "advisory",
+        "reasonCode": "STRENGTH_EFFORT_RPE",
+        "status": "not_applicable",
+        "rulePackId": "strength",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [],
+        "evidence": {
+          "exerciseCount": 0,
+          "missingEffort": []
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      },
+      {
+        "enforcement": "advisory",
+        "reasonCode": "ENDURANCE_EFFORT_ZONE",
+        "status": "pass",
+        "rulePackId": "structure",
+        "ruleVersion": "0.3.0",
+        "subjectRefs": [],
+        "evidence": {
+          "stepCount": 4,
+          "missingZone": []
+        },
+        "missingFacts": [],
+        "confidenceLimit": null
+      }
+    ],
+    "dataGaps": [],
+    "validatedAt": "2026-09-17T10:30:00.000Z",
+    "inputHash": "fnv1a-43dc673b",
+    "coverage": {
+      "hardChecksResolved": 7,
+      "hardChecksTotal": 7,
+      "movementFactsResolved": 0,
+      "movementFactsTotal": 0,
+      "muscleFactsResolved": 0,
+      "muscleFactsTotal": 0,
+      "equipmentFactsResolved": 0,
+      "equipmentFactsTotal": 0
+    }
+  }
+}

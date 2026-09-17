@@ -1,0 +1,13 @@
+{
+  "kind": "double_progression",
+  "name": "error_empty_completed_reps",
+  "input": {
+    "completedReps": [],
+    "repMin": 8,
+    "repMax": 10,
+    "currentLoad": 60,
+    "loadIncrement": 2.5,
+    "unit": "kg"
+  },
+  "error": "at least one completed set is required"
+}
