@@ -21,21 +21,22 @@ use std::collections::{HashMap, HashSet};
 use std::ops::RangeInclusive;
 use std::rc::Rc;
 
-use athria_core::date::day_difference;
+use athria_core::date::{add_days, day_difference, monday_weekday};
 use athria_core::schema::{
-    merge_profile, parse_personal_information, parse_profile, parse_profile_update, parse_session_template_create, parse_session_template_update, parse_training_session,
-    parse_wellness_patch, parse_wellness_record, template_variables, PersonalInformationWrite,
+    merge_profile, parse_current_plan, parse_current_plan_write, parse_next_training_day_write, parse_personal_information, parse_planned_session, parse_planned_session_action,
+    parse_profile, parse_profile_update, parse_session_template_create, parse_session_template_update, parse_training_session, parse_wellness_patch, parse_wellness_record,
+    template_variables, PersonalInformationWrite,
 };
 use athria_core::vocab::{DOMAIN_IDS, FACT_SOURCES, equipment_categories, equipment_type_ids, muscle_taxonomy, movement_pattern_taxonomy};
 use athria_core::{
-    AI_HARD_CONFIDENCE, AthriaError, AthriaErrorCode, Clock, DEFAULT_OWNER_ID, Result, SystemClock, TAXONOMY_VERSION, calculate_training_metrics, js_locale_compare,
-    stable_hash, tz,
+    AI_HARD_CONFIDENCE, AthriaError, AthriaErrorCode, Clock, DEFAULT_OWNER_ID, PlanValidation, Result, SystemClock, TAXONOMY_VERSION, calculate_training_metrics,
+    js_locale_compare, stable_hash, tz, validate_plan,
 };
 use serde_json::{Map, Value, json};
 use uuid::Uuid;
 
 use crate::catalog::{builtin_session_templates, builtin_template};
-use crate::store::AthriaStore;
+use crate::store::{AthriaStore, SaveCurrentPlannedSessionsInput, UpdateCurrentPlannedSessionsInput};
 use crate::{PLAN_SCHEMA_VERSION, TEMPLATE_CATALOG_VERSION};
 
 /// A schema-guaranteed string field; missing fields are programming errors,
@@ -157,6 +158,111 @@ fn template_references(plan: &Value, id: &str) -> Vec<Value> {
         }
     }
     references
+}
+
+/// The `{ mesocycle, effectiveStartDate }` document `validatePlan` receives.
+fn plan_validation_draft(plan: &Value) -> Value {
+    json!({ "mesocycle": plan["mesocycle"], "effectiveStartDate": plan["effectiveStartDate"] })
+}
+
+/// `phaseRefsForSession`: one reference per distinct resolved component domain,
+/// resolved through the plan's domain progressions and the week's phase.
+fn phase_refs_for_session(plan: &Value, week_number: i64, components: &Value) -> Result<Value> {
+    let mut domains: Vec<&str> = Vec::new();
+    for component in components.as_array().map(Vec::as_slice).unwrap_or(&[]) {
+        if let Some(domain) = component["domain"]["value"].as_str() {
+            if !domains.contains(&domain) {
+                domains.push(domain);
+            }
+        }
+    }
+    let progressions = plan["mesocycle"]["domainProgressions"].as_array().map(Vec::as_slice).unwrap_or(&[]);
+    let mut refs = Vec::with_capacity(domains.len());
+    for domain in domains {
+        let progression = progressions
+            .iter()
+            .find(|item| item["domain"].as_str() == Some(domain))
+            .ok_or_else(|| AthriaError::new(AthriaErrorCode::InvalidData, format!("plan is missing the `{domain}` domain progression")))?;
+        let phase = progression["phases"]
+            .as_array()
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+            .iter()
+            .find(|phase| week_number >= phase["startWeek"].as_i64().unwrap_or(0) && week_number <= phase["endWeek"].as_i64().unwrap_or(0))
+            .ok_or_else(|| AthriaError::new(AthriaErrorCode::InvalidData, format!("plan is missing a `{domain}` phase covering week {week_number}")))?;
+        refs.push(json!({ "domain": domain, "phaseId": phase["id"] }));
+    }
+    Ok(Value::Array(refs))
+}
+
+/// `plannedDatesFollowProfile`: whether a proposed set of occurrences still
+/// satisfies the Profile training rhythm.
+fn planned_dates_follow_profile(profile: &Value, plan: &Value, sessions: &[Value]) -> bool {
+    let mut dates: Vec<&str> = sessions.iter().filter_map(|session| session["scheduledDate"].as_str()).collect();
+    dates.sort_unstable();
+    dates.dedup();
+    let rhythm = &profile["trainingRhythm"];
+    let duration_weeks = plan["mesocycle"]["durationWeeks"].as_i64().unwrap_or(0);
+    let week_dates = |week_number: i64| -> Vec<&str> {
+        let mut found: Vec<&str> = sessions
+            .iter()
+            .filter(|session| session["weekNumber"].as_i64() == Some(week_number))
+            .filter_map(|session| session["scheduledDate"].as_str())
+            .collect();
+        found.sort_unstable();
+        found.dedup();
+        found
+    };
+    match rhythm["kind"].as_str().unwrap_or("") {
+        "fixed_week" => {
+            let mut days: Vec<u32> = rhythm["days"].as_array().map(|days| days.iter().filter_map(Value::as_u64).map(|day| day as u32).collect()).unwrap_or_default();
+            days.sort_unstable();
+            let expected = days.iter().map(u32::to_string).collect::<Vec<_>>().join(",");
+            (1..=duration_weeks).all(|week_number| {
+                let mut weekdays: Vec<u32> = week_dates(week_number).iter().map(|date| monday_weekday(date)).collect();
+                weekdays.sort_unstable();
+                weekdays.dedup();
+                weekdays.iter().map(u32::to_string).collect::<Vec<_>>().join(",") == expected
+            })
+        }
+        "flexible_week" => {
+            let min_days = rhythm["minDaysPerWeek"].as_i64().unwrap_or(0);
+            let max_days = rhythm["maxDaysPerWeek"].as_i64().unwrap_or(0);
+            (1..=duration_weeks).all(|week_number| {
+                let count = week_dates(week_number).len() as i64;
+                count >= min_days && count <= max_days
+            })
+        }
+        _ => {
+            let interval_days = rhythm["intervalDays"].as_i64().unwrap_or(0);
+            dates.first().copied() == plan["effectiveStartDate"].as_str()
+                && dates.iter().enumerate().all(|(index, date)| index == 0 || day_difference(dates[index - 1], date) == interval_days)
+        }
+    }
+}
+
+/// `blockerFailureMessage(validation)`: the plan-save error summary.
+fn blocker_failure_message(validation: &PlanValidation) -> String {
+    let failed: Vec<&Value> =
+        validation.results.iter().filter(|item| item["enforcement"] == json!("blocker") && matches!(item["status"].as_str(), Some("fail" | "unknown"))).collect();
+    let mut reasons: Vec<String> = Vec::new();
+    for item in &failed {
+        let reason = format!("{}:{}", item["reasonCode"].as_str().unwrap_or(""), item["status"].as_str().unwrap_or(""));
+        if !reasons.contains(&reason) {
+            reasons.push(reason);
+        }
+    }
+    reasons.truncate(5);
+    let suffix = if reasons.is_empty() { String::new() } else { format!(" ({})", reasons.join(", ")) };
+    format!("Plan has {} blocking issue(s){suffix}. Call validate_current_plan for the full report.", failed.len())
+}
+
+/// `{ ...session, status, updatedAt }` for the skip/restore occurrences.
+fn session_with_status(session: &Value, status: &str, updated_at: &str) -> Value {
+    let mut updated = session.as_object().cloned().unwrap_or_default();
+    updated.insert("status".into(), Value::String(status.to_owned()));
+    updated.insert("updatedAt".into(), Value::String(updated_at.to_owned()));
+    Value::Object(updated)
 }
 
 pub struct AthriaApplication<S: AthriaStore> {
@@ -604,5 +710,524 @@ impl<S: AthriaStore> AthriaApplication<S> {
         }
         let record = parse_wellness_record(&json!({ "ownerId": self.owner_id, "day": day, "fields": Value::Object(fields), "updatedAt": updated_at }))?;
         self.store.save_wellness(&record)
+    }
+
+    /// `getCurrentPlan()`.
+    pub fn get_current_plan(&self) -> Result<Option<Value>> {
+        self.store.get_current_plan(&self.owner_id)
+    }
+
+    /// `assertTemplateReferences`: every referenced session template must
+    /// resolve to the requested version at write time.
+    fn assert_template_references(&self, mesocycle: &Value) -> Result<()> {
+        let user = self.store.list_templates(&self.owner_id)?;
+        let builtins = builtin_session_templates();
+        for week in mesocycle["weeks"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
+            for session in week["sessions"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
+                let reference = &session["templateRef"];
+                if reference.is_null() {
+                    continue;
+                }
+                let id = reference["id"].as_str().unwrap_or("");
+                let valid = if reference["source"].as_str() == Some("builtin") {
+                    builtins.iter().find(|item| item["id"].as_str() == Some(id)).is_some_and(|item| item["catalogVersion"] == reference["catalogVersion"])
+                } else {
+                    user.iter().find(|item| item["id"].as_str() == Some(id)).is_some_and(|item| item["revision"] == reference["revision"])
+                };
+                if !valid {
+                    return Err(failure(AthriaErrorCode::TemplateNotFound, &format!("Template reference {id} does not resolve to the requested version."), 409));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// `validateCurrentPlan(value)`: the template-resolution check and core
+    /// validation a plan save would run, without writing anything.
+    pub fn validate_current_plan(&self, value: &Value) -> Result<PlanValidation> {
+        let input = parse_current_plan_write(value)?;
+        self.assert_template_references(&input["mesocycle"])?;
+        Ok(validate_plan(&self.get_profile()?, &plan_validation_draft(&input), &self.now_iso()))
+    }
+
+    /// `sessionsForPlan(plan, onOrAfterDate)`: every scheduled occurrence with
+    /// one shared occurrence id per scheduled date.
+    fn sessions_for_plan(&self, plan: &Value, on_or_after_date: &str) -> Result<Vec<Value>> {
+        let timestamp = self.now_iso();
+        let mut weeks: Vec<&Value> = plan["mesocycle"]["weeks"].as_array().map(|weeks| weeks.iter().collect()).unwrap_or_default();
+        weeks.sort_by_key(|week| week["weekNumber"].as_i64().unwrap_or(0));
+        let mut occurrence_by_date: HashMap<String, String> = HashMap::new();
+        let mut sessions = Vec::new();
+        for week in weeks {
+            let week_number = week["weekNumber"].as_i64().unwrap_or(0);
+            let mut week_sessions: Vec<&Value> = week["sessions"].as_array().map(|sessions| sessions.iter().collect()).unwrap_or_default();
+            week_sessions.sort_by(|left, right| {
+                js_locale_compare(string_field(left, "scheduledDate"), string_field(right, "scheduledDate"))
+                    .then_with(|| left["order"].as_i64().unwrap_or(0).cmp(&right["order"].as_i64().unwrap_or(0)))
+            });
+            for session in week_sessions {
+                let scheduled_date = string_field(session, "scheduledDate");
+                if scheduled_date < on_or_after_date {
+                    continue;
+                }
+                let occurrence_id = occurrence_by_date.entry(scheduled_date.to_owned()).or_insert_with(|| Uuid::new_v4().to_string()).clone();
+                let mut candidate = session.as_object().cloned().unwrap_or_default();
+                candidate.insert("occurrenceId".into(), Value::String(occurrence_id));
+                candidate.insert("ownerId".into(), Value::String(self.owner_id.clone()));
+                candidate.insert("planRevision".into(), plan["revision"].clone());
+                candidate.insert("weekNumber".into(), Value::from(week_number));
+                candidate.insert("phaseRefs".into(), phase_refs_for_session(plan, week_number, &session["components"])?);
+                candidate.insert("exerciseOverrides".into(), Value::Array(Vec::new()));
+                candidate.insert("notes".into(), Value::String(String::new()));
+                candidate.insert("overrideReason".into(), Value::Null);
+                candidate.insert("completedTrainingSessionId".into(), Value::Null);
+                candidate.insert("completedAt".into(), Value::Null);
+                candidate.insert("completionSource".into(), Value::Null);
+                candidate.insert("createdAt".into(), Value::String(timestamp.clone()));
+                candidate.insert("updatedAt".into(), Value::String(timestamp.clone()));
+                sessions.push(parse_planned_session(&Value::Object(candidate))?);
+            }
+        }
+        Ok(sessions)
+    }
+
+    /// `saveCurrentPlan(value)`: validate, re-parse the stored document, diff
+    /// the planned occurrences and write through the store.
+    pub fn save_current_plan(&self, value: &Value) -> Result<Value> {
+        let input = parse_current_plan_write(value)?;
+        if input["ownerId"].as_str() != Some(self.owner_id.as_str()) {
+            return Err(failure(AthriaErrorCode::OwnerMismatch, "The plan owner does not match the local athlete.", 403));
+        }
+        // `input.inputSnapshotHash && ...`: an empty hash is falsy in JavaScript.
+        if let Some(hash) = input["inputSnapshotHash"].as_str().filter(|hash| !hash.is_empty()) {
+            if hash != self.snapshot_hash()? {
+                return Err(failure(AthriaErrorCode::InputSnapshotChanged, "Training state changed. Refresh and revise the plan.", 409));
+            }
+        }
+        self.assert_template_references(&input["mesocycle"])?;
+        let validation = validate_plan(&self.get_profile()?, &plan_validation_draft(&input), &self.now_iso());
+        if !validation.valid {
+            return Err(failure(AthriaErrorCode::PlanHasBlockers, &blocker_failure_message(&validation), 409));
+        }
+        let expected_revision = input["expectedRevision"].as_i64().unwrap_or(0);
+        let mut candidate = input.as_object().cloned().unwrap_or_default();
+        candidate.shift_remove("expectedRevision");
+        candidate.insert("revision".into(), Value::from(expected_revision + 1));
+        candidate.insert("updatedAt".into(), Value::String(self.now_iso()));
+        let plan = parse_current_plan(&Value::Object(candidate))?;
+        let existing = self.store.list_current_planned_sessions(&self.owner_id, None)?;
+        let terminal_ids: HashSet<&str> =
+            existing.iter().filter(|session| session["status"].as_str() != Some("planned")).filter_map(|session| session["id"].as_str()).collect();
+        let desired: Vec<Value> = self
+            .sessions_for_plan(&plan, string_field(&plan, "effectiveStartDate"))?
+            .into_iter()
+            .filter(|session| !terminal_ids.contains(string_field(session, "id")))
+            .collect();
+        let desired_ids: HashSet<&str> = desired.iter().map(|session| string_field(session, "id")).collect();
+        let deleted: Vec<String> = existing
+            .iter()
+            .filter(|session| session["status"].as_str() == Some("planned") && !desired_ids.contains(string_field(session, "id")))
+            .map(|session| string_field(session, "id").to_owned())
+            .collect();
+        let plan = self.store.save_current_plan(&plan, expected_revision, &deleted, &desired).map_err(|error| match error.code() {
+            AthriaErrorCode::RevisionConflict => failure(AthriaErrorCode::RevisionConflict, "The current plan changed. Refresh and try again.", 409),
+            AthriaErrorCode::WriteBusy => failure(AthriaErrorCode::WriteBusy, "The database is busy. Retry the save.", 503),
+            _ => error,
+        })?;
+        let validation = serde_json::to_value(&validation)
+            .map_err(|error| failure(AthriaErrorCode::InvalidData, &format!("plan validation did not serialize: {error}"), 500))?;
+        Ok(json!({
+            "plan": plan,
+            "validation": validation,
+            "impact": {
+                "affectedCount": existing.len(),
+                "updatedCount": desired.len(),
+                "deletedCount": deleted.len(),
+                "legacySkippedCount": 0,
+            },
+        }))
+    }
+
+    /// `getNextTrainingDay({ onOrAfterDate? })`.
+    pub fn get_next_training_day(&self, on_or_after_date: Option<&str>) -> Result<Value> {
+        let Some(plan) = self.store.get_current_plan(&self.owner_id)? else {
+            return Ok(json!({ "nextTrainingDay": Value::Null, "reasonCode": "NO_CURRENT_PLAN" }));
+        };
+        let start = match on_or_after_date {
+            Some(date) => parse_date_input(date, "onOrAfterDate")?,
+            None => string_field(&plan, "effectiveStartDate").to_owned(),
+        };
+        let all: Vec<Value> = self
+            .store
+            .list_current_planned_sessions(&self.owner_id, None)?
+            .into_iter()
+            .filter(|session| session["scheduledDate"].as_str().is_some_and(|date| date >= start.as_str()))
+            .collect();
+        let Some(next) = all.iter().find(|session| session["status"].as_str() == Some("planned")) else {
+            return Ok(json!({ "nextTrainingDay": Value::Null, "reasonCode": "PLAN_ENDED" }));
+        };
+        let occurrence_id = string_field(next, "occurrenceId");
+        let existing: Vec<&Value> = all.iter().filter(|session| session["occurrenceId"].as_str() == Some(occurrence_id)).collect();
+        let mut refs: Vec<(&str, &str)> = Vec::new();
+        for session in &existing {
+            for reference in session["phaseRefs"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
+                let ref_key = (reference["domain"].as_str().unwrap_or(""), reference["phaseId"].as_str().unwrap_or(""));
+                if !refs.contains(&ref_key) {
+                    refs.push(ref_key);
+                }
+            }
+        }
+        let progressions = plan["mesocycle"]["domainProgressions"].as_array().map(Vec::as_slice).unwrap_or(&[]);
+        let mut domain_phases = Vec::with_capacity(refs.len());
+        for (domain, phase_id) in refs {
+            let phase = progressions
+                .iter()
+                .find(|progression| progression["domain"].as_str() == Some(domain))
+                .and_then(|progression| {
+                    progression["phases"].as_array().map(Vec::as_slice).unwrap_or(&[]).iter().find(|phase| phase["id"].as_str() == Some(phase_id))
+                });
+            let Some(phase) = phase else {
+                return Err(AthriaError::new(AthriaErrorCode::InvalidData, format!("plan is missing the `{domain}` phase `{phase_id}`")));
+            };
+            domain_phases.push(json!({ "domain": domain, "phaseId": phase_id, "phaseType": phase["phaseType"], "name": phase["name"] }));
+        }
+        let revision = self.store.schedule_revision(&self.owner_id)?;
+        let profile = self.get_profile()?;
+        Ok(json!({
+            "nextTrainingDay": {
+                "occurrenceId": next["occurrenceId"],
+                "scheduledDate": next["scheduledDate"],
+                "dayOfWeek": monday_weekday(string_field(next, "scheduledDate")),
+                "weekNumber": next["weekNumber"],
+                "domainPhases": Value::Array(domain_phases),
+                "existingSessions": existing,
+                "revision": revision,
+                "timezone": string_field(&profile, "timezone"),
+            },
+            "reasonCode": Value::Null,
+        }))
+    }
+
+    /// `getCalendar({ from?, to? })`: the display projection of every planned
+    /// occurrence inside the window.
+    pub fn get_calendar(&self, from: Option<&str>, to: Option<&str>) -> Result<Vec<Value>> {
+        let from = from.map(|value| parse_date_input(value, "from")).transpose()?;
+        let to = to.map(|value| parse_date_input(value, "to")).transpose()?;
+        if let (Some(from), Some(to)) = (&from, &to) {
+            if from > to {
+                return Err(AthriaError::new(AthriaErrorCode::InvalidCalendarWindow, "The calendar start date must not be after the end date."));
+            }
+        }
+        let revision = self.store.schedule_revision(&self.owner_id)?;
+        let profile = self.get_profile()?;
+        let today = tz::local_date(&self.now_iso(), string_field(&profile, "timezone"))?;
+        let mut sessions: Vec<Value> = self
+            .store
+            .list_current_planned_sessions(&self.owner_id, None)?
+            .into_iter()
+            .filter(|session| {
+                let date = string_field(session, "scheduledDate");
+                from.as_deref().map_or(true, |from| date >= from) && to.as_deref().map_or(true, |to| date <= to)
+            })
+            .collect();
+        sessions.sort_by(|left, right| {
+            js_locale_compare(string_field(left, "scheduledDate"), string_field(right, "scheduledDate"))
+                .then_with(|| left["order"].as_i64().unwrap_or(0).cmp(&right["order"].as_i64().unwrap_or(0)))
+        });
+        Ok(sessions
+            .into_iter()
+            .map(|session| {
+                let status = session["status"].as_str().unwrap_or("planned");
+                let display_state = if status == "completed" {
+                    "completed"
+                } else if status == "skipped" {
+                    "skipped"
+                } else if string_field(&session, "scheduledDate") < today.as_str() {
+                    "unrecorded"
+                } else {
+                    "scheduled"
+                };
+                json!({
+                    "id": session["id"],
+                    "occurrenceId": session["occurrenceId"],
+                    "revision": revision,
+                    "scheduledDate": session["scheduledDate"],
+                    "order": session["order"],
+                    "weekNumber": session["weekNumber"],
+                    "phaseRefs": session["phaseRefs"],
+                    "templateRef": session["templateRef"],
+                    "name": session["name"],
+                    "intent": session["intent"],
+                    "durationMinutes": session["durationMinutes"],
+                    "recoveryDemand": session["recoveryDemand"],
+                    "keySession": session["keySession"],
+                    "progressionNote": session["progressionNote"],
+                    "schedulingRationale": session["schedulingRationale"],
+                    "status": session["status"],
+                    "displayState": display_state,
+                    "components": session["components"],
+                    "legacySnapshot": session["legacySnapshot"],
+                    "overrideReason": session["overrideReason"],
+                    "completedTrainingSessionId": session["completedTrainingSessionId"],
+                    "completedAt": session["completedAt"],
+                    "completionSource": session["completionSource"],
+                    "match": session["match"],
+                })
+            })
+            .collect())
+    }
+
+    /// `updatePlannedSession(id, value)`: complete, skip, restore or move one
+    /// occurrence.
+    pub fn update_planned_session(&self, id: &str, value: &Value) -> Result<Value> {
+        let input = parse_planned_session_action(value)?;
+        let action = string_field(&input, "action").to_owned();
+        let expected_revision = input["expectedRevision"].as_i64().unwrap_or(0);
+        let Some(plan) = self.store.get_current_plan(&self.owner_id)? else {
+            return Err(failure(AthriaErrorCode::NoCurrentPlan, "There is no current plan.", 409));
+        };
+        let sessions = self.store.list_current_planned_sessions(&self.owner_id, None)?;
+        let Some(current) = sessions.iter().find(|session| session["id"].as_str() == Some(id)) else {
+            return Err(failure(AthriaErrorCode::PlannedSessionNotFound, "The planned session was not found.", 404));
+        };
+        let timestamp = self.now_iso();
+        let updates: Vec<Value>;
+        if action == "complete" {
+            if current["status"].as_str() != Some("planned") {
+                return Err(failure(AthriaErrorCode::PlannedSessionAlreadyResolved, "Completed or skipped sessions cannot be added again.", 409));
+            }
+            let timezone = string_field(&self.get_profile()?, "timezone").to_owned();
+            let scheduled_date = string_field(current, "scheduledDate");
+            if scheduled_date > tz::local_date(&self.now_iso(), &timezone)?.as_str() {
+                return Err(failure(
+                    AthriaErrorCode::FutureSessionCannotBeCompleted,
+                    "Move this planned session to the date you completed it before adding it as a completed workout.",
+                    409,
+                ));
+            }
+            let start_at = tz::local_noon(scheduled_date, &timezone)?;
+            let duration_minutes = current["durationMinutes"].as_i64().unwrap_or(0);
+            let end_at = tz::iso_from_millis(tz::millis(&start_at)? + duration_minutes * 60_000);
+            let components = current["components"].as_array().map(Vec::as_slice).unwrap_or(&[]);
+            let has_domain = |name: &str| components.iter().any(|component| component["domain"]["value"].as_str() == Some(name));
+            let modality = if has_domain("strength") {
+                "strength"
+            } else if has_domain("endurance") {
+                "endurance"
+            } else {
+                "recovery"
+            };
+            let domains: Vec<Value> = components.iter().filter_map(|component| component["domain"]["value"].as_str().map(|domain| Value::String(domain.to_owned()))).collect();
+            let session = self.record_training_session(&json!({
+                "name": current["name"],
+                "modality": modality,
+                "domains": domains,
+                "sport": Value::Null,
+                "startAt": start_at,
+                "endAt": end_at,
+                "durationMinutes": duration_minutes,
+                "timezone": timezone,
+                "plannedSessionId": current["id"],
+                "timePrecision": "date_only",
+                "strengthSets": [],
+                "endurance": Value::Null,
+                "missingFields": ["actual start time", "exercise details"],
+            }))?;
+            let sessions: Vec<Value> = self.store.list_current_planned_sessions(&self.owner_id, None)?.into_iter().filter(|session| session["id"].as_str() == Some(id)).collect();
+            return Ok(json!({ "sessions": sessions, "revision": plan["revision"], "trainingSession": session }));
+        } else if action == "skip" {
+            if current["status"].as_str() != Some("planned") {
+                return Err(failure(AthriaErrorCode::PlannedSessionAlreadyResolved, "Completed or skipped sessions cannot be skipped.", 409));
+            }
+            updates = vec![session_with_status(current, "skipped", &timestamp)];
+        } else if action == "restore" {
+            if current["status"].as_str() != Some("skipped") {
+                return Err(failure(AthriaErrorCode::PlannedSessionNotSkipped, "Only a skipped planned session can be restored.", 409));
+            }
+            updates = vec![session_with_status(current, "planned", &timestamp)];
+        } else {
+            if current["status"].as_str() != Some("planned") {
+                return Err(failure(AthriaErrorCode::PlannedSessionAlreadyResolved, "Completed or skipped sessions must be unresolved before they can be moved.", 409));
+            }
+            let scheduled_date = string_field(&input, "scheduledDate").to_owned();
+            if string_field(current, "scheduledDate") == scheduled_date {
+                return Err(AthriaError::new(AthriaErrorCode::InvalidMoveDate, "Choose a different date for the planned session."));
+            }
+            let occurrence_id = string_field(current, "occurrenceId");
+            if plan["mesocycle"]["schedule"]["kind"].as_str() != Some("interval")
+                && sessions.iter().any(|session| {
+                    session["status"].as_str() == Some("planned")
+                        && session["occurrenceId"].as_str() != Some(occurrence_id)
+                        && session["scheduledDate"].as_str() == Some(scheduled_date.as_str())
+                })
+            {
+                return Err(failure(AthriaErrorCode::TrainingDayConflict, "Another planned training day already uses that date.", 409));
+            }
+            let effective_start = string_field(&plan, "effectiveStartDate");
+            let plan_end = add_days(effective_start, plan["mesocycle"]["durationWeeks"].as_i64().unwrap_or(0) * 7 - 1);
+            if scheduled_date.as_str() < effective_start || scheduled_date > plan_end {
+                return Err(failure(AthriaErrorCode::MoveOutsidePlan, "The moved training day must stay within the current plan.", 409));
+            }
+            let week_number = day_difference(effective_start, &scheduled_date).div_euclid(7) + 1;
+            let mut moved = current.as_object().cloned().unwrap_or_default();
+            moved.insert("occurrenceId".into(), Value::String(Uuid::new_v4().to_string()));
+            moved.insert("scheduledDate".into(), Value::String(scheduled_date.clone()));
+            moved.insert("weekNumber".into(), Value::from(week_number));
+            moved.insert("phaseRefs".into(), phase_refs_for_session(&plan, week_number, &current["components"])?);
+            moved.insert("updatedAt".into(), Value::String(timestamp.clone()));
+            let moved = Value::Object(moved);
+            let proposed: Vec<Value> = sessions
+                .iter()
+                .map(|session| if session["id"] == moved["id"] { moved.clone() } else { session.clone() })
+                .collect();
+            if !planned_dates_follow_profile(&self.get_profile()?, &plan, &proposed) {
+                return Err(failure(AthriaErrorCode::ProfileTrainingRhythm, "The moved training day would break your Profile training rhythm.", 409));
+            }
+            if let Some(required) = self.get_profile()?["explicitRecoveryDays"].as_i64() {
+                let mut high_dates: Vec<&str> = proposed
+                    .iter()
+                    .filter(|session| session["status"].as_str() != Some("skipped") && session["recoveryDemand"].as_str() == Some("high"))
+                    .filter_map(|session| session["scheduledDate"].as_str())
+                    .collect();
+                high_dates.sort_unstable();
+                high_dates.dedup();
+                for pair in high_dates.windows(2) {
+                    if day_difference(pair[0], pair[1]).abs() < required {
+                        return Err(failure(
+                            AthriaErrorCode::ExplicitRecoveryInterval,
+                            "The moved training day is too close to another high-recovery-demand session.",
+                            409,
+                        ));
+                    }
+                }
+            }
+            updates = vec![moved];
+        }
+        let reason = input.get("reason").filter(|_| action == "skip" || action == "move_occurrence");
+        let reason_code = reason.and_then(|reason| reason["reasonCode"].as_str());
+        let reason_note = reason.and_then(|reason| reason["note"].as_str());
+        self.store
+            .update_current_planned_sessions(&UpdateCurrentPlannedSessionsInput {
+                owner_id: &self.owner_id,
+                expected_revision,
+                mode: &action,
+                sessions: &updates,
+                reason_code,
+                reason_note,
+            })
+            .map_err(|error| {
+                if error.code() == AthriaErrorCode::PlannedSessionRevisionConflict {
+                    failure(AthriaErrorCode::PlannedSessionRevisionConflict, "The planned sessions changed. Refresh and try again.", 409)
+                } else {
+                    error
+                }
+            })
+    }
+
+    /// `buildNextTrainingDaySessions(raw)`: the parsed write, its normalized
+    /// occurrences and the next training day they belong to.
+    fn build_next_training_day_sessions(&self, raw: &Value) -> Result<(Value, Vec<Value>, Value)> {
+        let input = parse_next_training_day_write(raw)?;
+        let next = self.get_next_training_day(None)?;
+        let Some(next_day) = next["nextTrainingDay"].as_object().cloned().map(Value::Object) else {
+            let code = match next["reasonCode"].as_str() {
+                Some("NO_CURRENT_PLAN") => AthriaErrorCode::NoCurrentPlan,
+                Some("PLAN_ENDED") => AthriaErrorCode::PlanEnded,
+                _ => AthriaErrorCode::NoNextTrainingDay,
+            };
+            return Err(failure(code, "There is no available next training day.", 409));
+        };
+        let scheduled_date = string_field(&input, "scheduledDate").to_owned();
+        if string_field(&next_day, "scheduledDate") != scheduled_date {
+            return Err(failure(AthriaErrorCode::NextTrainingDayChanged, "Refresh the next training day before saving sessions.", 409));
+        }
+        if next_day["revision"].as_i64() != input["expectedRevision"].as_i64() {
+            return Err(failure(AthriaErrorCode::PlannedSessionRevisionConflict, "The planned sessions changed. Refresh and confirm the update again.", 409));
+        }
+        let Some(plan) = self.store.get_current_plan(&self.owner_id)? else {
+            return Err(failure(AthriaErrorCode::NoCurrentPlan, "There is no current plan.", 409));
+        };
+        let timestamp = self.now_iso();
+        let week_number = next_day["weekNumber"].as_i64().unwrap_or(0);
+        let mut ids: HashSet<&str> = HashSet::new();
+        let mut sessions = Vec::new();
+        for (order, item) in input["sessions"].as_array().map(Vec::as_slice).unwrap_or(&[]).iter().enumerate() {
+            let session_id = string_field(item, "id");
+            if !ids.insert(session_id) {
+                return Err(AthriaError::new(AthriaErrorCode::DuplicatePlannedSessionId, "Session IDs must be unique."));
+            }
+            let mut candidate = item.as_object().cloned().unwrap_or_default();
+            candidate.insert("scheduledDate".into(), Value::String(scheduled_date.clone()));
+            candidate.insert("order".into(), Value::from(order as i64));
+            let mut mesocycle = plan["mesocycle"].clone();
+            mesocycle["weeks"] = Value::Array(vec![json!({ "weekNumber": week_number, "focus": Value::Null, "sessions": [Value::Object(candidate)] })]);
+            self.assert_template_references(&mesocycle)?;
+            let mut candidate = item.as_object().cloned().unwrap_or_default();
+            candidate.insert("occurrenceId".into(), next_day["occurrenceId"].clone());
+            candidate.insert("ownerId".into(), Value::String(self.owner_id.clone()));
+            candidate.insert("planRevision".into(), plan["revision"].clone());
+            candidate.insert("scheduledDate".into(), Value::String(scheduled_date.clone()));
+            candidate.insert("order".into(), Value::from(order as i64));
+            candidate.insert("weekNumber".into(), Value::from(week_number));
+            candidate.insert("phaseRefs".into(), phase_refs_for_session(&plan, week_number, &item["components"])?);
+            candidate.insert("exerciseOverrides".into(), Value::Array(Vec::new()));
+            candidate.insert("status".into(), Value::String("planned".into()));
+            candidate.insert("completedTrainingSessionId".into(), Value::Null);
+            candidate.insert("completedAt".into(), Value::Null);
+            candidate.insert("completionSource".into(), Value::Null);
+            candidate.insert("createdAt".into(), Value::String(timestamp.clone()));
+            candidate.insert("updatedAt".into(), Value::String(timestamp.clone()));
+            sessions.push(parse_planned_session(&Value::Object(candidate))?);
+        }
+        let profile = self.get_profile()?;
+        if let Some(required) = profile["explicitRecoveryDays"].as_i64() {
+            if sessions.iter().any(|session| session["recoveryDemand"].as_str() == Some("high")) {
+                let closest = self
+                    .store
+                    .list_current_planned_sessions(&self.owner_id, None)?
+                    .iter()
+                    .filter(|session| {
+                        session["recoveryDemand"].as_str() == Some("high")
+                            && session["status"].as_str() != Some("skipped")
+                            && session["scheduledDate"].as_str() != Some(scheduled_date.as_str())
+                    })
+                    .filter_map(|session| session["scheduledDate"].as_str())
+                    .map(|date| day_difference(date, &scheduled_date).abs())
+                    .min();
+                if closest.is_some_and(|closest| closest < required) {
+                    return Err(failure(AthriaErrorCode::ExplicitRecoveryInterval, "The high-recovery-demand sessions are too close together.", 409));
+                }
+            }
+        }
+        Ok((input, sessions, next_day))
+    }
+
+    /// `validateNextTrainingDaySessions(value)`.
+    pub fn validate_next_training_day_sessions(&self, value: &Value) -> Result<Value> {
+        let (_input, sessions, next_day) = self.build_next_training_day_sessions(value)?;
+        Ok(json!({ "valid": true, "sessions": sessions, "revision": next_day["revision"], "scheduledDate": next_day["scheduledDate"] }))
+    }
+
+    /// `saveNextTrainingDaySessions(value)`.
+    pub fn save_next_training_day_sessions(&self, value: &Value) -> Result<Value> {
+        let (input, sessions, _next_day) = self.build_next_training_day_sessions(value)?;
+        self.store
+            .save_current_planned_sessions(&SaveCurrentPlannedSessionsInput {
+                owner_id: &self.owner_id,
+                client_request_id: string_field(&input, "clientRequestId"),
+                scheduled_date: string_field(&input, "scheduledDate"),
+                expected_revision: input["expectedRevision"].as_i64().unwrap_or(0),
+                mode: string_field(&input, "mode"),
+                sessions: &sessions,
+            })
+            .map_err(|error| match error.code() {
+                AthriaErrorCode::PlannedSessionRevisionConflict => {
+                    failure(AthriaErrorCode::PlannedSessionRevisionConflict, "The planned sessions changed. Refresh and confirm the update again.", 409)
+                }
+                AthriaErrorCode::CompletedSessionCannotBeReplaced => {
+                    failure(AthriaErrorCode::CompletedSessionCannotBeReplaced, "Completed or skipped sessions cannot be replaced.", 409)
+                }
+                _ => error,
+            })
     }
 }

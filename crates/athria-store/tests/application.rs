@@ -820,3 +820,534 @@ fn training_taxonomy_exposes_the_versioned_vocabularies() {
     assert_eq!(taxonomy["equipmentCategories"][0]["id"], json!("strength_resistance"));
     assert_eq!(taxonomy["equipmentCategories"][0]["groups"][0]["items"][0], json!({ "id": "dumbbell", "label": "Dumbbells" }));
 }
+
+// ---------------------------------------------------------------------------
+// Plan use cases: current plan, planned sessions, calendar, next training day
+// ---------------------------------------------------------------------------
+
+/// One confirmed component of a planned prescription.
+fn plan_component(id: &str, name: &str, domain: &str) -> Value {
+    json!({
+        "id": id, "name": name,
+        "domain": { "value": domain, "source": "user_confirmed", "confidence": 1, "evidence": "", "taxonomyVersion": "strength-2.0" },
+        "prescription": { "kind": "duration_only", "notes": "" },
+    })
+}
+
+/// A weekly prescription in the 14-key order `parse_weekly_session` rebuilds.
+fn plan_session(id: &str, scheduled_date: &str, order: i64, recovery_demand: &str, components: Value) -> Value {
+    json!({
+        "id": id, "scheduledDate": scheduled_date, "order": order, "status": "planned", "templateRef": null,
+        "name": "Easy Run", "intent": "Aerobic base", "durationMinutes": 45, "recoveryDemand": recovery_demand, "keySession": false,
+        "components": components,
+        "progressionNote": null, "schedulingRationale": null, "legacySnapshot": false,
+    })
+}
+
+fn plan_phase(id: &str, phase_type: &str, name: &str, start_week: i64, end_week: i64) -> Value {
+    json!({
+        "id": id, "phaseType": phase_type, "name": name, "startWeek": start_week, "endWeek": end_week,
+        "focus": "Aerobic base", "progression": [],
+    })
+}
+
+/// One endurance progression with a contiguous phase per plan week.
+fn endurance_progressions(duration_weeks: i64) -> Value {
+    let mut phases = vec![plan_phase("phase-1", "foundation", "Base", 1, 1)];
+    for week in 2..=duration_weeks {
+        phases.push(plan_phase(&format!("phase-{week}"), "progression", &format!("Build {week}"), week, week));
+    }
+    json!([{ "domain": "endurance", "phases": phases }])
+}
+
+fn plan_week(week_number: i64, sessions: Vec<Value>) -> Value {
+    json!({ "weekNumber": week_number, "focus": null, "sessions": sessions })
+}
+
+/// The `currentPlanWriteSchema` payload: head, metadata, mesocycle and the
+/// expected revision.
+fn plan_write(schedule: Value, duration_weeks: i64, effective_start: &str, progressions: Value, weeks: Vec<Value>, expected_revision: i64) -> Value {
+    json!({
+        "planSchemaVersion": "7.0", "ownerId": "local-user", "title": "Base Block", "summary": "", "effectiveStartDate": effective_start,
+        "mesocycle": { "durationWeeks": duration_weeks, "schedule": schedule, "domainProgressions": progressions, "weeks": weeks, "adjustmentRules": [] },
+        "sourceAgent": "test", "model": null, "skillVersion": "0.6.0", "inputSnapshotHash": null,
+        "expectedRevision": expected_revision,
+    })
+}
+
+/// The two-week Monday plan most planned-session tests start from: one run per
+/// week, both on the plan's Monday (weekday 0).
+fn monday_plan_write(expected_revision: i64) -> Value {
+    plan_write(
+        json!({ "kind": "fixed_week", "days": [0] }),
+        2,
+        "2026-09-14",
+        endurance_progressions(2),
+        vec![
+            plan_week(1, vec![plan_session("s1", "2026-09-14", 0, "low", json!([plan_component("c1", "Run", "endurance")]))]),
+            plan_week(2, vec![plan_session("s2", "2026-09-21", 0, "low", json!([plan_component("c2", "Run", "endurance")]))]),
+        ],
+        expected_revision,
+    )
+}
+
+/// Applies a profile patch under the current hash.
+fn patch_profile(app: &AthriaApplication<SqliteStore>, patch: Value) -> Value {
+    app.update_profile(&json!({ "patch": patch, "expectedProfileHash": app.profile_hash().unwrap(), "confirmed": true }))
+        .expect("the profile patch succeeds")
+}
+
+/// A planned-session write payload for the next-training-day use cases.
+fn next_day_session(id: &str) -> Value {
+    json!({
+        "id": id, "status": "planned", "templateRef": null, "name": "Tempo Run", "intent": "Threshold",
+        "durationMinutes": 50, "recoveryDemand": "normal", "keySession": false,
+        "components": [plan_component(&format!("{id}-c1"), "Run", "endurance")],
+        "progressionNote": null, "schedulingRationale": null, "legacySnapshot": false,
+    })
+}
+
+fn next_day_write(scheduled_date: &str, expected_revision: i64, sessions: Vec<Value>) -> Value {
+    json!({ "clientRequestId": "req-1", "scheduledDate": scheduled_date, "expectedRevision": expected_revision, "mode": "replace", "sessions": sessions })
+}
+
+#[test]
+fn saved_plans_materialize_weekly_occurrences_with_impact_and_revision() {
+    let app = test_app();
+    patch_profile(&app, json!({ "trainingRhythm": { "kind": "fixed_week", "days": [0] } }));
+
+    // A Monday plan against a [0, 2] rhythm fails the core rhythm rule as a
+    // blocker, so the save is rejected before anything is written.
+    let broken = plan_write(
+        json!({ "kind": "fixed_week", "days": [0, 2] }),
+        2,
+        "2026-09-14",
+        endurance_progressions(2),
+        vec![
+            plan_week(1, vec![plan_session("s1", "2026-09-14", 0, "low", json!([plan_component("c1", "Run", "endurance")]))]),
+            plan_week(2, vec![plan_session("s2", "2026-09-21", 0, "low", json!([plan_component("c2", "Run", "endurance")]))]),
+        ],
+        0,
+    );
+    let validation = app.validate_current_plan(&broken).unwrap();
+    assert!(!validation.valid);
+    let rhythm = validation.results.iter().find(|result| result["reasonCode"] == json!("PROFILE_TRAINING_RHYTHM")).expect("the rhythm rule ran");
+    assert_eq!(rhythm["status"], json!("fail"));
+    assert_eq!(rhythm["enforcement"], json!("blocker"));
+    let rejected = app.save_current_plan(&broken).unwrap_err();
+    assert_eq!(rejected.code(), AthriaErrorCode::PlanHasBlockers);
+    assert_eq!(rejected.message(), "Plan has 1 blocking issue(s) (PROFILE_TRAINING_RHYTHM:fail). Call validate_current_plan for the full report.");
+    assert_eq!(rejected.status(), 409);
+    assert!(app.store().get_current_plan("local-user").unwrap().is_none());
+
+    // The matching Monday draft validates and saves at revision 1.
+    let draft = monday_plan_write(0);
+    let validated = app.validate_current_plan(&draft).unwrap();
+    assert!(validated.valid);
+    assert_eq!(validated.validated_at, NOW);
+    assert!(!validated.input_hash.is_empty());
+    assert!(validated.data_gaps.is_empty());
+
+    let saved = app.save_current_plan(&draft).unwrap();
+    assert_eq!(saved["plan"]["revision"], json!(1));
+    assert_eq!(saved["plan"]["updatedAt"], json!(NOW));
+    assert_eq!(saved["validation"]["valid"], json!(true));
+    assert_eq!(saved["impact"], json!({ "affectedCount": 0, "updatedCount": 2, "deletedCount": 0, "legacySkippedCount": 0 }));
+    assert_eq!(
+        saved["plan"].as_object().unwrap().keys().map(String::as_str).collect::<Vec<_>>(),
+        ["planSchemaVersion", "ownerId", "title", "summary", "effectiveStartDate", "mesocycle", "revision", "sourceAgent", "model", "skillVersion", "inputSnapshotHash", "updatedAt"]
+    );
+    assert_eq!(saved["plan"]["mesocycle"]["schedule"], json!({ "kind": "fixed_week", "days": [0] }));
+    assert_eq!(
+        saved["plan"]["mesocycle"]["weeks"][0]["sessions"][0].as_object().unwrap().keys().map(String::as_str).collect::<Vec<_>>(),
+        ["id", "scheduledDate", "order", "status", "templateRef", "name", "intent", "durationMinutes", "recoveryDemand", "keySession", "components", "progressionNote", "schedulingRationale", "legacySnapshot"]
+    );
+
+    // The calendar projects both occurrences with their display states.
+    let calendar = app.get_calendar(Some("2026-09-14"), Some("2026-09-27")).unwrap();
+    assert_eq!(calendar.len(), 2);
+    assert_eq!(
+        calendar[0].as_object().unwrap().keys().map(String::as_str).collect::<Vec<_>>(),
+        [
+            "id",
+            "occurrenceId",
+            "revision",
+            "scheduledDate",
+            "order",
+            "weekNumber",
+            "phaseRefs",
+            "templateRef",
+            "name",
+            "intent",
+            "durationMinutes",
+            "recoveryDemand",
+            "keySession",
+            "progressionNote",
+            "schedulingRationale",
+            "status",
+            "displayState",
+            "components",
+            "legacySnapshot",
+            "overrideReason",
+            "completedTrainingSessionId",
+            "completedAt",
+            "completionSource",
+            "match"
+        ]
+    );
+    assert_eq!(calendar[0]["occurrenceId"], json!("plan:2026-09-14"));
+    assert_eq!(calendar[1]["occurrenceId"], json!("plan:2026-09-21"));
+    assert_eq!(calendar[0]["displayState"], json!("unrecorded"));
+    assert_eq!(calendar[1]["displayState"], json!("scheduled"));
+    assert_eq!(calendar[0]["revision"], json!(1));
+
+    let inverted = app.get_calendar(Some("2026-09-21"), Some("2026-09-14")).unwrap_err();
+    assert_eq!(inverted.code(), AthriaErrorCode::InvalidCalendarWindow);
+    assert_eq!(inverted.message(), "The calendar start date must not be after the end date.");
+    assert_eq!(inverted.status(), 400);
+}
+
+#[test]
+fn plan_saves_enforce_ownership_snapshots_references_and_revisions() {
+    let app = test_app();
+    patch_profile(&app, json!({ "trainingRhythm": { "kind": "fixed_week", "days": [0] } }));
+
+    let mut foreign = monday_plan_write(0);
+    foreign["ownerId"] = json!("someone-else");
+    let owner = app.save_current_plan(&foreign).unwrap_err();
+    assert_eq!(owner.code(), AthriaErrorCode::OwnerMismatch);
+    assert_eq!(owner.message(), "The plan owner does not match the local athlete.");
+    assert_eq!(owner.status(), 403);
+
+    let mut stale_snapshot = monday_plan_write(0);
+    stale_snapshot["inputSnapshotHash"] = json!("fnv1a-00000000");
+    let changed = app.save_current_plan(&stale_snapshot).unwrap_err();
+    assert_eq!(changed.code(), AthriaErrorCode::InputSnapshotChanged);
+    assert_eq!(changed.message(), "Training state changed. Refresh and revise the plan.");
+    assert_eq!(changed.status(), 409);
+
+    // An absent hash skips the snapshot check, like the falsy empty string.
+    let saved = app.save_current_plan(&monday_plan_write(0)).unwrap();
+    assert_eq!(saved["plan"]["revision"], json!(1));
+
+    let repeat = app.save_current_plan(&monday_plan_write(0)).unwrap_err();
+    assert_eq!(repeat.code(), AthriaErrorCode::RevisionConflict);
+    assert_eq!(repeat.message(), "The current plan changed. Refresh and try again.");
+    assert_eq!(repeat.status(), 409);
+
+    let bumped = app.save_current_plan(&monday_plan_write(1)).unwrap();
+    assert_eq!(bumped["plan"]["revision"], json!(2));
+
+    // Session template references must resolve to the requested version.
+    app.create_template(&endurance_template("user.tempo", "Tempo Run")).unwrap();
+    let mut stale_user = monday_plan_write(2);
+    stale_user["mesocycle"]["weeks"][0]["sessions"][0]["templateRef"] = json!({ "source": "user", "id": "user.tempo", "revision": 5 });
+    let user_miss = app.save_current_plan(&stale_user).unwrap_err();
+    assert_eq!(user_miss.code(), AthriaErrorCode::TemplateNotFound);
+    assert_eq!(user_miss.message(), "Template reference user.tempo does not resolve to the requested version.");
+    assert_eq!(user_miss.status(), 409);
+
+    let mut stale_builtin = monday_plan_write(2);
+    stale_builtin["mesocycle"]["weeks"][0]["sessions"][0]["templateRef"] = json!({ "source": "builtin", "id": "builtin.easy-run", "catalogVersion": "1.0" });
+    let builtin_miss = app.save_current_plan(&stale_builtin).unwrap_err();
+    assert_eq!(builtin_miss.code(), AthriaErrorCode::TemplateNotFound);
+    assert_eq!(builtin_miss.message(), "Template reference builtin.easy-run does not resolve to the requested version.");
+
+    let mut referenced = monday_plan_write(2);
+    referenced["mesocycle"]["weeks"][0]["sessions"][0]["templateRef"] = json!({ "source": "builtin", "id": "builtin.easy-run", "catalogVersion": "2.0" });
+    let referenced = app.save_current_plan(&referenced).unwrap();
+    assert_eq!(referenced["plan"]["revision"], json!(3));
+    assert_eq!(referenced["plan"]["mesocycle"]["weeks"][0]["sessions"][0]["templateRef"], json!({ "source": "builtin", "id": "builtin.easy-run", "catalogVersion": "2.0" }));
+}
+
+#[test]
+fn planned_sessions_skip_restore_and_move_keep_the_revision_contract() {
+    let app = test_app();
+    patch_profile(&app, json!({ "trainingRhythm": { "kind": "fixed_week", "days": [0] } }));
+
+    let no_plan = app.update_planned_session("s1", &json!({ "action": "skip", "expectedRevision": 0 })).unwrap_err();
+    assert_eq!(no_plan.code(), AthriaErrorCode::NoCurrentPlan);
+    assert_eq!(no_plan.message(), "There is no current plan.");
+    assert_eq!(no_plan.status(), 409);
+
+    app.save_current_plan(&monday_plan_write(0)).unwrap();
+
+    let missing = app.update_planned_session("absent", &json!({ "action": "skip", "expectedRevision": 1 })).unwrap_err();
+    assert_eq!(missing.code(), AthriaErrorCode::PlannedSessionNotFound);
+    assert_eq!(missing.message(), "The planned session was not found.");
+    assert_eq!(missing.status(), 404);
+
+    let stale = app.update_planned_session("s1", &json!({ "action": "skip", "expectedRevision": 0 })).unwrap_err();
+    assert_eq!(stale.code(), AthriaErrorCode::PlannedSessionRevisionConflict);
+    assert_eq!(stale.message(), "The planned sessions changed. Refresh and try again.");
+    assert_eq!(stale.status(), 409);
+
+    let skipped = app
+        .update_planned_session("s1", &json!({ "action": "skip", "expectedRevision": 1, "reason": { "reasonCode": "travel", "note": "work trip" } }))
+        .unwrap();
+    assert_eq!(skipped["revision"], json!(2));
+    assert_eq!(skipped["sessions"][0]["id"], json!("s1"));
+    assert_eq!(skipped["sessions"][0]["status"], json!("skipped"));
+    let stored = app.store().get_current_plan("local-user").unwrap().expect("the plan is stored");
+    assert_eq!(stored["revision"], json!(2));
+    assert_eq!(stored["updatedAt"], json!(NOW));
+    let calendar = app.get_calendar(Some("2026-09-14"), Some("2026-09-27")).unwrap();
+    let skipped_entry = calendar.iter().find(|entry| entry["id"] == json!("s1")).expect("the skipped occurrence is scheduled");
+    assert_eq!(skipped_entry["status"], json!("skipped"));
+    assert_eq!(skipped_entry["displayState"], json!("skipped"));
+
+    let repeat_skip = app.update_planned_session("s1", &json!({ "action": "skip", "expectedRevision": 2 })).unwrap_err();
+    assert_eq!(repeat_skip.code(), AthriaErrorCode::PlannedSessionAlreadyResolved);
+    assert_eq!(repeat_skip.message(), "Completed or skipped sessions cannot be skipped.");
+    assert_eq!(repeat_skip.status(), 409);
+
+    let move_skipped = app
+        .update_planned_session("s1", &json!({ "action": "move_occurrence", "expectedRevision": 2, "scheduledDate": "2026-09-16" }))
+        .unwrap_err();
+    assert_eq!(move_skipped.code(), AthriaErrorCode::PlannedSessionAlreadyResolved);
+    assert_eq!(move_skipped.message(), "Completed or skipped sessions must be unresolved before they can be moved.");
+    assert_eq!(move_skipped.status(), 409);
+
+    let restored = app.update_planned_session("s1", &json!({ "action": "restore", "expectedRevision": 2 })).unwrap();
+    assert_eq!(restored["revision"], json!(3));
+    assert_eq!(restored["sessions"][0]["status"], json!("planned"));
+    assert_eq!(restored["sessions"][0]["updatedAt"], json!(NOW));
+    let calendar = app.get_calendar(Some("2026-09-14"), Some("2026-09-27")).unwrap();
+    let restored_entry = calendar.iter().find(|entry| entry["id"] == json!("s1")).expect("the restored occurrence is scheduled");
+    assert_eq!(restored_entry["displayState"], json!("unrecorded"));
+
+    let repeat_restore = app.update_planned_session("s1", &json!({ "action": "restore", "expectedRevision": 3 })).unwrap_err();
+    assert_eq!(repeat_restore.code(), AthriaErrorCode::PlannedSessionNotSkipped);
+    assert_eq!(repeat_restore.message(), "Only a skipped planned session can be restored.");
+    assert_eq!(repeat_restore.status(), 409);
+}
+
+#[test]
+fn completing_a_planned_session_records_a_dated_manual_workout() {
+    let app = test_app();
+    patch_profile(&app, json!({ "trainingRhythm": { "kind": "fixed_week", "days": [0] } }));
+    app.save_current_plan(&monday_plan_write(0)).unwrap();
+
+    // A future occurrence cannot be marked complete yet.
+    let future = app.update_planned_session("s2", &json!({ "action": "complete", "expectedRevision": 1 })).unwrap_err();
+    assert_eq!(future.code(), AthriaErrorCode::FutureSessionCannotBeCompleted);
+    assert_eq!(future.message(), "Move this planned session to the date you completed it before adding it as a completed workout.");
+    assert_eq!(future.status(), 409);
+
+    let completed = app.update_planned_session("s1", &json!({ "action": "complete", "expectedRevision": 1 })).unwrap();
+    let workout = &completed["trainingSession"];
+    assert_eq!(completed["revision"], json!(1));
+    assert_eq!(workout["source"], json!("manual"));
+    assert_eq!(workout["status"], json!("completed"));
+    assert_eq!(workout["modality"], json!("endurance"));
+    assert_eq!(workout["domains"], json!(["endurance"]));
+    assert_eq!(workout["sport"], json!(null));
+    assert_eq!(workout["plannedSessionId"], json!("s1"));
+    assert_eq!(workout["timePrecision"], json!("date_only"));
+    assert_eq!(workout["startAt"], json!("2026-09-14T04:00:00.000Z"));
+    assert_eq!(workout["endAt"], json!("2026-09-14T04:45:00.000Z"));
+    assert_eq!(workout["durationMinutes"], json!(45));
+    assert_eq!(workout["timezone"], json!("Asia/Hong_Kong"));
+    assert_eq!(workout["strengthSets"], json!([]));
+    assert_eq!(workout["endurance"], json!(null));
+    assert_eq!(workout["missingFields"], json!(["actual start time", "exercise details"]));
+
+    let resolved = &completed["sessions"][0];
+    assert_eq!(resolved["id"], json!("s1"));
+    assert_eq!(resolved["status"], json!("completed"));
+    assert_eq!(resolved["displayState"], json!("completed"));
+    assert_eq!(resolved["completionSource"], json!("manual"));
+    assert_eq!(resolved["completedTrainingSessionId"], workout["id"]);
+    assert_eq!(resolved["completedAt"], json!("2026-09-14T04:45:00.000Z"));
+    assert_eq!(resolved["match"], json!({ "plannedSessionId": "s1", "method": "manual" }));
+
+    // The next training day is the still-planned Monday with its rhythm phase.
+    let next = app.get_next_training_day(None).unwrap();
+    assert_eq!(next["reasonCode"], json!(null));
+    assert_eq!(next["nextTrainingDay"]["occurrenceId"], json!("plan:2026-09-21"));
+    assert_eq!(next["nextTrainingDay"]["scheduledDate"], json!("2026-09-21"));
+    assert_eq!(next["nextTrainingDay"]["dayOfWeek"], json!(0));
+    assert_eq!(next["nextTrainingDay"]["weekNumber"], json!(2));
+    assert_eq!(next["nextTrainingDay"]["revision"], json!(1));
+    assert_eq!(next["nextTrainingDay"]["timezone"], json!("Asia/Hong_Kong"));
+    assert_eq!(next["nextTrainingDay"]["domainPhases"], json!([{ "domain": "endurance", "phaseId": "phase-2", "phaseType": "progression", "name": "Build 2" }]));
+    assert_eq!(next["nextTrainingDay"]["existingSessions"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn moving_an_occurrence_checks_the_rhythm_and_recomputes_the_week() {
+    let app = test_app();
+    patch_profile(&app, json!({ "trainingRhythm": { "kind": "fixed_week", "days": [0] } }));
+    app.save_current_plan(&monday_plan_write(0)).unwrap();
+
+    let same_date = app
+        .update_planned_session("s1", &json!({ "action": "move_occurrence", "expectedRevision": 1, "scheduledDate": "2026-09-14" }))
+        .unwrap_err();
+    assert_eq!(same_date.code(), AthriaErrorCode::InvalidMoveDate);
+    assert_eq!(same_date.message(), "Choose a different date for the planned session.");
+    assert_eq!(same_date.status(), 400);
+
+    let conflict = app
+        .update_planned_session("s1", &json!({ "action": "move_occurrence", "expectedRevision": 1, "scheduledDate": "2026-09-21" }))
+        .unwrap_err();
+    assert_eq!(conflict.code(), AthriaErrorCode::TrainingDayConflict);
+    assert_eq!(conflict.message(), "Another planned training day already uses that date.");
+    assert_eq!(conflict.status(), 409);
+
+    let outside = app
+        .update_planned_session("s1", &json!({ "action": "move_occurrence", "expectedRevision": 1, "scheduledDate": "2026-10-05" }))
+        .unwrap_err();
+    assert_eq!(outside.code(), AthriaErrorCode::MoveOutsidePlan);
+    assert_eq!(outside.message(), "The moved training day must stay within the current plan.");
+    assert_eq!(outside.status(), 409);
+
+    let off_rhythm = app
+        .update_planned_session("s1", &json!({ "action": "move_occurrence", "expectedRevision": 1, "scheduledDate": "2026-09-22" }))
+        .unwrap_err();
+    assert_eq!(off_rhythm.code(), AthriaErrorCode::ProfileTrainingRhythm);
+    assert_eq!(off_rhythm.message(), "The moved training day would break your Profile training rhythm.");
+    assert_eq!(off_rhythm.status(), 409);
+
+    // A flexible rhythm accepts the same move and recomputes week and phases.
+    let flex = test_app();
+    patch_profile(&flex, json!({ "trainingRhythm": { "kind": "flexible_week", "targetDaysPerWeek": 2, "minDaysPerWeek": 0, "maxDaysPerWeek": 3 } }));
+    let flex_plan = plan_write(
+        json!({ "kind": "flexible_week", "targetDaysPerWeek": 2, "minDaysPerWeek": 0, "maxDaysPerWeek": 3 }),
+        2,
+        "2026-09-14",
+        endurance_progressions(2),
+        vec![
+            plan_week(1, vec![plan_session("s1", "2026-09-14", 0, "low", json!([plan_component("c1", "Run", "endurance")]))]),
+            plan_week(2, vec![plan_session("s2", "2026-09-21", 0, "low", json!([plan_component("c2", "Run", "endurance")]))]),
+        ],
+        0,
+    );
+    flex.save_current_plan(&flex_plan).unwrap();
+
+    let moved = flex.update_planned_session("s2", &json!({ "action": "move_occurrence", "expectedRevision": 1, "scheduledDate": "2026-09-16" })).unwrap();
+    assert_eq!(moved["revision"], json!(2));
+    assert_eq!(moved["sessions"][0]["id"], json!("s2"));
+    assert_eq!(moved["sessions"][0]["scheduledDate"], json!("2026-09-16"));
+    assert_eq!(moved["sessions"][0]["weekNumber"], json!(1));
+    assert_eq!(moved["sessions"][0]["phaseRefs"][0]["phaseId"], json!("phase-1"));
+
+    let calendar = flex.get_calendar(Some("2026-09-14"), Some("2026-09-20")).unwrap();
+    assert_eq!(calendar.len(), 2);
+    assert_eq!(calendar[0]["occurrenceId"], json!("plan:2026-09-14"));
+    assert_eq!(calendar[1]["id"], json!("s2"));
+    assert_eq!(calendar[1]["occurrenceId"], json!("plan:2026-09-16"));
+    assert_eq!(calendar[1]["weekNumber"], json!(1));
+    assert_eq!(calendar[1]["phaseRefs"][0]["phaseId"], json!("phase-1"));
+    assert_eq!(calendar[1]["revision"], json!(2));
+}
+
+#[test]
+fn moving_high_recovery_days_enforces_the_explicit_recovery_interval() {
+    let app = test_app();
+    patch_profile(
+        &app,
+        json!({
+            "trainingRhythm": { "kind": "flexible_week", "targetDaysPerWeek": 3, "minDaysPerWeek": 1, "maxDaysPerWeek": 3 },
+            "explicitRecoveryDays": 3,
+        }),
+    );
+    let plan = plan_write(
+        json!({ "kind": "flexible_week", "targetDaysPerWeek": 3, "minDaysPerWeek": 1, "maxDaysPerWeek": 3 }),
+        2,
+        "2026-09-14",
+        endurance_progressions(2),
+        vec![
+            plan_week(
+                1,
+                vec![
+                    plan_session("s1", "2026-09-14", 0, "high", json!([plan_component("c1", "Run", "endurance")])),
+                    plan_session("s2", "2026-09-18", 1, "low", json!([plan_component("c2", "Run", "endurance")])),
+                ],
+            ),
+            plan_week(
+                2,
+                vec![
+                    plan_session("s3", "2026-09-21", 0, "high", json!([plan_component("c3", "Run", "endurance")])),
+                    plan_session("s4", "2026-09-22", 1, "low", json!([plan_component("c4", "Run", "endurance")])),
+                ],
+            ),
+        ],
+        0,
+    );
+    let saved = app.save_current_plan(&plan).unwrap();
+    assert_eq!(saved["plan"]["revision"], json!(1));
+    assert_eq!(saved["impact"]["updatedCount"], json!(4));
+
+    let tight = app
+        .update_planned_session("s3", &json!({ "action": "move_occurrence", "expectedRevision": 1, "scheduledDate": "2026-09-16" }))
+        .unwrap_err();
+    assert_eq!(tight.code(), AthriaErrorCode::ExplicitRecoveryInterval);
+    assert_eq!(tight.message(), "The moved training day is too close to another high-recovery-demand session.");
+    assert_eq!(tight.status(), 409);
+
+    let moved = app.update_planned_session("s1", &json!({ "action": "move_occurrence", "expectedRevision": 1, "scheduledDate": "2026-09-24" })).unwrap();
+    assert_eq!(moved["revision"], json!(2));
+    assert_eq!(moved["sessions"][0]["id"], json!("s1"));
+    assert_eq!(moved["sessions"][0]["weekNumber"], json!(2));
+    assert_eq!(moved["sessions"][0]["phaseRefs"][0]["phaseId"], json!("phase-2"));
+}
+
+#[test]
+fn next_training_day_sessions_validate_and_save_with_revision_guards() {
+    let app = test_app();
+    assert_eq!(app.get_next_training_day(None).unwrap(), json!({ "nextTrainingDay": null, "reasonCode": "NO_CURRENT_PLAN" }));
+
+    let no_plan = app.validate_next_training_day_sessions(&next_day_write("2026-09-21", 0, vec![next_day_session("n1")])).unwrap_err();
+    assert_eq!(no_plan.code(), AthriaErrorCode::NoCurrentPlan);
+    assert_eq!(no_plan.message(), "There is no available next training day.");
+    assert_eq!(no_plan.status(), 409);
+
+    patch_profile(&app, json!({ "trainingRhythm": { "kind": "fixed_week", "days": [0] } }));
+    app.save_current_plan(&monday_plan_write(0)).unwrap();
+    app.update_planned_session("s1", &json!({ "action": "complete", "expectedRevision": 1 })).unwrap();
+
+    let wrong_date = app.validate_next_training_day_sessions(&next_day_write("2026-09-22", 1, vec![next_day_session("n1")])).unwrap_err();
+    assert_eq!(wrong_date.code(), AthriaErrorCode::NextTrainingDayChanged);
+    assert_eq!(wrong_date.message(), "Refresh the next training day before saving sessions.");
+    assert_eq!(wrong_date.status(), 409);
+
+    let stale = app.validate_next_training_day_sessions(&next_day_write("2026-09-21", 0, vec![next_day_session("n1")])).unwrap_err();
+    assert_eq!(stale.code(), AthriaErrorCode::PlannedSessionRevisionConflict);
+    assert_eq!(stale.message(), "The planned sessions changed. Refresh and confirm the update again.");
+    assert_eq!(stale.status(), 409);
+
+    let duplicated = app
+        .validate_next_training_day_sessions(&next_day_write("2026-09-21", 1, vec![next_day_session("n1"), next_day_session("n1")]))
+        .unwrap_err();
+    assert_eq!(duplicated.code(), AthriaErrorCode::DuplicatePlannedSessionId);
+    assert_eq!(duplicated.message(), "Session IDs must be unique.");
+    assert_eq!(duplicated.status(), 400);
+
+    let validated = app.validate_next_training_day_sessions(&next_day_write("2026-09-21", 1, vec![next_day_session("n1")])).unwrap();
+    assert_eq!(validated["valid"], json!(true));
+    assert_eq!(validated["scheduledDate"], json!("2026-09-21"));
+    assert_eq!(validated["revision"], json!(1));
+    let session = &validated["sessions"][0];
+    assert_eq!(session["id"], json!("n1"));
+    assert_eq!(session["occurrenceId"], json!("plan:2026-09-21"));
+    assert_eq!(session["planRevision"], json!(1));
+    assert_eq!(session["scheduledDate"], json!("2026-09-21"));
+    assert_eq!(session["order"], json!(0));
+    assert_eq!(session["weekNumber"], json!(2));
+    assert_eq!(session["status"], json!("planned"));
+    assert_eq!(session["displayState"], json!("scheduled"));
+    assert_eq!(session["createdAt"], json!(NOW));
+    assert_eq!(session["match"], json!(null));
+    assert_eq!(session["phaseRefs"], json!([{ "domain": "endurance", "phaseId": "phase-2" }]));
+
+    let saved = app.save_next_training_day_sessions(&next_day_write("2026-09-21", 1, vec![next_day_session("n1")])).unwrap();
+    assert_eq!(saved["revision"], json!(2));
+    assert_eq!(saved["idempotentReplay"], json!(false));
+    assert_eq!(saved["sessions"][0]["id"], json!("n1"));
+    assert_eq!(saved["sessions"][0]["occurrenceId"], json!("plan:2026-09-21"));
+
+    let replay = app.save_next_training_day_sessions(&next_day_write("2026-09-21", 1, vec![next_day_session("n1")])).unwrap_err();
+    assert_eq!(replay.code(), AthriaErrorCode::PlannedSessionRevisionConflict);
+    assert_eq!(replay.message(), "The planned sessions changed. Refresh and confirm the update again.");
+    assert_eq!(replay.status(), 409);
+}
