@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { HttpAthriaClient, TauriAthriaClient } from "./athria-client";
 import type { IntervalsConnectionStatus, SyncRange } from "./view-models";
 
 interface ServiceInfo { baseUrl: string; token: string; mcpUrl: string }
@@ -10,16 +11,10 @@ async function info(): Promise<ServiceInfo> {
   return serviceInfo;
 }
 
-export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const service = await info();
-  const response = await fetch(`${service.baseUrl}${path}`, {
-    ...init,
-    headers: { Authorization: `Bearer ${service.token}`, "Content-Type": "application/json", ...init.headers },
-  });
-  const payload = await response.json();
-  if (!response.ok) throw new Error(payload.error?.message ?? `Request failed with HTTP ${response.status}`);
-  return payload as T;
-}
+const httpClient = new HttpAthriaClient(info);
+const client = new TauriAthriaClient(invoke, httpClient);
+
+export async function api<T>(path: string, init: RequestInit = {}): Promise<T> { return client.request<T>(path, init); }
 
 export async function testIntervals(apiKey: string, athleteId: string, vaultPassword?: string): Promise<unknown> {
   return invoke("test_intervals_credentials", { apiKey, athleteId, vaultPassword });
