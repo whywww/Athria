@@ -1,0 +1,7 @@
+[package]
+name = "athria-integrations"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+athria-core = { workspace = true }

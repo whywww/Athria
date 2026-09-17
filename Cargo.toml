@@ -1,0 +1,19 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+# The Tauri desktop shell stays a standalone package: its tauri-build script
+# resolves sidecar and frontend paths relative to its own directory and is
+# driven by scripts/desktop-build.ts with explicit environment overrides.
+exclude = ["apps/desktop/src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+[workspace.dependencies]
+athria-application = { path = "crates/athria-application" }
+athria-core = { path = "crates/athria-core" }
+athria-integrations = { path = "crates/athria-integrations" }
+athria-mcp = { path = "crates/athria-mcp" }
+athria-runtime = { path = "crates/athria-runtime" }
+athria-store = { path = "crates/athria-store" }

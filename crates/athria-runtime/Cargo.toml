@@ -1,0 +1,11 @@
+[package]
+name = "athria-runtime"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+athria-application = { workspace = true }
+athria-core = { workspace = true }
+athria-integrations = { workspace = true }
+athria-mcp = { workspace = true }
+athria-store = { workspace = true }

@@ -10,6 +10,9 @@ coverage/
 dist-types/
 *.log
 
+# Rust workspace build output
+/target/
+
 # One-off UI verification artifacts
 verify-*
 
