@@ -7,7 +7,6 @@
     { "path": "packages/integrations" },
     { "path": "packages/application" },
     { "path": "packages/mcp" },
-    { "path": "apps/service" },
     { "path": "apps/desktop" }
   ]
 }

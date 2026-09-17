@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 athria-application = { workspace = true }
 athria-core = { workspace = true }
+athria-vault = { workspace = true }
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 serde_json = { version = "1.0.151", features = ["preserve_order"] }
 uuid = { version = "1.26.1", features = ["v4"] }

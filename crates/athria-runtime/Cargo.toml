@@ -9,7 +9,11 @@ athria-core = { workspace = true }
 athria-integrations = { workspace = true }
 athria-mcp = { workspace = true }
 athria-store = { workspace = true }
+athria-vault = { workspace = true }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
 
 [[bin]]
 name = "athria"

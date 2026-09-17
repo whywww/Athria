@@ -5,10 +5,6 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "dialog:default",
-    {
-      "identifier": "shell:allow-spawn",
-      "allow": [{ "name": "binaries/athria-service", "sidecar": true, "args": ["serve"] }]
-    }
+    "dialog:default"
   ]
 }

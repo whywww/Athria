@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { api, changeVaultPassword, createNewProfile, disconnectConnection, getIntervalsStatus, getMcpStatus, getVaultStatus, getXunjiStatus, importXunjiSkill, pickNewProfileDestination, pickRestoreFile, resetVaultPassword, restoreBackup, setupVault, syncIntervals, syncXunji, testIntervals, unlockVault } from "./api";
 import { mcpConfig, mcpGuides } from "./mcp-guides";
 import {
@@ -701,14 +700,13 @@ function DatabaseGate() {
 }
 
 export function App() {
-  const [page, setPage] = useState<Page>("Overview"); const [serviceCrash, setServiceCrash] = useState(false); const View = views[page];
+  const [page, setPage] = useState<Page>("Overview"); const View = views[page];
   const profile = useQuery({ queryKey: ["profile"], queryFn: () => api<AthleteProfile>("/api/profile") });
   const primaryPages = dashboardPages.filter((item) => item.group === "primary");
   const supportPages = dashboardPages.filter((item) => item.group === "support");
-  useEffect(() => { let unlisten: UnlistenFn | undefined; void listen("athria-service-crashed", () => setServiceCrash(true)).then((dispose) => { unlisten = dispose; }); return () => unlisten?.(); }, []);
   useEffect(() => { const openTraining = () => setPage("Training"); const openConnections = () => setPage("Connections"); window.addEventListener("athria-open-training", openTraining); window.addEventListener("athria-open-connections", openConnections); return () => { window.removeEventListener("athria-open-training", openTraining); window.removeEventListener("athria-open-connections", openConnections); }; }, []);
   const navIcons: Record<Page, IconName> = { Overview: "overview", Training: "training", Profile: "profile", Plan: "plan", Connections: "devices", Settings: "settings", Help: "help" };
   const NavItems = ({ items }: { items: typeof dashboardPages[number][] }) => <>{items.map((item) => <button key={item.id} className={item.id === page ? "active" : ""} aria-current={item.id === page ? "page" : undefined} onClick={() => setPage(item.id)}><AppIcon name={navIcons[item.id]}/>{item.label}</button>)}</>;
   const preferredName = profile.data?.preferredName || "Athlete";
-  return <><DatabaseGate/><div className="shell"><aside><div className="brand"><img src="/athria-logo.svg" alt="Athria" /></div><nav aria-label="Main navigation"><NavItems items={primaryPages}/></nav><div className="sidebar-lower"><nav className="support-nav" aria-label="Support navigation"><NavItems items={supportPages}/></nav></div></aside><main className="primary-main">{page !== "Plan" && page !== "Profile" && <PrimaryPageHeader preferredName={preferredName} subtitle={page === "Overview" ? "Let's keep the momentum going. Here's your overview for today." : page === "Training" ? "All your training in one place — every domain, every workout." : page === "Connections" ? "Sync your data from the apps and devices you use. Keep everything in one place." : page === "Settings" ? "Your personal information, system status, and local database." : page === "Help" ? "Guides for plans, training data, backups and connecting your AI agent through MCP." : "Your AI fitness hub. Local-first. Data you own."}/>}{serviceCrash && <div className="error">The local service stopped unexpectedly. Close and reopen Athria. If the problem continues, back up your database file before troubleshooting.</div>}<View/></main></div></>;
+  return <><DatabaseGate/><div className="shell"><aside><div className="brand"><img src="/athria-logo.svg" alt="Athria" /></div><nav aria-label="Main navigation"><NavItems items={primaryPages}/></nav><div className="sidebar-lower"><nav className="support-nav" aria-label="Support navigation"><NavItems items={supportPages}/></nav></div></aside><main className="primary-main">{page !== "Plan" && page !== "Profile" && <PrimaryPageHeader preferredName={preferredName} subtitle={page === "Overview" ? "Let's keep the momentum going. Here's your overview for today." : page === "Training" ? "All your training in one place — every domain, every workout." : page === "Connections" ? "Sync your data from the apps and devices you use. Keep everything in one place." : page === "Settings" ? "Your personal information, system status, and local database." : page === "Help" ? "Guides for plans, training data, backups and connecting your AI agent through MCP." : "Your AI fitness hub. Local-first. Data you own."}/>}<View/></main></div></>;
 }
