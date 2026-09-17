@@ -2,11 +2,34 @@
 //!
 //! This crate must stay free of platform, filesystem, network and SQLite
 //! dependencies so every other runtime crate (and future mobile shells) can
-//! link it. Phase 2 of the migration establishes the boundary and the shared
-//! error model only; schedule expansion, training metrics, stable hashing and
-//! plan validation move here in later phases, each verified against golden
-//! fixtures produced by the TypeScript implementation.
+//! link it. It consumes the same schema-validated JSON documents the
+//! TypeScript core receives, which lets the golden fixtures under
+//! `tests/fixtures` prove that both implementations agree until the
+//! TypeScript core is retired.
 
 pub mod error;
+pub mod hash;
+pub mod schedule;
+
+mod date;
+mod json;
 
 pub use error::{AthriaError, AthriaErrorCode, Result};
+pub use hash::{canonical, stable_hash};
+pub use schedule::{ScheduleOccurrence, expand_schedule};
+
+/// Version of the deterministic formulas; byte-identical to `FORMULA_VERSION`
+/// in `packages/schemas`.
+pub const FORMULA_VERSION: &str = "0.2.0";
+
+/// Plan-validation rule pack version; byte-identical to `RULE_VERSION` in
+/// `packages/schemas`.
+pub const RULE_VERSION: &str = "0.3.0";
+
+/// Taxonomy version stamped into classified facts; byte-identical to
+/// `TAXONOMY_VERSION` in `packages/schemas`.
+pub const TAXONOMY_VERSION: &str = "strength-2.0";
+
+/// Confidence an `ai_inferred` fact needs before a hard rule trusts it;
+/// byte-identical to `AI_HARD_CONFIDENCE` in `packages/schemas`.
+pub const AI_HARD_CONFIDENCE: f64 = 0.9;
