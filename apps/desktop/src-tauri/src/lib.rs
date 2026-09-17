@@ -17,6 +17,10 @@ use uuid::Uuid;
 use zeroize::Zeroizing;
 
 mod vault;
+mod application_ipc;
+use application_ipc::{DesktopApplication, dispatch as dispatch_application};
+use athria_application::AthriaApplication;
+use athria_store::SqliteStore;
 use vault::{EncryptedSecret, VaultBundle};
 
 #[derive(Clone, Serialize)]
@@ -31,6 +35,8 @@ struct RuntimeState {
     service: ServiceInfo,
     child: Mutex<Option<CommandChild>>,
     vault_key: Mutex<Option<Zeroizing<Vec<u8>>>>,
+    application: Mutex<DesktopApplication>,
+    database_path: PathBuf,
 }
 
 #[derive(Deserialize)]
@@ -204,6 +210,12 @@ fn run_mcp_passthrough() -> i32 {
 
 #[tauri::command]
 fn get_service_info(state: State<'_, RuntimeState>) -> ServiceInfo { state.service.clone() }
+
+#[tauri::command]
+fn athria_request(state: State<'_, RuntimeState>, method: String, path: String, body: Option<Value>) -> Result<Value, String> {
+    let application = state.application.lock().map_err(|_| "Athria runtime state is unavailable.".to_string())?;
+    dispatch_application(&application, &state.database_path, &method, &path, body)
+}
 
 async fn service_post(state: &RuntimeState, path: &str, body: Value) -> Result<Value, String> {
     let response = reqwest::Client::new()
@@ -522,12 +534,17 @@ pub fn run() -> i32 {
     let mcp_token = new_runtime_token();
     let service = ServiceInfo { base_url: format!("http://127.0.0.1:{port}"), token: token.clone(), mcp_url: format!("http://127.0.0.1:{port}/mcp") };
     let service_for_setup = service.clone();
+    let database_path = current_database_path();
+    let application = match SqliteStore::open(&database_path) {
+        Ok(store) => AthriaApplication::new(store),
+        Err(error) => { eprintln!("Athria could not open the database: {error}"); return 1; }
+    };
 
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
-        .manage(RuntimeState { service, child: Mutex::new(None), vault_key: Mutex::new(None) })
-        .invoke_handler(tauri::generate_handler![get_service_info, vault_status, setup_vault, unlock_vault, change_vault_password, reset_vault_password, disconnect_connection, test_intervals_credentials, sync_intervals, intervals_status, import_xunji_skill, sync_xunji, xunji_status, mcp_status, pick_restore_file, pick_new_profile_destination, restore_backup, create_new_profile])
+        .manage(RuntimeState { service, child: Mutex::new(None), vault_key: Mutex::new(None), application: Mutex::new(application), database_path: database_path.clone() })
+        .invoke_handler(tauri::generate_handler![athria_request, get_service_info, vault_status, setup_vault, unlock_vault, change_vault_password, reset_vault_password, disconnect_connection, test_intervals_credentials, sync_intervals, intervals_status, import_xunji_skill, sync_xunji, xunji_status, mcp_status, pick_restore_file, pick_new_profile_destination, restore_backup, create_new_profile])
         .setup(move |app| {
             #[cfg(feature = "dev-service")]
             let command = {
@@ -544,7 +561,7 @@ pub fn run() -> i32 {
                 .env("ATHRIA_SESSION_TOKEN", token)
                 .env("ATHRIA_MCP_TOKEN", mcp_token)
                 .env("ATHRIA_PARENT_PID", std::process::id().to_string())
-                .env("ATHRIA_DATABASE_PATH", current_database_path());
+                .env("ATHRIA_DATABASE_PATH", database_path);
             let (mut events, child) = command.spawn()?;
             *app.state::<RuntimeState>().child.lock().expect("runtime state poisoned") = Some(child);
             let address = format!("127.0.0.1:{port}").parse().map_err(|error| std::io::Error::other(format!("Invalid service address: {error}")))?;
