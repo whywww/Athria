@@ -9,7 +9,13 @@
 use std::fmt;
 
 /// Every error code currently produced by the TypeScript application and
-/// store layers. Kept in ASCII-alphabetical order of [`Self::as_str`].
+/// store layers, plus two additive Rust-only codes (`INVALID_DATA`,
+/// `SCHEMA_VERSION_UNSUPPORTED`) that cover failure modes the TypeScript
+/// implementation reports through plain exceptions instead. Existing codes
+/// and their wire strings are byte-compatible with TypeScript and must never
+/// change.
+///
+/// Kept in ASCII-alphabetical order of [`Self::as_str`].
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AthriaErrorCode {
@@ -21,6 +27,7 @@ pub enum AthriaErrorCode {
     InputSnapshotChanged,
     IntervalsNormalizationFailed,
     InvalidCalendarWindow,
+    InvalidData,
     InvalidMoveDate,
     InvalidSummaryWindow,
     ManualDateChangeRequiresPlanMove,
@@ -44,6 +51,7 @@ pub enum AthriaErrorCode {
     ProfileTrainingRhythm,
     RevisionConflict,
     RevisionRequired,
+    SchemaVersionUnsupported,
     TemplateAlreadyExists,
     TemplateInUse,
     TemplateNotFound,
@@ -54,7 +62,7 @@ pub enum AthriaErrorCode {
 
 impl AthriaErrorCode {
     /// All known codes; the wire lookup [`Self::from_wire`] is built from it.
-    pub const ALL: [Self; 37] = [
+    pub const ALL: [Self; 39] = [
         Self::CompletedSessionCannotBeReplaced,
         Self::DuplicatePlannedSessionId,
         Self::ExplicitRecoveryInterval,
@@ -63,6 +71,7 @@ impl AthriaErrorCode {
         Self::InputSnapshotChanged,
         Self::IntervalsNormalizationFailed,
         Self::InvalidCalendarWindow,
+        Self::InvalidData,
         Self::InvalidMoveDate,
         Self::InvalidSummaryWindow,
         Self::ManualDateChangeRequiresPlanMove,
@@ -86,6 +95,7 @@ impl AthriaErrorCode {
         Self::ProfileTrainingRhythm,
         Self::RevisionConflict,
         Self::RevisionRequired,
+        Self::SchemaVersionUnsupported,
         Self::TemplateAlreadyExists,
         Self::TemplateInUse,
         Self::TemplateNotFound,
@@ -105,6 +115,7 @@ impl AthriaErrorCode {
             Self::InputSnapshotChanged => "INPUT_SNAPSHOT_CHANGED",
             Self::IntervalsNormalizationFailed => "INTERVALS_NORMALIZATION_FAILED",
             Self::InvalidCalendarWindow => "INVALID_CALENDAR_WINDOW",
+            Self::InvalidData => "INVALID_DATA",
             Self::InvalidMoveDate => "INVALID_MOVE_DATE",
             Self::InvalidSummaryWindow => "INVALID_SUMMARY_WINDOW",
             Self::ManualDateChangeRequiresPlanMove => "MANUAL_DATE_CHANGE_REQUIRES_PLAN_MOVE",
@@ -128,6 +139,7 @@ impl AthriaErrorCode {
             Self::ProfileTrainingRhythm => "PROFILE_TRAINING_RHYTHM",
             Self::RevisionConflict => "REVISION_CONFLICT",
             Self::RevisionRequired => "REVISION_REQUIRED",
+            Self::SchemaVersionUnsupported => "SCHEMA_VERSION_UNSUPPORTED",
             Self::TemplateAlreadyExists => "TEMPLATE_ALREADY_EXISTS",
             Self::TemplateInUse => "TEMPLATE_IN_USE",
             Self::TemplateNotFound => "TEMPLATE_NOT_FOUND",
