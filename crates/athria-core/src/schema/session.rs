@@ -39,7 +39,7 @@ pub fn parse_training_session(value: &Value) -> Result<Value> {
     session.insert("plannedSessionId".into(), text_or_null(value, "plannedSessionId"));
     session.insert("timePrecision".into(), Value::String(enum_or(value, "timePrecision", &TIME_PRECISIONS, "exact")));
     session.insert("sources".into(), parse_sources(value));
-    session.insert("planMatch".into(), parse_plan_match(value));
+    session.insert("planMatch".into(), match_summary_or_null(value, "planMatch"));
     session.insert("isPlanMatchExcluded".into(), Value::Bool(value.get("isPlanMatchExcluded").and_then(Value::as_bool).unwrap_or(false)));
     session.insert("strengthSets".into(), parse_strength_sets(value));
     session.insert("endurance".into(), parse_endurance(value));
@@ -76,18 +76,6 @@ fn parse_sources(value: &Value) -> Value {
             })
             .unwrap_or_default(),
     )
-}
-
-/// `planMatch: planWorkoutMatchSummarySchema.nullable()`.
-fn parse_plan_match(value: &Value) -> Value {
-    let Some(match_value) = value.get("planMatch").filter(|item| !item.is_null()) else {
-        return Value::Null;
-    };
-    let method = enum_or(match_value, "method", &["auto", "manual"], "");
-    match (match_value.get("plannedSessionId").and_then(Value::as_str), method.is_empty()) {
-        (Some(planned_session_id), false) => serde_json::json!({ "plannedSessionId": planned_session_id, "method": method }),
-        _ => Value::Null,
-    }
 }
 
 /// `strengthSets: z.array(strengthSetSchema)`.

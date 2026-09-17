@@ -87,6 +87,37 @@ pub(crate) fn required_int(value: &Value, key: &str, path: &str) -> Result<i64> 
     value.get(key).and_then(Value::as_i64).ok_or_else(|| invalid_type(&format!("{path}.{key}"), "an integer"))
 }
 
+/// A required enum field: the value must be one of `allowed`.
+pub(crate) fn required_enum(value: &Value, key: &str, allowed: &[&str], path: &str) -> Result<String> {
+    value
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|candidate| allowed.contains(candidate))
+        .map(str::to_owned)
+        .ok_or_else(|| invalid(&format!("{path}.{key}"), "unexpected value"))
+}
+
+/// A required `dateSchema` field: the strict `^\d{4}-\d{2}-\d{2}$` form.
+pub(crate) fn required_date(value: &Value, key: &str, path: &str) -> Result<String> {
+    let date = required_text(value, key, path)?;
+    if !is_iso_date(&date) {
+        return Err(invalid(&format!("{path}.{key}"), "expected YYYY-MM-DD"));
+    }
+    Ok(date)
+}
+
+/// `planWorkoutMatchSummarySchema.nullable()` read from `key`.
+pub(crate) fn match_summary_or_null(value: &Value, key: &str) -> Value {
+    let Some(match_value) = value.get(key).filter(|item| !item.is_null()) else {
+        return Value::Null;
+    };
+    let method = enum_or(match_value, "method", &["auto", "manual"], "");
+    match (match_value.get("plannedSessionId").and_then(Value::as_str), method.is_empty()) {
+        (Some(planned_session_id), false) => serde_json::json!({ "plannedSessionId": planned_session_id, "method": method }),
+        _ => Value::Null,
+    }
+}
+
 /// `z.enum(values).nullable()`: missing, `null` and unknown values parse as
 /// `null`.
 pub(crate) fn nullable_enum(value: &Value, key: &str, allowed: &[&str]) -> Value {

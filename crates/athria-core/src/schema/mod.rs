@@ -11,11 +11,16 @@
 //! transports own user-facing message formatting.
 
 pub mod common;
+pub mod plan;
 pub mod profile;
 pub mod session;
 pub mod template;
 pub mod wellness;
 
+pub use plan::{
+    PLAN_SCHEMA_VERSION, parse_current_plan, parse_current_plan_write, parse_mesocycle, parse_next_training_day_write, parse_planned_session,
+    parse_planned_session_action,
+};
 pub use profile::{
     PersonalInformationWrite, ProfileUpdate, merge_profile, normalize_note, parse_personal_information, parse_profile, parse_profile_update, parse_race_days,
     parse_training_rhythm,
