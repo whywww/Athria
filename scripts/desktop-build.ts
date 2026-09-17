@@ -6,9 +6,9 @@ import { fileURLToPath } from "node:url";
 type Action = "dev" | "service" | "debug" | "app" | "release" | "msi";
 
 interface HostBuild {
-  platform: "windows" | "macos";
-  rustTarget: "x86_64-pc-windows-msvc" | "aarch64-apple-darwin";
-  bunTarget: "bun-windows-x64" | "bun-darwin-arm64";
+  platform: "windows" | "macos" | "linux";
+  rustTarget: "x86_64-pc-windows-msvc" | "aarch64-apple-darwin" | "x86_64-unknown-linux-gnu";
+  bunTarget: "bun-windows-x64" | "bun-darwin-arm64" | "bun-linux-x64";
   sidecarName: string;
   nativeDependency: string;
 }
@@ -43,7 +43,10 @@ function hostBuild(): HostBuild {
       nativeDependency: "@tauri-apps+cli-darwin-arm64@",
     };
   }
-  throw new Error(`Unsupported Athria desktop host: ${process.platform}/${process.arch}. Supported hosts are Windows x64 and macOS ARM64.`);
+  if (process.platform === "linux" && process.arch === "x64") {
+    return { platform: "linux", rustTarget: "x86_64-unknown-linux-gnu", bunTarget: "bun-linux-x64", sidecarName: "athria-service-x86_64-unknown-linux-gnu", nativeDependency: "@tauri-apps+cli-linux-x64-gnu@" };
+  }
+  throw new Error(`Unsupported Athria desktop host: ${process.platform}/${process.arch}. Supported hosts are Windows x64, macOS ARM64 and Linux x64.`);
 }
 
 function assertNativeDependencies(host: HostBuild): void {
@@ -125,10 +128,10 @@ assertNativeDependencies(host);
 if (action === "service") buildService(host);
 else if (action === "dev") tauri(host, ["dev", "--features", "dev-service", "--config", "src-tauri/tauri.dev.conf.json"], false);
 else {
-  if (action === "msi" && host.platform !== "windows") throw new Error("release:msi is available only on Windows x64. Use release:native on macOS.");
+  if (action === "msi" && host.platform !== "windows") throw new Error("release:msi is available only on Windows x64. Use release:native on macOS or Linux.");
   buildService(host);
   if (action === "debug") tauri(host, host.platform === "macos" ? ["build", "--debug", "--bundles", "app"] : ["build", "--debug", "--no-bundle"]);
   if (action === "app") tauri(host, host.platform === "macos" ? ["build", "--bundles", "app"] : ["build", "--no-bundle"]);
-  if (action === "release") tauri(host, ["build", "--bundles", host.platform === "macos" ? "app,dmg" : "msi"]);
+  if (action === "release") tauri(host, ["build", "--bundles", host.platform === "macos" ? "app,dmg" : host.platform === "linux" ? "appimage,deb" : "msi"]);
   if (action === "msi") tauri(host, ["build", "--bundles", "msi"]);
 }

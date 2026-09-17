@@ -81,7 +81,14 @@ fn platform_config_root() -> Result<PathBuf, String> {
     Ok(home.join("Library").join("Application Support").join("Athria"))
 }
 
-#[cfg(not(any(windows, target_os = "macos")))]
+#[cfg(target_os = "linux")]
+fn platform_config_root() -> Result<PathBuf, String> {
+    if let Some(root) = std::env::var_os("XDG_DATA_HOME").filter(|value| !value.is_empty()) { return Ok(PathBuf::from(root).join("athria")); }
+    let home = std::env::var_os("HOME").map(PathBuf::from).ok_or_else(|| "Athria could not determine the Linux home folder.".to_string())?;
+    Ok(home.join(".local").join("share").join("athria"))
+}
+
+#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
 fn platform_config_root() -> Result<PathBuf, String> { Err("Unsupported Athria desktop host.".to_string()) }
 
 fn read_config_from(root: &Path) -> Option<PathBuf> {
