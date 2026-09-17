@@ -1,6 +1,6 @@
 //! Replays the TypeScript Phase 5 application contract against Rust.
 
-use std::rc::Rc;
+use std::sync::Arc;
 
 use athria_application::{AthriaApplication, AthriaError};
 use athria_core::FixedClock;
@@ -41,7 +41,7 @@ fn execute(app: &AthriaApplication<SqliteStore>, operation: &str, input: &Value)
 #[test]
 fn typescript_and_rust_application_contracts_match() {
     let fixture: Value = serde_json::from_str(include_str!("fixtures/application.json")).expect("fixture parses");
-    let clock = Rc::new(FixedClock::new(fixture["now"].as_str().unwrap()));
+    let clock = Arc::new(FixedClock::new(fixture["now"].as_str().unwrap()));
     let store = SqliteStore::open_in_memory_with_clock(clock.clone()).expect("in-memory store opens");
     let app = AthriaApplication::with_clock(store, "local-user", clock);
 

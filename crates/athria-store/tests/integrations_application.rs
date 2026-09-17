@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use athria_application::AthriaApplication;
 use athria_core::FixedClock;
@@ -7,7 +7,7 @@ use serde_json::json;
 
 const NOW: &str = "2026-09-17T04:00:00.000Z";
 fn app() -> AthriaApplication<SqliteStore> {
-    let clock = Rc::new(FixedClock::new(NOW));
+    let clock = Arc::new(FixedClock::new(NOW));
     AthriaApplication::with_clock(SqliteStore::open_in_memory_with_clock(clock.clone()).unwrap(), "local-user", clock)
 }
 

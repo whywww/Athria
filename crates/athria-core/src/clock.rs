@@ -11,7 +11,7 @@ use jiff::Timestamp;
 use crate::tz::iso_from_millis;
 
 /// Source of the current instant as an ISO-8601 UTC string.
-pub trait Clock: fmt::Debug {
+pub trait Clock: fmt::Debug + Send + Sync {
     /// `new Date().toISOString()` equivalent.
     fn now_iso(&self) -> String;
 }

@@ -5,7 +5,7 @@
 //! wiring the desktop shell will use. TypeScript parity for the same use cases
 //! is covered by the fixture replay (`scripts/application-compat.ts`).
 
-use std::rc::Rc;
+use std::sync::Arc;
 
 use athria_application::AthriaApplication;
 use athria_core::{AthriaErrorCode, FixedClock};
@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 const NOW: &str = "2026-09-17T04:00:00.000Z";
 
 fn test_app() -> AthriaApplication<SqliteStore> {
-    let clock = Rc::new(FixedClock::new(NOW));
+    let clock = Arc::new(FixedClock::new(NOW));
     let store = SqliteStore::open_in_memory_with_clock(clock.clone()).expect("in-memory store opens");
     AthriaApplication::with_clock(store, "local-user", clock)
 }

@@ -20,7 +20,7 @@
 use std::collections::{HashMap, HashSet};
 use std::cell::RefCell;
 use std::ops::RangeInclusive;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use athria_core::date::{add_days, day_difference, monday_weekday};
 use athria_core::schema::{
@@ -270,18 +270,18 @@ fn session_with_status(session: &Value, status: &str, updated_at: &str) -> Value
 pub struct AthriaApplication<S: AthriaStore> {
     store: S,
     owner_id: String,
-    clock: Rc<dyn Clock>,
+    clock: Arc<dyn Clock>,
     integration_previews: RefCell<HashMap<String, Value>>,
 }
 
 impl<S: AthriaStore> AthriaApplication<S> {
     /// `new AthriaApplication(store)`: the local owner and the system clock.
     pub fn new(store: S) -> Self {
-        Self::with_clock(store, DEFAULT_OWNER_ID, Rc::new(SystemClock))
+        Self::with_clock(store, DEFAULT_OWNER_ID, Arc::new(SystemClock))
     }
 
     /// The TypeScript constructor with an explicit `ownerId` and `now`.
-    pub fn with_clock(store: S, owner_id: impl Into<String>, clock: Rc<dyn Clock>) -> Self {
+    pub fn with_clock(store: S, owner_id: impl Into<String>, clock: Arc<dyn Clock>) -> Self {
         Self { store, owner_id: owner_id.into(), clock, integration_previews: RefCell::new(HashMap::new()) }
     }
 

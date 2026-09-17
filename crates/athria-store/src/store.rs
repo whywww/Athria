@@ -9,7 +9,7 @@
 
 use std::cell::Cell;
 use std::path::Path;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use athria_application::RecordImportBatchInput;
 use athria_core::{AthriaError, AthriaErrorCode, Result};
@@ -213,7 +213,7 @@ const WELLNESS_FIELD_ORDER: [&str; 24] = [
 #[derive(Debug)]
 pub struct SqliteStore {
     connection: Connection,
-    clock: Rc<dyn Clock>,
+    clock: Arc<dyn Clock>,
     /// Nested-transaction depth; SQLite does not allow nested `BEGIN`, so
     /// nested calls use savepoints like the `bun:sqlite` transactions the
     /// TypeScript store relies on.
@@ -225,27 +225,27 @@ impl SqliteStore {
     /// has no tables yet. Databases from any other schema version fail with
     /// `SCHEMA_VERSION_UNSUPPORTED` instead of being migrated or modified.
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
-        Self::open_with_clock(path, Rc::new(SystemClock))
+        Self::open_with_clock(path, Arc::new(SystemClock))
     }
 
     /// In-memory store used by unit tests; bootstraps a fresh v24 database.
     pub fn open_in_memory() -> Result<Self> {
-        Self::open_in_memory_with_clock(Rc::new(SystemClock))
+        Self::open_in_memory_with_clock(Arc::new(SystemClock))
     }
 
     /// Opens a database with an injected clock, for fixtures and tests.
-    pub fn open_with_clock(path: impl AsRef<Path>, clock: Rc<dyn Clock>) -> Result<Self> {
+    pub fn open_with_clock(path: impl AsRef<Path>, clock: Arc<dyn Clock>) -> Result<Self> {
         let connection = Connection::open(path).map_err(database_error)?;
         Self::from_connection(connection, clock)
     }
 
     /// In-memory store with an injected clock, for fixtures and tests.
-    pub fn open_in_memory_with_clock(clock: Rc<dyn Clock>) -> Result<Self> {
+    pub fn open_in_memory_with_clock(clock: Arc<dyn Clock>) -> Result<Self> {
         let connection = Connection::open_in_memory().map_err(database_error)?;
         Self::from_connection(connection, clock)
     }
 
-    fn from_connection(connection: Connection, clock: Rc<dyn Clock>) -> Result<Self> {
+    fn from_connection(connection: Connection, clock: Arc<dyn Clock>) -> Result<Self> {
         connection.execute_batch("PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;").map_err(database_error)?;
         connection.query_row("PRAGMA journal_mode=WAL", [], |row| row.get::<_, String>(0)).map_err(database_error)?;
         let store = Self { connection, clock, depth: Cell::new(0) };
@@ -840,19 +840,18 @@ mod tests {
     /// tie-breaks never depend on row insertion order.
     #[derive(Debug)]
     struct TickingClock {
-        current: Cell<i64>,
+        current: std::sync::atomic::AtomicI64,
     }
 
     impl TickingClock {
         fn new(anchor_millis: i64) -> Self {
-            Self { current: Cell::new(anchor_millis) }
+            Self { current: std::sync::atomic::AtomicI64::new(anchor_millis) }
         }
     }
 
     impl Clock for TickingClock {
         fn now_iso(&self) -> String {
-            let value = crate::tz::iso_from_millis(self.current.get());
-            self.current.set(self.current.get() + 60_000);
+            let value = crate::tz::iso_from_millis(self.current.fetch_add(60_000, std::sync::atomic::Ordering::SeqCst));
             value
         }
     }
@@ -988,7 +987,7 @@ mod tests {
 
     #[test]
     fn wellness_imports_map_intervals_fields_and_keep_other_sources() {
-        let store = SqliteStore::open_in_memory_with_clock(Rc::new(crate::clock::FixedClock::new("2026-09-17T04:00:00.000Z"))).unwrap();
+        let store = SqliteStore::open_in_memory_with_clock(Arc::new(crate::clock::FixedClock::new("2026-09-17T04:00:00.000Z"))).unwrap();
         let stored = store
             .upsert_wellness(
                 DEFAULT_OWNER_ID,
@@ -1034,7 +1033,7 @@ mod tests {
     #[test]
     fn import_batches_are_idempotent_per_content_hash() {
         // 2026-09-17T04:00:00.000Z, ticking forward one minute per call.
-        let store = SqliteStore::open_in_memory_with_clock(Rc::new(TickingClock::new(1_789_617_600_000))).unwrap();
+        let store = SqliteStore::open_in_memory_with_clock(Arc::new(TickingClock::new(1_789_617_600_000))).unwrap();
         let data = json!({ "workouts": 3 });
         let mut input = RecordImportBatchInput {
             owner_id: DEFAULT_OWNER_ID,

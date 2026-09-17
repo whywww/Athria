@@ -1164,10 +1164,10 @@ impl SqliteStore {
 mod tests {
     use super::*;
     use crate::clock::FixedClock;
-    use std::rc::Rc;
+    use std::sync::Arc;
 
     fn store() -> SqliteStore {
-        SqliteStore::open_in_memory_with_clock(Rc::new(FixedClock::new("2026-09-17T04:00:00.000Z"))).unwrap()
+        SqliteStore::open_in_memory_with_clock(Arc::new(FixedClock::new("2026-09-17T04:00:00.000Z"))).unwrap()
     }
 
     fn run(source: &str, external_id: &str, id: &str, start_at: &str, end_at: &str, minutes: i64, name: &str) -> Value {
@@ -1322,4 +1322,3 @@ mod tests {
         assert_eq!(parse_json_column(&stored).unwrap()["domains"], json!([]));
     }
 }
-

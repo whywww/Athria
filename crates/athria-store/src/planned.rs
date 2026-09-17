@@ -344,10 +344,10 @@ mod tests {
     use super::*;
     use crate::clock::FixedClock;
     use crate::store::DEFAULT_OWNER_ID;
-    use std::rc::Rc;
+    use std::sync::Arc;
 
     fn store() -> SqliteStore {
-        SqliteStore::open_in_memory_with_clock(Rc::new(FixedClock::new("2026-09-17T04:00:00.000Z"))).unwrap()
+        SqliteStore::open_in_memory_with_clock(Arc::new(FixedClock::new("2026-09-17T04:00:00.000Z"))).unwrap()
     }
 
     fn session(id: &str, scheduled_date: &str, order: i64, name: &str) -> Value {
