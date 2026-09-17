@@ -40,6 +40,9 @@ version = "0.1.0"
 dependencies = [
  "athria-application",
  "athria-core",
+ "athria-store",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
