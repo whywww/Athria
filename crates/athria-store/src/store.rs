@@ -221,6 +221,11 @@ pub struct SqliteStore {
 }
 
 impl SqliteStore {
+    /// Stable workspace identity stored in schema v24 vault metadata. It is
+    /// independent from the database's current filesystem location.
+    pub fn database_uuid(&self) -> Result<String> {
+        self.connection.query_row("SELECT database_uuid FROM vault_meta WHERE id = 1", [], |row| row.get(0)).map_err(database_error)
+    }
     /// Opens an Athria database, creating and bootstrapping it when the file
     /// has no tables yet. Databases from any other schema version fail with
     /// `SCHEMA_VERSION_UNSUPPORTED` instead of being migrated or modified.
