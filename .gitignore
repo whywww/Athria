@@ -10,6 +10,9 @@ coverage/
 dist-types/
 *.log
 
+# One-off UI verification artifacts
+verify-*
+
 # Local secrets and signing material
 .env
 .env.*
