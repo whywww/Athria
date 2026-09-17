@@ -24,7 +24,7 @@ fn fold_char(character: char) -> char {
 /// Approximation of the default ICU collation used by `localeCompare` for
 /// identifier-shaped ASCII keys: case-insensitive primary order, lowercase
 /// before uppercase on case-only ties.
-pub(crate) fn js_locale_compare(left: &str, right: &str) -> Ordering {
+pub fn js_locale_compare(left: &str, right: &str) -> Ordering {
     let left_folded: Vec<char> = left.chars().map(fold_char).collect();
     let right_folded: Vec<char> = right.chars().map(fold_char).collect();
     match left_folded.cmp(&right_folded) {

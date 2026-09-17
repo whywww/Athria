@@ -6,7 +6,7 @@
 //! `civil_from_days` algorithms, without pulling in a calendar crate.
 
 /// Days since 1970-01-01 for a proleptic Gregorian date.
-pub(crate) fn days_from_civil(year: i64, month: u32, day: u32) -> i64 {
+pub fn days_from_civil(year: i64, month: u32, day: u32) -> i64 {
     let adjusted_year = if month <= 2 { year - 1 } else { year };
     let era = if adjusted_year >= 0 { adjusted_year } else { adjusted_year - 399 } / 400;
     let year_of_era = adjusted_year - era * 400;
@@ -17,7 +17,7 @@ pub(crate) fn days_from_civil(year: i64, month: u32, day: u32) -> i64 {
 }
 
 /// Inverse of [`days_from_civil`]: `(year, month, day)` for a day number.
-pub(crate) fn civil_from_days(days: i64) -> (i64, u32, u32) {
+pub fn civil_from_days(days: i64) -> (i64, u32, u32) {
     let shifted = days + 719_468;
     let era = if shifted >= 0 { shifted } else { shifted - 146_096 } / 146_097;
     let day_of_era = shifted - era * 146_097;
@@ -31,7 +31,7 @@ pub(crate) fn civil_from_days(days: i64) -> (i64, u32, u32) {
 }
 
 /// Parses the schema-validated `YYYY-MM-DD` form.
-pub(crate) fn parse_iso_date(date: &str) -> (i64, u32, u32) {
+pub fn parse_iso_date(date: &str) -> (i64, u32, u32) {
     let mut parts = date.split('-');
     let year = parts.next().expect("date must start with a year").parse().expect("year must be numeric");
     let month = parts.next().expect("date must contain a month").parse().expect("month must be numeric");
@@ -39,32 +39,32 @@ pub(crate) fn parse_iso_date(date: &str) -> (i64, u32, u32) {
     (year, month, day)
 }
 
-pub(crate) fn epoch_day(date: &str) -> i64 {
+pub fn epoch_day(date: &str) -> i64 {
     let (year, month, day) = parse_iso_date(date);
     days_from_civil(year, month, day)
 }
 
-pub(crate) fn format_iso_date(days: i64) -> String {
+pub fn format_iso_date(days: i64) -> String {
     let (year, month, day) = civil_from_days(days);
     format!("{year:04}-{month:02}-{day:02}")
 }
 
-pub(crate) fn add_days(date: &str, days: i64) -> String {
+pub fn add_days(date: &str, days: i64) -> String {
     format_iso_date(epoch_day(date) + days)
 }
 
 /// JavaScript `getUTCDay()`: Sunday is 0 ... Saturday is 6.
-pub(crate) fn utc_weekday(date: &str) -> u32 {
+pub fn utc_weekday(date: &str) -> u32 {
     (epoch_day(date) + 4).rem_euclid(7) as u32
 }
 
 /// The TypeScript `scheduleWeekday` helper: `(getUTCDay() + 6) % 7`, so
 /// Monday is 0 ... Sunday is 6.
-pub(crate) fn monday_weekday(date: &str) -> u32 {
+pub fn monday_weekday(date: &str) -> u32 {
     (utc_weekday(date) + 6) % 7
 }
 
-pub(crate) fn day_difference(from: &str, to: &str) -> i64 {
+pub fn day_difference(from: &str, to: &str) -> i64 {
     epoch_day(to) - epoch_day(from)
 }
 

@@ -7,6 +7,7 @@
 //! `tests/fixtures` prove that both implementations agree until the
 //! TypeScript core is retired.
 
+pub mod date;
 pub mod error;
 pub mod hash;
 pub mod metrics;
@@ -14,11 +15,10 @@ pub mod progression;
 pub mod schedule;
 pub mod validation;
 
-mod date;
 mod json;
 
 pub use error::{AthriaError, AthriaErrorCode, Result};
-pub use hash::{canonical, stable_hash};
+pub use hash::{canonical, js_locale_compare, stable_hash};
 pub use metrics::{
     DataQuality, EnduranceMetrics, MetricResult, StrengthMetrics, TimeRange, TrainingMetrics, calculate_heart_rate_zones, calculate_training_metrics,
     estimate_one_rep_max,
