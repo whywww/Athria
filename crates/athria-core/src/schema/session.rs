@@ -7,8 +7,8 @@
 use serde_json::{Map, Value};
 
 use super::common::*;
-use crate::vocab::DOMAIN_IDS;
 use crate::Result;
+use crate::vocab::DOMAIN_IDS;
 
 /// `modalitySchema`, kept only as source metadata on imported records.
 const MODALITIES: [&str; 5] = ["strength", "endurance", "recovery", "mixed", "unknown"];
@@ -19,10 +19,22 @@ const WEIGHT_UNITS: [&str; 2] = ["kg", "lb"];
 pub fn parse_training_session(value: &Value) -> Result<Value> {
     object(value, "session")?;
     let mut session = Map::new();
-    session.insert("id".into(), Value::String(required_text(value, "id", "session")?));
-    session.insert("ownerId".into(), Value::String(text_or(value, "ownerId", crate::DEFAULT_OWNER_ID)));
-    session.insert("source".into(), Value::String(required_text(value, "source", "session")?));
-    session.insert("externalId".into(), Value::String(required_text(value, "externalId", "session")?));
+    session.insert(
+        "id".into(),
+        Value::String(required_text(value, "id", "session")?),
+    );
+    session.insert(
+        "ownerId".into(),
+        Value::String(text_or(value, "ownerId", crate::DEFAULT_OWNER_ID)),
+    );
+    session.insert(
+        "source".into(),
+        Value::String(required_text(value, "source", "session")?),
+    );
+    session.insert(
+        "externalId".into(),
+        Value::String(required_text(value, "externalId", "session")?),
+    );
     let modality = enum_or(value, "modality", &MODALITIES, "");
     if modality.is_empty() {
         return Err(invalid("session.modality", "expected a modality"));
@@ -30,17 +42,49 @@ pub fn parse_training_session(value: &Value) -> Result<Value> {
     session.insert("modality".into(), Value::String(modality));
     session.insert("domains".into(), domain_array(value, "domains"));
     session.insert("sport".into(), text_or_null(value, "sport"));
-    session.insert("name".into(), Value::String(required_text(value, "name", "session")?));
-    session.insert("startAt".into(), Value::String(required_text(value, "startAt", "session")?));
-    session.insert("endAt".into(), Value::String(required_text(value, "endAt", "session")?));
-    session.insert("durationMinutes".into(), Value::from(required_int(value, "durationMinutes", "session")?));
-    session.insert("status".into(), Value::String(enum_or(value, "status", &["completed"], "completed")));
+    session.insert(
+        "name".into(),
+        Value::String(required_text(value, "name", "session")?),
+    );
+    session.insert(
+        "startAt".into(),
+        Value::String(required_text(value, "startAt", "session")?),
+    );
+    session.insert(
+        "endAt".into(),
+        Value::String(required_text(value, "endAt", "session")?),
+    );
+    session.insert(
+        "durationMinutes".into(),
+        Value::from(required_int(value, "durationMinutes", "session")?),
+    );
+    session.insert(
+        "status".into(),
+        Value::String(enum_or(value, "status", &["completed"], "completed")),
+    );
     session.insert("timezone".into(), text_or_null(value, "timezone"));
-    session.insert("plannedSessionId".into(), text_or_null(value, "plannedSessionId"));
-    session.insert("timePrecision".into(), Value::String(enum_or(value, "timePrecision", &TIME_PRECISIONS, "exact")));
+    session.insert(
+        "plannedSessionId".into(),
+        text_or_null(value, "plannedSessionId"),
+    );
+    session.insert(
+        "timePrecision".into(),
+        Value::String(enum_or(value, "timePrecision", &TIME_PRECISIONS, "exact")),
+    );
     session.insert("sources".into(), parse_sources(value));
-    session.insert("planMatch".into(), match_summary_or_null(value, "planMatch"));
-    session.insert("isPlanMatchExcluded".into(), Value::Bool(value.get("isPlanMatchExcluded").and_then(Value::as_bool).unwrap_or(false)));
+    session.insert(
+        "planMatch".into(),
+        match_summary_or_null(value, "planMatch"),
+    );
+    session.insert(
+        "isPlanMatchExcluded".into(),
+        Value::Bool(
+            value
+                .get("isPlanMatchExcluded")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+        ),
+    );
     session.insert("strengthSets".into(), parse_strength_sets(value));
     session.insert("endurance".into(), parse_endurance(value));
     session.insert("missingFields".into(), string_array(value, "missingFields"));
@@ -80,25 +124,55 @@ fn parse_sources(value: &Value) -> Value {
 
 /// `strengthSets: z.array(strengthSetSchema)`.
 fn parse_strength_sets(value: &Value) -> Value {
-    Value::Array(value.get("strengthSets").and_then(Value::as_array).map(|items| items.iter().map(parse_strength_set).collect()).unwrap_or_default())
+    Value::Array(
+        value
+            .get("strengthSets")
+            .and_then(Value::as_array)
+            .map(|items| items.iter().map(parse_strength_set).collect())
+            .unwrap_or_default(),
+    )
 }
 
 /// `strengthSetSchema.parse(value)`: the four optional fields stay present only
 /// when the source observation carries them.
 fn parse_strength_set(value: &Value) -> Value {
     let mut set = Map::new();
-    set.insert("exerciseRaw".into(), Value::String(text_or(value, "exerciseRaw", "")));
+    set.insert(
+        "exerciseRaw".into(),
+        Value::String(text_or(value, "exerciseRaw", "")),
+    );
     set.insert("exerciseKey".into(), text_or_null(value, "exerciseKey"));
     set.insert("movement".into(), text_or_null(value, "movement"));
-    set.insert("primaryMuscles".into(), string_array(value, "primaryMuscles"));
-    set.insert("secondaryMuscles".into(), string_array(value, "secondaryMuscles"));
-    set.insert("setIndex".into(), Value::from(value.get("setIndex").and_then(Value::as_i64).unwrap_or(0)));
-    set.insert("setType".into(), Value::String(text_or(value, "setType", "normal")));
+    set.insert(
+        "primaryMuscles".into(),
+        string_array(value, "primaryMuscles"),
+    );
+    set.insert(
+        "secondaryMuscles".into(),
+        string_array(value, "secondaryMuscles"),
+    );
+    set.insert(
+        "setIndex".into(),
+        Value::from(value.get("setIndex").and_then(Value::as_i64).unwrap_or(0)),
+    );
+    set.insert(
+        "setType".into(),
+        Value::String(text_or(value, "setType", "normal")),
+    );
     set.insert("weight".into(), number_or_null(value, "weight"));
-    set.insert("weightUnit".into(), nullable_enum(value, "weightUnit", &WEIGHT_UNITS));
+    set.insert(
+        "weightUnit".into(),
+        nullable_enum(value, "weightUnit", &WEIGHT_UNITS),
+    );
     set.insert("reps".into(), number_or_null(value, "reps"));
     set.insert("rpe".into(), number_or_null(value, "rpe"));
-    for key in ["leftWeight", "rightWeight", "durationSeconds", "restSeconds", "plannedRestSeconds"] {
+    for key in [
+        "leftWeight",
+        "rightWeight",
+        "durationSeconds",
+        "restSeconds",
+        "plannedRestSeconds",
+    ] {
         if let Some(entry) = value.get(key) {
             set.insert(key.into(), entry.clone());
         }
@@ -112,13 +186,31 @@ fn parse_endurance(value: &Value) -> Value {
         return Value::Null;
     };
     let mut parsed = Map::new();
-    for key in ["distanceMeters", "averageHeartRate", "maxHeartRate", "averagePowerWatts", "maxPowerWatts"] {
+    for key in [
+        "distanceMeters",
+        "averageHeartRate",
+        "maxHeartRate",
+        "averagePowerWatts",
+        "maxPowerWatts",
+    ] {
         parsed.insert(key.into(), number_or_null(details, key));
     }
-    let zones = details.get("heartRateZoneSeconds").and_then(Value::as_object).map(|entries| {
-        Value::Object(entries.iter().filter(|(_, zone)| zone.as_f64().is_some()).map(|(key, zone)| (key.clone(), zone.clone())).collect())
-    });
-    parsed.insert("heartRateZoneSeconds".into(), zones.unwrap_or_else(|| Value::Object(Map::new())));
+    let zones = details
+        .get("heartRateZoneSeconds")
+        .and_then(Value::as_object)
+        .map(|entries| {
+            Value::Object(
+                entries
+                    .iter()
+                    .filter(|(_, zone)| zone.as_f64().is_some())
+                    .map(|(key, zone)| (key.clone(), zone.clone()))
+                    .collect(),
+            )
+        });
+    parsed.insert(
+        "heartRateZoneSeconds".into(),
+        zones.unwrap_or_else(|| Value::Object(Map::new())),
+    );
     Value::Object(parsed)
 }
 
@@ -152,7 +244,12 @@ mod tests {
     fn sessions_are_rebuilt_in_schema_order() {
         let session = parse_training_session(&write_payload()).unwrap();
         assert_eq!(
-            session.as_object().unwrap().keys().map(String::as_str).collect::<Vec<_>>(),
+            session
+                .as_object()
+                .unwrap()
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
             [
                 "id",
                 "ownerId",
@@ -188,7 +285,8 @@ mod tests {
     #[test]
     fn nested_endurance_and_match_summaries_keep_their_defaults() {
         let mut payload = write_payload();
-        payload["endurance"] = json!({ "distanceMeters": 5000, "heartRateZoneSeconds": { "1": 600 } });
+        payload["endurance"] =
+            json!({ "distanceMeters": 5000, "heartRateZoneSeconds": { "1": 600 } });
         payload["planMatch"] = json!({ "plannedSessionId": "planned-1", "method": "manual" });
         let session = parse_training_session(&payload).unwrap();
         assert_eq!(
@@ -202,16 +300,30 @@ mod tests {
                 "heartRateZoneSeconds": { "1": 600 },
             })
         );
-        assert_eq!(session["planMatch"], json!({ "plannedSessionId": "planned-1", "method": "manual" }));
+        assert_eq!(
+            session["planMatch"],
+            json!({ "plannedSessionId": "planned-1", "method": "manual" })
+        );
     }
 
     #[test]
     fn missing_required_fields_are_rejected() {
-        for key in ["modality", "name", "startAt", "endAt", "durationMinutes", "id"] {
+        for key in [
+            "modality",
+            "name",
+            "startAt",
+            "endAt",
+            "durationMinutes",
+            "id",
+        ] {
             let mut payload = write_payload();
             payload.as_object_mut().unwrap().remove(key);
             let error = parse_training_session(&payload).unwrap_err();
-            assert_eq!(error.code(), crate::AthriaErrorCode::InvalidData, "{key} must be required");
+            assert_eq!(
+                error.code(),
+                crate::AthriaErrorCode::InvalidData,
+                "{key} must be required"
+            );
         }
     }
 }

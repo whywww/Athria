@@ -26,11 +26,16 @@ pub(crate) fn invalid_type(path: &str, expected: &str) -> AthriaError {
 
 /// The object entries of `value`, or a schema violation.
 pub(crate) fn object<'a>(value: &'a Value, path: &str) -> Result<&'a Map<String, Value>> {
-    value.as_object().ok_or_else(|| invalid_type(path, "an object"))
+    value
+        .as_object()
+        .ok_or_else(|| invalid_type(path, "an object"))
 }
 
 pub(crate) fn array<'a>(value: &'a Value, path: &str) -> Result<&'a [Value]> {
-    value.as_array().map(Vec::as_slice).ok_or_else(|| invalid_type(path, "an array"))
+    value
+        .as_array()
+        .map(Vec::as_slice)
+        .ok_or_else(|| invalid_type(path, "an array"))
 }
 
 /// `value[key]`, with `null` for anything missing.
@@ -40,7 +45,11 @@ pub(crate) fn get<'a>(value: &'a Value, key: &str) -> &'a Value {
 
 /// A required string field.
 pub(crate) fn required_text(value: &Value, key: &str, path: &str) -> Result<String> {
-    value.get(key).and_then(Value::as_str).map(str::to_owned).ok_or_else(|| invalid_type(&format!("{path}.{key}"), "a string"))
+    value
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .ok_or_else(|| invalid_type(&format!("{path}.{key}"), "a string"))
 }
 
 /// A required, trimmed string field.
@@ -50,7 +59,11 @@ pub(crate) fn required_trimmed(value: &Value, key: &str, path: &str) -> Result<S
 
 /// A string field with a schema default.
 pub(crate) fn text_or(value: &Value, key: &str, fallback: &str) -> String {
-    value.get(key).and_then(Value::as_str).unwrap_or(fallback).to_owned()
+    value
+        .get(key)
+        .and_then(Value::as_str)
+        .unwrap_or(fallback)
+        .to_owned()
 }
 
 /// A nullable string field: missing, `null`, and non-strings all parse as
@@ -64,7 +77,12 @@ pub(crate) fn text_or_null(value: &Value, key: &str) -> Value {
 
 /// `z.string().trim()` with a schema default.
 pub(crate) fn trimmed_or(value: &Value, key: &str, fallback: &str) -> String {
-    value.get(key).and_then(Value::as_str).map(str::trim).unwrap_or(fallback).to_owned()
+    value
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or(fallback)
+        .to_owned()
 }
 
 /// An enum field with a schema default: values outside `allowed` fall back.
@@ -84,11 +102,19 @@ pub(crate) fn int_or(value: &Value, key: &str, fallback: i64) -> Value {
 
 /// A required integer field.
 pub(crate) fn required_int(value: &Value, key: &str, path: &str) -> Result<i64> {
-    value.get(key).and_then(Value::as_i64).ok_or_else(|| invalid_type(&format!("{path}.{key}"), "an integer"))
+    value
+        .get(key)
+        .and_then(Value::as_i64)
+        .ok_or_else(|| invalid_type(&format!("{path}.{key}"), "an integer"))
 }
 
 /// A required enum field: the value must be one of `allowed`.
-pub(crate) fn required_enum(value: &Value, key: &str, allowed: &[&str], path: &str) -> Result<String> {
+pub(crate) fn required_enum(
+    value: &Value,
+    key: &str,
+    allowed: &[&str],
+    path: &str,
+) -> Result<String> {
     value
         .get(key)
         .and_then(Value::as_str)
@@ -112,8 +138,13 @@ pub(crate) fn match_summary_or_null(value: &Value, key: &str) -> Value {
         return Value::Null;
     };
     let method = enum_or(match_value, "method", &["auto", "manual"], "");
-    match (match_value.get("plannedSessionId").and_then(Value::as_str), method.is_empty()) {
-        (Some(planned_session_id), false) => serde_json::json!({ "plannedSessionId": planned_session_id, "method": method }),
+    match (
+        match_value.get("plannedSessionId").and_then(Value::as_str),
+        method.is_empty(),
+    ) {
+        (Some(planned_session_id), false) => {
+            serde_json::json!({ "plannedSessionId": planned_session_id, "method": method })
+        }
         _ => Value::Null,
     }
 }
@@ -121,7 +152,11 @@ pub(crate) fn match_summary_or_null(value: &Value, key: &str) -> Value {
 /// `z.enum(values).nullable()`: missing, `null` and unknown values parse as
 /// `null`.
 pub(crate) fn nullable_enum(value: &Value, key: &str, allowed: &[&str]) -> Value {
-    match value.get(key).and_then(Value::as_str).filter(|candidate| allowed.contains(candidate)) {
+    match value
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|candidate| allowed.contains(candidate))
+    {
         Some(candidate) => Value::String(candidate.to_owned()),
         None => Value::Null,
     }
@@ -149,14 +184,26 @@ pub(crate) fn number_or_null(value: &Value, key: &str) -> Value {
 /// `z.array(z.string())` with a schema default.
 pub(crate) fn text_array_or(value: &Value, key: &str, fallback: &[&str]) -> Value {
     let items = match value.get(key).and_then(Value::as_array) {
-        Some(items) => items.iter().filter_map(Value::as_str).map(|text| Value::String(text.to_owned())).collect(),
-        None => fallback.iter().map(|text| Value::String((*text).to_owned())).collect(),
+        Some(items) => items
+            .iter()
+            .filter_map(Value::as_str)
+            .map(|text| Value::String(text.to_owned()))
+            .collect(),
+        None => fallback
+            .iter()
+            .map(|text| Value::String((*text).to_owned()))
+            .collect(),
     };
     Value::Array(items)
 }
 
 /// `z.array(z.enum(ids))` with a schema default of every allowed id.
-pub(crate) fn enum_array_or(value: &Value, key: &str, allowed: &[&str], fallback: &[&str]) -> Value {
+pub(crate) fn enum_array_or(
+    value: &Value,
+    key: &str,
+    allowed: &[&str],
+    fallback: &[&str],
+) -> Value {
     let items = match value.get(key).and_then(Value::as_array) {
         Some(items) => items
             .iter()
@@ -164,7 +211,10 @@ pub(crate) fn enum_array_or(value: &Value, key: &str, allowed: &[&str], fallback
             .filter(|candidate| allowed.contains(candidate))
             .map(|text| Value::String(text.to_owned()))
             .collect(),
-        None => fallback.iter().map(|text| Value::String((*text).to_owned())).collect(),
+        None => fallback
+            .iter()
+            .map(|text| Value::String((*text).to_owned()))
+            .collect(),
     };
     Value::Array(items)
 }

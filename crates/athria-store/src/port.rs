@@ -6,7 +6,8 @@
 //! meet. Store failures surface with the stable codes documented on the trait.
 
 use athria_application::{
-    AthriaStore, RecordImportBatchInput, ReplaceSourceSessionsInput, SaveCurrentPlannedSessionsInput, UpdateCurrentPlannedSessionsInput, WriteCounts,
+    AthriaStore, RecordImportBatchInput, ReplaceSourceSessionsInput,
+    SaveCurrentPlannedSessionsInput, UpdateCurrentPlannedSessionsInput, WriteCounts,
 };
 use athria_core::Result;
 use athria_core::vocab::default_profile;
@@ -34,7 +35,12 @@ impl AthriaStore for SqliteStore {
         SqliteStore::list_sessions(self, owner_id, since)
     }
 
-    fn list_sessions_by_source(&self, source: &str, owner_id: &str, since: Option<&str>) -> Result<Vec<Value>> {
+    fn list_sessions_by_source(
+        &self,
+        source: &str,
+        owner_id: &str,
+        since: Option<&str>,
+    ) -> Result<Vec<Value>> {
         SqliteStore::list_sessions_by_source(self, source, owner_id, since)
     }
 
@@ -42,28 +48,67 @@ impl AthriaStore for SqliteStore {
         SqliteStore::upsert_sessions(self, sessions)
     }
 
-    fn replace_source_sessions(&self, input: &ReplaceSourceSessionsInput<'_>) -> Result<WriteCounts> {
+    fn replace_source_sessions(
+        &self,
+        input: &ReplaceSourceSessionsInput<'_>,
+    ) -> Result<WriteCounts> {
         SqliteStore::replace_source_sessions(self, input)
     }
 
-    fn set_training_session_plan_match(&self, owner_id: &str, training_session_id: &str, planned_session_id: Option<&str>, expected_revision: i64)
-    -> Result<Value> {
-        SqliteStore::set_training_session_plan_match(self, owner_id, training_session_id, planned_session_id, expected_revision)
+    fn set_training_session_plan_match(
+        &self,
+        owner_id: &str,
+        training_session_id: &str,
+        planned_session_id: Option<&str>,
+        expected_revision: i64,
+    ) -> Result<Value> {
+        SqliteStore::set_training_session_plan_match(
+            self,
+            owner_id,
+            training_session_id,
+            planned_session_id,
+            expected_revision,
+        )
     }
 
-    fn clear_training_session_plan_exclusion(&self, owner_id: &str, training_session_id: &str) -> Result<Value> {
+    fn clear_training_session_plan_exclusion(
+        &self,
+        owner_id: &str,
+        training_session_id: &str,
+    ) -> Result<Value> {
         SqliteStore::clear_training_session_plan_exclusion(self, owner_id, training_session_id)
     }
 
-    fn set_training_session_type_override(&self, owner_id: &str, training_session_id: &str, domain: &str) -> Result<Value> {
+    fn set_training_session_type_override(
+        &self,
+        owner_id: &str,
+        training_session_id: &str,
+        domain: &str,
+    ) -> Result<Value> {
         SqliteStore::set_training_session_type_override(self, owner_id, training_session_id, domain)
     }
 
-    fn update_manual_training_session(&self, owner_id: &str, training_session_id: &str, start_at: Option<&str>, duration_minutes: Option<i64>) -> Result<Value> {
-        SqliteStore::update_manual_training_session(self, owner_id, training_session_id, start_at, duration_minutes)
+    fn update_manual_training_session(
+        &self,
+        owner_id: &str,
+        training_session_id: &str,
+        start_at: Option<&str>,
+        duration_minutes: Option<i64>,
+    ) -> Result<Value> {
+        SqliteStore::update_manual_training_session(
+            self,
+            owner_id,
+            training_session_id,
+            start_at,
+            duration_minutes,
+        )
     }
 
-    fn delete_manual_training_session(&self, owner_id: &str, training_session_id: &str) -> Result<Option<Value>> {
+    fn delete_manual_training_session(
+        &self,
+        owner_id: &str,
+        training_session_id: &str,
+    ) -> Result<Option<Value>> {
         SqliteStore::delete_manual_training_session(self, owner_id, training_session_id)
     }
 
@@ -100,7 +145,12 @@ impl AthriaStore for SqliteStore {
         SqliteStore::create_template(self, template, owner_id)
     }
 
-    fn update_template(&self, template: &Value, expected_revision: i64, owner_id: &str) -> Result<Value> {
+    fn update_template(
+        &self,
+        template: &Value,
+        expected_revision: i64,
+        owner_id: &str,
+    ) -> Result<Value> {
         SqliteStore::update_template(self, template, expected_revision, owner_id)
     }
 
@@ -123,11 +173,21 @@ impl AthriaStore for SqliteStore {
     /// The `deletedSessionIds` / `updatedSessions` arguments are ignored, like
     /// `AthriaRepository.saveCurrentPlan`: the plan document is the only input
     /// the stored rows are derived from.
-    fn save_current_plan(&self, plan: &Value, expected_revision: i64, _deleted_session_ids: &[String], _updated_sessions: &[Value]) -> Result<Value> {
+    fn save_current_plan(
+        &self,
+        plan: &Value,
+        expected_revision: i64,
+        _deleted_session_ids: &[String],
+        _updated_sessions: &[Value],
+    ) -> Result<Value> {
         SqliteStore::save_current_plan(self, plan, expected_revision)
     }
 
-    fn list_current_planned_sessions(&self, owner_id: &str, scheduled_date: Option<&str>) -> Result<Vec<Value>> {
+    fn list_current_planned_sessions(
+        &self,
+        owner_id: &str,
+        scheduled_date: Option<&str>,
+    ) -> Result<Vec<Value>> {
         SqliteStore::list_current_planned_sessions(self, owner_id, scheduled_date)
     }
 
@@ -135,11 +195,17 @@ impl AthriaStore for SqliteStore {
         SqliteStore::schedule_revision(self, owner_id)
     }
 
-    fn update_current_planned_sessions(&self, input: &UpdateCurrentPlannedSessionsInput<'_>) -> Result<Value> {
+    fn update_current_planned_sessions(
+        &self,
+        input: &UpdateCurrentPlannedSessionsInput<'_>,
+    ) -> Result<Value> {
         SqliteStore::update_current_planned_sessions(self, input)
     }
 
-    fn save_current_planned_sessions(&self, input: &SaveCurrentPlannedSessionsInput<'_>) -> Result<Value> {
+    fn save_current_planned_sessions(
+        &self,
+        input: &SaveCurrentPlannedSessionsInput<'_>,
+    ) -> Result<Value> {
         SqliteStore::save_current_planned_sessions(self, input)
     }
 

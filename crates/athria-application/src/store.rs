@@ -96,15 +96,47 @@ pub trait AthriaStore {
     fn save_profile(&self, profile: &Value) -> Result<Value>;
 
     fn list_sessions(&self, owner_id: &str, since: Option<&str>) -> Result<Vec<Value>>;
-    fn list_sessions_by_source(&self, source: &str, owner_id: &str, since: Option<&str>) -> Result<Vec<Value>>;
+    fn list_sessions_by_source(
+        &self,
+        source: &str,
+        owner_id: &str,
+        since: Option<&str>,
+    ) -> Result<Vec<Value>>;
     fn upsert_sessions(&self, sessions: &[Value]) -> Result<WriteCounts>;
-    fn replace_source_sessions(&self, input: &ReplaceSourceSessionsInput<'_>) -> Result<WriteCounts>;
-    fn set_training_session_plan_match(&self, owner_id: &str, training_session_id: &str, planned_session_id: Option<&str>, expected_revision: i64)
-    -> Result<Value>;
-    fn clear_training_session_plan_exclusion(&self, owner_id: &str, training_session_id: &str) -> Result<Value>;
-    fn set_training_session_type_override(&self, owner_id: &str, training_session_id: &str, domain: &str) -> Result<Value>;
-    fn update_manual_training_session(&self, owner_id: &str, training_session_id: &str, start_at: Option<&str>, duration_minutes: Option<i64>) -> Result<Value>;
-    fn delete_manual_training_session(&self, owner_id: &str, training_session_id: &str) -> Result<Option<Value>>;
+    fn replace_source_sessions(
+        &self,
+        input: &ReplaceSourceSessionsInput<'_>,
+    ) -> Result<WriteCounts>;
+    fn set_training_session_plan_match(
+        &self,
+        owner_id: &str,
+        training_session_id: &str,
+        planned_session_id: Option<&str>,
+        expected_revision: i64,
+    ) -> Result<Value>;
+    fn clear_training_session_plan_exclusion(
+        &self,
+        owner_id: &str,
+        training_session_id: &str,
+    ) -> Result<Value>;
+    fn set_training_session_type_override(
+        &self,
+        owner_id: &str,
+        training_session_id: &str,
+        domain: &str,
+    ) -> Result<Value>;
+    fn update_manual_training_session(
+        &self,
+        owner_id: &str,
+        training_session_id: &str,
+        start_at: Option<&str>,
+        duration_minutes: Option<i64>,
+    ) -> Result<Value>;
+    fn delete_manual_training_session(
+        &self,
+        owner_id: &str,
+        training_session_id: &str,
+    ) -> Result<Option<Value>>;
     fn delete_training_session(&self, owner_id: &str, training_session_id: &str) -> Result<()>;
 
     fn get_wellness(&self, owner_id: &str, day: &str) -> Result<Option<Value>>;
@@ -115,17 +147,38 @@ pub trait AthriaStore {
     fn list_templates(&self, owner_id: &str) -> Result<Vec<Value>>;
     fn get_template(&self, id: &str, owner_id: &str) -> Result<Option<Value>>;
     fn create_template(&self, template: &Value, owner_id: &str) -> Result<Value>;
-    fn update_template(&self, template: &Value, expected_revision: i64, owner_id: &str) -> Result<Value>;
+    fn update_template(
+        &self,
+        template: &Value,
+        expected_revision: i64,
+        owner_id: &str,
+    ) -> Result<Value>;
     fn delete_template(&self, id: &str, expected_revision: i64, owner_id: &str) -> Result<()>;
     fn list_dismissed_template_ids(&self, owner_id: &str) -> Result<Vec<String>>;
     fn dismiss_template(&self, id: &str, owner_id: &str) -> Result<()>;
 
     fn get_current_plan(&self, owner_id: &str) -> Result<Option<Value>>;
-    fn save_current_plan(&self, plan: &Value, expected_revision: i64, deleted_session_ids: &[String], updated_sessions: &[Value]) -> Result<Value>;
-    fn list_current_planned_sessions(&self, owner_id: &str, scheduled_date: Option<&str>) -> Result<Vec<Value>>;
+    fn save_current_plan(
+        &self,
+        plan: &Value,
+        expected_revision: i64,
+        deleted_session_ids: &[String],
+        updated_sessions: &[Value],
+    ) -> Result<Value>;
+    fn list_current_planned_sessions(
+        &self,
+        owner_id: &str,
+        scheduled_date: Option<&str>,
+    ) -> Result<Vec<Value>>;
     fn schedule_revision(&self, owner_id: &str) -> Result<i64>;
-    fn update_current_planned_sessions(&self, input: &UpdateCurrentPlannedSessionsInput<'_>) -> Result<Value>;
-    fn save_current_planned_sessions(&self, input: &SaveCurrentPlannedSessionsInput<'_>) -> Result<Value>;
+    fn update_current_planned_sessions(
+        &self,
+        input: &UpdateCurrentPlannedSessionsInput<'_>,
+    ) -> Result<Value>;
+    fn save_current_planned_sessions(
+        &self,
+        input: &SaveCurrentPlannedSessionsInput<'_>,
+    ) -> Result<Value>;
 
     fn record_import_batch(&self, input: &RecordImportBatchInput<'_>) -> Result<Value>;
     fn latest_import_batch(&self, owner_id: &str, source: &str) -> Result<Option<Value>>;

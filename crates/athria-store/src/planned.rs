@@ -41,7 +41,11 @@ fn weekly_session_projection(session: &Value, status: &str) -> Value {
 fn component_domains(session: &Value) -> Vec<String> {
     let mut domains: Vec<String> = Vec::new();
     for component in array(session, "components") {
-        if let Some(domain) = component.get("domain").and_then(|domain| domain.get("value")).and_then(Value::as_str) {
+        if let Some(domain) = component
+            .get("domain")
+            .and_then(|domain| domain.get("value"))
+            .and_then(Value::as_str)
+        {
             if !domains.iter().any(|existing| existing == domain) {
                 domains.push(domain.to_string());
             }
@@ -53,16 +57,36 @@ fn component_domains(session: &Value) -> Vec<String> {
 /// `phaseRefs`: one reference per resolved component domain, resolved through
 /// the plan's domain progressions and the phase covering the week.
 fn phase_refs(plan: &Value, session: &Value, week_number: i64) -> Result<Value> {
-    let progressions = plan.get("mesocycle").and_then(|mesocycle| mesocycle.get("domainProgressions")).and_then(Value::as_array);
+    let progressions = plan
+        .get("mesocycle")
+        .and_then(|mesocycle| mesocycle.get("domainProgressions"))
+        .and_then(Value::as_array);
     let mut refs = Vec::new();
     for domain in component_domains(session) {
         let progression = progressions
-            .and_then(|items| items.iter().find(|item| text_or(item, "domain", "") == domain.as_str()))
-            .ok_or_else(|| AthriaError::new(AthriaErrorCode::InvalidData, format!("plan is missing the `{domain}` domain progression")))?;
+            .and_then(|items| {
+                items
+                    .iter()
+                    .find(|item| text_or(item, "domain", "") == domain.as_str())
+            })
+            .ok_or_else(|| {
+                AthriaError::new(
+                    AthriaErrorCode::InvalidData,
+                    format!("plan is missing the `{domain}` domain progression"),
+                )
+            })?;
         let phase = array(progression, "phases")
             .iter()
-            .find(|phase| week_number >= integer(phase, "startWeek") && week_number <= integer(phase, "endWeek"))
-            .ok_or_else(|| AthriaError::new(AthriaErrorCode::InvalidData, format!("plan is missing a `{domain}` phase covering week {week_number}")))?;
+            .find(|phase| {
+                week_number >= integer(phase, "startWeek")
+                    && week_number <= integer(phase, "endWeek")
+            })
+            .ok_or_else(|| {
+                AthriaError::new(
+                    AthriaErrorCode::InvalidData,
+                    format!("plan is missing a `{domain}` phase covering week {week_number}"),
+                )
+            })?;
         refs.push(json!({ "domain": domain, "phaseId": text_or(phase, "id", "") }));
     }
     Ok(Value::Array(refs))
@@ -84,7 +108,11 @@ fn project_session(
     let scheduled_date = text_or(session, "scheduledDate", "");
     let entry = completed.get(session_id);
     let stored_status = text_or(session, "status", "planned");
-    let status = if entry.is_some() { "completed" } else { stored_status };
+    let status = if entry.is_some() {
+        "completed"
+    } else {
+        stored_status
+    };
     let display_state = if entry.is_some() {
         "completed"
     } else if stored_status == "skipped" {
@@ -97,7 +125,11 @@ fn project_session(
     let (completed_training_session_id, completed_at, completion_source) = match entry {
         Some((workout, _)) => {
             let workout_id = text_or(workout, "id", "");
-            let source = if sources.get(workout_id).is_some_and(|summaries| summaries.iter().any(|summary| text_or(summary, "source", "") != "manual")) {
+            let source = if sources.get(workout_id).is_some_and(|summaries| {
+                summaries
+                    .iter()
+                    .any(|summary| text_or(summary, "source", "") != "manual")
+            }) {
                 "import"
             } else {
                 "manual"
@@ -152,8 +184,14 @@ fn project_session(
 impl SqliteStore {
     /// `listCurrentPlannedSessions`: every scheduled occurrence of the current
     /// plan with completion state derived from plan matches.
-    pub fn list_current_planned_sessions(&self, owner_id: &str, scheduled_date: Option<&str>) -> Result<Vec<Value>> {
-        let Some(plan) = self.get_current_plan(owner_id)? else { return Ok(Vec::new()) };
+    pub fn list_current_planned_sessions(
+        &self,
+        owner_id: &str,
+        scheduled_date: Option<&str>,
+    ) -> Result<Vec<Value>> {
+        let Some(plan) = self.get_current_plan(owner_id)? else {
+            return Ok(Vec::new());
+        };
         let timestamp = text_or(&plan, "updatedAt", "").to_string();
         let plan_revision = integer(&plan, "revision");
         let mut completed: HashMap<String, (Value, String)> = HashMap::new();
@@ -163,13 +201,24 @@ impl SqliteStore {
                 .prepare("SELECT planned_session_id, training_session_id, method FROM plan_workout_matches WHERE owner_id = ?1")
                 .map_err(database_error)?;
             let rows = statement
-                .query_map(params![owner_id], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?)))
+                .query_map(params![owner_id], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                })
                 .map_err(database_error)?;
             for row in rows {
-                let (planned_session_id, training_session_id, method) = row.map_err(database_error)?;
+                let (planned_session_id, training_session_id, method) =
+                    row.map_err(database_error)?;
                 let data: Option<String> = self
                     .sqlite()
-                    .query_row("SELECT data FROM training_sessions WHERE owner_id = ?1 AND id = ?2", params![owner_id, training_session_id], |row| row.get(0))
+                    .query_row(
+                        "SELECT data FROM training_sessions WHERE owner_id = ?1 AND id = ?2",
+                        params![owner_id, training_session_id],
+                        |row| row.get(0),
+                    )
                     .optional()
                     .map_err(database_error)?;
                 if let Some(data) = data {
@@ -181,11 +230,25 @@ impl SqliteStore {
         let today = crate::tz::local_date(&self.now(), &self.profile_timezone(owner_id)?)?;
 
         let mut sessions = Vec::new();
-        if let Some(weeks) = plan.get("mesocycle").and_then(|mesocycle| mesocycle.get("weeks")).and_then(Value::as_array) {
+        if let Some(weeks) = plan
+            .get("mesocycle")
+            .and_then(|mesocycle| mesocycle.get("weeks"))
+            .and_then(Value::as_array)
+        {
             for week in weeks {
                 let week_number = integer(week, "weekNumber");
                 for session in array(week, "sessions") {
-                    sessions.push(project_session(&plan, session, week_number, owner_id, plan_revision, &timestamp, &today, &completed, &sources)?);
+                    sessions.push(project_session(
+                        &plan,
+                        session,
+                        week_number,
+                        owner_id,
+                        plan_revision,
+                        &timestamp,
+                        &today,
+                        &completed,
+                        &sources,
+                    )?);
                 }
             }
         }
@@ -193,20 +256,29 @@ impl SqliteStore {
             sessions.retain(|session| text_or(session, "scheduledDate", "") == date);
         }
         sessions.sort_by(|left, right| {
-            js_locale_compare(text_or(left, "scheduledDate", ""), text_or(right, "scheduledDate", ""))
-                .then_with(|| integer(left, "order").cmp(&integer(right, "order")))
+            js_locale_compare(
+                text_or(left, "scheduledDate", ""),
+                text_or(right, "scheduledDate", ""),
+            )
+            .then_with(|| integer(left, "order").cmp(&integer(right, "order")))
         });
         Ok(sessions)
     }
 
     /// `scheduleRevision`: current plan revision, 0 without a plan.
     pub fn schedule_revision(&self, owner_id: &str) -> Result<i64> {
-        Ok(self.get_current_plan(owner_id)?.map(|plan| integer(&plan, "revision")).unwrap_or(0))
+        Ok(self
+            .get_current_plan(owner_id)?
+            .map(|plan| integer(&plan, "revision"))
+            .unwrap_or(0))
     }
 
     /// `updateCurrentPlannedSessions`: replace occurrences by id, record one
     /// event per occurrence and bump the plan revision.
-    pub fn update_current_planned_sessions(&self, input: &UpdateCurrentPlannedSessionsInput<'_>) -> Result<Value> {
+    pub fn update_current_planned_sessions(
+        &self,
+        input: &UpdateCurrentPlannedSessionsInput<'_>,
+    ) -> Result<Value> {
         let sessions = self.transaction(&mut || {
             let current = self
                 .get_current_plan(input.owner_id)?
@@ -282,25 +354,49 @@ impl SqliteStore {
 
     /// `saveCurrentPlannedSessions`: insert or replace one scheduled date of
     /// the current plan and return the fresh projection for that date.
-    pub fn save_current_planned_sessions(&self, input: &SaveCurrentPlannedSessionsInput<'_>) -> Result<Value> {
+    pub fn save_current_planned_sessions(
+        &self,
+        input: &SaveCurrentPlannedSessionsInput<'_>,
+    ) -> Result<Value> {
         let current = self
             .get_current_plan(input.owner_id)?
             .ok_or_else(|| AthriaError::new(AthriaErrorCode::NoCurrentPlan, "NO_CURRENT_PLAN"))?;
         let revision = integer(&current, "revision");
         if revision != input.expected_revision {
-            return Err(AthriaError::new(AthriaErrorCode::PlannedSessionRevisionConflict, "PLANNED_SESSION_REVISION_CONFLICT"));
+            return Err(AthriaError::new(
+                AthriaErrorCode::PlannedSessionRevisionConflict,
+                "PLANNED_SESSION_REVISION_CONFLICT",
+            ));
         }
-        let Some(target_week) = input.sessions.first().map(|session| integer(session, "weekNumber")).filter(|week| *week != 0) else {
-            return Err(AthriaError::new(AthriaErrorCode::PlanWeekNotFound, "PLAN_WEEK_NOT_FOUND"));
+        let Some(target_week) = input
+            .sessions
+            .first()
+            .map(|session| integer(session, "weekNumber"))
+            .filter(|week| *week != 0)
+        else {
+            return Err(AthriaError::new(
+                AthriaErrorCode::PlanWeekNotFound,
+                "PLAN_WEEK_NOT_FOUND",
+            ));
         };
         let replace = input.mode == "replace";
         let mut weeks: Vec<Value> = Vec::new();
-        if let Some(current_weeks) = current.get("mesocycle").and_then(|mesocycle| mesocycle.get("weeks")).and_then(Value::as_array) {
+        if let Some(current_weeks) = current
+            .get("mesocycle")
+            .and_then(|mesocycle| mesocycle.get("weeks"))
+            .and_then(Value::as_array)
+        {
             for week in current_weeks {
                 let mut updated = week.clone();
                 if integer(week, "weekNumber") == target_week {
                     let mut sessions: Vec<Value> = if replace {
-                        array(week, "sessions").iter().filter(|session| text_or(session, "scheduledDate", "") != input.scheduled_date).cloned().collect()
+                        array(week, "sessions")
+                            .iter()
+                            .filter(|session| {
+                                text_or(session, "scheduledDate", "") != input.scheduled_date
+                            })
+                            .cloned()
+                            .collect()
                     } else {
                         array(week, "sessions").to_vec()
                     };
@@ -327,7 +423,13 @@ impl SqliteStore {
 
     /// `AthriaRepository.saveCurrentPlan` writes the row with the plan's own
     /// revision and timestamp columns.
-    pub(crate) fn write_current_plan(&self, owner_id: &str, plan: &Value, revision: i64, updated_at: &str) -> Result<()> {
+    pub(crate) fn write_current_plan(
+        &self,
+        owner_id: &str,
+        plan: &Value,
+        revision: i64,
+        updated_at: &str,
+    ) -> Result<()> {
         self.sqlite()
             .execute(
                 "INSERT INTO current_mesocycles(owner_id, data, revision, updated_at) VALUES (?1, ?2, ?3, ?4)
@@ -347,7 +449,10 @@ mod tests {
     use std::sync::Arc;
 
     fn store() -> SqliteStore {
-        SqliteStore::open_in_memory_with_clock(Arc::new(FixedClock::new("2026-09-17T04:00:00.000Z"))).unwrap()
+        SqliteStore::open_in_memory_with_clock(Arc::new(FixedClock::new(
+            "2026-09-17T04:00:00.000Z",
+        )))
+        .unwrap()
     }
 
     fn session(id: &str, scheduled_date: &str, order: i64, name: &str) -> Value {
@@ -388,27 +493,62 @@ mod tests {
     fn projects_scheduled_occurrences_with_display_states_and_schema_key_order() {
         let store = store();
         store.save_current_plan(&plan(), 0).unwrap();
-        let sessions = store.list_current_planned_sessions(DEFAULT_OWNER_ID, None).unwrap();
+        let sessions = store
+            .list_current_planned_sessions(DEFAULT_OWNER_ID, None)
+            .unwrap();
         assert_eq!(sessions.len(), 2);
 
         let keys: Vec<&String> = sessions[0].as_object().unwrap().keys().collect();
         assert_eq!(
             keys,
             [
-                "id", "occurrenceId", "ownerId", "planRevision", "scheduledDate", "order", "weekNumber", "phaseRefs", "templateRef", "name", "intent",
-                "recoveryDemand", "durationMinutes", "keySession", "components", "progressionNote", "schedulingRationale", "exerciseOverrides",
-                "legacySnapshot", "notes", "overrideReason", "status", "displayState", "completedTrainingSessionId", "completedAt", "completionSource",
-                "match", "createdAt", "updatedAt",
+                "id",
+                "occurrenceId",
+                "ownerId",
+                "planRevision",
+                "scheduledDate",
+                "order",
+                "weekNumber",
+                "phaseRefs",
+                "templateRef",
+                "name",
+                "intent",
+                "recoveryDemand",
+                "durationMinutes",
+                "keySession",
+                "components",
+                "progressionNote",
+                "schedulingRationale",
+                "exerciseOverrides",
+                "legacySnapshot",
+                "notes",
+                "overrideReason",
+                "status",
+                "displayState",
+                "completedTrainingSessionId",
+                "completedAt",
+                "completionSource",
+                "match",
+                "createdAt",
+                "updatedAt",
             ]
         );
         assert_eq!(sessions[0]["occurrenceId"], json!("plan:2026-09-10"));
         assert_eq!(sessions[0]["displayState"], json!("unrecorded"));
-        assert_eq!(sessions[0]["phaseRefs"], json!([{ "domain": "endurance", "phaseId": "phase-1" }]));
+        assert_eq!(
+            sessions[0]["phaseRefs"],
+            json!([{ "domain": "endurance", "phaseId": "phase-1" }])
+        );
         assert_eq!(sessions[0]["createdAt"], json!("2026-09-01T04:00:00.000Z"));
         assert_eq!(sessions[1]["displayState"], json!("scheduled"));
-        assert_eq!(sessions[1]["phaseRefs"], json!([{ "domain": "endurance", "phaseId": "phase-2" }]));
+        assert_eq!(
+            sessions[1]["phaseRefs"],
+            json!([{ "domain": "endurance", "phaseId": "phase-2" }])
+        );
 
-        let filtered = store.list_current_planned_sessions(DEFAULT_OWNER_ID, Some("2026-09-20")).unwrap();
+        let filtered = store
+            .list_current_planned_sessions(DEFAULT_OWNER_ID, Some("2026-09-20"))
+            .unwrap();
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0]["id"], json!("s2"));
     }
@@ -453,8 +593,16 @@ mod tests {
         assert_eq!(action, "move_occurrence");
         assert_eq!((revision_before, revision_after), (1, 2));
 
-        let sessions = store.list_current_planned_sessions(DEFAULT_OWNER_ID, None).unwrap();
-        assert_eq!(sessions.iter().map(|session| text_or(session, "scheduledDate", "").to_string()).collect::<Vec<_>>(), ["2026-09-12", "2026-09-20"]);
+        let sessions = store
+            .list_current_planned_sessions(DEFAULT_OWNER_ID, None)
+            .unwrap();
+        assert_eq!(
+            sessions
+                .iter()
+                .map(|session| text_or(session, "scheduledDate", "").to_string())
+                .collect::<Vec<_>>(),
+            ["2026-09-12", "2026-09-20"]
+        );
     }
 
     #[test]
@@ -471,18 +619,25 @@ mod tests {
             reason_code: None,
             reason_note: None,
         });
-        assert_eq!(stale.unwrap_err().code(), AthriaErrorCode::PlannedSessionRevisionConflict);
+        assert_eq!(
+            stale.unwrap_err().code(),
+            AthriaErrorCode::PlannedSessionRevisionConflict
+        );
 
         moved["weekNumber"] = json!(9);
-        let unknown_week = store.update_current_planned_sessions(&UpdateCurrentPlannedSessionsInput {
-            owner_id: DEFAULT_OWNER_ID,
-            expected_revision: 1,
-            mode: "move_occurrence",
-            sessions: std::slice::from_ref(&moved),
-            reason_code: None,
-            reason_note: None,
-        });
-        assert_eq!(unknown_week.unwrap_err().code(), AthriaErrorCode::PlanWeekNotFound);
+        let unknown_week =
+            store.update_current_planned_sessions(&UpdateCurrentPlannedSessionsInput {
+                owner_id: DEFAULT_OWNER_ID,
+                expected_revision: 1,
+                mode: "move_occurrence",
+                sessions: std::slice::from_ref(&moved),
+                reason_code: None,
+                reason_note: None,
+            });
+        assert_eq!(
+            unknown_week.unwrap_err().code(),
+            AthriaErrorCode::PlanWeekNotFound
+        );
         assert_eq!(store.schedule_revision(DEFAULT_OWNER_ID).unwrap(), 1);
     }
 

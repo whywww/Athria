@@ -17,7 +17,8 @@ use crate::{AthriaError, AthriaErrorCode, Result};
 
 /// JavaScript `new Date().toISOString()` shape: `2026-09-10T04:00:00.000Z`.
 pub fn iso_from_millis(milliseconds: i64) -> String {
-    let format = format_description!("[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z");
+    let format =
+        format_description!("[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z");
     OffsetDateTime::from_unix_timestamp_nanos(i128::from(milliseconds) * 1_000_000)
         .expect("millisecond instants are representable")
         .format(&format)
@@ -25,27 +26,45 @@ pub fn iso_from_millis(milliseconds: i64) -> String {
 }
 
 fn invalid_instant(iso: &str) -> AthriaError {
-    AthriaError::new(AthriaErrorCode::InvalidData, format!("invalid ISO-8601 instant `{iso}`"))
+    AthriaError::new(
+        AthriaErrorCode::InvalidData,
+        format!("invalid ISO-8601 instant `{iso}`"),
+    )
 }
 
 /// `Date.parse` equivalent; panics are reserved for malformed input, matching
 /// the Phase 4 core boundary.
 pub fn millis(iso: &str) -> Result<i64> {
-    Ok(iso.parse::<Timestamp>().map_err(|_| invalid_instant(iso))?.as_millisecond())
+    Ok(iso
+        .parse::<Timestamp>()
+        .map_err(|_| invalid_instant(iso))?
+        .as_millisecond())
 }
 
 fn time_zone(name: &str) -> Result<TimeZone> {
-    TimeZone::get(name).map_err(|_| AthriaError::new(AthriaErrorCode::InvalidData, format!("unknown IANA time zone `{name}`")))
+    TimeZone::get(name).map_err(|_| {
+        AthriaError::new(
+            AthriaErrorCode::InvalidData,
+            format!("unknown IANA time zone `{name}`"),
+        )
+    })
 }
 
 fn zoned(iso: &str, time_zone_name: &str) -> Result<jiff::Zoned> {
-    Ok(Timestamp::from_millisecond(millis(iso)?).expect("parsed instants round-trip").to_zoned(time_zone(time_zone_name)?))
+    Ok(Timestamp::from_millisecond(millis(iso)?)
+        .expect("parsed instants round-trip")
+        .to_zoned(time_zone(time_zone_name)?))
 }
 
 /// `Intl.DateTimeFormat("en-CA")` local `YYYY-MM-DD` for an instant.
 pub fn local_date(iso: &str, time_zone_name: &str) -> Result<String> {
     let value = zoned(iso, time_zone_name)?;
-    Ok(format!("{:04}-{:02}-{:02}", value.year(), value.month(), value.day()))
+    Ok(format!(
+        "{:04}-{:02}-{:02}",
+        value.year(),
+        value.month(),
+        value.day()
+    ))
 }
 
 /// Monday-based local weekday (0 = Monday), matching `Intl` `weekday: "short"`
@@ -68,8 +87,16 @@ pub fn local_weekday(iso: &str, time_zone_name: &str) -> Result<i64> {
 /// DST gap or fold for real zones, so the offset resolution is unambiguous.
 pub fn local_noon(date: &str, time_zone_name: &str) -> Result<String> {
     let (year, month, day) = crate::date::parse_iso_date(date);
-    let civil = Date::new(year as i16, month as i8, day as i8).map_err(|_| AthriaError::new(AthriaErrorCode::InvalidData, format!("invalid date `{date}`")))?;
-    let zoned = civil.at(12, 0, 0, 0).to_zoned(time_zone(time_zone_name)?).map_err(|_| invalid_instant(date))?;
+    let civil = Date::new(year as i16, month as i8, day as i8).map_err(|_| {
+        AthriaError::new(
+            AthriaErrorCode::InvalidData,
+            format!("invalid date `{date}`"),
+        )
+    })?;
+    let zoned = civil
+        .at(12, 0, 0, 0)
+        .to_zoned(time_zone(time_zone_name)?)
+        .map_err(|_| invalid_instant(date))?;
     Ok(iso_from_millis(zoned.timestamp().as_millisecond()))
 }
 
@@ -84,28 +111,58 @@ mod tests {
 
     #[test]
     fn local_dates_match_icu_formatting() {
-        assert_eq!(local_date("2026-09-07T16:30:00Z", "Asia/Hong_Kong").unwrap(), "2026-09-08");
-        assert_eq!(local_date("2026-09-07T15:59:59Z", "Asia/Hong_Kong").unwrap(), "2026-09-07");
-        assert_eq!(local_date("2026-09-07T10:00:00Z", "Pacific/Kiritimati").unwrap(), "2026-09-08");
-        assert_eq!(local_date("2026-09-07T02:00:00Z", "America/New_York").unwrap(), "2026-09-06");
+        assert_eq!(
+            local_date("2026-09-07T16:30:00Z", "Asia/Hong_Kong").unwrap(),
+            "2026-09-08"
+        );
+        assert_eq!(
+            local_date("2026-09-07T15:59:59Z", "Asia/Hong_Kong").unwrap(),
+            "2026-09-07"
+        );
+        assert_eq!(
+            local_date("2026-09-07T10:00:00Z", "Pacific/Kiritimati").unwrap(),
+            "2026-09-08"
+        );
+        assert_eq!(
+            local_date("2026-09-07T02:00:00Z", "America/New_York").unwrap(),
+            "2026-09-06"
+        );
     }
 
     #[test]
     fn local_noon_resolves_the_zone_offset() {
-        assert_eq!(local_noon("2026-09-07", "Asia/Hong_Kong").unwrap(), "2026-09-07T04:00:00.000Z");
-        assert_eq!(local_noon("2026-09-07", "Pacific/Kiritimati").unwrap(), "2026-09-06T22:00:00.000Z");
-        assert_eq!(local_noon("2026-09-07", "UTC").unwrap(), "2026-09-07T12:00:00.000Z");
+        assert_eq!(
+            local_noon("2026-09-07", "Asia/Hong_Kong").unwrap(),
+            "2026-09-07T04:00:00.000Z"
+        );
+        assert_eq!(
+            local_noon("2026-09-07", "Pacific/Kiritimati").unwrap(),
+            "2026-09-06T22:00:00.000Z"
+        );
+        assert_eq!(
+            local_noon("2026-09-07", "UTC").unwrap(),
+            "2026-09-07T12:00:00.000Z"
+        );
     }
 
     #[test]
     fn weekdays_are_monday_based() {
-        assert_eq!(local_weekday("2026-09-07T04:00:00Z", "Asia/Hong_Kong").unwrap(), 0);
-        assert_eq!(local_weekday("2026-09-13T04:00:00Z", "Asia/Hong_Kong").unwrap(), 6);
+        assert_eq!(
+            local_weekday("2026-09-07T04:00:00Z", "Asia/Hong_Kong").unwrap(),
+            0
+        );
+        assert_eq!(
+            local_weekday("2026-09-13T04:00:00Z", "Asia/Hong_Kong").unwrap(),
+            6
+        );
     }
 
     #[test]
     fn instants_round_trip_through_millisecond_math() {
-        assert_eq!(iso_minus_days("2026-09-10T04:00:00.000Z", 7).unwrap(), "2026-09-03T04:00:00.000Z");
+        assert_eq!(
+            iso_minus_days("2026-09-10T04:00:00.000Z", 7).unwrap(),
+            "2026-09-03T04:00:00.000Z"
+        );
         assert_eq!(millis("1970-01-01T00:00:00.000Z").unwrap(), 0);
     }
 }

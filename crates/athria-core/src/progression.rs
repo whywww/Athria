@@ -39,14 +39,29 @@ pub struct RpeAutoregulationInput {
 
 pub fn evaluate_double_progression(input: &DoubleProgressionInput) -> Result<Value> {
     if input.completed_reps.is_empty() {
-        return Err(AthriaError::new(AthriaErrorCode::InvalidData, "at least one completed set is required"));
+        return Err(AthriaError::new(
+            AthriaErrorCode::InvalidData,
+            "at least one completed set is required",
+        ));
     }
     if input.rep_min < 1.0 || input.rep_max < input.rep_min {
-        return Err(AthriaError::new(AthriaErrorCode::InvalidData, "invalid repetition range"));
+        return Err(AthriaError::new(
+            AthriaErrorCode::InvalidData,
+            "invalid repetition range",
+        ));
     }
-    let reached_top = input.completed_reps.iter().all(|reps| *reps >= input.rep_max);
-    let below_minimum = input.completed_reps.iter().any(|reps| *reps < input.rep_min);
-    let rpe_available = input.rpe_values.as_ref().is_some_and(|values| values.len() == input.completed_reps.len());
+    let reached_top = input
+        .completed_reps
+        .iter()
+        .all(|reps| *reps >= input.rep_max);
+    let below_minimum = input
+        .completed_reps
+        .iter()
+        .any(|reps| *reps < input.rep_min);
+    let rpe_available = input
+        .rpe_values
+        .as_ref()
+        .is_some_and(|values| values.len() == input.completed_reps.len());
     let rpe_acceptable = match (&input.rpe_values, input.rpe_ceiling) {
         (_, None) => true,
         (Some(values), Some(ceiling)) => rpe_available && values.iter().all(|rpe| *rpe <= ceiling),
@@ -59,7 +74,11 @@ pub fn evaluate_double_progression(input: &DoubleProgressionInput) -> Result<Val
     } else {
         "hold"
     };
-    let proposed_load = if action == "increase" { input.current_load + input.load_increment } else { input.current_load };
+    let proposed_load = if action == "increase" {
+        input.current_load + input.load_increment
+    } else {
+        input.current_load
+    };
     let reason_code = if action == "increase" {
         "REP_RANGE_COMPLETE"
     } else if below_minimum {
@@ -94,11 +113,18 @@ pub fn evaluate_rpe_autoregulation(input: &RpeAutoregulationInput) -> Result<Val
         }));
     };
     if actual_rpe < 0.0 || actual_rpe > 10.0 || input.target_rpe < 1.0 || input.target_rpe > 10.0 {
-        return Err(AthriaError::new(AthriaErrorCode::InvalidData, "RPE values must be valid"));
+        return Err(AthriaError::new(
+            AthriaErrorCode::InvalidData,
+            "RPE values must be valid",
+        ));
     }
     let difference = actual_rpe - input.target_rpe;
     let (action, proposed_load, reason_code) = if difference >= 1.0 {
-        ("decrease", (input.load - input.increment).max(0.0), "RPE_ABOVE_TARGET")
+        (
+            "decrease",
+            (input.load - input.increment).max(0.0),
+            "RPE_ABOVE_TARGET",
+        )
     } else if difference <= -1.0 {
         ("increase", input.load + input.increment, "RPE_BELOW_TARGET")
     } else {
@@ -126,7 +152,10 @@ mod tests {
         let result = evaluate_double_progression(&input).unwrap();
         assert_eq!(result["action"], "hold");
         assert_eq!(result["reasonCode"], "RPE_DATA_MISSING");
-        assert_eq!(result["confidenceLimit"], "RPE ceiling could not be evaluated.");
+        assert_eq!(
+            result["confidenceLimit"],
+            "RPE ceiling could not be evaluated."
+        );
     }
 
     #[test]
@@ -153,13 +182,34 @@ mod tests {
 
     #[test]
     fn autoregulation_moves_load_away_from_the_target_rpe() {
-        let over: RpeAutoregulationInput = serde_json::from_value(json!({ "actualRpe": 9, "targetRpe": 8, "load": 100, "increment": 2.5, "unit": "kg" })).unwrap();
-        assert_eq!(evaluate_rpe_autoregulation(&over).unwrap()["reasonCode"], "RPE_ABOVE_TARGET");
+        let over: RpeAutoregulationInput = serde_json::from_value(
+            json!({ "actualRpe": 9, "targetRpe": 8, "load": 100, "increment": 2.5, "unit": "kg" }),
+        )
+        .unwrap();
+        assert_eq!(
+            evaluate_rpe_autoregulation(&over).unwrap()["reasonCode"],
+            "RPE_ABOVE_TARGET"
+        );
         let under: RpeAutoregulationInput = serde_json::from_value(json!({ "actualRpe": 6.5, "targetRpe": 8, "load": 100, "increment": 2.5, "unit": "kg" })).unwrap();
-        assert_eq!(evaluate_rpe_autoregulation(&under).unwrap()["proposedLoad"], 102.5);
-        let clamped: RpeAutoregulationInput = serde_json::from_value(json!({ "actualRpe": 9, "targetRpe": 8, "load": 2, "increment": 5, "unit": "kg" })).unwrap();
-        assert_eq!(evaluate_rpe_autoregulation(&clamped).unwrap()["proposedLoad"], 0);
-        let invalid = RpeAutoregulationInput { actual_rpe: Some(11.0), target_rpe: 8.0, load: 100.0, increment: 2.5, unit: "kg".to_string() };
+        assert_eq!(
+            evaluate_rpe_autoregulation(&under).unwrap()["proposedLoad"],
+            102.5
+        );
+        let clamped: RpeAutoregulationInput = serde_json::from_value(
+            json!({ "actualRpe": 9, "targetRpe": 8, "load": 2, "increment": 5, "unit": "kg" }),
+        )
+        .unwrap();
+        assert_eq!(
+            evaluate_rpe_autoregulation(&clamped).unwrap()["proposedLoad"],
+            0
+        );
+        let invalid = RpeAutoregulationInput {
+            actual_rpe: Some(11.0),
+            target_rpe: 8.0,
+            load: 100.0,
+            increment: 2.5,
+            unit: "kg".to_string(),
+        };
         let error = evaluate_rpe_autoregulation(&invalid).unwrap_err();
         assert_eq!(error.message(), "RPE values must be valid");
         assert_eq!(error.code(), AthriaErrorCode::InvalidData);

@@ -38,10 +38,13 @@ pub use clock::{Clock, FixedClock, SystemClock};
 pub use error::{AthriaError, AthriaErrorCode, Result};
 pub use hash::{canonical, js_locale_compare, stable_hash};
 pub use metrics::{
-    DataQuality, EnduranceMetrics, MetricResult, StrengthMetrics, TimeRange, TrainingMetrics, calculate_heart_rate_zones, calculate_training_metrics,
-    estimate_one_rep_max,
+    DataQuality, EnduranceMetrics, MetricResult, StrengthMetrics, TimeRange, TrainingMetrics,
+    calculate_heart_rate_zones, calculate_training_metrics, estimate_one_rep_max,
 };
-pub use progression::{DoubleProgressionInput, RpeAutoregulationInput, evaluate_double_progression, evaluate_rpe_autoregulation};
+pub use progression::{
+    DoubleProgressionInput, RpeAutoregulationInput, evaluate_double_progression,
+    evaluate_rpe_autoregulation,
+};
 pub use schedule::{ScheduleOccurrence, expand_schedule};
 pub use validation::{Coverage, PlanValidation, validate_plan};
 

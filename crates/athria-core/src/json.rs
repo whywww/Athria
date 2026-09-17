@@ -29,7 +29,9 @@ pub(crate) fn field<'a>(value: &'a Value, key: &str) -> &'a Value {
 }
 
 pub(crate) fn string_field<'a>(value: &'a Value, key: &str) -> &'a str {
-    field(value, key).as_str().unwrap_or_else(|| panic!("expected `{key}` to be a string"))
+    field(value, key)
+        .as_str()
+        .unwrap_or_else(|| panic!("expected `{key}` to be a string"))
 }
 
 pub(crate) fn optional_string<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
@@ -37,15 +39,22 @@ pub(crate) fn optional_string<'a>(value: &'a Value, key: &str) -> Option<&'a str
 }
 
 pub(crate) fn int_field(value: &Value, key: &str) -> i64 {
-    field(value, key).as_i64().unwrap_or_else(|| panic!("expected `{key}` to be an integer"))
+    field(value, key)
+        .as_i64()
+        .unwrap_or_else(|| panic!("expected `{key}` to be an integer"))
 }
 
 pub(crate) fn number_field(value: &Value, key: &str) -> f64 {
-    field(value, key).as_f64().unwrap_or_else(|| panic!("expected `{key}` to be a number"))
+    field(value, key)
+        .as_f64()
+        .unwrap_or_else(|| panic!("expected `{key}` to be a number"))
 }
 
 pub(crate) fn array_field<'a>(value: &'a Value, key: &str) -> &'a [Value] {
-    field(value, key).as_array().map(Vec::as_slice).unwrap_or_else(|| panic!("expected `{key}` to be an array"))
+    field(value, key)
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_else(|| panic!("expected `{key}` to be an array"))
 }
 
 /// `value.key == null` under JavaScript's loose equality: missing or `null`.

@@ -13,7 +13,10 @@ use serde_json::{Map, Value, json};
 
 use crate::date;
 use crate::hash::stable_hash;
-use crate::json::{array_field, bump, field, int_field, is_null_or_missing, number, number_field, optional_string, string_field};
+use crate::json::{
+    array_field, bump, field, int_field, is_null_or_missing, number, number_field, optional_string,
+    string_field,
+};
 use crate::schedule::expand_schedule;
 use crate::{AI_HARD_CONFIDENCE, RULE_VERSION, TAXONOMY_VERSION};
 
@@ -43,7 +46,16 @@ pub struct PlanValidation {
     pub coverage: Coverage,
 }
 
-fn rule(enforcement: &str, reason_code: &str, status: &str, subject_refs: &[&str], evidence: Value, missing_facts: &[&str], confidence_limit: Value, rule_pack_id: &str) -> Value {
+fn rule(
+    enforcement: &str,
+    reason_code: &str,
+    status: &str,
+    subject_refs: &[&str],
+    evidence: Value,
+    missing_facts: &[&str],
+    confidence_limit: Value,
+    rule_pack_id: &str,
+) -> Value {
     json!({
         "status": status,
         "enforcement": enforcement,
@@ -59,10 +71,15 @@ fn rule(enforcement: &str, reason_code: &str, status: &str, subject_refs: &[&str
 
 fn fact_trusted(fact: &Value) -> bool {
     let has_value = !field(fact, "value").is_null();
-    let conflicts_empty = fact.get("conflicts").and_then(Value::as_array).is_none_or(|items| items.is_empty());
+    let conflicts_empty = fact
+        .get("conflicts")
+        .and_then(Value::as_array)
+        .is_none_or(|items| items.is_empty());
     let source = string_field(fact, "source");
     let source_ok = source == "user_confirmed" || conflicts_empty;
-    let ai_ok = source != "ai_inferred" || (number_field(fact, "confidence") >= AI_HARD_CONFIDENCE && !string_field(fact, "evidence").trim().is_empty());
+    let ai_ok = source != "ai_inferred"
+        || (number_field(fact, "confidence") >= AI_HARD_CONFIDENCE
+            && !string_field(fact, "evidence").trim().is_empty());
     has_value && source_ok && ai_ok
 }
 
@@ -75,7 +92,11 @@ fn ratio_status(left: f64, right: f64) -> &'static str {
         "pass"
     } else {
         let ratio = left / right;
-        if ratio > 2.0 || ratio < 0.5 { "fail" } else { "pass" }
+        if ratio > 2.0 || ratio < 0.5 {
+            "fail"
+        } else {
+            "pass"
+        }
     }
 }
 
@@ -102,7 +123,10 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
         let schedule = field(mesocycle, "schedule");
         let schedule_kind = string_field(schedule, "kind");
         let weekdays: Vec<i64> = if schedule_kind == "fixed_week" {
-            array_field(schedule, "days").iter().filter_map(Value::as_i64).collect()
+            array_field(schedule, "days")
+                .iter()
+                .filter_map(Value::as_i64)
+                .collect()
         } else {
             Vec::new()
         };
@@ -110,7 +134,10 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
         let duration_weeks = int_field(mesocycle, "durationWeeks");
         let schedule_occurrences = expand_schedule(effective_start, duration_weeks, schedule);
         let weeks = array_field(mesocycle, "weeks");
-        let prescriptions: Vec<&Value> = weeks.iter().flat_map(|week| array_field(week, "sessions").iter()).collect();
+        let prescriptions: Vec<&Value> = weeks
+            .iter()
+            .flat_map(|week| array_field(week, "sessions").iter())
+            .collect();
 
         let mut scheduled_dates: Vec<String> = Vec::new();
         for session in &prescriptions {
@@ -120,7 +147,10 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
             }
         }
         scheduled_dates.sort();
-        let mut expected_dates: Vec<String> = schedule_occurrences.iter().map(|occurrence| occurrence.scheduled_date.clone()).collect();
+        let mut expected_dates: Vec<String> = schedule_occurrences
+            .iter()
+            .map(|occurrence| occurrence.scheduled_date.clone())
+            .collect();
         expected_dates.sort();
         let same_dates = scheduled_dates == expected_dates;
 
@@ -131,7 +161,10 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
                 if schedule_kind != "fixed_week" {
                     false
                 } else {
-                    let mut profile_days: Vec<i64> = array_field(rhythm, "days").iter().filter_map(Value::as_i64).collect();
+                    let mut profile_days: Vec<i64> = array_field(rhythm, "days")
+                        .iter()
+                        .filter_map(Value::as_i64)
+                        .collect();
                     profile_days.sort_unstable();
                     let mut plan_days = weekdays.clone();
                     plan_days.sort_unstable();
@@ -140,18 +173,25 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
             }
             "flexible_week" => {
                 schedule_kind == "flexible_week"
-                    && int_field(schedule, "targetDaysPerWeek") == int_field(rhythm, "targetDaysPerWeek")
+                    && int_field(schedule, "targetDaysPerWeek")
+                        == int_field(rhythm, "targetDaysPerWeek")
                     && int_field(schedule, "minDaysPerWeek") == int_field(rhythm, "minDaysPerWeek")
                     && int_field(schedule, "maxDaysPerWeek") == int_field(rhythm, "maxDaysPerWeek")
             }
-            _ => schedule_kind == "interval" && int_field(schedule, "intervalDays") == int_field(rhythm, "intervalDays"),
+            _ => {
+                schedule_kind == "interval"
+                    && int_field(schedule, "intervalDays") == int_field(rhythm, "intervalDays")
+            }
         };
         let weekly_rhythm_matches = match rhythm_kind {
             "flexible_week" => {
                 let min_days = int_field(rhythm, "minDaysPerWeek");
                 let max_days = int_field(rhythm, "maxDaysPerWeek");
                 weeks.iter().all(|week| {
-                    let mut distinct: Vec<&str> = array_field(week, "sessions").iter().map(|session| string_field(session, "scheduledDate")).collect();
+                    let mut distinct: Vec<&str> = array_field(week, "sessions")
+                        .iter()
+                        .map(|session| string_field(session, "scheduledDate"))
+                        .collect();
                     distinct.sort_unstable();
                     distinct.dedup();
                     let training_days = distinct.len() as i64;
@@ -161,7 +201,9 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
             "interval" => {
                 let interval_days = int_field(rhythm, "intervalDays");
                 scheduled_dates.first().map(String::as_str) == Some(effective_start)
-                    && scheduled_dates.windows(2).all(|pair| date::day_difference(&pair[0], &pair[1]) == interval_days)
+                    && scheduled_dates
+                        .windows(2)
+                        .all(|pair| date::day_difference(&pair[0], &pair[1]) == interval_days)
             }
             _ => same_dates,
         };
@@ -180,7 +222,10 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
             }
         }
         let component_ids_unique = prescriptions.iter().all(|session| {
-            let ids: Vec<&str> = array_field(session, "components").iter().map(|component| string_field(component, "id")).collect();
+            let ids: Vec<&str> = array_field(session, "components")
+                .iter()
+                .map(|component| string_field(component, "id"))
+                .collect();
             unique(&ids)
         });
         let exercise_ids_unique = prescriptions.iter().all(|session| {
@@ -189,7 +234,10 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
                 .flat_map(|component| {
                     let prescription = field(component, "prescription");
                     if string_field(prescription, "kind") == "strength" {
-                        array_field(prescription, "exercises").iter().map(|exercise| string_field(exercise, "id")).collect::<Vec<_>>()
+                        array_field(prescription, "exercises")
+                            .iter()
+                            .map(|exercise| string_field(exercise, "id"))
+                            .collect::<Vec<_>>()
                     } else {
                         Vec::new()
                     }
@@ -197,8 +245,26 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
                 .collect();
             unique(&ids)
         });
-        results.push(rule("blocker", "COMPONENT_IDS", if component_ids_unique { "pass" } else { "fail" }, &[], json!({ "componentIds": component_ids }), &[], Value::Null, "structure"));
-        results.push(rule("blocker", "EXERCISE_IDS", if exercise_ids_unique { "pass" } else { "fail" }, &[], json!({ "exerciseIds": exercise_ids }), &[], Value::Null, "structure"));
+        results.push(rule(
+            "blocker",
+            "COMPONENT_IDS",
+            if component_ids_unique { "pass" } else { "fail" },
+            &[],
+            json!({ "componentIds": component_ids }),
+            &[],
+            Value::Null,
+            "structure",
+        ));
+        results.push(rule(
+            "blocker",
+            "EXERCISE_IDS",
+            if exercise_ids_unique { "pass" } else { "fail" },
+            &[],
+            json!({ "exerciseIds": exercise_ids }),
+            &[],
+            Value::Null,
+            "structure",
+        ));
         results.push(rule(
             "blocker",
             "MESOCYCLE_SCHEDULE",
@@ -220,7 +286,10 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
             "structure",
         ));
 
-        let progression_domains: Vec<&str> = array_field(mesocycle, "domainProgressions").iter().map(|progression| string_field(progression, "domain")).collect();
+        let progression_domains: Vec<&str> = array_field(mesocycle, "domainProgressions")
+            .iter()
+            .map(|progression| string_field(progression, "domain"))
+            .collect();
         let mut session_domains: Vec<String> = Vec::new();
         for session in &prescriptions {
             for component in array_field(session, "components") {
@@ -231,28 +300,42 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
                 }
             }
         }
-        let domains_match = progression_domains.len() == progression_domains.iter().collect::<HashSet<_>>().len()
+        let domains_match = progression_domains.len()
+            == progression_domains.iter().collect::<HashSet<_>>().len()
             && session_domains.len() == progression_domains.len()
-            && progression_domains.iter().all(|domain| session_domains.iter().any(|candidate| candidate == domain));
-        let progressions_cover_duration = array_field(mesocycle, "domainProgressions").iter().all(|progression| {
-            let mut phases: Vec<&Value> = array_field(progression, "phases").iter().collect();
-            phases.sort_by_key(|phase| int_field(phase, "startWeek"));
-            let phase_ids: Vec<&str> = phases.iter().map(|phase| string_field(phase, "id")).collect();
-            if !unique(&phase_ids) {
-                return false;
-            }
-            let (Some(first), Some(last)) = (phases.first(), phases.last()) else {
-                return false;
-            };
-            if int_field(first, "startWeek") != 1 || int_field(last, "endWeek") != duration_weeks {
-                return false;
-            }
-            phases.iter().enumerate().all(|(index, phase)| {
-                int_field(phase, "startWeek") <= int_field(phase, "endWeek")
-                    && int_field(phase, "endWeek") <= duration_weeks
-                    && (index == 0 || int_field(phase, "startWeek") == int_field(phases[index - 1], "endWeek") + 1)
-            })
-        });
+            && progression_domains
+                .iter()
+                .all(|domain| session_domains.iter().any(|candidate| candidate == domain));
+        let progressions_cover_duration =
+            array_field(mesocycle, "domainProgressions")
+                .iter()
+                .all(|progression| {
+                    let mut phases: Vec<&Value> =
+                        array_field(progression, "phases").iter().collect();
+                    phases.sort_by_key(|phase| int_field(phase, "startWeek"));
+                    let phase_ids: Vec<&str> = phases
+                        .iter()
+                        .map(|phase| string_field(phase, "id"))
+                        .collect();
+                    if !unique(&phase_ids) {
+                        return false;
+                    }
+                    let (Some(first), Some(last)) = (phases.first(), phases.last()) else {
+                        return false;
+                    };
+                    if int_field(first, "startWeek") != 1
+                        || int_field(last, "endWeek") != duration_weeks
+                    {
+                        return false;
+                    }
+                    phases.iter().enumerate().all(|(index, phase)| {
+                        int_field(phase, "startWeek") <= int_field(phase, "endWeek")
+                            && int_field(phase, "endWeek") <= duration_weeks
+                            && (index == 0
+                                || int_field(phase, "startWeek")
+                                    == int_field(phases[index - 1], "endWeek") + 1)
+                    })
+                });
         results.push(rule(
             "blocker",
             "DOMAIN_PROGRESSION",
@@ -276,7 +359,11 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
             results.push(rule(
                 "blocker",
                 "MAX_SESSION_DURATION",
-                if session_duration <= maximum_duration { "pass" } else { "fail" },
+                if session_duration <= maximum_duration {
+                    "pass"
+                } else {
+                    "fail"
+                },
                 &[session_id],
                 json!({ "durationMinutes": session_duration, "maximum": maximum_duration }),
                 &[],
@@ -296,7 +383,11 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
                 results.push(rule(
                     "blocker",
                     "COMPONENT_PRESCRIPTION",
-                    if prescription_consistent { "pass" } else { "fail" },
+                    if prescription_consistent {
+                        "pass"
+                    } else {
+                        "fail"
+                    },
                     &[session_id, component_id],
                     json!({ "domain": domain_value, "prescription": prescription_kind }),
                     &[],
@@ -304,7 +395,16 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
                     "structure",
                 ));
                 if domain_value.is_null() {
-                    results.push(rule("info", "COMPONENT_DOMAIN_MISSING", "unknown", &[component_id], json!({}), &["domain"], Value::Null, "structure"));
+                    results.push(rule(
+                        "info",
+                        "COMPONENT_DOMAIN_MISSING",
+                        "unknown",
+                        &[component_id],
+                        json!({}),
+                        &["domain"],
+                        Value::Null,
+                        "structure",
+                    ));
                     data_gaps.push(json!({
                         "code": "COMPONENT_DOMAIN_MISSING",
                         "subjectRef": component_id,
@@ -331,7 +431,9 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
                     let muscle_values = array_field(muscles, "value");
                     let muscle_resolved = !muscle_values.is_empty() && fact_trusted(muscles);
                     let equipment_values = array_field(equipment, "value");
-                    let equipment_trusted = !equipment_values.is_empty() && fact_trusted(equipment) && !equipment_conflict;
+                    let equipment_trusted = !equipment_values.is_empty()
+                        && fact_trusted(equipment)
+                        && !equipment_conflict;
                     if movement_trusted {
                         movement_facts_resolved += 1;
                     }
@@ -342,7 +444,10 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
                         equipment_facts_resolved += 1;
                     }
                     let exercise_sets = int_field(exercise, "sets") as f64 * multiplier;
-                    if let Some(pattern) = field(movement, "value").as_str().filter(|pattern| !pattern.is_empty()) {
+                    if let Some(pattern) = field(movement, "value")
+                        .as_str()
+                        .filter(|pattern| !pattern.is_empty())
+                    {
                         bump(&mut sets_by_pattern, pattern, exercise_sets);
                     }
                     for muscle in muscle_values {
@@ -356,8 +461,19 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
                         }
                     }
                     let equipment_status = if equipment_trusted {
-                        let available: Vec<&str> = array_field(profile, "equipment").iter().filter_map(Value::as_str).collect();
-                        if equipment_values.iter().filter_map(Value::as_str).any(|item| available.contains(&item)) { "pass" } else { "fail" }
+                        let available: Vec<&str> = array_field(profile, "equipment")
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .collect();
+                        if equipment_values
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .any(|item| available.contains(&item))
+                        {
+                            "pass"
+                        } else {
+                            "fail"
+                        }
                     } else {
                         "unknown"
                     };
@@ -404,8 +520,10 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
             Value::Null,
             "strength",
         ));
-        let push_sets = pattern_count(&sets_by_pattern, "horizontal_push") + pattern_count(&sets_by_pattern, "vertical_push");
-        let pull_sets = pattern_count(&sets_by_pattern, "horizontal_pull") + pattern_count(&sets_by_pattern, "vertical_pull");
+        let push_sets = pattern_count(&sets_by_pattern, "horizontal_push")
+            + pattern_count(&sets_by_pattern, "vertical_push");
+        let pull_sets = pattern_count(&sets_by_pattern, "horizontal_pull")
+            + pattern_count(&sets_by_pattern, "vertical_pull");
         results.push(rule(
             "advisory",
             "STRENGTH_PUSH_PULL_BALANCE",
@@ -416,7 +534,8 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
             Value::Null,
             "strength",
         ));
-        let knee_sets = pattern_count(&sets_by_pattern, "squat") + pattern_count(&sets_by_pattern, "lunge");
+        let knee_sets =
+            pattern_count(&sets_by_pattern, "squat") + pattern_count(&sets_by_pattern, "lunge");
         let hinge_sets = pattern_count(&sets_by_pattern, "hinge");
         results.push(rule(
             "advisory",
@@ -455,13 +574,22 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
         }
         let effort_missing: Vec<&str> = strength_exercises
             .iter()
-            .filter(|exercise| is_null_or_missing(exercise, "targetRpe") && is_null_or_missing(exercise, "targetRir"))
+            .filter(|exercise| {
+                is_null_or_missing(exercise, "targetRpe")
+                    && is_null_or_missing(exercise, "targetRir")
+            })
             .map(|exercise| string_field(exercise, "id"))
             .collect();
         results.push(rule(
             "advisory",
             "STRENGTH_EFFORT_RPE",
-            if strength_exercises.is_empty() { "not_applicable" } else if effort_missing.is_empty() { "pass" } else { "fail" },
+            if strength_exercises.is_empty() {
+                "not_applicable"
+            } else if effort_missing.is_empty() {
+                "pass"
+            } else {
+                "fail"
+            },
             &[],
             json!({ "exerciseCount": strength_exercises.len(), "missingEffort": effort_missing }),
             &[],
@@ -479,7 +607,13 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
         results.push(rule(
             "advisory",
             "ENDURANCE_EFFORT_ZONE",
-            if endurance_steps.is_empty() { "not_applicable" } else if zone_missing.is_empty() { "pass" } else { "fail" },
+            if endurance_steps.is_empty() {
+                "not_applicable"
+            } else if zone_missing.is_empty() {
+                "pass"
+            } else {
+                "fail"
+            },
             &[],
             json!({ "stepCount": endurance_steps.len(), "missingZone": zone_missing }),
             &[],
@@ -500,7 +634,10 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
         if high_dates.len() > 1 {
             let mut closest_days = i64::MAX;
             for index in 1..high_dates.len() {
-                closest_days = closest_days.min(date::day_difference(&high_dates[index - 1], &high_dates[index]));
+                closest_days = closest_days.min(date::day_difference(
+                    &high_dates[index - 1],
+                    &high_dates[index],
+                ));
             }
             let explicit_recovery_days = field(profile, "explicitRecoveryDays");
             if explicit_recovery_days.is_null() {
@@ -515,11 +652,17 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
                     "balance",
                 ));
             } else {
-                let required_days = explicit_recovery_days.as_i64().unwrap_or_else(|| panic!("expected `explicitRecoveryDays` to be an integer"));
+                let required_days = explicit_recovery_days
+                    .as_i64()
+                    .unwrap_or_else(|| panic!("expected `explicitRecoveryDays` to be an integer"));
                 results.push(rule(
                     "blocker",
                     "EXPLICIT_RECOVERY_INTERVAL",
-                    if closest_days >= required_days { "pass" } else { "fail" },
+                    if closest_days >= required_days {
+                        "pass"
+                    } else {
+                        "fail"
+                    },
                     &[],
                     json!({ "closestDays": closest_days, "requiredDays": required_days }),
                     &[],
@@ -530,9 +673,17 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
         }
     }
 
-    let blockers: Vec<&Value> = results.iter().filter(|item| field(item, "enforcement").as_str() == Some("blocker")).collect();
-    let hard_checks_resolved = blockers.iter().filter(|item| matches!(field(item, "status").as_str(), Some("pass" | "fail"))).count();
-    let valid = !blockers.iter().any(|item| matches!(field(item, "status").as_str(), Some("fail" | "unknown")));
+    let blockers: Vec<&Value> = results
+        .iter()
+        .filter(|item| field(item, "enforcement").as_str() == Some("blocker"))
+        .collect();
+    let hard_checks_resolved = blockers
+        .iter()
+        .filter(|item| matches!(field(item, "status").as_str(), Some("pass" | "fail")))
+        .count();
+    let valid = !blockers
+        .iter()
+        .any(|item| matches!(field(item, "status").as_str(), Some("fail" | "unknown")));
     let coverage = Coverage {
         hard_checks_resolved,
         hard_checks_total: blockers.len(),
@@ -554,7 +705,14 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
             "balance": RULE_VERSION,
         },
     }));
-    PlanValidation { valid, results, data_gaps, validated_at: now.to_string(), input_hash, coverage }
+    PlanValidation {
+        valid,
+        results,
+        data_gaps,
+        validated_at: now.to_string(),
+        input_hash,
+        coverage,
+    }
 }
 
 #[cfg(test)]
@@ -612,28 +770,45 @@ mod tests {
 
     #[test]
     fn explicit_recovery_days_block_a_tight_schedule() {
-        let draft = json!({ "mesocycle": two_high_session_plan(), "effectiveStartDate": "2026-09-07" });
+        let draft =
+            json!({ "mesocycle": two_high_session_plan(), "effectiveStartDate": "2026-09-07" });
         let validation = validate_plan(&profile(json!(3)), &draft, "2026-09-17T00:00:00.000Z");
         assert!(!validation.valid);
-        let recovery = validation.results.iter().find(|item| item["reasonCode"] == "EXPLICIT_RECOVERY_INTERVAL").expect("rule must run");
+        let recovery = validation
+            .results
+            .iter()
+            .find(|item| item["reasonCode"] == "EXPLICIT_RECOVERY_INTERVAL")
+            .expect("rule must run");
         assert_eq!(recovery["status"], "fail");
         assert_eq!(recovery["enforcement"], "blocker");
-        assert_eq!(recovery["evidence"], json!({ "closestDays": 2, "requiredDays": 3 }));
+        assert_eq!(
+            recovery["evidence"],
+            json!({ "closestDays": 2, "requiredDays": 3 })
+        );
     }
 
     #[test]
     fn adjacent_high_demand_sessions_stay_advisory_without_explicit_recovery() {
-        let draft = json!({ "mesocycle": two_high_session_plan(), "effectiveStartDate": "2026-09-07" });
+        let draft =
+            json!({ "mesocycle": two_high_session_plan(), "effectiveStartDate": "2026-09-07" });
         let validation = validate_plan(&profile(Value::Null), &draft, "2026-09-17T00:00:00.000Z");
         assert!(validation.valid);
-        let advisory = validation.results.iter().find(|item| item["reasonCode"] == "ADJACENT_HIGH_DEMAND_SESSIONS").expect("rule must run");
+        let advisory = validation
+            .results
+            .iter()
+            .find(|item| item["reasonCode"] == "ADJACENT_HIGH_DEMAND_SESSIONS")
+            .expect("rule must run");
         assert_eq!(advisory["status"], "pass");
         assert_eq!(advisory["enforcement"], "advisory");
     }
 
     #[test]
     fn a_missing_mesocycle_yields_a_valid_empty_validation() {
-        let validation = validate_plan(&profile(Value::Null), &json!({ "mesocycle": null }), "2026-09-17T00:00:00.000Z");
+        let validation = validate_plan(
+            &profile(Value::Null),
+            &json!({ "mesocycle": null }),
+            "2026-09-17T00:00:00.000Z",
+        );
         assert!(validation.valid);
         assert!(validation.results.is_empty());
         assert!(validation.data_gaps.is_empty());

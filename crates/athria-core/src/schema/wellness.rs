@@ -54,17 +54,25 @@ enum FieldValue {
 /// `z.number().nonnegative()` and friends; `null` is always allowed.
 fn accepts(rule: FieldValue, value: &Value) -> bool {
     match rule {
-        FieldValue::Text(maximum) => value.as_str().is_some_and(|text| text.encode_utf16().count() <= maximum),
+        FieldValue::Text(maximum) => value
+            .as_str()
+            .is_some_and(|text| text.encode_utf16().count() <= maximum),
         FieldValue::NonNegative => value.as_f64().is_some_and(|number| number >= 0.0),
-        FieldValue::NonNegativeInteger => value.as_f64().is_some_and(|number| number >= 0.0 && number.fract() == 0.0),
-        FieldValue::ZeroToOneHundred => value.as_f64().is_some_and(|number| (0.0..=100.0).contains(&number)),
+        FieldValue::NonNegativeInteger => value
+            .as_f64()
+            .is_some_and(|number| number >= 0.0 && number.fract() == 0.0),
+        FieldValue::ZeroToOneHundred => value
+            .as_f64()
+            .is_some_and(|number| (0.0..=100.0).contains(&number)),
         FieldValue::Positive => value.as_f64().is_some_and(|number| number > 0.0),
     }
 }
 
 fn rule_for(field: &str) -> FieldValue {
     match field {
-        "sleepSeconds" | "sleepQuality" | "stepsCount" | "injuryScore" => FieldValue::NonNegativeInteger,
+        "sleepSeconds" | "sleepQuality" | "stepsCount" | "injuryScore" => {
+            FieldValue::NonNegativeInteger
+        }
         "sleepScore" | "bodyFatPercent" | "spo2Percent" => FieldValue::ZeroToOneHundred,
         "weightKg" => FieldValue::Positive,
         "notes" => FieldValue::Text(2000),
@@ -93,7 +101,10 @@ pub fn parse_wellness_record(value: &Value) -> Result<Value> {
         }
     }
     let mut record = Map::new();
-    record.insert("ownerId".into(), Value::String(text_or(value, "ownerId", crate::DEFAULT_OWNER_ID)));
+    record.insert(
+        "ownerId".into(),
+        Value::String(text_or(value, "ownerId", crate::DEFAULT_OWNER_ID)),
+    );
     record.insert("day".into(), Value::String(day));
     record.insert("fields".into(), Value::Object(ordered));
     record.insert("updatedAt".into(), Value::String(updated_at));
@@ -116,9 +127,15 @@ pub fn parse_wellness_patch(value: &Value) -> Result<WellnessPatch> {
     if value.get("confirmed") != Some(&Value::Bool(true)) {
         return Err(invalid("wellnessPatch.confirmed", "expected true"));
     }
-    let source = value.get("source").and_then(Value::as_str).filter(|candidate| ["user", "llm"].contains(candidate));
+    let source = value
+        .get("source")
+        .and_then(Value::as_str)
+        .filter(|candidate| ["user", "llm"].contains(candidate));
     let Some(source) = source else {
-        return Err(invalid("wellnessPatch.source", "expected a wellness source"));
+        return Err(invalid(
+            "wellnessPatch.source",
+            "expected a wellness source",
+        ));
     };
     Ok(WellnessPatch {
         expected_snapshot_hash: required_text(value, "expectedSnapshotHash", "wellnessPatch")?,
@@ -140,9 +157,15 @@ fn parse_field(field: &str, value: &Value) -> Result<Value> {
     if !field_value.is_null() && !accepts(rule_for(field), field_value) {
         return Err(invalid(&path, "value is outside the field range"));
     }
-    let source = entries.get("source").and_then(Value::as_str).filter(|candidate| SOURCES.contains(candidate));
+    let source = entries
+        .get("source")
+        .and_then(Value::as_str)
+        .filter(|candidate| SOURCES.contains(candidate));
     let Some(source) = source else {
-        return Err(invalid(&format!("{path}.source"), "expected a wellness source"));
+        return Err(invalid(
+            &format!("{path}.source"),
+            "expected a wellness source",
+        ));
     };
     let updated_at = required_text(value, "updatedAt", &path)?;
     let mut parsed = Map::new();

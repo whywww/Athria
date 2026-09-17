@@ -10,9 +10,9 @@
 use serde::Serialize;
 use serde_json::{Map, Value};
 
+use crate::FORMULA_VERSION;
 use crate::error::{AthriaError, AthriaErrorCode, Result};
 use crate::json::{array_field, bump, field, is_null, number, string_field};
-use crate::FORMULA_VERSION;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct TimeRange {
@@ -69,23 +69,45 @@ fn empty_quality(sources: &[String], missing_fields: &[&str]) -> DataQuality {
     DataQuality {
         completeness: if missing_fields.is_empty() { 1 } else { 0 },
         sources: sources.to_vec(),
-        missing_fields: missing_fields.iter().map(|value| value.to_string()).collect(),
+        missing_fields: missing_fields
+            .iter()
+            .map(|value| value.to_string())
+            .collect(),
         anomalies: Vec::new(),
     }
 }
 
 fn range_of(sessions: &[&Value]) -> TimeRange {
     if sessions.is_empty() {
-        return TimeRange { start: None, end: None };
+        return TimeRange {
+            start: None,
+            end: None,
+        };
     }
-    let mut starts: Vec<&str> = sessions.iter().filter_map(|session| session.get("startAt").and_then(Value::as_str)).collect();
+    let mut starts: Vec<&str> = sessions
+        .iter()
+        .filter_map(|session| session.get("startAt").and_then(Value::as_str))
+        .collect();
     starts.sort_unstable();
-    let mut ends: Vec<&str> = sessions.iter().filter_map(|session| session.get("endAt").and_then(Value::as_str)).collect();
+    let mut ends: Vec<&str> = sessions
+        .iter()
+        .filter_map(|session| session.get("endAt").and_then(Value::as_str))
+        .collect();
     ends.sort_unstable();
-    TimeRange { start: starts.first().map(|value| value.to_string()), end: ends.last().map(|value| value.to_string()) }
+    TimeRange {
+        start: starts.first().map(|value| value.to_string()),
+        end: ends.last().map(|value| value.to_string()),
+    }
 }
 
-fn metric(value: Value, unit: &str, method: &str, sessions: &[&Value], data_quality: DataQuality, limitations: Vec<String>) -> MetricResult {
+fn metric(
+    value: Value,
+    unit: &str,
+    method: &str,
+    sessions: &[&Value],
+    data_quality: DataQuality,
+    limitations: Vec<String>,
+) -> MetricResult {
     MetricResult {
         value,
         unit: unit.to_string(),
@@ -104,12 +126,22 @@ fn to_fixed_2(value: f64) -> f64 {
 
 pub fn estimate_one_rep_max(load: f64, reps: f64, unit: &str) -> Result<MetricResult> {
     if !load.is_finite() || load <= 0.0 {
-        return Err(AthriaError::new(AthriaErrorCode::InvalidData, "load must be greater than zero"));
+        return Err(AthriaError::new(
+            AthriaErrorCode::InvalidData,
+            "load must be greater than zero",
+        ));
     }
     if reps.fract() != 0.0 || reps < 1.0 || reps > 12.0 {
-        return Err(AthriaError::new(AthriaErrorCode::InvalidData, "reps must be an integer from 1 to 12"));
+        return Err(AthriaError::new(
+            AthriaErrorCode::InvalidData,
+            "reps must be an integer from 1 to 12",
+        ));
     }
-    let value = if reps == 1.0 { load } else { load * (1.0 + reps / 30.0) };
+    let value = if reps == 1.0 {
+        load
+    } else {
+        load * (1.0 + reps / 30.0)
+    };
     Ok(metric(
         number(to_fixed_2(value)),
         unit,
@@ -125,14 +157,23 @@ pub fn estimate_one_rep_max(load: f64, reps: f64, unit: &str) -> Result<MetricRe
 
 pub fn calculate_heart_rate_zones(max_heart_rate: f64) -> Result<MetricResult> {
     if max_heart_rate.fract() != 0.0 || max_heart_rate < 80.0 || max_heart_rate > 240.0 {
-        return Err(AthriaError::new(AthriaErrorCode::InvalidData, "maxHeartRate must be an explicitly measured integer from 80 to 240"));
+        return Err(AthriaError::new(
+            AthriaErrorCode::InvalidData,
+            "maxHeartRate must be an explicitly measured integer from 80 to 240",
+        ));
     }
     let ratios = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
-    let bounds: Vec<f64> = ratios.iter().map(|ratio| (max_heart_rate * ratio).round()).collect();
+    let bounds: Vec<f64> = ratios
+        .iter()
+        .map(|ratio| (max_heart_rate * ratio).round())
+        .collect();
     let mut zones = Map::new();
     for (index, min) in bounds[..bounds.len() - 1].iter().enumerate() {
         let max = bounds[index + 1] - if index < 4 { 1.0 } else { 0.0 };
-        zones.insert(format!("zone{}", index + 1), serde_json::json!({ "min": number(*min), "max": number(max) }));
+        zones.insert(
+            format!("zone{}", index + 1),
+            serde_json::json!({ "min": number(*min), "max": number(max) }),
+        );
     }
     Ok(metric(
         Value::Object(zones),
@@ -153,13 +194,23 @@ fn session_domains(session: &Value) -> Vec<String> {
     let declared: Vec<String> = session
         .get("domains")
         .and_then(Value::as_array)
-        .map(|items| items.iter().filter_map(Value::as_str).map(str::to_string).collect())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
         .unwrap_or_default();
     if !declared.is_empty() {
         return declared;
     }
     let mut derived = Vec::new();
-    if session.get("strengthSets").and_then(Value::as_array).is_some_and(|sets| !sets.is_empty()) {
+    if session
+        .get("strengthSets")
+        .and_then(Value::as_array)
+        .is_some_and(|sets| !sets.is_empty())
+    {
         derived.push("strength".to_string());
     }
     if !field(session, "endurance").is_null() {
@@ -169,12 +220,21 @@ fn session_domains(session: &Value) -> Vec<String> {
 }
 
 pub fn calculate_training_metrics(sessions: &[Value]) -> TrainingMetrics {
-    let strength_sessions: Vec<&Value> = sessions.iter().filter(|session| session_domains(session).iter().any(|domain| domain == "strength")).collect();
+    let strength_sessions: Vec<&Value> = sessions
+        .iter()
+        .filter(|session| {
+            session_domains(session)
+                .iter()
+                .any(|domain| domain == "strength")
+        })
+        .collect();
     let endurance_sessions: Vec<&Value> = sessions
         .iter()
         .filter(|session| {
             let domains = session_domains(session);
-            domains.iter().any(|domain| domain == "endurance" || domain == "recovery")
+            domains
+                .iter()
+                .any(|domain| domain == "endurance" || domain == "recovery")
         })
         .collect();
 
@@ -206,14 +266,24 @@ pub fn calculate_training_metrics(sessions: &[Value]) -> TrainingMetrics {
         }
     }
 
-    let duration: i64 = endurance_sessions.iter().map(|session| field(session, "durationMinutes").as_i64().unwrap_or(0)).sum();
+    let duration: i64 = endurance_sessions
+        .iter()
+        .map(|session| field(session, "durationMinutes").as_i64().unwrap_or(0))
+        .sum();
     let distance: f64 = endurance_sessions
         .iter()
-        .map(|session| field(field(session, "endurance"), "distanceMeters").as_f64().unwrap_or(0.0))
+        .map(|session| {
+            field(field(session, "endurance"), "distanceMeters")
+                .as_f64()
+                .unwrap_or(0.0)
+        })
         .sum();
     let mut zone_seconds: Map<String, Value> = Map::new();
     for session in &endurance_sessions {
-        if let Some(Value::Object(zones)) = session.get("endurance").and_then(|endurance| endurance.get("heartRateZoneSeconds")) {
+        if let Some(Value::Object(zones)) = session
+            .get("endurance")
+            .and_then(|endurance| endurance.get("heartRateZoneSeconds"))
+        {
             for (zone, seconds) in zones {
                 bump(&mut zone_seconds, zone, seconds.as_f64().unwrap_or(0.0));
             }
@@ -229,16 +299,32 @@ pub fn calculate_training_metrics(sessions: &[Value]) -> TrainingMetrics {
         }
     }
 
-    let volume_missing = strength_sessions.iter().any(|session| array_field(session, "strengthSets").iter().any(|set| is_null(set.get("weight")) || is_null(set.get("reps"))));
-    let distance_missing = endurance_sessions
-        .iter()
-        .any(|session| is_null(session.get("endurance").and_then(|endurance| endurance.get("distanceMeters"))));
-    let zones_missing = endurance_sessions.iter().any(|session| match session.get("endurance") {
-        None | Some(Value::Null) => true,
-        Some(endurance) => endurance.get("heartRateZoneSeconds").and_then(Value::as_object).map_or(true, |zones| zones.is_empty()),
+    let volume_missing = strength_sessions.iter().any(|session| {
+        array_field(session, "strengthSets")
+            .iter()
+            .any(|set| is_null(set.get("weight")) || is_null(set.get("reps")))
     });
+    let distance_missing = endurance_sessions.iter().any(|session| {
+        is_null(
+            session
+                .get("endurance")
+                .and_then(|endurance| endurance.get("distanceMeters")),
+        )
+    });
+    let zones_missing = endurance_sessions
+        .iter()
+        .any(|session| match session.get("endurance") {
+            None | Some(Value::Null) => true,
+            Some(endurance) => endurance
+                .get("heartRateZoneSeconds")
+                .and_then(Value::as_object)
+                .map_or(true, |zones| zones.is_empty()),
+        });
 
-    let shared_limit = vec!["Strength and endurance metrics are intentionally not combined into a single load score.".to_string()];
+    let shared_limit = vec![
+        "Strength and endurance metrics are intentionally not combined into a single load score."
+            .to_string(),
+    ];
     TrainingMetrics {
         strength: StrengthMetrics {
             working_sets: metric(Value::from(working_sets), "sets", "completed_working_sets", &strength_sessions, empty_quality(&sources, &[]), shared_limit.clone()),
@@ -297,10 +383,24 @@ mod tests {
 
     #[test]
     fn one_rep_max_matches_epley_and_rejects_invalid_inputs() {
-        assert_eq!(estimate_one_rep_max(100.0, 5.0, "kg").unwrap().value, json!(116.67));
-        assert_eq!(estimate_one_rep_max(60.0, 1.0, "lb").unwrap().value, json!(60));
-        assert_eq!(estimate_one_rep_max(0.0, 5.0, "kg").unwrap_err().message(), "load must be greater than zero");
-        assert_eq!(estimate_one_rep_max(100.0, 2.5, "kg").unwrap_err().message(), "reps must be an integer from 1 to 12");
+        assert_eq!(
+            estimate_one_rep_max(100.0, 5.0, "kg").unwrap().value,
+            json!(116.67)
+        );
+        assert_eq!(
+            estimate_one_rep_max(60.0, 1.0, "lb").unwrap().value,
+            json!(60)
+        );
+        assert_eq!(
+            estimate_one_rep_max(0.0, 5.0, "kg").unwrap_err().message(),
+            "load must be greater than zero"
+        );
+        assert_eq!(
+            estimate_one_rep_max(100.0, 2.5, "kg")
+                .unwrap_err()
+                .message(),
+            "reps must be an integer from 1 to 12"
+        );
     }
 
     #[test]
@@ -308,26 +408,30 @@ mod tests {
         let zones = calculate_heart_rate_zones(190.0).unwrap().value;
         assert_eq!(zones["zone1"], json!({ "min": 95, "max": 113 }));
         assert_eq!(zones["zone5"], json!({ "min": 171, "max": 190 }));
-        assert_eq!(calculate_heart_rate_zones(190.5).unwrap_err().message(), "maxHeartRate must be an explicitly measured integer from 80 to 240");
+        assert_eq!(
+            calculate_heart_rate_zones(190.5).unwrap_err().message(),
+            "maxHeartRate must be an explicitly measured integer from 80 to 240"
+        );
     }
 
     #[test]
     fn training_metrics_skip_warmups_and_join_zone_records() {
-        let sessions = vec![
-            json!({
-                "source": "hevy", "startAt": "2026-09-07T08:00:00.000Z", "endAt": "2026-09-07T09:00:00.000Z",
-                "domains": [], "durationMinutes": 60,
-                "strengthSets": [
-                    { "setType": "warmup", "weight": 40, "reps": 10, "primaryMuscles": ["chest"], "secondaryMuscles": [] },
-                    { "setType": "normal", "weight": 100, "reps": 5, "primaryMuscles": ["chest"], "secondaryMuscles": ["triceps"] }
-                ],
-                "endurance": null
-            }),
-        ];
+        let sessions = vec![json!({
+            "source": "hevy", "startAt": "2026-09-07T08:00:00.000Z", "endAt": "2026-09-07T09:00:00.000Z",
+            "domains": [], "durationMinutes": 60,
+            "strengthSets": [
+                { "setType": "warmup", "weight": 40, "reps": 10, "primaryMuscles": ["chest"], "secondaryMuscles": [] },
+                { "setType": "normal", "weight": 100, "reps": 5, "primaryMuscles": ["chest"], "secondaryMuscles": ["triceps"] }
+            ],
+            "endurance": null
+        })];
         let metrics = calculate_training_metrics(&sessions);
         assert_eq!(metrics.strength.working_sets.value, json!(1));
         assert_eq!(metrics.strength.raw_volume.value, json!(500));
-        assert_eq!(metrics.strength.direct_sets_by_muscle.value, json!({ "chest": 1 }));
+        assert_eq!(
+            metrics.strength.direct_sets_by_muscle.value,
+            json!({ "chest": 1 })
+        );
         assert_eq!(metrics.endurance.duration_minutes.value, json!(0));
         assert_eq!(metrics.endurance.pace_seconds_per_km.value, Value::Null);
     }

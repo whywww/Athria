@@ -151,7 +151,9 @@ impl AthriaErrorCode {
 
     /// Parses the wire form; `None` for codes this runtime does not know.
     pub fn from_wire(code: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|candidate| candidate.as_str() == code)
+        Self::ALL
+            .into_iter()
+            .find(|candidate| candidate.as_str() == code)
     }
 }
 
@@ -175,7 +177,11 @@ pub type Result<T, E = AthriaError> = std::result::Result<T, E>;
 impl AthriaError {
     /// `status` defaults to 400, matching the TypeScript constructor.
     pub fn new(code: AthriaErrorCode, message: impl Into<String>) -> Self {
-        Self { code, message: message.into(), status: 400 }
+        Self {
+            code,
+            message: message.into(),
+            status: 400,
+        }
     }
 
     /// Overrides the transport status, for example 409 for snapshot changes.
@@ -218,9 +224,17 @@ mod tests {
 
     #[test]
     fn wire_form_is_sorted_and_free_of_duplicates() {
-        let strings: Vec<&str> = AthriaErrorCode::ALL.iter().map(|code| code.as_str()).collect();
+        let strings: Vec<&str> = AthriaErrorCode::ALL
+            .iter()
+            .map(|code| code.as_str())
+            .collect();
         for pair in strings.windows(2) {
-            assert!(pair[0] < pair[1], "{} must sort before {}", pair[0], pair[1]);
+            assert!(
+                pair[0] < pair[1],
+                "{} must sort before {}",
+                pair[0],
+                pair[1]
+            );
         }
     }
 

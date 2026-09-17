@@ -24,5 +24,6 @@ pub use app::AthriaApplication;
 pub use athria_core::{AthriaError, AthriaErrorCode, Result};
 pub use catalog::{builtin_session_templates, builtin_template};
 pub use store::{
-    AthriaStore, RecordImportBatchInput, ReplaceSourceSessionsInput, SaveCurrentPlannedSessionsInput, UpdateCurrentPlannedSessionsInput, WriteCounts,
+    AthriaStore, RecordImportBatchInput, ReplaceSourceSessionsInput,
+    SaveCurrentPlannedSessionsInput, UpdateCurrentPlannedSessionsInput, WriteCounts,
 };

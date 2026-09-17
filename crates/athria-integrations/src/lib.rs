@@ -11,8 +11,14 @@ mod xunji;
 use serde_json::Value;
 
 pub use hevy::{HEVY_PARSER_VERSION, HevyPreview, parse_hevy_csv};
-pub use intervals::{SyncDateWindow, fetch_intervals, interval_modality, normalize_intervals_activity, sync_date_window};
-pub use xunji::{XUNJI_PARSER_VERSION, XUNJI_SYNC_DAYS, XunjiAuthenticationError, fetch_xunji_training, normalize_xunji_training};
+pub use intervals::{
+    SyncDateWindow, fetch_intervals, interval_modality, normalize_intervals_activity,
+    sync_date_window,
+};
+pub use xunji::{
+    XUNJI_PARSER_VERSION, XUNJI_SYNC_DAYS, XunjiAuthenticationError, fetch_xunji_training,
+    normalize_xunji_training,
+};
 
 pub use athria_core::{AthriaError, AthriaErrorCode, Result};
 

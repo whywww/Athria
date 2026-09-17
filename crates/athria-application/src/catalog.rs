@@ -113,7 +113,9 @@ pub fn builtin_session_templates() -> Vec<Value> {
 
 /// The catalog entry for `id`, if the id names a built-in.
 pub fn builtin_template(id: &str) -> Option<Value> {
-    builtin_session_templates().into_iter().find(|template| template["id"] == json!(id))
+    builtin_session_templates()
+        .into_iter()
+        .find(|template| template["id"] == json!(id))
 }
 
 #[cfg(test)]
@@ -127,7 +129,11 @@ mod tests {
         for template in &templates {
             assert_eq!(template["origin"], json!("builtin"));
             assert_eq!(template["catalogVersion"], json!(TEMPLATE_CATALOG_VERSION));
-            assert!(template["id"].as_str().is_some_and(|id| id.starts_with("builtin.")));
+            assert!(
+                template["id"]
+                    .as_str()
+                    .is_some_and(|id| id.starts_with("builtin."))
+            );
         }
     }
 

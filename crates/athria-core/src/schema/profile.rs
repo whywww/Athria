@@ -17,22 +17,58 @@ const UNIT_SYSTEMS: [&str; 2] = ["metric", "imperial"];
 pub fn parse_profile(value: &Value) -> Result<Value> {
     let equipment_ids = equipment_type_ids();
     let mut profile = Map::new();
-    profile.insert("ownerId".into(), Value::String(text_or(value, "ownerId", DEFAULT_OWNER_ID)));
-    profile.insert("preferredName".into(), Value::String(trimmed_or(value, "preferredName", "Athlete")));
+    profile.insert(
+        "ownerId".into(),
+        Value::String(text_or(value, "ownerId", DEFAULT_OWNER_ID)),
+    );
+    profile.insert(
+        "preferredName".into(),
+        Value::String(trimmed_or(value, "preferredName", "Athlete")),
+    );
     profile.insert("gender".into(), nullable_enum(value, "gender", &GENDERS));
     profile.insert("heightCm".into(), number_or_null(value, "heightCm"));
     profile.insert("birthDate".into(), text_or_null(value, "birthDate"));
-    profile.insert("timezone".into(), Value::String(text_or(value, "timezone", DEFAULT_TIMEZONE)));
-    profile.insert("goals".into(), text_array_or(value, "goals", &["general_fitness"]));
-    profile.insert("preference".into(), Value::String(trimmed_or(value, "preference", "")));
-    profile.insert("maxSessionMinutes".into(), int_or(value, "maxSessionMinutes", 60));
-    profile.insert("trainingRhythm".into(), parse_training_rhythm(value.get("trainingRhythm"))?);
-    profile.insert("equipment".into(), enum_array_or(value, "equipment", &equipment_ids, &equipment_ids));
+    profile.insert(
+        "timezone".into(),
+        Value::String(text_or(value, "timezone", DEFAULT_TIMEZONE)),
+    );
+    profile.insert(
+        "goals".into(),
+        text_array_or(value, "goals", &["general_fitness"]),
+    );
+    profile.insert(
+        "preference".into(),
+        Value::String(trimmed_or(value, "preference", "")),
+    );
+    profile.insert(
+        "maxSessionMinutes".into(),
+        int_or(value, "maxSessionMinutes", 60),
+    );
+    profile.insert(
+        "trainingRhythm".into(),
+        parse_training_rhythm(value.get("trainingRhythm"))?,
+    );
+    profile.insert(
+        "equipment".into(),
+        enum_array_or(value, "equipment", &equipment_ids, &equipment_ids),
+    );
     profile.insert("injuries".into(), parse_note_list(value, "injuries")?);
-    profile.insert("constraintNotes".into(), parse_note_list(value, "constraintNotes")?);
-    profile.insert("explicitRecoveryDays".into(), nullable_int(value, "explicitRecoveryDays"));
-    profile.insert("unitSystem".into(), Value::String(enum_or(value, "unitSystem", &UNIT_SYSTEMS, "metric")));
-    profile.insert("mesocycleDurationWeeks".into(), int_or(value, "mesocycleDurationWeeks", 8));
+    profile.insert(
+        "constraintNotes".into(),
+        parse_note_list(value, "constraintNotes")?,
+    );
+    profile.insert(
+        "explicitRecoveryDays".into(),
+        nullable_int(value, "explicitRecoveryDays"),
+    );
+    profile.insert(
+        "unitSystem".into(),
+        Value::String(enum_or(value, "unitSystem", &UNIT_SYSTEMS, "metric")),
+    );
+    profile.insert(
+        "mesocycleDurationWeeks".into(),
+        int_or(value, "mesocycleDurationWeeks", 8),
+    );
     profile.insert("raceDays".into(), parse_race_days(value.get("raceDays"))?);
     Ok(Value::Object(profile))
 }
@@ -40,9 +76,18 @@ pub fn parse_profile(value: &Value) -> Result<Value> {
 /// `trainingRhythmSchema.parse(value)` with the schema default.
 pub fn parse_training_rhythm(value: Option<&Value>) -> Result<Value> {
     let Some(value) = value.filter(|candidate| candidate.is_object()) else {
-        return Ok(json!({ "kind": "flexible_week", "targetDaysPerWeek": 4, "minDaysPerWeek": 3, "maxDaysPerWeek": 5 }));
+        return Ok(
+            json!({ "kind": "flexible_week", "targetDaysPerWeek": 4, "minDaysPerWeek": 3, "maxDaysPerWeek": 5 }),
+        );
     };
-    match enum_or(value, "kind", &["fixed_week", "flexible_week", "interval"], "flexible_week").as_str() {
+    match enum_or(
+        value,
+        "kind",
+        &["fixed_week", "flexible_week", "interval"],
+        "flexible_week",
+    )
+    .as_str()
+    {
         "fixed_week" => Ok(json!({
             "kind": "fixed_week",
             "days": match value.get("days").and_then(Value::as_array) {
@@ -50,7 +95,9 @@ pub fn parse_training_rhythm(value: Option<&Value>) -> Result<Value> {
                 None => json!([1, 3, 5]),
             },
         })),
-        "interval" => Ok(json!({ "kind": "interval", "intervalDays": int_or(value, "intervalDays", 2) })),
+        "interval" => {
+            Ok(json!({ "kind": "interval", "intervalDays": int_or(value, "intervalDays", 2) }))
+        }
         _ => Ok(json!({
             "kind": "flexible_week",
             "targetDaysPerWeek": int_or(value, "targetDaysPerWeek", 4),
@@ -85,12 +132,22 @@ fn parse_note_list(value: &Value, key: &str) -> Result<Value> {
     let mut notes: Vec<String> = Vec::with_capacity(items.len());
     for (index, entry) in items.iter().enumerate() {
         let path = format!("{key}.{index}");
-        let note = entry.as_str().ok_or_else(|| invalid_type(&path, "a string"))?.trim().to_owned();
+        let note = entry
+            .as_str()
+            .ok_or_else(|| invalid_type(&path, "a string"))?
+            .trim()
+            .to_owned();
         if normalize_note(&note).is_empty() {
             return Err(invalid(&path, "note must not be empty"));
         }
-        if notes.iter().any(|existing| normalize_note(existing) == normalize_note(&note)) {
-            return Err(invalid(key, "profile notes must not contain duplicate entries"));
+        if notes
+            .iter()
+            .any(|existing| normalize_note(existing) == normalize_note(&note))
+        {
+            return Err(invalid(
+                key,
+                "profile notes must not contain duplicate entries",
+            ));
         }
         notes.push(note);
     }
@@ -99,7 +156,11 @@ fn parse_note_list(value: &Value, key: &str) -> Result<Value> {
 
 /// `normalizeProfileNote`: trim, collapse whitespace, lowercase.
 pub fn normalize_note(value: &str) -> String {
-    value.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
+    value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
 }
 
 /// The keys `athleteProfileSchema.partial().omit({ ownerId: true })` accepts.
@@ -126,7 +187,11 @@ pub fn patch_keys(patch: &Value) -> Vec<String> {
     let Some(entries) = patch.as_object() else {
         return Vec::new();
     };
-    PATCHABLE.iter().filter(|key| entries.contains_key(**key)).map(|key| (*key).to_owned()).collect()
+    PATCHABLE
+        .iter()
+        .filter(|key| entries.contains_key(**key))
+        .map(|key| (*key).to_owned())
+        .collect()
 }
 
 /// Merges a profile patch over a stored profile, then re-parses: the
@@ -156,9 +221,15 @@ pub struct ProfileUpdate {
 /// `profileUpdateSchema.parse(value)`.
 pub fn parse_profile_update(value: &Value) -> Result<ProfileUpdate> {
     object(value, "profileUpdate")?;
-    let patch = value.get("patch").cloned().unwrap_or_else(|| Value::Object(Map::new()));
+    let patch = value
+        .get("patch")
+        .cloned()
+        .unwrap_or_else(|| Value::Object(Map::new()));
     object(&patch, "profileUpdate.patch")?;
-    Ok(ProfileUpdate { patch, expected_profile_hash: required_text(value, "expectedProfileHash", "profileUpdate")? })
+    Ok(ProfileUpdate {
+        patch,
+        expected_profile_hash: required_text(value, "expectedProfileHash", "profileUpdate")?,
+    })
 }
 
 /// `personalInformationWriteSchema.parse(value)`.
@@ -170,8 +241,16 @@ pub fn parse_personal_information(value: &Value) -> Result<PersonalInformationWr
         height_cm: number_or_null(value, "heightCm"),
         birth_date: text_or_null(value, "birthDate"),
         weight_kg: value.get("weightKg").cloned(),
-        unit_system: value.get("unitSystem").and_then(Value::as_str).filter(|candidate| UNIT_SYSTEMS.contains(candidate)).map(str::to_owned),
-        expected_snapshot_hash: required_text(value, "expectedSnapshotHash", "personalInformation")?,
+        unit_system: value
+            .get("unitSystem")
+            .and_then(Value::as_str)
+            .filter(|candidate| UNIT_SYSTEMS.contains(candidate))
+            .map(str::to_owned),
+        expected_snapshot_hash: required_text(
+            value,
+            "expectedSnapshotHash",
+            "personalInformation",
+        )?,
     })
 }
 

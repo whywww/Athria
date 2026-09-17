@@ -60,7 +60,9 @@ fn string_literal(text: &str) -> String {
             '\n' => output.push_str("\\n"),
             '\r' => output.push_str("\\r"),
             '\t' => output.push_str("\\t"),
-            control if (control as u32) < 0x20 => output.push_str(&format!("\\u{:04x}", control as u32)),
+            control if (control as u32) < 0x20 => {
+                output.push_str(&format!("\\u{:04x}", control as u32))
+            }
             printable => output.push(printable),
         }
     }
@@ -71,11 +73,24 @@ fn string_literal(text: &str) -> String {
 /// The TypeScript `canonical` serialization used as the hash pre-image.
 pub fn canonical(value: &Value) -> String {
     match value {
-        Value::Array(items) => format!("[{}]", items.iter().map(canonical).collect::<Vec<_>>().join(",")),
+        Value::Array(items) => format!(
+            "[{}]",
+            items.iter().map(canonical).collect::<Vec<_>>().join(",")
+        ),
         Value::Object(entries) => {
             let mut keys: Vec<&String> = entries.keys().collect();
             keys.sort_by(|left, right| js_locale_compare(left, right));
-            let body = keys.iter().map(|key| format!("{}:{}", string_literal(key), canonical(&entries[key.as_str()]))).collect::<Vec<_>>().join(",");
+            let body = keys
+                .iter()
+                .map(|key| {
+                    format!(
+                        "{}:{}",
+                        string_literal(key),
+                        canonical(&entries[key.as_str()])
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(",");
             format!("{{{body}}}")
         }
         Value::String(text) => string_literal(text),
@@ -90,7 +105,11 @@ pub fn stable_hash(value: &Value) -> String {
         let code_point = character as u32;
         // `charCodeAt(0)` inside a `for...of` loop returns the high surrogate
         // of astral code points; the low surrogate is never hashed.
-        let code_unit = if code_point > 0xFFFF { 0xD800 + ((code_point - 0x1_0000) >> 10) } else { code_point };
+        let code_unit = if code_point > 0xFFFF {
+            0xD800 + ((code_point - 0x1_0000) >> 10)
+        } else {
+            code_point
+        };
         hash ^= code_unit;
         hash = hash.wrapping_mul(16_777_619);
     }
@@ -106,20 +125,32 @@ mod tests {
     fn canonical_sorts_keys_like_locale_compare() {
         assert_eq!(canonical(&json!({ "b": 1, "a": 2 })), "{\"a\":2,\"b\":1}");
         // Case-insensitive primary order with lowercase-first tertiary ties.
-        assert_eq!(canonical(&json!({ "aB": 1, "Ac": 2, "a": 3, "B": 4 })), "{\"a\":3,\"aB\":1,\"Ac\":2,\"B\":4}");
+        assert_eq!(
+            canonical(&json!({ "aB": 1, "Ac": 2, "a": 3, "B": 4 })),
+            "{\"a\":3,\"aB\":1,\"Ac\":2,\"B\":4}"
+        );
         assert_eq!(canonical(&json!({ "a": 1, "A": 2 })), "{\"a\":1,\"A\":2}");
     }
 
     #[test]
     fn canonical_matches_javascript_value_rendering() {
         assert_eq!(canonical(&json!(null)), "null");
-        assert_eq!(canonical(&json!([1, "two", true, [3]])), "[1,\"two\",true,[3]]");
-        assert_eq!(canonical(&json!({ "text": "a\"b", "empty": {} })), "{\"empty\":{},\"text\":\"a\\\"b\"}");
+        assert_eq!(
+            canonical(&json!([1, "two", true, [3]])),
+            "[1,\"two\",true,[3]]"
+        );
+        assert_eq!(
+            canonical(&json!({ "text": "a\"b", "empty": {} })),
+            "{\"empty\":{},\"text\":\"a\\\"b\"}"
+        );
     }
 
     #[test]
     fn stable_hash_is_order_insensitive_but_case_sensitive() {
-        assert_eq!(stable_hash(&json!({ "a": 1, "b": [2, { "c": 3 }] })), stable_hash(&json!({ "b": [2, { "c": 3 }], "a": 1 })));
+        assert_eq!(
+            stable_hash(&json!({ "a": 1, "b": [2, { "c": 3 }] })),
+            stable_hash(&json!({ "b": [2, { "c": 3 }], "a": 1 }))
+        );
         assert_ne!(stable_hash(&json!("a")), stable_hash(&json!("A")));
         assert!(stable_hash(&json!({})).starts_with("fnv1a-"));
         assert_eq!(stable_hash(&json!({})).len(), "fnv1a-".len() + 8);
