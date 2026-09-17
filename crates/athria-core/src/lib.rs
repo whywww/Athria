@@ -12,6 +12,7 @@ pub mod hash;
 pub mod metrics;
 pub mod progression;
 pub mod schedule;
+pub mod validation;
 
 mod date;
 mod json;
@@ -24,6 +25,7 @@ pub use metrics::{
 };
 pub use progression::{DoubleProgressionInput, RpeAutoregulationInput, evaluate_double_progression, evaluate_rpe_autoregulation};
 pub use schedule::{ScheduleOccurrence, expand_schedule};
+pub use validation::{Coverage, PlanValidation, validate_plan};
 
 /// Version of the deterministic formulas; byte-identical to `FORMULA_VERSION`
 /// in `packages/schemas`.
