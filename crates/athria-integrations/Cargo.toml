@@ -5,3 +5,8 @@ edition.workspace = true
 
 [dependencies]
 athria-core = { workspace = true }
+base64 = "0.22"
+csv = "1.3"
+indexmap = "2.11"
+serde_json = { version = "1.0.151", features = ["preserve_order"] }
+sha2 = "0.10"

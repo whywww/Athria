@@ -1,10 +1,41 @@
-//! Training-data integrations, the Rust port target of `packages/integrations`:
-//! Hevy CSV parsing, Intervals.icu and Xunji normalization.
+//! Shared training-data adapters.
 //!
-//! Phase 2 establishes the crate boundary only. When ported (Phase 6), parsing
-//! and normalization must stay fixture-compatible with the TypeScript code
-//! (timezone behavior, sync date windows, partial failure semantics). Network
-//! transport stays in this crate behind an injectable client, while credential
-//! access belongs to the runtime/platform layer, never to the application.
+//! Parsing is pure, network access is behind [`HttpClient`], and credentials
+//! are call-scoped values supplied by the runtime. This crate never reads an
+//! OS keyring or persists a secret.
+
+mod hevy;
+mod intervals;
+mod xunji;
+
+use serde_json::Value;
+
+pub use hevy::{HEVY_PARSER_VERSION, HevyPreview, parse_hevy_csv};
+pub use intervals::{SyncDateWindow, fetch_intervals, interval_modality, normalize_intervals_activity, sync_date_window};
+pub use xunji::{XUNJI_PARSER_VERSION, XUNJI_SYNC_DAYS, XunjiAuthenticationError, fetch_xunji_training, normalize_xunji_training};
 
 pub use athria_core::{AthriaError, AthriaErrorCode, Result};
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HttpRequest {
+    pub method: &'static str,
+    pub url: String,
+    pub headers: Vec<(String, String)>,
+    pub body: Option<String>,
+    pub timeout_ms: u64,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct HttpResponse {
+    pub status: u16,
+    pub body: Value,
+}
+
+/// Runtime-provided HTTP adapter. Platform credentials remain outside it.
+pub trait HttpClient {
+    fn send(&self, request: &HttpRequest) -> std::result::Result<HttpResponse, String>;
+}
+
+pub(crate) fn invalid(message: impl Into<String>) -> AthriaError {
+    AthriaError::new(AthriaErrorCode::InvalidData, message.into())
+}
