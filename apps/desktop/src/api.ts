@@ -1,18 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
-import { HttpAthriaClient, TauriAthriaClient } from "./athria-client";
+import { TauriAthriaClient } from "./athria-client";
 import type { IntervalsConnectionStatus, SyncRange } from "./view-models";
 
-interface ServiceInfo { baseUrl: string; token: string; mcpUrl: string }
 export interface McpStatus { configured: boolean; executablePath: string; arguments: ["mcp"] }
-let serviceInfo: Promise<ServiceInfo> | undefined;
 
-async function info(): Promise<ServiceInfo> {
-  serviceInfo ??= invoke<ServiceInfo>("get_service_info");
-  return serviceInfo;
-}
-
-const httpClient = new HttpAthriaClient(info);
-const client = new TauriAthriaClient(invoke, httpClient);
+const client = new TauriAthriaClient(invoke);
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> { return client.request<T>(path, init); }
 

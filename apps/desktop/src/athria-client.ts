@@ -24,12 +24,9 @@ export class HttpAthriaClient implements AthriaClient {
 }
 
 export class TauriAthriaClient implements AthriaClient {
-  constructor(private readonly invoke: Invoke, private readonly fallback: AthriaClient) {}
+  constructor(private readonly invoke: Invoke) {}
 
   async request<T>(path: string, init: RequestInit = {}): Promise<T> {
-    // Backup inspection still belongs to the desktop filesystem adapter. It
-    // remains on the compatibility transport until that adapter is ported.
-    if (path === "/api/system/backup/preview") return this.fallback.request<T>(path, init);
     const body = typeof init.body === "string" && init.body.length > 0 ? JSON.parse(init.body) as unknown : undefined;
     try {
       return await this.invoke<T>("athria_request", { method: init.method ?? "GET", path, body });

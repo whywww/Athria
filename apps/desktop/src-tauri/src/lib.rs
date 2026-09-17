@@ -212,7 +212,10 @@ fn run_mcp_passthrough() -> i32 {
 fn get_service_info(state: State<'_, RuntimeState>) -> ServiceInfo { state.service.clone() }
 
 #[tauri::command]
-fn athria_request(state: State<'_, RuntimeState>, method: String, path: String, body: Option<Value>) -> Result<Value, String> {
+async fn athria_request(state: State<'_, RuntimeState>, method: String, path: String, body: Option<Value>) -> Result<Value, String> {
+    if method.eq_ignore_ascii_case("POST") && path == "/api/system/backup/preview" {
+        return service_post(&state, &path, body.unwrap_or_else(|| json!({}))).await;
+    }
     let application = state.application.lock().map_err(|_| "Athria runtime state is unavailable.".to_string())?;
     dispatch_application(&application, &state.database_path, &method, &path, body)
 }
