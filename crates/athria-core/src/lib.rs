@@ -9,6 +9,8 @@
 
 pub mod error;
 pub mod hash;
+pub mod metrics;
+pub mod progression;
 pub mod schedule;
 
 mod date;
@@ -16,6 +18,11 @@ mod json;
 
 pub use error::{AthriaError, AthriaErrorCode, Result};
 pub use hash::{canonical, stable_hash};
+pub use metrics::{
+    DataQuality, EnduranceMetrics, MetricResult, StrengthMetrics, TimeRange, TrainingMetrics, calculate_heart_rate_zones, calculate_training_metrics,
+    estimate_one_rep_max,
+};
+pub use progression::{DoubleProgressionInput, RpeAutoregulationInput, evaluate_double_progression, evaluate_rpe_autoregulation};
 pub use schedule::{ScheduleOccurrence, expand_schedule};
 
 /// Version of the deterministic formulas; byte-identical to `FORMULA_VERSION`
