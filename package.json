@@ -13,6 +13,7 @@
     "test": "bun --bun vitest run --configLoader runner",
     "test:compat:store": "bun run scripts/store-compat.ts",
     "test:compat:core": "bun run scripts/core-golden.ts && cargo test -p athria-core",
+    "test:compat:application": "bun run scripts/application-compat.ts && cargo test -p athria-store --test application_compat",
     "typecheck": "bun --bun tsc -b",
     "build:service": "bun run scripts/desktop-build.ts service",
     "build:debug": "bun run scripts/desktop-build.ts debug",

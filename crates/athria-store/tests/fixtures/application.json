@@ -1,0 +1,1247 @@
+{
+  "version": 1,
+  "now": "2026-09-17T04:00:00.000Z",
+  "steps": [
+    {
+      "operation": "get_profile",
+      "expected": {
+        "ownerId": "local-user",
+        "preferredName": "Athlete",
+        "gender": null,
+        "heightCm": null,
+        "birthDate": null,
+        "timezone": "Asia/Hong_Kong",
+        "goals": [
+          "general_fitness"
+        ],
+        "preference": "",
+        "maxSessionMinutes": 60,
+        "trainingRhythm": {
+          "kind": "flexible_week",
+          "targetDaysPerWeek": 4,
+          "minDaysPerWeek": 3,
+          "maxDaysPerWeek": 5
+        },
+        "equipment": [
+          "dumbbell",
+          "barbell",
+          "kettlebell",
+          "cable",
+          "smith_machine",
+          "machine",
+          "landmine",
+          "pull_up_bar",
+          "trx",
+          "bench",
+          "plyo_box",
+          "resistance_band",
+          "medicine_ball",
+          "sandbag",
+          "sled",
+          "treadmill",
+          "exercise_bike",
+          "rowing_machine",
+          "elliptical",
+          "stepper",
+          "ski_erg",
+          "jump_rope",
+          "battle_rope",
+          "yoga_mat",
+          "foam_roller",
+          "massage_ball",
+          "reformer",
+          "pilates_ring",
+          "mini_stability_ball",
+          "ball_machine"
+        ],
+        "injuries": [],
+        "constraintNotes": [],
+        "explicitRecoveryDays": null,
+        "unitSystem": "metric",
+        "mesocycleDurationWeeks": 8,
+        "raceDays": []
+      }
+    },
+    {
+      "operation": "update_profile",
+      "input": {
+        "patch": {
+          "preferredName": "Compat Athlete",
+          "timezone": "Asia/Hong_Kong",
+          "trainingRhythm": {
+            "kind": "fixed_week",
+            "days": [
+              0
+            ]
+          }
+        },
+        "expectedProfileHash": "fnv1a-e8a6b10c",
+        "confirmed": true
+      },
+      "expected": {
+        "ownerId": "local-user",
+        "preferredName": "Compat Athlete",
+        "gender": null,
+        "heightCm": null,
+        "birthDate": null,
+        "timezone": "Asia/Hong_Kong",
+        "goals": [
+          "general_fitness"
+        ],
+        "preference": "",
+        "maxSessionMinutes": 60,
+        "trainingRhythm": {
+          "kind": "fixed_week",
+          "days": [
+            0
+          ]
+        },
+        "equipment": [
+          "dumbbell",
+          "barbell",
+          "kettlebell",
+          "cable",
+          "smith_machine",
+          "machine",
+          "landmine",
+          "pull_up_bar",
+          "trx",
+          "bench",
+          "plyo_box",
+          "resistance_band",
+          "medicine_ball",
+          "sandbag",
+          "sled",
+          "treadmill",
+          "exercise_bike",
+          "rowing_machine",
+          "elliptical",
+          "stepper",
+          "ski_erg",
+          "jump_rope",
+          "battle_rope",
+          "yoga_mat",
+          "foam_roller",
+          "massage_ball",
+          "reformer",
+          "pilates_ring",
+          "mini_stability_ball",
+          "ball_machine"
+        ],
+        "injuries": [],
+        "constraintNotes": [],
+        "explicitRecoveryDays": null,
+        "unitSystem": "metric",
+        "mesocycleDurationWeeks": 8,
+        "raceDays": []
+      }
+    },
+    {
+      "operation": "update_profile",
+      "input": {
+        "patch": {
+          "preferredName": "Stale"
+        },
+        "expectedProfileHash": "fnv1a-00000000",
+        "confirmed": true
+      },
+      "error": {
+        "code": "INPUT_SNAPSHOT_CHANGED",
+        "message": "The athlete profile changed. Refresh before applying the confirmed update.",
+        "status": 409
+      }
+    },
+    {
+      "operation": "get_personal_information",
+      "expected": {
+        "preferredName": "Compat Athlete",
+        "gender": null,
+        "heightCm": null,
+        "birthDate": null,
+        "unitSystem": "metric",
+        "weightKg": null,
+        "weightDate": null,
+        "snapshotHash": "fnv1a-21c8df12"
+      }
+    },
+    {
+      "operation": "save_personal_information",
+      "input": {
+        "preferredName": "Compat Athlete",
+        "gender": "non_binary",
+        "heightCm": 171.5,
+        "birthDate": "1995-04-03",
+        "weightKg": 67.2,
+        "expectedSnapshotHash": "fnv1a-21c8df12"
+      },
+      "expected": {
+        "preferredName": "Compat Athlete",
+        "gender": "non_binary",
+        "heightCm": 171.5,
+        "birthDate": "1995-04-03",
+        "unitSystem": "metric",
+        "weightKg": 67.2,
+        "weightDate": "2026-09-17",
+        "snapshotHash": "fnv1a-715c550f"
+      }
+    },
+    {
+      "operation": "update_wellness",
+      "input": {
+        "day": "2026-09-16",
+        "value": {
+          "fields": {
+            "sleepScore": 82,
+            "restingHeartRateBpm": 51
+          },
+          "source": "user",
+          "expectedSnapshotHash": "new",
+          "confirmed": true
+        }
+      },
+      "expected": {
+        "ownerId": "local-user",
+        "day": "2026-09-16",
+        "fields": {
+          "restingHeartRateBpm": {
+            "value": 51,
+            "source": "user",
+            "updatedAt": "2026-09-17T04:00:00.000Z"
+          },
+          "sleepScore": {
+            "value": 82,
+            "source": "user",
+            "updatedAt": "2026-09-17T04:00:00.000Z"
+          }
+        },
+        "updatedAt": "2026-09-17T04:00:00.000Z"
+      }
+    },
+    {
+      "operation": "update_wellness",
+      "input": {
+        "day": "2026-09-16",
+        "value": {
+          "fields": {
+            "sleepScore": 60
+          },
+          "source": "user",
+          "expectedSnapshotHash": "new",
+          "confirmed": true
+        }
+      },
+      "error": {
+        "code": "INPUT_SNAPSHOT_CHANGED",
+        "message": "Wellness changed. Refresh before applying the confirmed update.",
+        "status": 409
+      }
+    },
+    {
+      "operation": "record_training_session",
+      "input": {
+        "id": "compat-session",
+        "externalId": "compat-session",
+        "name": "Compat Run",
+        "modality": "endurance",
+        "domains": [
+          "endurance"
+        ],
+        "sport": null,
+        "startAt": "2026-09-15T22:00:00.000Z",
+        "endAt": "2026-09-15T22:45:00.000Z",
+        "durationMinutes": 45,
+        "timezone": "Asia/Hong_Kong",
+        "plannedSessionId": null,
+        "strengthSets": [],
+        "endurance": {
+          "distanceMeters": 8000
+        },
+        "missingFields": []
+      },
+      "expected": {
+        "id": "compat-session",
+        "ownerId": "local-user",
+        "source": "manual",
+        "externalId": "compat-session",
+        "modality": "endurance",
+        "domains": [
+          "endurance"
+        ],
+        "sport": null,
+        "name": "Compat Run",
+        "startAt": "2026-09-15T22:00:00.000Z",
+        "endAt": "2026-09-15T22:45:00.000Z",
+        "durationMinutes": 45,
+        "status": "completed",
+        "timezone": "Asia/Hong_Kong",
+        "plannedSessionId": null,
+        "timePrecision": "exact",
+        "sources": [],
+        "planMatch": null,
+        "isPlanMatchExcluded": false,
+        "strengthSets": [],
+        "endurance": {
+          "distanceMeters": 8000,
+          "averageHeartRate": null,
+          "maxHeartRate": null,
+          "averagePowerWatts": null,
+          "maxPowerWatts": null,
+          "heartRateZoneSeconds": {}
+        },
+        "missingFields": []
+      }
+    },
+    {
+      "operation": "get_training_summary",
+      "input": {
+        "days": 7,
+        "from": "2026-09-15",
+        "to": "2026-09-17"
+      },
+      "expected": {
+        "periodDays": 7,
+        "sessionCount": 1,
+        "totalDurationMinutes": 45,
+        "byDomain": {
+          "strength": 0,
+          "endurance": 1,
+          "sport_skill": 0,
+          "mind_body": 0,
+          "recovery": 0
+        },
+        "durationMinutesByDomain": {
+          "strength": 0,
+          "endurance": 45,
+          "sport_skill": 0,
+          "mind_body": 0,
+          "recovery": 0
+        },
+        "sports": [],
+        "metrics": {
+          "strength": {
+            "workingSets": {
+              "value": 0,
+              "unit": "sets",
+              "method": "completed_working_sets",
+              "formulaVersion": "0.2.0",
+              "timeRange": {
+                "start": null,
+                "end": null
+              },
+              "dataQuality": {
+                "completeness": 1,
+                "sources": [
+                  "manual"
+                ],
+                "missingFields": [],
+                "anomalies": []
+              },
+              "limitations": [
+                "Strength and endurance metrics are intentionally not combined into a single load score."
+              ]
+            },
+            "rawVolume": {
+              "value": 0,
+              "unit": "load_repetitions",
+              "method": "sum_load_times_reps",
+              "formulaVersion": "0.2.0",
+              "timeRange": {
+                "start": null,
+                "end": null
+              },
+              "dataQuality": {
+                "completeness": 1,
+                "sources": [
+                  "manual"
+                ],
+                "missingFields": [],
+                "anomalies": []
+              },
+              "limitations": [
+                "Volumes in different weight units must not be compared until normalized."
+              ]
+            },
+            "directSetsByMuscle": {
+              "value": {},
+              "unit": "sets",
+              "method": "primary_muscle_set_count",
+              "formulaVersion": "0.2.0",
+              "timeRange": {
+                "start": null,
+                "end": null
+              },
+              "dataQuality": {
+                "completeness": 1,
+                "sources": [
+                  "manual"
+                ],
+                "missingFields": [],
+                "anomalies": []
+              },
+              "limitations": []
+            },
+            "indirectSetsByMuscle": {
+              "value": {},
+              "unit": "participations",
+              "method": "secondary_muscle_participation_count",
+              "formulaVersion": "0.2.0",
+              "timeRange": {
+                "start": null,
+                "end": null
+              },
+              "dataQuality": {
+                "completeness": 1,
+                "sources": [
+                  "manual"
+                ],
+                "missingFields": [],
+                "anomalies": []
+              },
+              "limitations": [
+                "Indirect participation is not treated as equivalent to a direct set."
+              ]
+            }
+          },
+          "endurance": {
+            "durationMinutes": {
+              "value": 45,
+              "unit": "min",
+              "method": "sum_duration",
+              "formulaVersion": "0.2.0",
+              "timeRange": {
+                "start": "2026-09-15T22:00:00.000Z",
+                "end": "2026-09-15T22:45:00.000Z"
+              },
+              "dataQuality": {
+                "completeness": 1,
+                "sources": [
+                  "manual"
+                ],
+                "missingFields": [],
+                "anomalies": []
+              },
+              "limitations": [
+                "Strength and endurance metrics are intentionally not combined into a single load score."
+              ]
+            },
+            "distanceMeters": {
+              "value": 8000,
+              "unit": "m",
+              "method": "sum_distance",
+              "formulaVersion": "0.2.0",
+              "timeRange": {
+                "start": "2026-09-15T22:00:00.000Z",
+                "end": "2026-09-15T22:45:00.000Z"
+              },
+              "dataQuality": {
+                "completeness": 1,
+                "sources": [
+                  "manual"
+                ],
+                "missingFields": [],
+                "anomalies": []
+              },
+              "limitations": []
+            },
+            "paceSecondsPerKm": {
+              "value": 337.5,
+              "unit": "s/km",
+              "method": "elapsed_duration_per_kilometer",
+              "formulaVersion": "0.2.0",
+              "timeRange": {
+                "start": "2026-09-15T22:00:00.000Z",
+                "end": "2026-09-15T22:45:00.000Z"
+              },
+              "dataQuality": {
+                "completeness": 1,
+                "sources": [
+                  "manual"
+                ],
+                "missingFields": [],
+                "anomalies": []
+              },
+              "limitations": [
+                "Elapsed pace may include stopped time depending on the source."
+              ]
+            },
+            "timeInZoneSeconds": {
+              "value": {},
+              "unit": "s",
+              "method": "sum_source_zone_durations",
+              "formulaVersion": "0.2.0",
+              "timeRange": {
+                "start": "2026-09-15T22:00:00.000Z",
+                "end": "2026-09-15T22:45:00.000Z"
+              },
+              "dataQuality": {
+                "completeness": 0,
+                "sources": [
+                  "manual"
+                ],
+                "missingFields": [
+                  "heartRateZoneSeconds"
+                ],
+                "anomalies": []
+              },
+              "limitations": [
+                "Zone totals retain the source method and require a configured heart-rate basis."
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "operation": "create_template",
+      "input": {
+        "id": "compat.tempo",
+        "name": "Tempo",
+        "intent": "Build sustainable aerobic speed.",
+        "domain": "endurance",
+        "nodes": [
+          {
+            "role": "steady",
+            "variables": [
+              "duration"
+            ],
+            "optionalVariables": [
+              "distance"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "id": "compat.tempo",
+        "name": "Tempo",
+        "intent": "Build sustainable aerobic speed.",
+        "domain": "endurance",
+        "nodes": [
+          {
+            "role": "steady",
+            "variables": [
+              "duration"
+            ],
+            "optionalVariables": [
+              "distance"
+            ]
+          }
+        ],
+        "origin": "user",
+        "revision": 1
+      }
+    },
+    {
+      "operation": "update_template",
+      "input": {
+        "template": {
+          "id": "compat.tempo",
+          "name": "Tempo v2",
+          "intent": "Build sustainable aerobic speed.",
+          "domain": "endurance",
+          "nodes": [
+            {
+              "role": "steady",
+              "variables": [
+                "duration"
+              ],
+              "optionalVariables": [
+                "distance"
+              ]
+            }
+          ]
+        },
+        "expectedRevision": 1
+      },
+      "expected": {
+        "template": {
+          "id": "compat.tempo",
+          "name": "Tempo v2",
+          "intent": "Build sustainable aerobic speed.",
+          "domain": "endurance",
+          "nodes": [
+            {
+              "role": "steady",
+              "variables": [
+                "duration"
+              ],
+              "optionalVariables": [
+                "distance"
+              ]
+            }
+          ],
+          "origin": "user",
+          "revision": 2
+        },
+        "impact": {
+          "affectedCount": 0,
+          "updatedCount": 0
+        }
+      }
+    },
+    {
+      "operation": "update_template",
+      "input": {
+        "template": {
+          "id": "compat.tempo",
+          "name": "Tempo v2",
+          "intent": "Build sustainable aerobic speed.",
+          "domain": "endurance",
+          "nodes": [
+            {
+              "role": "steady",
+              "variables": [
+                "duration"
+              ],
+              "optionalVariables": [
+                "distance"
+              ]
+            }
+          ]
+        },
+        "expectedRevision": 1
+      },
+      "error": {
+        "code": "REVISION_CONFLICT",
+        "message": "The template changed. Refresh and try again.",
+        "status": 409
+      }
+    },
+    {
+      "operation": "save_current_plan",
+      "input": {
+        "planSchemaVersion": "7.0",
+        "ownerId": "local-user",
+        "title": "Compat Plan",
+        "summary": "",
+        "effectiveStartDate": "2026-09-14",
+        "mesocycle": {
+          "durationWeeks": 1,
+          "schedule": {
+            "kind": "fixed_week",
+            "days": [
+              0
+            ]
+          },
+          "domainProgressions": [
+            {
+              "domain": "endurance",
+              "phases": [
+                {
+                  "id": "base",
+                  "phaseType": "foundation",
+                  "name": "Base",
+                  "startWeek": 1,
+                  "endWeek": 1,
+                  "focus": "Aerobic base",
+                  "progression": []
+                }
+              ]
+            }
+          ],
+          "weeks": [
+            {
+              "weekNumber": 1,
+              "focus": null,
+              "sessions": [
+                {
+                  "id": "compat-plan-session",
+                  "scheduledDate": "2026-09-14",
+                  "order": 0,
+                  "status": "planned",
+                  "templateRef": {
+                    "source": "user",
+                    "id": "compat.tempo",
+                    "revision": 2
+                  },
+                  "name": "Easy Run",
+                  "intent": "Aerobic base",
+                  "durationMinutes": 40,
+                  "recoveryDemand": "low",
+                  "keySession": false,
+                  "components": [
+                    {
+                      "id": "run",
+                      "name": "Run",
+                      "domain": {
+                        "value": "endurance",
+                        "source": "user_confirmed",
+                        "confidence": 1,
+                        "evidence": "compat fixture",
+                        "taxonomyVersion": "strength-2.0"
+                      },
+                      "prescription": {
+                        "kind": "duration_only",
+                        "notes": ""
+                      }
+                    }
+                  ],
+                  "progressionNote": null,
+                  "schedulingRationale": null,
+                  "legacySnapshot": false
+                }
+              ]
+            }
+          ],
+          "adjustmentRules": []
+        },
+        "sourceAgent": "compat",
+        "model": null,
+        "skillVersion": "phase-5",
+        "inputSnapshotHash": "fnv1a-8f77e5d4",
+        "expectedRevision": 0
+      },
+      "expected": {
+        "plan": {
+          "planSchemaVersion": "7.0",
+          "ownerId": "local-user",
+          "title": "Compat Plan",
+          "summary": "",
+          "effectiveStartDate": "2026-09-14",
+          "mesocycle": {
+            "durationWeeks": 1,
+            "schedule": {
+              "kind": "fixed_week",
+              "days": [
+                0
+              ]
+            },
+            "domainProgressions": [
+              {
+                "domain": "endurance",
+                "phases": [
+                  {
+                    "id": "base",
+                    "phaseType": "foundation",
+                    "name": "Base",
+                    "startWeek": 1,
+                    "endWeek": 1,
+                    "focus": "Aerobic base",
+                    "progression": []
+                  }
+                ]
+              }
+            ],
+            "weeks": [
+              {
+                "weekNumber": 1,
+                "focus": null,
+                "sessions": [
+                  {
+                    "id": "compat-plan-session",
+                    "scheduledDate": "2026-09-14",
+                    "order": 0,
+                    "status": "planned",
+                    "templateRef": {
+                      "source": "user",
+                      "id": "compat.tempo",
+                      "revision": 2
+                    },
+                    "name": "Easy Run",
+                    "intent": "Aerobic base",
+                    "durationMinutes": 40,
+                    "recoveryDemand": "low",
+                    "keySession": false,
+                    "components": [
+                      {
+                        "id": "run",
+                        "name": "Run",
+                        "domain": {
+                          "value": "endurance",
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "compat fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        },
+                        "prescription": {
+                          "kind": "duration_only",
+                          "notes": ""
+                        }
+                      }
+                    ],
+                    "progressionNote": null,
+                    "schedulingRationale": null,
+                    "legacySnapshot": false
+                  }
+                ]
+              }
+            ],
+            "adjustmentRules": []
+          },
+          "revision": 1,
+          "sourceAgent": "compat",
+          "model": null,
+          "skillVersion": "phase-5",
+          "inputSnapshotHash": "fnv1a-8f77e5d4",
+          "updatedAt": "2026-09-17T04:00:00.000Z"
+        },
+        "validation": {
+          "valid": true,
+          "results": [
+            {
+              "enforcement": "blocker",
+              "reasonCode": "COMPONENT_IDS",
+              "status": "pass",
+              "rulePackId": "structure",
+              "ruleVersion": "0.3.0",
+              "subjectRefs": [],
+              "evidence": {
+                "componentIds": [
+                  "run"
+                ]
+              },
+              "missingFacts": [],
+              "confidenceLimit": null
+            },
+            {
+              "enforcement": "blocker",
+              "reasonCode": "EXERCISE_IDS",
+              "status": "pass",
+              "rulePackId": "structure",
+              "ruleVersion": "0.3.0",
+              "subjectRefs": [],
+              "evidence": {
+                "exerciseIds": []
+              },
+              "missingFacts": [],
+              "confidenceLimit": null
+            },
+            {
+              "enforcement": "blocker",
+              "reasonCode": "MESOCYCLE_SCHEDULE",
+              "status": "pass",
+              "rulePackId": "structure",
+              "ruleVersion": "0.3.0",
+              "subjectRefs": [],
+              "evidence": {
+                "kind": "fixed_week",
+                "weekdays": [
+                  0
+                ],
+                "occurrenceCount": 1
+              },
+              "missingFacts": [],
+              "confidenceLimit": null
+            },
+            {
+              "enforcement": "blocker",
+              "reasonCode": "PROFILE_TRAINING_RHYTHM",
+              "status": "pass",
+              "rulePackId": "structure",
+              "ruleVersion": "0.3.0",
+              "subjectRefs": [],
+              "evidence": {
+                "profileRhythm": {
+                  "kind": "fixed_week",
+                  "days": [
+                    0
+                  ]
+                },
+                "planSchedule": {
+                  "kind": "fixed_week",
+                  "days": [
+                    0
+                  ]
+                },
+                "scheduledDates": [
+                  "2026-09-14"
+                ]
+              },
+              "missingFacts": [],
+              "confidenceLimit": null
+            },
+            {
+              "enforcement": "blocker",
+              "reasonCode": "DOMAIN_PROGRESSION",
+              "status": "pass",
+              "rulePackId": "structure",
+              "ruleVersion": "0.3.0",
+              "subjectRefs": [],
+              "evidence": {
+                "durationWeeks": 1,
+                "sessionDomains": [
+                  "endurance"
+                ],
+                "progressions": [
+                  {
+                    "domain": "endurance",
+                    "phases": [
+                      {
+                        "id": "base",
+                        "phaseType": "foundation",
+                        "name": "Base",
+                        "startWeek": 1,
+                        "endWeek": 1,
+                        "focus": "Aerobic base",
+                        "progression": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              "missingFacts": [],
+              "confidenceLimit": null
+            },
+            {
+              "enforcement": "blocker",
+              "reasonCode": "MAX_SESSION_DURATION",
+              "status": "pass",
+              "rulePackId": "structure",
+              "ruleVersion": "0.3.0",
+              "subjectRefs": [
+                "compat-plan-session"
+              ],
+              "evidence": {
+                "durationMinutes": 40,
+                "maximum": 60
+              },
+              "missingFacts": [],
+              "confidenceLimit": null
+            },
+            {
+              "enforcement": "blocker",
+              "reasonCode": "COMPONENT_PRESCRIPTION",
+              "status": "pass",
+              "rulePackId": "structure",
+              "ruleVersion": "0.3.0",
+              "subjectRefs": [
+                "compat-plan-session",
+                "run"
+              ],
+              "evidence": {
+                "domain": "endurance",
+                "prescription": "duration_only"
+              },
+              "missingFacts": [],
+              "confidenceLimit": null
+            },
+            {
+              "enforcement": "info",
+              "reasonCode": "STRENGTH_VOLUME_DISTRIBUTION",
+              "status": "pass",
+              "rulePackId": "strength",
+              "ruleVersion": "0.3.0",
+              "subjectRefs": [],
+              "evidence": {
+                "directSetsByMuscle": {},
+                "indirectParticipationsByMuscle": {},
+                "setsByPattern": {}
+              },
+              "missingFacts": [],
+              "confidenceLimit": null
+            },
+            {
+              "enforcement": "advisory",
+              "reasonCode": "STRENGTH_PUSH_PULL_BALANCE",
+              "status": "not_applicable",
+              "rulePackId": "strength",
+              "ruleVersion": "0.3.0",
+              "subjectRefs": [],
+              "evidence": {
+                "pushSets": 0,
+                "pullSets": 0,
+                "boundary": 2
+              },
+              "missingFacts": [],
+              "confidenceLimit": null
+            },
+            {
+              "enforcement": "advisory",
+              "reasonCode": "STRENGTH_KNEE_HINGE_BALANCE",
+              "status": "not_applicable",
+              "rulePackId": "strength",
+              "ruleVersion": "0.3.0",
+              "subjectRefs": [],
+              "evidence": {
+                "kneeDominantSets": 0,
+                "hingeSets": 0,
+                "boundary": 2
+              },
+              "missingFacts": [],
+              "confidenceLimit": null
+            },
+            {
+              "enforcement": "advisory",
+              "reasonCode": "STRENGTH_EFFORT_RPE",
+              "status": "not_applicable",
+              "rulePackId": "strength",
+              "ruleVersion": "0.3.0",
+              "subjectRefs": [],
+              "evidence": {
+                "exerciseCount": 0,
+                "missingEffort": []
+              },
+              "missingFacts": [],
+              "confidenceLimit": null
+            },
+            {
+              "enforcement": "advisory",
+              "reasonCode": "ENDURANCE_EFFORT_ZONE",
+              "status": "not_applicable",
+              "rulePackId": "structure",
+              "ruleVersion": "0.3.0",
+              "subjectRefs": [],
+              "evidence": {
+                "stepCount": 0,
+                "missingZone": []
+              },
+              "missingFacts": [],
+              "confidenceLimit": null
+            }
+          ],
+          "dataGaps": [],
+          "validatedAt": "2026-09-17T04:00:00.000Z",
+          "inputHash": "fnv1a-3b2330ef",
+          "coverage": {
+            "hardChecksResolved": 7,
+            "hardChecksTotal": 7,
+            "movementFactsResolved": 0,
+            "movementFactsTotal": 0,
+            "muscleFactsResolved": 0,
+            "muscleFactsTotal": 0,
+            "equipmentFactsResolved": 0,
+            "equipmentFactsTotal": 0
+          }
+        },
+        "impact": {
+          "affectedCount": 0,
+          "updatedCount": 1,
+          "deletedCount": 0,
+          "legacySkippedCount": 0
+        }
+      }
+    },
+    {
+      "operation": "save_current_plan",
+      "input": {
+        "planSchemaVersion": "7.0",
+        "ownerId": "local-user",
+        "title": "Compat Plan",
+        "summary": "",
+        "effectiveStartDate": "2026-09-14",
+        "mesocycle": {
+          "durationWeeks": 1,
+          "schedule": {
+            "kind": "fixed_week",
+            "days": [
+              0
+            ]
+          },
+          "domainProgressions": [
+            {
+              "domain": "endurance",
+              "phases": [
+                {
+                  "id": "base",
+                  "phaseType": "foundation",
+                  "name": "Base",
+                  "startWeek": 1,
+                  "endWeek": 1,
+                  "focus": "Aerobic base",
+                  "progression": []
+                }
+              ]
+            }
+          ],
+          "weeks": [
+            {
+              "weekNumber": 1,
+              "focus": null,
+              "sessions": [
+                {
+                  "id": "compat-plan-session",
+                  "scheduledDate": "2026-09-14",
+                  "order": 0,
+                  "status": "planned",
+                  "templateRef": {
+                    "source": "user",
+                    "id": "compat.tempo",
+                    "revision": 2
+                  },
+                  "name": "Easy Run",
+                  "intent": "Aerobic base",
+                  "durationMinutes": 40,
+                  "recoveryDemand": "low",
+                  "keySession": false,
+                  "components": [
+                    {
+                      "id": "run",
+                      "name": "Run",
+                      "domain": {
+                        "value": "endurance",
+                        "source": "user_confirmed",
+                        "confidence": 1,
+                        "evidence": "compat fixture",
+                        "taxonomyVersion": "strength-2.0"
+                      },
+                      "prescription": {
+                        "kind": "duration_only",
+                        "notes": ""
+                      }
+                    }
+                  ],
+                  "progressionNote": null,
+                  "schedulingRationale": null,
+                  "legacySnapshot": false
+                }
+              ]
+            }
+          ],
+          "adjustmentRules": []
+        },
+        "sourceAgent": "compat",
+        "model": null,
+        "skillVersion": "phase-5",
+        "inputSnapshotHash": "fnv1a-8f77e5d4",
+        "expectedRevision": 0
+      },
+      "error": {
+        "code": "REVISION_CONFLICT",
+        "message": "The current plan changed. Refresh and try again.",
+        "status": 409
+      }
+    },
+    {
+      "operation": "get_calendar",
+      "input": {
+        "from": "2026-09-14",
+        "to": "2026-09-14"
+      },
+      "expected": [
+        {
+          "id": "compat-plan-session",
+          "revision": 1,
+          "scheduledDate": "2026-09-14",
+          "order": 0,
+          "weekNumber": 1,
+          "phaseRefs": [
+            {
+              "domain": "endurance",
+              "phaseId": "base"
+            }
+          ],
+          "templateRef": {
+            "source": "user",
+            "id": "compat.tempo",
+            "revision": 2
+          },
+          "name": "Easy Run",
+          "intent": "Aerobic base",
+          "durationMinutes": 40,
+          "recoveryDemand": "low",
+          "keySession": false,
+          "progressionNote": null,
+          "schedulingRationale": null,
+          "status": "planned",
+          "displayState": "unrecorded",
+          "components": [
+            {
+              "id": "run",
+              "name": "Run",
+              "domain": {
+                "value": "endurance",
+                "source": "user_confirmed",
+                "confidence": 1,
+                "evidence": "compat fixture",
+                "taxonomyVersion": "strength-2.0"
+              },
+              "prescription": {
+                "kind": "duration_only",
+                "notes": ""
+              }
+            }
+          ],
+          "legacySnapshot": false,
+          "overrideReason": null,
+          "completedTrainingSessionId": null,
+          "completedAt": null,
+          "completionSource": null,
+          "match": null
+        }
+      ]
+    },
+    {
+      "operation": "update_planned_session",
+      "input": {
+        "id": "compat-plan-session",
+        "value": {
+          "action": "skip",
+          "expectedRevision": 1,
+          "reason": {
+            "reasonCode": "schedule",
+            "note": "compat"
+          }
+        }
+      },
+      "expected": {
+        "sessions": [
+          {
+            "id": "compat-plan-session",
+            "ownerId": "local-user",
+            "planRevision": 1,
+            "scheduledDate": "2026-09-14",
+            "order": 0,
+            "weekNumber": 1,
+            "phaseRefs": [
+              {
+                "domain": "endurance",
+                "phaseId": "base"
+              }
+            ],
+            "templateRef": {
+              "source": "user",
+              "id": "compat.tempo",
+              "revision": 2
+            },
+            "name": "Easy Run",
+            "intent": "Aerobic base",
+            "recoveryDemand": "low",
+            "durationMinutes": 40,
+            "keySession": false,
+            "components": [
+              {
+                "id": "run",
+                "name": "Run",
+                "domain": {
+                  "value": "endurance",
+                  "source": "user_confirmed",
+                  "confidence": 1,
+                  "evidence": "compat fixture",
+                  "taxonomyVersion": "strength-2.0"
+                },
+                "prescription": {
+                  "kind": "duration_only",
+                  "notes": ""
+                }
+              }
+            ],
+            "progressionNote": null,
+            "schedulingRationale": null,
+            "exerciseOverrides": [],
+            "legacySnapshot": false,
+            "notes": "",
+            "overrideReason": null,
+            "status": "skipped",
+            "displayState": "unrecorded",
+            "completedTrainingSessionId": null,
+            "completedAt": null,
+            "completionSource": null,
+            "match": null,
+            "createdAt": "2026-09-17T04:00:00.000Z",
+            "updatedAt": "2026-09-17T04:00:00.000Z"
+          }
+        ],
+        "revision": 2
+      }
+    },
+    {
+      "operation": "get_next_training_day",
+      "input": {
+        "onOrAfterDate": "2026-09-14"
+      },
+      "expected": {
+        "nextTrainingDay": null,
+        "reasonCode": "PLAN_ENDED"
+      }
+    }
+  ]
+}
