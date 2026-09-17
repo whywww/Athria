@@ -72,17 +72,11 @@ fn rule_for(field: &str) -> FieldValue {
     }
 }
 
-fn iso_date(text: &str) -> bool {
-    let bytes = text.as_bytes();
-    bytes.len() == 10
-        && bytes.iter().enumerate().all(|(index, byte)| if index == 4 || index == 7 { *byte == b'-' } else { byte.is_ascii_digit() })
-}
-
 /// `wellnessRecordSchema.parse(value)`.
 pub fn parse_wellness_record(value: &Value) -> Result<Value> {
     object(value, "wellness")?;
     let day = required_text(value, "day", "wellness")?;
-    if !iso_date(&day) {
+    if !is_iso_date(&day) {
         return Err(invalid("wellness.day", "expected a YYYY-MM-DD date"));
     }
     let updated_at = required_text(value, "updatedAt", "wellness")?;
@@ -104,6 +98,33 @@ pub fn parse_wellness_record(value: &Value) -> Result<Value> {
     record.insert("fields".into(), Value::Object(ordered));
     record.insert("updatedAt".into(), Value::String(updated_at));
     Ok(Value::Object(record))
+}
+
+/// Parsed `wellnessPatchSchema`: the confirmed field update for one day.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WellnessPatch {
+    pub expected_snapshot_hash: String,
+    /// `user` or `llm`; intervals imports never come through this path.
+    pub source: String,
+    /// Raw `{ field: value }` entries; `null` clears the stored field.
+    pub fields: Map<String, Value>,
+}
+
+/// `wellnessPatchSchema.parse(value)`.
+pub fn parse_wellness_patch(value: &Value) -> Result<WellnessPatch> {
+    object(value, "wellnessPatch")?;
+    if value.get("confirmed") != Some(&Value::Bool(true)) {
+        return Err(invalid("wellnessPatch.confirmed", "expected true"));
+    }
+    let source = value.get("source").and_then(Value::as_str).filter(|candidate| ["user", "llm"].contains(candidate));
+    let Some(source) = source else {
+        return Err(invalid("wellnessPatch.source", "expected a wellness source"));
+    };
+    Ok(WellnessPatch {
+        expected_snapshot_hash: required_text(value, "expectedSnapshotHash", "wellnessPatch")?,
+        source: source.to_owned(),
+        fields: object(get(value, "fields"), "wellnessPatch.fields")?.clone(),
+    })
 }
 
 /// `wellnessFieldSchema(...)`: `{ value, source, updatedAt }`, strict.

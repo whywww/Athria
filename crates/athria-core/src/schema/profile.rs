@@ -187,19 +187,3 @@ pub struct PersonalInformationWrite {
     pub unit_system: Option<String>,
     pub expected_snapshot_hash: String,
 }
-
-/// `z.enum(values).nullable()`.
-fn nullable_enum(value: &Value, key: &str, allowed: &[&str]) -> Value {
-    match value.get(key) {
-        Some(Value::String(candidate)) if allowed.contains(&candidate.as_str()) => Value::String(candidate.clone()),
-        _ => Value::Null,
-    }
-}
-
-/// `z.number().int().nullable()`.
-fn nullable_int(value: &Value, key: &str) -> Value {
-    match value.get(key).and_then(Value::as_i64) {
-        Some(number) => Value::from(number),
-        None => Value::Null,
-    }
-}

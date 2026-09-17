@@ -30,6 +30,12 @@ pub fn civil_from_days(days: i64) -> (i64, u32, u32) {
     (if month <= 2 { year + 1 } else { year }, month, day)
 }
 
+/// `dateSchema`: the strict `^\d{4}-\d{2}-\d{2}$` form.
+pub fn is_iso_date(date: &str) -> bool {
+    let bytes = date.as_bytes();
+    bytes.len() == 10 && bytes.iter().enumerate().all(|(index, byte)| if index == 4 || index == 7 { *byte == b'-' } else { byte.is_ascii_digit() })
+}
+
 /// Parses the schema-validated `YYYY-MM-DD` form.
 pub fn parse_iso_date(date: &str) -> (i64, u32, u32) {
     let mut parts = date.split('-');

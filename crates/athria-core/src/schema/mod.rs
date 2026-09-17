@@ -12,6 +12,7 @@
 
 pub mod common;
 pub mod profile;
+pub mod session;
 pub mod template;
 pub mod wellness;
 
@@ -19,7 +20,8 @@ pub use profile::{
     PersonalInformationWrite, ProfileUpdate, merge_profile, normalize_note, parse_personal_information, parse_profile, parse_profile_update, parse_race_days,
     parse_training_rhythm,
 };
+pub use session::parse_training_session;
 pub use template::{
     builtin_session_template, parse_session_template, parse_session_template_create, parse_session_template_update, stored_session_template, template_variables,
 };
-pub use wellness::{WELLNESS_FIELD_ORDER, parse_wellness_record};
+pub use wellness::{WELLNESS_FIELD_ORDER, WellnessPatch, parse_wellness_patch, parse_wellness_record};

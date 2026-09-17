@@ -82,6 +82,31 @@ pub(crate) fn int_or(value: &Value, key: &str, fallback: i64) -> Value {
     Value::from(value.get(key).and_then(Value::as_i64).unwrap_or(fallback))
 }
 
+/// A required integer field.
+pub(crate) fn required_int(value: &Value, key: &str, path: &str) -> Result<i64> {
+    value.get(key).and_then(Value::as_i64).ok_or_else(|| invalid_type(&format!("{path}.{key}"), "an integer"))
+}
+
+/// `z.enum(values).nullable()`: missing, `null` and unknown values parse as
+/// `null`.
+pub(crate) fn nullable_enum(value: &Value, key: &str, allowed: &[&str]) -> Value {
+    match value.get(key).and_then(Value::as_str).filter(|candidate| allowed.contains(candidate)) {
+        Some(candidate) => Value::String(candidate.to_owned()),
+        None => Value::Null,
+    }
+}
+
+/// `z.number().int().nullable()`.
+pub(crate) fn nullable_int(value: &Value, key: &str) -> Value {
+    match value.get(key).and_then(Value::as_i64) {
+        Some(number) => Value::from(number),
+        None => Value::Null,
+    }
+}
+
+/// `dateSchema`: the strict `^\d{4}-\d{2}-\d{2}$` form.
+pub(crate) use crate::date::is_iso_date;
+
 /// A nullable numeric field.
 pub(crate) fn number_or_null(value: &Value, key: &str) -> Value {
     match value.get(key).and_then(Value::as_f64) {

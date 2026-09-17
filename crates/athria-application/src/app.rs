@@ -7,20 +7,32 @@
 //!
 //! The schema normalizers in `athria_core::schema` reproduce the Zod *parse
 //! output* — defaults applied, fields in schema declaration order, unknown keys
-//! rejected, value types checked. Zod range refinements (`min`/`max` bounds,
-//! the birth-date "not in the future" check) are transport-level validation and
-//! land with the Tauri/CLI/MCP input schemas in Phase 7.
+//! rejected, value types checked. Zod range refinements on *document* schemas
+//! (`min`/`max` bounds, the birth-date "not in the future" check) are
+//! transport-level validation and land with the Tauri/CLI/MCP input schemas in
+//! Phase 7.
+//!
+//! Action schemas declared inline in `packages/application/src/index.ts` — the
+//! `confirmed` literals, `expectedRevision`, the `dateSchema` transport
+//! strings, the manual-update duration range and "at least one field" check —
+//! are ported here; a violation raises `INVALID_DATA`.
 
 use std::collections::{HashMap, HashSet};
+use std::ops::RangeInclusive;
 use std::rc::Rc;
 
+use athria_core::date::day_difference;
 use athria_core::schema::{
-    parse_personal_information, parse_profile, parse_profile_update, parse_session_template_create, parse_session_template_update, parse_wellness_record,
-    merge_profile, template_variables, PersonalInformationWrite,
+    merge_profile, parse_personal_information, parse_profile, parse_profile_update, parse_session_template_create, parse_session_template_update, parse_training_session,
+    parse_wellness_patch, parse_wellness_record, template_variables, PersonalInformationWrite,
 };
 use athria_core::vocab::{DOMAIN_IDS, FACT_SOURCES, equipment_categories, equipment_type_ids, muscle_taxonomy, movement_pattern_taxonomy};
-use athria_core::{AI_HARD_CONFIDENCE, AthriaError, AthriaErrorCode, Clock, DEFAULT_OWNER_ID, Result, SystemClock, TAXONOMY_VERSION, stable_hash, tz};
+use athria_core::{
+    AI_HARD_CONFIDENCE, AthriaError, AthriaErrorCode, Clock, DEFAULT_OWNER_ID, Result, SystemClock, TAXONOMY_VERSION, calculate_training_metrics, js_locale_compare,
+    stable_hash, tz,
+};
 use serde_json::{Map, Value, json};
+use uuid::Uuid;
 
 use crate::catalog::{builtin_session_templates, builtin_template};
 use crate::store::AthriaStore;
@@ -45,6 +57,93 @@ fn template_write_error(error: AthriaError) -> AthriaError {
         AthriaErrorCode::TemplateNotFound => failure(AthriaErrorCode::TemplateNotFound, "The session template was not found.", 404),
         _ => error,
     }
+}
+
+/// An action-schema violation; the transports own the user-facing ZodError text.
+fn invalid_input(message: &str) -> AthriaError {
+    AthriaError::new(AthriaErrorCode::InvalidData, message.to_owned())
+}
+
+/// The `z.object(...).strict().parse(value)` object input.
+fn object_input<'a>(value: &'a Value, path: &str) -> Result<&'a Map<String, Value>> {
+    value.as_object().ok_or_else(|| invalid_input(&format!("{path}: expected an object")))
+}
+
+/// `confirmed: z.literal(true)`.
+fn require_confirmed(value: &Value, path: &str) -> Result<()> {
+    if value.get("confirmed") == Some(&Value::Bool(true)) { Ok(()) } else { Err(invalid_input(&format!("{path}.confirmed: expected true"))) }
+}
+
+/// `z.string().min(1).optional()`: absence parses as `None`, `null` is rejected.
+fn optional_text(value: &Value, key: &str, path: &str) -> Result<Option<String>> {
+    match value.get(key) {
+        None => Ok(None),
+        Some(Value::String(text)) if !text.is_empty() => Ok(Some(text.clone())),
+        _ => Err(invalid_input(&format!("{path}.{key}: expected a non-empty string"))),
+    }
+}
+
+/// `z.string().min(1).nullable()`: `null` parses as `None`, absence is rejected.
+fn nullable_text(value: &Value, key: &str, path: &str) -> Result<Option<String>> {
+    match value.get(key) {
+        Some(Value::Null) => Ok(None),
+        Some(Value::String(text)) if !text.is_empty() => Ok(Some(text.clone())),
+        _ => Err(invalid_input(&format!("{path}.{key}: expected a non-empty string or null"))),
+    }
+}
+
+/// `z.number().int()` within an inclusive range; like `Number.isInteger`, an
+/// integral float such as `4.0` is accepted.
+fn input_int(value: &Value, key: &str, path: &str, range: RangeInclusive<i64>) -> Result<i64> {
+    let parsed = value.get(key).and_then(|entry| entry.as_i64().or_else(|| entry.as_f64().filter(|number| number.fract() == 0.0).map(|number| number as i64)));
+    match parsed.filter(|number| range.contains(number)) {
+        Some(number) => Ok(number),
+        None => Err(invalid_input(&format!("{path}.{key}: expected an integer in {}..={}", range.start(), range.end()))),
+    }
+}
+
+/// `dateSchema.parse(value)` on a transport string.
+fn parse_date_input(value: &str, path: &str) -> Result<String> {
+    if athria_core::date::is_iso_date(value) { Ok(value.to_owned()) } else { Err(invalid_input(&format!("{path}: expected a YYYY-MM-DD date"))) }
+}
+
+/// `sessionDomains`: the stored domains, or the ones implied by the payload.
+fn session_domains(session: &Value) -> Vec<Value> {
+    let domains = session.get("domains").and_then(Value::as_array).cloned().unwrap_or_default();
+    if !domains.is_empty() {
+        return domains;
+    }
+    let mut derived = Vec::new();
+    if session.get("strengthSets").and_then(Value::as_array).is_some_and(|sets| !sets.is_empty()) {
+        derived.push(Value::String("strength".into()));
+    }
+    if session.get("endurance").is_some_and(|endurance| !endurance.is_null()) {
+        derived.push(Value::String("endurance".into()));
+    }
+    derived
+}
+
+/// `listSessions` mapping: fill in the derived domains and, when nothing could
+/// be derived, record `domains` as a missing field.
+fn with_session_domains(session: &Value) -> Value {
+    let mut updated = session.as_object().cloned().unwrap_or_default();
+    let domains = session_domains(session);
+    let empty = domains.is_empty();
+    updated.insert("domains".into(), Value::Array(domains));
+    if empty {
+        let mut missing = updated.get("missingFields").and_then(Value::as_array).cloned().unwrap_or_default();
+        if !missing.iter().any(|field| field == "domains") {
+            missing.push(Value::String("domains".into()));
+        }
+        updated.insert("missingFields".into(), Value::Array(missing));
+    }
+    Value::Object(updated)
+}
+
+/// `localDate(new Date(session.startAt), session.timezone ?? profile.timezone)`.
+fn session_local_day(session: &Value, profile_timezone: &str) -> Result<String> {
+    let timezone = session.get("timezone").and_then(Value::as_str).unwrap_or(profile_timezone);
+    tz::local_date(string_field(session, "startAt"), timezone)
 }
 
 /// The ids of every session in `plan` that references the user template `id`.
@@ -254,5 +353,256 @@ impl<S: AthriaStore> AthriaApplication<S> {
             self.store.dismiss_template(id, &self.owner_id)?;
         }
         Ok(json!({ "deleted": true, "id": id }))
+    }
+
+    /// `listSessions(days = 90)`, with the derived domains filled in.
+    pub fn list_sessions(&self, days: i64) -> Result<Vec<Value>> {
+        let since = tz::iso_minus_days(&self.now_iso(), days)?;
+        Ok(self.store.list_sessions(&self.owner_id, Some(&since))?.iter().map(with_session_domains).collect())
+    }
+
+    /// `snapshotHash()`: the hash the plan/personal-information writes compare against.
+    pub fn snapshot_hash(&self) -> Result<String> {
+        Ok(stable_hash(&json!({
+            "profile": self.get_profile()?,
+            "sessions": self.list_sessions(90)?,
+            "wellness": self.list_wellness(42)?,
+        })))
+    }
+
+    pub fn get_training_state(&self) -> Result<Value> {
+        let sessions = self.list_sessions(90)?;
+        let metrics = serde_json::to_value(calculate_training_metrics(&sessions))
+            .map_err(|error| failure(AthriaErrorCode::InvalidData, &format!("training metrics did not serialize: {error}"), 500))?;
+        Ok(json!({
+            "asOf": self.now_iso(),
+            "inputSnapshotHash": self.snapshot_hash()?,
+            "personalInformation": self.get_personal_information()?,
+            "metrics": metrics,
+            "wellness": self.list_wellness(42)?,
+            "dataGaps": [],
+        }))
+    }
+
+    /// `getTrainingSummary(days = 7, from?, to?)`: domain-separated metrics over
+    /// the sessions whose local day falls inside the requested window.
+    pub fn get_training_summary(&self, days: i64, from: Option<&str>, to: Option<&str>) -> Result<Value> {
+        let start = from.map(|value| parse_date_input(value, "from")).transpose()?;
+        let end = to.map(|value| parse_date_input(value, "to")).transpose()?;
+        if let (Some(start), Some(end)) = (&start, &end) {
+            if start > end {
+                return Err(AthriaError::new(AthriaErrorCode::InvalidSummaryWindow, "The summary start date must not be after the end date."));
+            }
+        }
+        let profile = self.get_profile()?;
+        let profile_timezone = string_field(&profile, "timezone");
+        let lookback_days = match &start {
+            Some(start) => days.max(day_difference(start, &tz::local_date(&self.now_iso(), profile_timezone)?) + 2),
+            None => days,
+        };
+        let mut sessions = Vec::new();
+        for session in self.list_sessions(lookback_days)? {
+            let day = session_local_day(&session, profile_timezone)?;
+            if start.as_ref().is_some_and(|start| &day < start) || end.as_ref().is_some_and(|end| &day > end) {
+                continue;
+            }
+            sessions.push(session);
+        }
+        let mut by_domain = Map::new();
+        let mut duration_minutes_by_domain = Map::new();
+        for domain in DOMAIN_IDS {
+            let matching: Vec<&Value> =
+                sessions.iter().filter(|session| session.get("domains").and_then(Value::as_array).is_some_and(|domains| domains.iter().any(|item| item == domain))).collect();
+            by_domain.insert(domain.into(), Value::from(matching.len() as i64));
+            duration_minutes_by_domain
+                .insert(domain.into(), Value::from(matching.iter().map(|session| session["durationMinutes"].as_i64().unwrap_or(0)).sum::<i64>()));
+        }
+        let mut sports: Vec<(String, i64, i64)> = Vec::new();
+        for session in &sessions {
+            if !session.get("domains").and_then(Value::as_array).is_some_and(|domains| domains.iter().any(|item| item == "sport_skill")) {
+                continue;
+            }
+            let Some(name) = session.get("sport").and_then(Value::as_str).map(str::trim).filter(|name| !name.is_empty()) else {
+                continue;
+            };
+            let duration = session["durationMinutes"].as_i64().unwrap_or(0);
+            match sports.iter_mut().find(|(existing, _, _)| existing == name) {
+                Some((_, session_count, duration_minutes)) => {
+                    *session_count += 1;
+                    *duration_minutes += duration;
+                }
+                None => sports.push((name.to_owned(), 1, duration)),
+            }
+        }
+        sports.sort_by(|(left_name, _, left_duration), (right_name, _, right_duration)| right_duration.cmp(left_duration).then_with(|| js_locale_compare(left_name, right_name)));
+        let sports = Value::Array(sports.into_iter().map(|(name, session_count, duration_minutes)| json!({ "name": name, "sessionCount": session_count, "durationMinutes": duration_minutes })).collect());
+        let total_duration_minutes: i64 = sessions.iter().map(|session| session["durationMinutes"].as_i64().unwrap_or(0)).sum();
+        let metrics = serde_json::to_value(calculate_training_metrics(&sessions))
+            .map_err(|error| failure(AthriaErrorCode::InvalidData, &format!("training metrics did not serialize: {error}"), 500))?;
+        Ok(json!({
+            "periodDays": days,
+            "sessionCount": sessions.len(),
+            "totalDurationMinutes": total_duration_minutes,
+            "byDomain": Value::Object(by_domain),
+            "durationMinutesByDomain": Value::Object(duration_minutes_by_domain),
+            "sports": sports,
+            "metrics": metrics,
+        }))
+    }
+
+    /// `recordTrainingSession(value)`: the manual write path, always stored as a
+    /// completed `manual` observation.
+    pub fn record_training_session(&self, value: &Value) -> Result<Value> {
+        object_input(value, "session")?;
+        let id = match optional_text(value, "id", "session")? {
+            Some(id) => id,
+            None => Uuid::new_v4().to_string(),
+        };
+        let external_id = match optional_text(value, "externalId", "session")? {
+            Some(external_id) => external_id,
+            None => id.clone(),
+        };
+        let mut candidate = value.as_object().cloned().unwrap_or_default();
+        candidate.insert("id".into(), Value::String(id));
+        candidate.insert("externalId".into(), Value::String(external_id));
+        candidate.insert("ownerId".into(), Value::String(self.owner_id.clone()));
+        candidate.insert("source".into(), Value::String("manual".into()));
+        candidate.insert("status".into(), Value::String("completed".into()));
+        let session = parse_training_session(&Value::Object(candidate))?;
+        self.store.upsert_sessions(std::slice::from_ref(&session))?;
+        Ok(session)
+    }
+
+    pub fn set_training_session_plan_match(&self, id: &str, value: &Value) -> Result<Value> {
+        object_input(value, "match")?;
+        require_confirmed(value, "match")?;
+        let planned_session_id = nullable_text(value, "plannedSessionId", "match")?;
+        let expected_revision = input_int(value, "expectedRevision", "match", 0..=i64::MAX)?;
+        self.store.set_training_session_plan_match(&self.owner_id, id, planned_session_id.as_deref(), expected_revision).map_err(|error| {
+            let code = error.code();
+            let message = match code {
+                AthriaErrorCode::NoCurrentPlan => "There is no current plan.",
+                AthriaErrorCode::PlannedSessionRevisionConflict => "The plan changed. Refresh and try again.",
+                AthriaErrorCode::TrainingSessionNotFound => "The workout was not found.",
+                AthriaErrorCode::PlannedSessionNotFound => "The planned session was not found.",
+                AthriaErrorCode::PlannedSessionSkipped => "Restore the skipped session before linking it.",
+                AthriaErrorCode::PlanWorkoutDateMismatch => "The workout and planned session must be on the same local date.",
+                _ => "The workout-to-plan match could not be updated.",
+            };
+            failure(code, message, if code.as_str().ends_with("NOT_FOUND") { 404 } else { 409 })
+        })
+    }
+
+    pub fn clear_training_session_plan_exclusion(&self, id: &str, value: &Value) -> Result<Value> {
+        object_input(value, "match")?;
+        require_confirmed(value, "match")?;
+        self.store.clear_training_session_plan_exclusion(&self.owner_id, id).map_err(|error| failure(error.code(), "The workout could not be returned to automatic matching.", 404))
+    }
+
+    pub fn update_training_session_type(&self, id: &str, value: &Value) -> Result<Value> {
+        object_input(value, "type")?;
+        require_confirmed(value, "type")?;
+        let domain = value.get("domain").and_then(Value::as_str).filter(|domain| DOMAIN_IDS.contains(domain)).ok_or_else(|| invalid_input("type.domain: expected a training domain"))?;
+        self.store.set_training_session_type_override(&self.owner_id, id, domain).map_err(|error| {
+            let code = error.code();
+            failure(code, if code == AthriaErrorCode::TrainingSessionNotFound { "The workout was not found." } else { "The workout type could not be updated." }, if code == AthriaErrorCode::TrainingSessionNotFound { 404 } else { 409 })
+        })
+    }
+
+    pub fn update_manual_training_session(&self, id: &str, value: &Value) -> Result<Value> {
+        object_input(value, "session")?;
+        require_confirmed(value, "session")?;
+        let start_at = optional_text(value, "startAt", "session")?;
+        let duration_minutes = match value.get("durationMinutes") {
+            Some(_) => Some(input_int(value, "durationMinutes", "session", 1..=1440)?),
+            None => None,
+        };
+        if start_at.is_none() && duration_minutes.is_none() {
+            return Err(invalid_input("session: provide a start time or duration"));
+        }
+        self.store.update_manual_training_session(&self.owner_id, id, start_at.as_deref(), duration_minutes).map_err(|error| {
+            let code = error.code();
+            let message = if code == AthriaErrorCode::ManualDateChangeRequiresPlanMove {
+                "Move or unlink the planned session before changing the workout date."
+            } else {
+                "The manual workout details could not be updated."
+            };
+            failure(code, message, if code == AthriaErrorCode::ManualSourceNotFound { 404 } else { 409 })
+        })
+    }
+
+    pub fn delete_manual_training_session(&self, id: &str, value: &Value) -> Result<Value> {
+        object_input(value, "session")?;
+        require_confirmed(value, "session")?;
+        let session = self.store.delete_manual_training_session(&self.owner_id, id).map_err(|error| failure(error.code(), "The manual workout record could not be removed.", 404))?;
+        Ok(session.unwrap_or(Value::Null))
+    }
+
+    pub fn delete_training_session(&self, id: &str, value: &Value) -> Result<Value> {
+        object_input(value, "session")?;
+        require_confirmed(value, "session")?;
+        self.store.delete_training_session(&self.owner_id, id).map_err(|error| {
+            let code = error.code();
+            failure(code, if code == AthriaErrorCode::TrainingSessionNotFound { "The workout was not found." } else { "The workout could not be deleted." }, if code == AthriaErrorCode::TrainingSessionNotFound { 404 } else { 409 })
+        })?;
+        Ok(json!({ "deleted": true }))
+    }
+
+    /// `listWellness(days = 42)`: stored records plus their snapshot hashes.
+    pub fn list_wellness(&self, days: i64) -> Result<Vec<Value>> {
+        let since = tz::iso_minus_days(&self.now_iso(), days)?;
+        let since = &since[..10];
+        let records = self.store.list_wellness(&self.owner_id, Some(since))?;
+        Ok(records
+            .into_iter()
+            .map(|record| {
+                let hash = stable_hash(&record);
+                let mut value = record.as_object().cloned().unwrap_or_default();
+                value.insert("snapshotHash".into(), Value::String(hash));
+                Value::Object(value)
+            })
+            .collect())
+    }
+
+    /// `getWellnessDay(day)`: a missing day reports the hash `"new"` and omits
+    /// `record`, which `JSON.stringify` drops in TypeScript.
+    pub fn get_wellness_day(&self, day: &str) -> Result<Value> {
+        let day = parse_date_input(day, "day")?;
+        let record = self.store.get_wellness(&self.owner_id, &day)?;
+        let mut response = Map::new();
+        let snapshot_hash = match &record {
+            Some(record) => {
+                response.insert("record".into(), record.clone());
+                stable_hash(record)
+            }
+            None => "new".to_owned(),
+        };
+        response.insert("snapshotHash".into(), Value::String(snapshot_hash));
+        Ok(Value::Object(response))
+    }
+
+    /// `updateWellness(day, value)`: hash-checked field merge into one day.
+    pub fn update_wellness(&self, day: &str, value: &Value) -> Result<Value> {
+        let input = parse_wellness_patch(value)?;
+        let day = parse_date_input(day, "day")?;
+        let current = self.store.get_wellness(&self.owner_id, &day)?;
+        let current_hash = match &current {
+            Some(record) => stable_hash(record),
+            None => "new".to_owned(),
+        };
+        if current_hash != input.expected_snapshot_hash {
+            return Err(failure(AthriaErrorCode::InputSnapshotChanged, "Wellness changed. Refresh before applying the confirmed update.", 409));
+        }
+        let updated_at = self.now_iso();
+        let mut fields = current.as_ref().and_then(|record| record.get("fields")).and_then(Value::as_object).cloned().unwrap_or_default();
+        for (key, field_value) in &input.fields {
+            if field_value.is_null() {
+                fields.shift_remove(key);
+            } else {
+                fields.insert(key.clone(), json!({ "value": field_value, "source": &input.source, "updatedAt": &updated_at }));
+            }
+        }
+        let record = parse_wellness_record(&json!({ "ownerId": self.owner_id, "day": day, "fields": Value::Object(fields), "updatedAt": updated_at }))?;
+        self.store.save_wellness(&record)
     }
 }
