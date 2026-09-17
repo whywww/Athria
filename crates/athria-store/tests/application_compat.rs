@@ -30,6 +30,10 @@ fn execute(app: &AthriaApplication<SqliteStore>, operation: &str, input: &Value)
         "get_calendar" => app.get_calendar(input["from"].as_str(), input["to"].as_str()).map(Value::Array),
         "update_planned_session" => app.update_planned_session(input["id"].as_str().unwrap(), &input["value"]),
         "get_next_training_day" => app.get_next_training_day(input["onOrAfterDate"].as_str()),
+        "preview_hevy" => app.preview_hevy(input["content"].as_str().unwrap().as_bytes(), input["fileName"].as_str().unwrap()),
+        "commit_hevy" => app.commit_hevy(input["previewToken"].as_str().unwrap()),
+        "commit_intervals" => app.commit_intervals(&input["payload"], &input["context"]),
+        "commit_xunji" => app.commit_xunji(&input["result"], input["attemptedAt"].as_str().unwrap()),
         other => panic!("unknown fixture operation: {other}"),
     }
 }

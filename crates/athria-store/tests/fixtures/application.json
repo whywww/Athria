@@ -1242,6 +1242,129 @@
         "nextTrainingDay": null,
         "reasonCode": "PLAN_ENDED"
       }
+    },
+    {
+      "operation": "preview_hevy",
+      "input": {
+        "content": "title,start_time,end_time,exercise_title,set_index,weight_kg,reps\nCompat Lift,2026-09-13T10:00:00Z,2026-09-13T11:00:00Z,Squat,1,80,5\n",
+        "fileName": "compat.csv"
+      },
+      "expected": {
+        "previewToken": "afa5bcdad7ad0c098eee1d84be840fb6eec2ab81b5fd00917167e5324647771c",
+        "fileName": "compat.csv",
+        "counts": {
+          "rows": 1,
+          "sessions": 1,
+          "sets": 1,
+          "validRows": 1,
+          "invalidRows": 0
+        },
+        "errors": [],
+        "unknownColumns": []
+      }
+    },
+    {
+      "operation": "commit_hevy",
+      "input": {
+        "previewToken": "afa5bcdad7ad0c098eee1d84be840fb6eec2ab81b5fd00917167e5324647771c"
+      },
+      "expected": {
+        "added": 1,
+        "updated": 0
+      }
+    },
+    {
+      "operation": "commit_intervals",
+      "input": {
+        "payload": {
+          "activities": [
+            {
+              "id": "compat-ride",
+              "type": "Ride",
+              "start_date": "2026-09-12T02:00:00Z",
+              "moving_time": 3600
+            }
+          ],
+          "wellness": [],
+          "events": "HTTP 500"
+        },
+        "context": {
+          "attemptedAt": "2026-09-17T04:00:00.000Z",
+          "rangeStart": "2026-09-12",
+          "rangeEnd": "2026-09-17"
+        }
+      },
+      "expected": {
+        "added": 1,
+        "updated": 0,
+        "wellnessCount": 0,
+        "errors": {
+          "events": "HTTP 500"
+        },
+        "sync": {
+          "ownerId": "local-user",
+          "source": "intervals",
+          "lastAttemptAt": "2026-09-17T04:00:00.000Z",
+          "lastSuccessAt": "2026-09-17T04:00:00.000Z",
+          "rangeStart": "2026-09-12",
+          "rangeEnd": "2026-09-17",
+          "status": "success",
+          "data": {
+            "activities": {
+              "added": 1,
+              "updated": 0
+            },
+            "wellnessCount": 0,
+            "errors": {
+              "events": "HTTP 500"
+            }
+          }
+        }
+      }
+    },
+    {
+      "operation": "commit_xunji",
+      "input": {
+        "result": {
+          "rangeStart": "2026-09-11",
+          "rangeEnd": "2026-09-11",
+          "successfulDates": [
+            "2026-09-11"
+          ],
+          "errors": [],
+          "records": [
+            {
+              "localid": "compat-xunji",
+              "datestr": "2026-09-11",
+              "title": "Xunji",
+              "start": "2026-09-11T03:00:00Z",
+              "end": "2026-09-11T04:00:00Z",
+              "movements": []
+            }
+          ]
+        },
+        "attemptedAt": "2026-09-17T04:00:00.000Z"
+      },
+      "expected": {
+        "added": 1,
+        "updated": 0,
+        "sync": {
+          "ownerId": "local-user",
+          "source": "xunji",
+          "lastAttemptAt": "2026-09-17T04:00:00.000Z",
+          "lastSuccessAt": "2026-09-17T04:00:00.000Z",
+          "rangeStart": "2026-09-11",
+          "rangeEnd": "2026-09-11",
+          "status": "success",
+          "data": {
+            "successfulDays": 1,
+            "failedDays": 0,
+            "records": 1,
+            "normalizationFailures": 0,
+            "errors": []
+          }
+        }
+      }
     }
   ]
 }

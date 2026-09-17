@@ -18,6 +18,7 @@
 //! are ported here; a violation raises `INVALID_DATA`.
 
 use std::collections::{HashMap, HashSet};
+use std::cell::RefCell;
 use std::ops::RangeInclusive;
 use std::rc::Rc;
 
@@ -32,11 +33,12 @@ use athria_core::{
     AI_HARD_CONFIDENCE, AthriaError, AthriaErrorCode, Clock, DEFAULT_OWNER_ID, PlanValidation, Result, SystemClock, TAXONOMY_VERSION, calculate_training_metrics,
     js_locale_compare, stable_hash, tz, validate_plan,
 };
+use athria_integrations::{HEVY_PARSER_VERSION, XUNJI_PARSER_VERSION, normalize_intervals_activity, normalize_xunji_training, parse_hevy_csv};
 use serde_json::{Map, Value, json};
 use uuid::Uuid;
 
 use crate::catalog::{builtin_session_templates, builtin_template};
-use crate::store::{AthriaStore, SaveCurrentPlannedSessionsInput, UpdateCurrentPlannedSessionsInput};
+use crate::store::{AthriaStore, RecordImportBatchInput, ReplaceSourceSessionsInput, SaveCurrentPlannedSessionsInput, UpdateCurrentPlannedSessionsInput};
 use crate::{PLAN_SCHEMA_VERSION, TEMPLATE_CATALOG_VERSION};
 
 /// A schema-guaranteed string field; missing fields are programming errors,
@@ -269,6 +271,7 @@ pub struct AthriaApplication<S: AthriaStore> {
     store: S,
     owner_id: String,
     clock: Rc<dyn Clock>,
+    integration_previews: RefCell<HashMap<String, Value>>,
 }
 
 impl<S: AthriaStore> AthriaApplication<S> {
@@ -279,7 +282,7 @@ impl<S: AthriaStore> AthriaApplication<S> {
 
     /// The TypeScript constructor with an explicit `ownerId` and `now`.
     pub fn with_clock(store: S, owner_id: impl Into<String>, clock: Rc<dyn Clock>) -> Self {
-        Self { store, owner_id: owner_id.into(), clock }
+        Self { store, owner_id: owner_id.into(), clock, integration_previews: RefCell::new(HashMap::new()) }
     }
 
     pub fn store(&self) -> &S {
@@ -710,6 +713,102 @@ impl<S: AthriaStore> AthriaApplication<S> {
         }
         let record = parse_wellness_record(&json!({ "ownerId": self.owner_id, "day": day, "fields": Value::Object(fields), "updatedAt": updated_at }))?;
         self.store.save_wellness(&record)
+    }
+
+    pub fn preview_hevy(&self, content: &[u8], file_name: &str) -> Result<Value> {
+        let preview = parse_hevy_csv(content, file_name)?.value;
+        let token = string_field(&preview, "contentHash").to_owned();
+        self.integration_previews.borrow_mut().insert(token.clone(), preview.clone());
+        Ok(json!({ "previewToken": token, "fileName": file_name, "counts": preview["counts"], "errors": preview["errors"], "unknownColumns": preview["unknownColumns"] }))
+    }
+
+    pub fn commit_hevy(&self, preview_token: &str) -> Result<Value> {
+        let preview = self.integration_previews.borrow().get(preview_token).cloned().ok_or_else(|| failure(AthriaErrorCode::ImportPreviewNotFound, "The import preview was not found.", 404))?;
+        let sessions = preview["sessions"].as_array().cloned().unwrap_or_default();
+        let counts = self.store.upsert_sessions(&sessions)?;
+        let status = if preview["errors"].as_array().is_some_and(Vec::is_empty) { "committed" } else { "partial" };
+        let data = json!({ "counts": preview["counts"], "errors": preview["errors"], "unknownColumns": preview["unknownColumns"] });
+        self.store.record_import_batch(&RecordImportBatchInput { owner_id: &self.owner_id, source: "hevy", content_hash: string_field(&preview, "contentHash"), file_name: string_field(&preview, "fileName"), parser_version: HEVY_PARSER_VERSION, status, data: &data })?;
+        self.integration_previews.borrow_mut().remove(preview_token);
+        Ok(counts.to_json())
+    }
+
+    pub fn get_hevy_import_status(&self) -> Result<Option<Value>> {
+        Ok(self.store.latest_import_batch(&self.owner_id, "hevy")?.map(|batch| json!({
+            "fileName": batch["fileName"], "importedAt": batch["createdAt"], "status": batch["status"], "counts": batch["data"]["counts"]
+        })))
+    }
+
+    pub fn get_intervals_sync_status(&self) -> Result<Option<Value>> { self.store.get_connection_sync_state("intervals", &self.owner_id) }
+
+    pub fn commit_intervals(&self, payload: &Value, context: &Value) -> Result<Value> {
+        let activities = payload.get("activities").and_then(Value::as_array);
+        let mut sessions = Vec::new();
+        if let Some(items) = activities {
+            for item in items {
+                let Some(session) = normalize_intervals_activity(item, "activities")? else {
+                    return Err(failure(AthriaErrorCode::IntervalsNormalizationFailed, "Intervals returned an activity without a valid start time; existing training data was left unchanged.", 502));
+                };
+                sessions.push(session);
+            }
+        }
+        let attempted_at = context.get("attemptedAt").and_then(Value::as_str).map(str::to_owned).unwrap_or_else(|| self.now_iso());
+        let range_start = context.get("rangeStart").and_then(Value::as_str).unwrap_or(&attempted_at[..10]);
+        let range_end = context.get("rangeEnd").and_then(Value::as_str).unwrap_or(&attempted_at[..10]);
+        let counts = if activities.is_some() { self.store.replace_source_sessions(&ReplaceSourceSessionsInput { owner_id: &self.owner_id, source: "intervals", sessions: &sessions, dates: None, local_dates: None, range_start: Some(range_start), range_end: Some(range_end) })? } else { crate::store::WriteCounts { added: 0, updated: 0 } };
+        let wellness_count = match payload.get("wellness").and_then(Value::as_array) { Some(records) => self.store.upsert_wellness(&self.owner_id, records)?, None => 0 };
+        let mut errors = Map::new();
+        for name in ["activities", "events", "wellness"] { if let Some(Value::String(message)) = payload.get(name) { errors.insert(name.into(), json!(message)); } }
+        let activities_ok = activities.is_some(); let wellness_ok = payload.get("wellness").is_some_and(Value::is_array);
+        let status = if activities_ok && wellness_ok { "success" } else if activities_ok || wellness_ok { "partial" } else { "failed" };
+        let previous = self.get_intervals_sync_status()?;
+        let last_success = if status == "success" { json!(attempted_at) } else { previous.as_ref().map(|value| value["lastSuccessAt"].clone()).unwrap_or(Value::Null) };
+        let state = self.store.save_connection_sync_state(&json!({ "ownerId": self.owner_id, "source": "intervals", "lastAttemptAt": attempted_at,
+            "lastSuccessAt": last_success, "rangeStart": range_start, "rangeEnd": range_end, "status": status,
+            "data": { "activities": counts.to_json(), "wellnessCount": wellness_count, "errors": errors } }))?;
+        Ok(json!({ "added": counts.added, "updated": counts.updated, "wellnessCount": wellness_count, "errors": errors, "sync": state }))
+    }
+
+    pub fn get_xunji_sync_status(&self) -> Result<Option<Value>> { self.store.get_connection_sync_state("xunji", &self.owner_id) }
+
+    pub fn list_xunji_sessions(&self, days: i64) -> Result<Value> {
+        let since = tz::iso_minus_days(&self.now_iso(), days)?;
+        Ok(json!({ "source": "xunji", "sync": self.get_xunji_sync_status()?, "sessions": self.store.list_sessions_by_source("xunji", &self.owner_id, Some(&since))? }))
+    }
+
+    pub fn record_xunji_failure(&self, input: &Value) -> Result<Value> {
+        let previous = self.get_xunji_sync_status()?;
+        let message: String = input["message"].as_str().unwrap_or("").chars().take(500).collect();
+        self.store.save_connection_sync_state(&json!({ "ownerId": self.owner_id, "source": "xunji", "lastAttemptAt": input["attemptedAt"],
+            "lastSuccessAt": previous.as_ref().map(|value| value["lastSuccessAt"].clone()).unwrap_or(Value::Null), "rangeStart": input["rangeStart"], "rangeEnd": input["rangeEnd"],
+            "status": "failed", "data": { "successfulDays": 0, "failedDays": 1, "errors": [{ "code": input["code"], "message": message }] } }))
+    }
+
+    pub fn commit_xunji(&self, result: &Value, attempted_at: &str) -> Result<Value> {
+        let mut normalized = Vec::new(); let mut normalization_errors = Vec::new(); let mut failed_dates = HashSet::new();
+        for record in result["records"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
+            match normalize_xunji_training(record) {
+                Ok(session) => normalized.push((record["datestr"].as_str().unwrap_or("").to_owned(), session)),
+                Err(error) => { if record["datestr"].as_str().is_some_and(athria_core::date::is_iso_date) { failed_dates.insert(record["datestr"].as_str().unwrap().to_owned()); }
+                    normalization_errors.push(json!({ "code": "normalization_failed", "message": error.message().chars().take(500).collect::<String>() })); }
+            }
+        }
+        let replace_dates: Vec<String> = result["successfulDates"].as_array().into_iter().flatten().filter_map(Value::as_str).filter(|date| !failed_dates.contains(*date)).map(str::to_owned).collect();
+        let replacement: Vec<Value> = normalized.iter().filter(|(date, _)| replace_dates.contains(date)).map(|(_, session)| session.clone()).collect();
+        let local_dates = Map::from_iter(normalized.iter().filter(|(date, _)| replace_dates.contains(date)).map(|(date, session)| (string_field(session, "externalId").to_owned(), json!(date))));
+        let counts = if replace_dates.is_empty() { crate::store::WriteCounts { added: 0, updated: 0 } } else { self.store.replace_source_sessions(&ReplaceSourceSessionsInput { owner_id: &self.owner_id, source: "xunji", sessions: &replacement, dates: Some(&replace_dates), local_dates: Some(&local_dates), range_start: None, range_end: None })? };
+        let mut errors = result["errors"].as_array().cloned().unwrap_or_default(); errors.extend(normalization_errors.clone());
+        let successful_days = result["successfulDates"].as_array().map_or(0, Vec::len); let failed_days = result["errors"].as_array().map_or(0, Vec::len);
+        let status = if errors.is_empty() { "success" } else if successful_days > 0 { "partial" } else { "failed" };
+        let previous = self.get_xunji_sync_status()?;
+        let state = self.store.save_connection_sync_state(&json!({ "ownerId": self.owner_id, "source": "xunji", "lastAttemptAt": attempted_at,
+            "lastSuccessAt": if successful_days > 0 { json!(attempted_at) } else { previous.as_ref().map(|value| value["lastSuccessAt"].clone()).unwrap_or(Value::Null) },
+            "rangeStart": result["rangeStart"], "rangeEnd": result["rangeEnd"], "status": status,
+            "data": { "successfulDays": successful_days, "failedDays": failed_days, "records": result["records"].as_array().map_or(0, Vec::len), "normalizationFailures": normalization_errors.len(), "errors": errors } }))?;
+        let content_hash = stable_hash(&json!({ "rangeStart": result["rangeStart"], "rangeEnd": result["records"].as_array().into_iter().flatten().map(|record| record.get("localid").or_else(|| record.get("start")).cloned().unwrap_or(Value::Null)).collect::<Vec<_>>() }));
+        let data = json!({ "added": counts.added, "updated": counts.updated, "sync": state });
+        self.store.record_import_batch(&RecordImportBatchInput { owner_id: &self.owner_id, source: "xunji", content_hash: &content_hash, file_name: "Xunji Open API", parser_version: XUNJI_PARSER_VERSION, status, data: &data })?;
+        Ok(json!({ "added": counts.added, "updated": counts.updated, "sync": state }))
     }
 
     /// `getCurrentPlan()`.

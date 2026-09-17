@@ -1,10 +1,11 @@
 //! Athria application use cases, the Rust port of `packages/application`.
 //!
-//! [`AthriaApplication`] owns every business read and write that does not talk
-//! to an integration (Hevy, intervals.icu and Xunji arrive in Phase 6) and the
-//! MCP tool registry (Phase 8). It depends only on the [`AthriaStore`] port and
-//! the deterministic core, so the desktop shell, the CLI and future mobile
-//! shells run exactly these use cases.
+//! [`AthriaApplication`] owns every business read and write, including the
+//! commit boundary for Hevy, intervals.icu and Xunji. Network and credential
+//! access remain runtime adapters. The MCP tool registry arrives in Phase 8.
+//! It depends only on the [`AthriaStore`] port, deterministic core and pure
+//! integration adapters, so desktop, CLI and mobile shells run the same use
+//! cases.
 //!
 //! Transports (Tauri IPC, MCP, CLI, HTTP) depend on this crate, never the
 //! reverse.

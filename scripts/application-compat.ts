@@ -89,6 +89,18 @@ const skip = { action: "skip", expectedRevision: 1, reason: { reasonCode: "sched
 capture("update_planned_session", { id: "compat-plan-session", value: skip }, () => app.updatePlannedSession("compat-plan-session", skip));
 capture("get_next_training_day", { onOrAfterDate: "2026-09-14" }, () => app.getNextTrainingDay({ onOrAfterDate: "2026-09-14" }));
 
+const hevyCsv = "title,start_time,end_time,exercise_title,set_index,weight_kg,reps\nCompat Lift,2026-09-13T10:00:00Z,2026-09-13T11:00:00Z,Squat,1,80,5\n";
+let hevyToken = "";
+capture("preview_hevy", { content: hevyCsv, fileName: "compat.csv" }, () => {
+  const preview = app.previewHevy(new TextEncoder().encode(hevyCsv), "compat.csv"); hevyToken = preview.previewToken; return preview;
+});
+capture("commit_hevy", { previewToken: hevyToken }, () => app.commitHevy(hevyToken));
+const intervalsPayload = { activities: [{ id: "compat-ride", type: "Ride", start_date: "2026-09-12T02:00:00Z", moving_time: 3600 }], wellness: [], events: "HTTP 500" };
+const intervalsContext = { attemptedAt: "2026-09-17T04:00:00.000Z", rangeStart: "2026-09-12", rangeEnd: "2026-09-17" };
+capture("commit_intervals", { payload: intervalsPayload, context: intervalsContext }, () => app.commitIntervals(intervalsPayload, intervalsContext));
+const xunjiResult = { rangeStart: "2026-09-11", rangeEnd: "2026-09-11", successfulDates: ["2026-09-11"], errors: [], records: [{ localid: "compat-xunji", datestr: "2026-09-11", title: "Xunji", start: "2026-09-11T03:00:00Z", end: "2026-09-11T04:00:00Z", movements: [] }] };
+capture("commit_xunji", { result: xunjiResult, attemptedAt: now.toISOString() }, () => app.commitXunji(xunjiResult, now.toISOString()));
+
 repository.close();
 mkdirSync(resolve(outputPath, ".."), { recursive: true });
 writeFileSync(outputPath, `${JSON.stringify({ version: 1, now: now.toISOString(), steps }, null, 2)}\n`);
