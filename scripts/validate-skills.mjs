@@ -21,6 +21,16 @@ export function validateToolNames(tools) {
   if (invalid.length) throw new Error("MCP contract contains a tool without a valid name");
   const duplicates = names.filter((name, index) => names.indexOf(name) !== index);
   if (duplicates.length) throw new Error(`MCP contract contains duplicate tools: ${[...new Set(duplicates)].join(", ")}`);
+  for (const tool of tools) {
+    if (tool.handlerKey !== tool.name) throw new Error(`MCP tool ${tool.name} must use its canonical name as handlerKey`);
+    const output = tool.outputSchema;
+    if (output?.type !== "object" || !output.properties?.result || !output.required?.includes("result")) {
+      throw new Error(`MCP tool ${tool.name} must define an object outputSchema with required result`);
+    }
+    if (Object.keys(output.properties.result).length === 0) {
+      throw new Error(`MCP tool ${tool.name} has an untyped result schema`);
+    }
+  }
   return new Set(names);
 }
 
@@ -40,9 +50,8 @@ export function validateSkillTools(skill, manifest, content, contractTools) {
 }
 
 const contract = JSON.parse(readFileSync(join(projectRoot, "crates/athria-mcp/contract.json"), "utf8"));
-const adjustmentTool = JSON.parse(readFileSync(join(projectRoot, "crates/athria-mcp/adjustment-tool.json"), "utf8"));
 if (!Array.isArray(contract.tools)) throw new Error("crates/athria-mcp/contract.json: tools must be an array");
-const contractTools = validateToolNames([...contract.tools, adjustmentTool]);
+const contractTools = validateToolNames(contract.tools);
 
 for (const skill of skills) {
   const content = readFileSync(join(projectRoot, skill, "SKILL.md"), "utf8");

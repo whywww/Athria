@@ -9,11 +9,31 @@ use athria_core::{
 pub use athria_core::{AthriaError, AthriaErrorCode, Result};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::io::{BufRead, Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::borrow::Cow;
+use std::collections::HashSet;
+use std::net::TcpListener;
+use std::sync::{Arc, Mutex};
+
+use axum::{
+    Json, Router,
+    body::Body,
+    extract::{Request, State},
+    http::{HeaderValue, StatusCode, header},
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
+};
+use rmcp::{
+    ErrorData, ServerHandler, ServiceExt,
+    model::{
+        CallToolRequestParams, CallToolResponse, CallToolResult, Implementation, ListToolsResult,
+        PaginatedRequestParams, ProtocolVersion, ServerCapabilities, ServerConfig, Tool,
+    },
+    transport::streamable_http_server::{
+        StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
+    },
+};
 
 const CONTRACT: &str = include_str!("../contract.json");
-const ADJUSTMENT_TOOL_CONTRACT: &str = include_str!("../adjustment-tool.json");
 
 #[derive(Debug, Deserialize)]
 struct Contract {
@@ -21,77 +41,170 @@ struct Contract {
     tools: Vec<Value>,
 }
 
+struct RegisteredTool {
+    kind: ToolKind,
+    input: jsonschema::Validator,
+    output: jsonschema::Validator,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ToolKind {
+    GetAthleteProfile,
+    GetTrainingState,
+    ListTrainingSessions,
+    ListWellness,
+    GetWellnessDay,
+    ListXunjiTrainingSessions,
+    GetXunjiSyncStatus,
+    GetTrainingSummary,
+    GetCurrentPlan,
+    GetPlanAdjustmentReview,
+    ListSessionTemplates,
+    GetSessionTemplate,
+    GetTrainingTaxonomy,
+    CalculateTrainingMetrics,
+    EstimateOneRepMax,
+    CalculateHeartRateZones,
+    EvaluateProgression,
+    EvaluateRpeAutoregulation,
+    ValidateCurrentPlan,
+    GetNextTrainingDay,
+    ListPlannedSessions,
+    ValidateNextTrainingDaySessions,
+    CreateSessionTemplate,
+    UpdateSessionTemplate,
+    DeleteSessionTemplate,
+    SaveCurrentPlan,
+    SaveNextTrainingDaySessions,
+    UpdatePlannedSession,
+    RecordTrainingSession,
+    SetTrainingSessionPlanMatch,
+    AllowAutomaticPlanMatch,
+    UpdateManualTrainingSession,
+    RemoveManualTrainingSource,
+    UpdateWellness,
+    UpdateAthleteProfile,
+}
+
+impl ToolKind {
+    fn parse(value: &str) -> Option<Self> {
+        Some(match value {
+            "get_athlete_profile" => Self::GetAthleteProfile,
+            "get_training_state" => Self::GetTrainingState,
+            "list_training_sessions" => Self::ListTrainingSessions,
+            "list_wellness" => Self::ListWellness,
+            "get_wellness_day" => Self::GetWellnessDay,
+            "list_xunji_training_sessions" => Self::ListXunjiTrainingSessions,
+            "get_xunji_sync_status" => Self::GetXunjiSyncStatus,
+            "get_training_summary" => Self::GetTrainingSummary,
+            "get_current_plan" => Self::GetCurrentPlan,
+            "get_plan_adjustment_review" => Self::GetPlanAdjustmentReview,
+            "list_session_templates" => Self::ListSessionTemplates,
+            "get_session_template" => Self::GetSessionTemplate,
+            "get_training_taxonomy" => Self::GetTrainingTaxonomy,
+            "calculate_training_metrics" => Self::CalculateTrainingMetrics,
+            "estimate_1rm" => Self::EstimateOneRepMax,
+            "calculate_heart_rate_zones" => Self::CalculateHeartRateZones,
+            "evaluate_progression" => Self::EvaluateProgression,
+            "evaluate_rpe_autoregulation" => Self::EvaluateRpeAutoregulation,
+            "validate_current_plan" => Self::ValidateCurrentPlan,
+            "get_next_training_day" => Self::GetNextTrainingDay,
+            "list_planned_sessions" => Self::ListPlannedSessions,
+            "validate_next_training_day_sessions" => Self::ValidateNextTrainingDaySessions,
+            "create_session_template" => Self::CreateSessionTemplate,
+            "update_session_template" => Self::UpdateSessionTemplate,
+            "delete_session_template" => Self::DeleteSessionTemplate,
+            "save_current_plan" => Self::SaveCurrentPlan,
+            "save_next_training_day_sessions" => Self::SaveNextTrainingDaySessions,
+            "update_planned_session" => Self::UpdatePlannedSession,
+            "record_training_session" => Self::RecordTrainingSession,
+            "set_training_session_plan_match" => Self::SetTrainingSessionPlanMatch,
+            "allow_automatic_plan_match" => Self::AllowAutomaticPlanMatch,
+            "update_manual_training_session" => Self::UpdateManualTrainingSession,
+            "remove_manual_training_source" => Self::RemoveManualTrainingSource,
+            "update_wellness" => Self::UpdateWellness,
+            "update_athlete_profile" => Self::UpdateAthleteProfile,
+            _ => return None,
+        })
+    }
+}
+
 pub struct McpService<S: AthriaStore> {
     application: AthriaApplication<S>,
     contract: Contract,
+    registry: Vec<RegisteredTool>,
 }
 
 impl<S: AthriaStore> McpService<S> {
     pub fn new(application: AthriaApplication<S>) -> Self {
-        let mut contract: Contract =
+        let contract: Contract =
             serde_json::from_str(CONTRACT).expect("embedded MCP contract must be valid");
-        contract.tools.push(
-            serde_json::from_str(ADJUSTMENT_TOOL_CONTRACT)
-                .expect("embedded adjustment tool contract must be valid"),
-        );
+        let mut names = HashSet::new();
+        let registry = contract
+            .tools
+            .iter()
+            .map(|tool| {
+                let name = tool["name"]
+                    .as_str()
+                    .expect("MCP tool name must be a string");
+                assert!(names.insert(name), "duplicate MCP tool name: {name}");
+                let handler = tool["handlerKey"]
+                    .as_str()
+                    .expect("MCP tool handlerKey must be a string");
+                let kind = ToolKind::parse(handler)
+                    .unwrap_or_else(|| panic!("unknown MCP handlerKey: {handler}"));
+                let input = jsonschema::options()
+                    .should_validate_formats(true)
+                    .build(&tool["inputSchema"])
+                    .unwrap_or_else(|error| panic!("invalid input schema for {name}: {error}"));
+                let output = jsonschema::options()
+                    .should_validate_formats(true)
+                    .build(&tool["outputSchema"])
+                    .unwrap_or_else(|error| panic!("invalid output schema for {name}: {error}"));
+                RegisteredTool {
+                    kind,
+                    input,
+                    output,
+                }
+            })
+            .collect();
         Self {
             application,
             contract,
+            registry,
         }
     }
     pub fn tools(&self) -> &[Value] {
         &self.contract.tools
     }
 
-    pub fn handle(&self, request: &Value) -> Option<Value> {
-        let id = request.get("id").cloned()?;
-        let method = request
-            .get("method")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        let response = match method {
-            "initialize" => {
-                json!({ "protocolVersion": request.pointer("/params/protocolVersion").and_then(Value::as_str).unwrap_or("2025-11-25"), "capabilities": { "tools": { "listChanged": false } }, "serverInfo": self.contract.server })
-            }
-            "ping" => json!({}),
-            "tools/list" => json!({ "tools": self.contract.tools }),
-            "tools/call" => {
-                let name = request
-                    .pointer("/params/name")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default();
-                let input = request
-                    .pointer("/params/arguments")
-                    .cloned()
-                    .unwrap_or_else(|| json!({}));
-                self.call_result(name, &input)
-            }
-            _ => {
-                return Some(
-                    json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32601, "message": "Method not found" } }),
-                );
-            }
-        };
-        Some(json!({ "jsonrpc": "2.0", "id": id, "result": response }))
-    }
-
     pub fn call_result(&self, name: &str, input: &Value) -> Value {
         let result = self
-            .contract
-            .tools
+            .registry
             .iter()
-            .find(|tool| tool["name"] == name)
+            .enumerate()
+            .find(|(index, _)| self.contract.tools[*index]["name"] == name)
             .ok_or_else(|| ToolError {
                 code: "INTERNAL_ERROR".into(),
                 message: format!("Unknown tool: {name}"),
             })
-            .and_then(|tool| {
-                validate_schema(&tool["inputSchema"], input, "input").map_err(ToolError::invalid)
-            })
-            .and_then(|()| self.call_tool(name, input));
+            .and_then(|(_, tool)| {
+                tool.input
+                    .validate(input)
+                    .map_err(|error| ToolError::invalid(format!("input: {error}")))?;
+                let output = self.call_tool(tool.kind, input)?;
+                let structured = json!({ "result": output });
+                tool.output
+                    .validate(&structured)
+                    .map_err(|error| ToolError {
+                        code: "INTERNAL_ERROR".into(),
+                        message: format!("Tool output violated its contract: {error}"),
+                    })?;
+                Ok((output, structured))
+            });
         match result {
-            Ok(output) => {
-                json!({ "content": [{ "type": "text", "text": serde_json::to_string(&output).expect("JSON output") }] })
+            Ok((output, structured)) => {
+                json!({ "content": [{ "type": "text", "text": serde_json::to_string(&output).expect("JSON output") }], "structuredContent": structured })
             }
             Err(error) => {
                 json!({ "isError": true, "content": [{ "type": "text", "text": serde_json::to_string(&json!({ "error": error.message, "code": error.code })).expect("JSON error") }] })
@@ -99,40 +212,42 @@ impl<S: AthriaStore> McpService<S> {
         }
     }
 
-    fn call_tool(&self, name: &str, input: &Value) -> std::result::Result<Value, ToolError> {
+    fn call_tool(&self, kind: ToolKind, input: &Value) -> std::result::Result<Value, ToolError> {
         let app = &self.application;
         let application =
             |result: athria_application::Result<Value>| result.map_err(ToolError::application);
-        match name {
-            "get_athlete_profile" => {
+        match kind {
+            ToolKind::GetAthleteProfile => {
                 let mut profile = app.get_profile().map_err(ToolError::application)?;
                 profile["profileHash"] = json!(app.profile_hash().map_err(ToolError::application)?);
                 Ok(profile)
             }
-            "get_training_state" => application(app.get_training_state()),
-            "list_training_sessions" => serialize(
+            ToolKind::GetTrainingState => application(app.get_training_state()),
+            ToolKind::ListTrainingSessions => serialize(
                 app.list_sessions(days(input, 30)?)
                     .map_err(ToolError::application)?,
             ),
-            "list_wellness" => serialize(
+            ToolKind::ListWellness => serialize(
                 app.list_wellness(days(input, 42)?)
                     .map_err(ToolError::application)?,
             ),
-            "get_wellness_day" => application(app.get_wellness_day(required_str(input, "day")?)),
-            "list_xunji_training_sessions" => {
+            ToolKind::GetWellnessDay => {
+                application(app.get_wellness_day(required_str(input, "day")?))
+            }
+            ToolKind::ListXunjiTrainingSessions => {
                 application(app.list_xunji_sessions(days(input, 30)?))
             }
-            "get_xunji_sync_status" => serialize(
+            ToolKind::GetXunjiSyncStatus => serialize(
                 app.get_xunji_sync_status()
                     .map_err(ToolError::application)?,
             ),
-            "get_training_summary" => {
+            ToolKind::GetTrainingSummary => {
                 application(app.get_training_summary(days(input, 7)?, None, None))
             }
-            "get_current_plan" => {
+            ToolKind::GetCurrentPlan => {
                 serialize(app.get_current_plan().map_err(ToolError::application)?)
             }
-            "get_plan_adjustment_review" => {
+            ToolKind::GetPlanAdjustmentReview => {
                 let trigger = match required_str(input, "trigger")? {
                     "weekly_review" => AdjustmentTrigger::WeeklyReview,
                     "profile_change" => AdjustmentTrigger::ProfileChange,
@@ -144,16 +259,18 @@ impl<S: AthriaStore> McpService<S> {
                         .map_err(ToolError::application)?,
                 )
             }
-            "list_session_templates" => {
+            ToolKind::ListSessionTemplates => {
                 serialize(app.list_templates().map_err(ToolError::application)?)
             }
-            "get_session_template" => application(app.get_template(required_str(input, "id")?)),
-            "get_training_taxonomy" => Ok(app.get_training_taxonomy()),
-            "calculate_training_metrics" => serialize(calculate_training_metrics(
+            ToolKind::GetSessionTemplate => {
+                application(app.get_template(required_str(input, "id")?))
+            }
+            ToolKind::GetTrainingTaxonomy => Ok(app.get_training_taxonomy()),
+            ToolKind::CalculateTrainingMetrics => serialize(calculate_training_metrics(
                 &app.list_sessions(days(input, 90)?)
                     .map_err(ToolError::application)?,
             )),
-            "estimate_1rm" => serialize(
+            ToolKind::EstimateOneRepMax => serialize(
                 estimate_one_rep_max(
                     required_f64(input, "load")?,
                     required_f64(input, "reps")?,
@@ -161,47 +278,40 @@ impl<S: AthriaStore> McpService<S> {
                 )
                 .map_err(ToolError::application)?,
             ),
-            "calculate_heart_rate_zones" => serialize(
+            ToolKind::CalculateHeartRateZones => serialize(
                 calculate_heart_rate_zones(required_f64(input, "maxHeartRate")?)
                     .map_err(ToolError::application)?,
             ),
-            "evaluate_double_progression" | "evaluate_progression" => {
+            ToolKind::EvaluateProgression => {
                 application(evaluate_double_progression(&parse(input)?))
             }
-            "evaluate_rpe_autoregulation" => {
-                application(evaluate_rpe_autoregulation(
-                    &parse::<RpeAutoregulationInput>(input)?,
-                ))
-            }
-            "validate_current_plan" => serialize(
+            ToolKind::EvaluateRpeAutoregulation => application(evaluate_rpe_autoregulation(
+                &parse::<RpeAutoregulationInput>(input)?,
+            )),
+            ToolKind::ValidateCurrentPlan => serialize(
                 app.validate_current_plan(input)
                     .map_err(ToolError::application)?,
             ),
-            "check_training_constraints" => serialize(
-                app.validate_current_plan(input)
-                    .map_err(ToolError::application)?
-                    .results,
-            ),
-            "get_next_training_day" => application(
+            ToolKind::GetNextTrainingDay => application(
                 app.get_next_training_day(input.get("onOrAfterDate").and_then(Value::as_str)),
             ),
-            "list_planned_sessions" => serialize(
+            ToolKind::ListPlannedSessions => serialize(
                 app.get_calendar(
                     input.get("from").and_then(Value::as_str),
                     input.get("to").and_then(Value::as_str),
                 )
                 .map_err(ToolError::application)?,
             ),
-            "validate_next_training_day_sessions" => {
+            ToolKind::ValidateNextTrainingDaySessions => {
                 application(app.validate_next_training_day_sessions(input))
             }
-            "create_session_template" => application(app.create_template(input)),
-            "update_session_template" => application(app.update_template(input)),
-            "delete_session_template" => application(app.delete_template(
+            ToolKind::CreateSessionTemplate => application(app.create_template(input)),
+            ToolKind::UpdateSessionTemplate => application(app.update_template(input)),
+            ToolKind::DeleteSessionTemplate => application(app.delete_template(
                 required_str(input, "id")?,
                 input.get("expectedRevision").and_then(Value::as_i64),
             )),
-            "save_current_plan" => {
+            ToolKind::SaveCurrentPlan => {
                 let saved = app
                     .save_current_plan(input)
                     .map_err(ToolError::application)?;
@@ -209,10 +319,10 @@ impl<S: AthriaStore> McpService<S> {
                     json!({ "revision": saved["plan"]["revision"], "impact": saved["impact"], "blockerSummary": blocker_summary(&saved["validation"]) }),
                 )
             }
-            "save_next_training_day_sessions" => {
+            ToolKind::SaveNextTrainingDaySessions => {
                 application(app.save_next_training_day_sessions(input))
             }
-            "update_planned_session" => application(
+            ToolKind::UpdatePlannedSession => application(
                 app.update_planned_session(
                     required_str(input, "id")?,
                     input
@@ -220,20 +330,20 @@ impl<S: AthriaStore> McpService<S> {
                         .ok_or_else(|| ToolError::invalid("update is required"))?,
                 ),
             ),
-            "record_training_session" => application(app.record_training_session(input)),
-            "set_training_session_plan_match" => {
+            ToolKind::RecordTrainingSession => application(app.record_training_session(input)),
+            ToolKind::SetTrainingSessionPlanMatch => {
                 application(app.set_training_session_plan_match(required_str(input, "id")?, input))
             }
-            "allow_automatic_plan_match" => application(
+            ToolKind::AllowAutomaticPlanMatch => application(
                 app.clear_training_session_plan_exclusion(required_str(input, "id")?, input),
             ),
-            "update_manual_training_session" => {
+            ToolKind::UpdateManualTrainingSession => {
                 application(app.update_manual_training_session(required_str(input, "id")?, input))
             }
-            "remove_manual_training_source" => {
+            ToolKind::RemoveManualTrainingSource => {
                 application(app.delete_manual_training_session(required_str(input, "id")?, input))
             }
-            "update_wellness" => application(
+            ToolKind::UpdateWellness => application(
                 app.update_wellness(
                     required_str(input, "day")?,
                     input
@@ -241,12 +351,110 @@ impl<S: AthriaStore> McpService<S> {
                         .ok_or_else(|| ToolError::invalid("update is required"))?,
                 ),
             ),
-            "update_athlete_profile" => application(app.update_profile(input)),
-            _ => Err(ToolError {
-                code: "INTERNAL_ERROR".into(),
-                message: format!("Unknown tool: {name}"),
-            }),
+            ToolKind::UpdateAthleteProfile => application(app.update_profile(input)),
         }
+    }
+}
+
+struct RmcpServer<S: AthriaStore + Send + 'static> {
+    service: Arc<Mutex<McpService<S>>>,
+    tools: Arc<Vec<Tool>>,
+    server_name: Arc<str>,
+    server_version: Arc<str>,
+}
+
+impl<S: AthriaStore + Send + 'static> Clone for RmcpServer<S> {
+    fn clone(&self) -> Self {
+        Self {
+            service: Arc::clone(&self.service),
+            tools: Arc::clone(&self.tools),
+            server_name: Arc::clone(&self.server_name),
+            server_version: Arc::clone(&self.server_version),
+        }
+    }
+}
+
+impl<S: AthriaStore + Send + 'static> RmcpServer<S> {
+    fn new(service: McpService<S>) -> Self {
+        let server_name: Arc<str> = service.contract.server["name"]
+            .as_str()
+            .expect("MCP server name must be a string")
+            .into();
+        let server_version: Arc<str> = service.contract.server["version"]
+            .as_str()
+            .expect("MCP server version must be a string")
+            .into();
+        let tools = service
+            .tools()
+            .iter()
+            .map(|tool| {
+                let mut wire = tool.clone();
+                wire.as_object_mut()
+                    .expect("MCP tool must be an object")
+                    .shift_remove("handlerKey");
+                serde_json::from_value(wire).expect("MCP tool must match the RMCP wire model")
+            })
+            .collect();
+        Self {
+            service: Arc::new(Mutex::new(service)),
+            tools: Arc::new(tools),
+            server_name,
+            server_version,
+        }
+    }
+}
+
+impl<S: AthriaStore + Send + 'static> ServerHandler for RmcpServer<S> {
+    fn get_info(&self) -> ServerConfig {
+        ServerConfig::new(ServerCapabilities::builder().enable_tools().build()).with_server_info(
+            Implementation::new(
+                self.server_name.to_string(),
+                self.server_version.to_string(),
+            ),
+        )
+    }
+
+    fn supported_protocol_versions(&self) -> Cow<'static, [ProtocolVersion]> {
+        Cow::Owned(vec![
+            ProtocolVersion::V_2025_11_25,
+            ProtocolVersion::V_2026_07_28,
+        ])
+    }
+
+    fn list_tools(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> impl Future<Output = Result<ListToolsResult, ErrorData>> + Send + '_ {
+        std::future::ready(Ok(ListToolsResult::with_all_items((*self.tools).clone())))
+    }
+
+    fn get_tool(&self, name: &str) -> Option<Tool> {
+        self.tools.iter().find(|tool| tool.name == name).cloned()
+    }
+
+    fn call_tool(
+        &self,
+        request: CallToolRequestParams,
+        _context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> impl Future<Output = Result<CallToolResponse, ErrorData>> + Send + '_ {
+        let result = if self.get_tool(&request.name).is_none() {
+            Err(ErrorData::invalid_params(
+                format!("Unknown tool: {}", request.name),
+                None,
+            ))
+        } else {
+            let input = Value::Object(request.arguments.unwrap_or_default());
+            let value = self
+                .service
+                .lock()
+                .expect("MCP service lock must not be poisoned")
+                .call_result(&request.name, &input);
+            serde_json::from_value::<CallToolResult>(value)
+                .map(CallToolResponse::from)
+                .map_err(|error| ErrorData::internal_error(error.to_string(), None))
+        };
+        std::future::ready(result)
     }
 }
 
@@ -305,326 +513,93 @@ fn blocker_summary(validation: &Value) -> Value {
     json!({ "valid": validation["valid"], "blockers": results.iter().filter(|item| item["enforcement"] == "blocker" && (item["status"] == "fail" || item["status"] == "unknown")).count(), "advisories": results.iter().filter(|item| item["enforcement"] == "advisory").count(), "blockingDataGaps": validation["dataGaps"].as_array().map(|items| items.iter().filter(|item| item["blocking"] == true).count()).unwrap_or(0) })
 }
 
-fn validate_schema(schema: &Value, value: &Value, path: &str) -> std::result::Result<(), String> {
-    if let Some(expected) = schema.get("const") {
-        if value != expected {
-            return Err(format!("{path} must equal {expected}"));
-        }
-    }
-    if let Some(values) = schema.get("enum").and_then(Value::as_array) {
-        if !values.contains(value) {
-            return Err(format!("{path} is not an allowed value"));
-        }
-    }
-    if let Some(options) = schema.get("anyOf").and_then(Value::as_array) {
-        if !options
-            .iter()
-            .any(|option| validate_schema(option, value, path).is_ok())
-        {
-            return Err(format!("{path} does not match any allowed shape"));
-        }
-        return Ok(());
-    }
-    if let Some(options) = schema.get("oneOf").and_then(Value::as_array) {
-        if options
-            .iter()
-            .filter(|option| validate_schema(option, value, path).is_ok())
-            .count()
-            != 1
-        {
-            return Err(format!("{path} must match exactly one allowed shape"));
-        }
-        return Ok(());
-    }
-    if let Some(kind) = schema.get("type").and_then(Value::as_str) {
-        let matches = match kind {
-            "object" => value.is_object(),
-            "array" => value.is_array(),
-            "string" => value.is_string(),
-            "number" => value.is_number(),
-            "integer" => value.as_f64().is_some_and(|number| number.fract() == 0.0),
-            "boolean" => value.is_boolean(),
-            "null" => value.is_null(),
-            _ => true,
-        };
-        if !matches {
-            return Err(format!("{path} must be {kind}"));
-        }
-    }
-    if let Some(object) = value.as_object() {
-        let properties = schema.get("properties").and_then(Value::as_object);
-        for name in schema
-            .get("required")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_str)
-        {
-            if !object.contains_key(name) {
-                return Err(format!("{path}.{name} is required"));
-            }
-        }
-        if let Some(properties) = properties {
-            for (name, child) in object {
-                if let Some(child_schema) = properties.get(name) {
-                    validate_schema(child_schema, child, &format!("{path}.{name}"))?;
-                } else if schema.get("additionalProperties") == Some(&Value::Bool(false)) {
-                    return Err(format!("{path}.{name} is not allowed"));
-                }
-            }
-        }
-        if let Some(names) = schema.get("propertyNames") {
-            for name in object.keys() {
-                validate_schema(
-                    names,
-                    &Value::String(name.clone()),
-                    &format!("{path} property name"),
-                )?;
-            }
-        }
-    }
-    if let Some(items) = value.as_array() {
-        if let Some(minimum) = schema.get("minItems").and_then(Value::as_u64) {
-            if items.len() < minimum as usize {
-                return Err(format!("{path} must contain at least {minimum} item(s)"));
-            }
-        }
-        if let Some(maximum) = schema.get("maxItems").and_then(Value::as_u64) {
-            if items.len() > maximum as usize {
-                return Err(format!("{path} must contain at most {maximum} item(s)"));
-            }
-        }
-        if schema.get("uniqueItems") == Some(&Value::Bool(true)) {
-            for (index, item) in items.iter().enumerate() {
-                if items[..index].contains(item) {
-                    return Err(format!("{path} must contain unique items"));
-                }
-            }
-        }
-        if let Some(item_schema) = schema.get("items") {
-            for (index, item) in items.iter().enumerate() {
-                validate_schema(item_schema, item, &format!("{path}[{index}]"))?;
-            }
-        }
-    }
-    if let Some(text) = value.as_str() {
-        if let Some(minimum) = schema.get("minLength").and_then(Value::as_u64) {
-            if text.chars().count() < minimum as usize {
-                return Err(format!("{path} is too short"));
-            }
-        }
-        if let Some(maximum) = schema.get("maxLength").and_then(Value::as_u64) {
-            if text.chars().count() > maximum as usize {
-                return Err(format!("{path} is too long"));
-            }
-        }
-        if schema.get("format").and_then(Value::as_str) == Some("date")
-            && !athria_core::date::is_iso_date(text)
-        {
-            return Err(format!("{path} must be an ISO date"));
-        }
-        if schema.get("format").and_then(Value::as_str) == Some("date-time")
-            && !(text.contains('T')
-                && (text.ends_with('Z') || text.rfind(['+', '-']).is_some_and(|index| index > 9)))
-        {
-            return Err(format!("{path} must be an ISO date-time with an offset"));
-        }
-        if schema
-            .get("pattern")
-            .and_then(Value::as_str)
-            .is_some_and(|pattern| pattern.contains("\\d{4}-\\d{2}-\\d{2}"))
-            && !athria_core::date::is_iso_date(text)
-        {
-            return Err(format!("{path} must match the required pattern"));
-        }
-    }
-    if let Some(number) = value.as_f64() {
-        if let Some(minimum) = schema.get("minimum").and_then(Value::as_f64) {
-            if number < minimum {
-                return Err(format!("{path} must be at least {minimum}"));
-            }
-        }
-        if let Some(maximum) = schema.get("maximum").and_then(Value::as_f64) {
-            if number > maximum {
-                return Err(format!("{path} must be at most {maximum}"));
-            }
-        }
-        if let Some(minimum) = schema.get("exclusiveMinimum").and_then(Value::as_f64) {
-            if number <= minimum {
-                return Err(format!("{path} must be greater than {minimum}"));
-            }
-        }
-    }
-    Ok(())
-}
-
-pub fn serve_stdio<S: AthriaStore>(service: McpService<S>) -> std::io::Result<()> {
-    let stdin = std::io::stdin();
-    let mut stdout = std::io::stdout().lock();
-    for line in stdin.lock().lines() {
-        let line = line?;
-        if line.trim().is_empty() {
-            continue;
-        }
-        let request: Value = match serde_json::from_str(&line) {
-            Ok(value) => value,
-            Err(_) => {
-                writeln!(
-                    stdout,
-                    "{}",
-                    json!({ "jsonrpc": "2.0", "id": Value::Null, "error": { "code": -32700, "message": "Parse error" } })
-                )?;
-                stdout.flush()?;
-                continue;
-            }
-        };
-        if let Some(response) = service.handle(&request) {
-            writeln!(stdout, "{response}")?;
-            stdout.flush()?;
-        }
-    }
-    Ok(())
+pub fn serve_stdio<S: AthriaStore + Send + 'static>(service: McpService<S>) -> std::io::Result<()> {
+    tokio::runtime::Runtime::new()?.block_on(async move {
+        let running = RmcpServer::new(service)
+            .serve(rmcp::transport::stdio())
+            .await
+            .map_err(std::io::Error::other)?;
+        running.waiting().await.map_err(std::io::Error::other)?;
+        Ok(())
+    })
 }
 
 /// Minimal Streamable HTTP JSON-response adapter. It deliberately binds only
 /// to a caller-provided listener; the runtime owns loopback binding and token
 /// generation so the application and MCP crates stay platform-independent.
-pub fn serve_http<S: AthriaStore>(
+pub fn serve_http<S: AthriaStore + Send + 'static>(
     listener: TcpListener,
     service: McpService<S>,
     bearer_token: &str,
 ) -> std::io::Result<()> {
-    for stream in listener.incoming() {
-        match stream {
-            Ok(stream) => {
-                if let Err(error) = handle_http(stream, &service, bearer_token) {
-                    eprintln!("Athria MCP HTTP request failed: {error}");
-                }
-            }
-            Err(error) => return Err(error),
-        }
-    }
-    Ok(())
+    let token = Arc::new(bearer_token.to_owned());
+    listener.set_nonblocking(true)?;
+    tokio::runtime::Runtime::new()?.block_on(async move {
+        let server = RmcpServer::new(service);
+        let config = StreamableHttpServerConfig::default()
+            .with_legacy_session_mode(true)
+            .with_json_response(true)
+            .with_allowed_hosts(["localhost", "127.0.0.1"])
+            .with_allowed_origins(["tauri://localhost", "http://tauri.localhost"]);
+        let mcp: StreamableHttpService<_, LocalSessionManager> =
+            StreamableHttpService::new(move || Ok(server.clone()), Default::default(), config);
+        let router = Router::new()
+            .nest_service("/mcp", mcp)
+            .layer(middleware::from_fn_with_state(token, authorize_request));
+        let listener = tokio::net::TcpListener::from_std(listener)?;
+        axum::serve(listener, router)
+            .await
+            .map_err(std::io::Error::other)
+    })
 }
 
-fn handle_http<S: AthriaStore>(
-    mut stream: TcpStream,
-    service: &McpService<S>,
-    bearer_token: &str,
+/// Unauthenticated loopback server used only by the pinned MCP conformance suite.
+#[cfg(feature = "conformance")]
+pub fn serve_conformance_http<S: AthriaStore + Send + 'static>(
+    listener: TcpListener,
+    service: McpService<S>,
 ) -> std::io::Result<()> {
-    let mut bytes = Vec::new();
-    let mut chunk = [0u8; 8192];
-    let header_end;
-    loop {
-        let read = stream.read(&mut chunk)?;
-        if read == 0 {
-            return Ok(());
-        }
-        bytes.extend_from_slice(&chunk[..read]);
-        if let Some(index) = bytes.windows(4).position(|window| window == b"\r\n\r\n") {
-            header_end = index + 4;
-            break;
-        }
-        if bytes.len() > 64 * 1024 {
-            return http_response(&mut stream, 413, None, "");
-        }
-    }
-    let headers = String::from_utf8_lossy(&bytes[..header_end]);
-    let mut lines = headers.lines();
-    let request_line = lines.next().unwrap_or_default();
-    let mut parts = request_line.split_whitespace();
-    let method = parts.next().unwrap_or_default();
-    let path = parts.next().unwrap_or_default();
-    let mut content_length = 0usize;
-    let mut authorized = false;
-    let mut host_allowed = false;
-    let mut origin_allowed = true;
-    for line in lines {
-        if let Some((name, value)) = line.split_once(':') {
-            let name = name.trim().to_ascii_lowercase();
-            let value = value.trim();
-            match name.as_str() {
-                "content-length" => content_length = value.parse().unwrap_or(0),
-                "authorization" => authorized = value == format!("Bearer {bearer_token}"),
-                "host" => {
-                    host_allowed =
-                        value.starts_with("127.0.0.1:") || value.starts_with("localhost:")
-                }
-                "origin" => {
-                    origin_allowed = matches!(value, "tauri://localhost" | "http://tauri.localhost")
-                }
-                _ => {}
-            }
-        }
-    }
-    if method != "POST" || path != "/mcp" {
-        return http_response(&mut stream, 404, None, "");
-    }
-    if !host_allowed || !origin_allowed {
-        return http_response(
-            &mut stream,
-            403,
-            None,
-            r#"{"error":"Host or origin is not allowed."}"#,
-        );
-    }
-    if !authorized {
-        return http_response(
-            &mut stream,
-            401,
-            None,
-            r#"{"error":"A valid local bearer token is required."}"#,
-        );
-    }
-    while bytes.len() < header_end + content_length {
-        let read = stream.read(&mut chunk)?;
-        if read == 0 {
-            break;
-        }
-        bytes.extend_from_slice(&chunk[..read]);
-    }
-    let request: Value = match serde_json::from_slice(
-        &bytes[header_end..bytes.len().min(header_end + content_length)],
-    ) {
-        Ok(value) => value,
-        Err(_) => return http_response(&mut stream, 400, None, r#"{"error":"Invalid JSON."}"#),
-    };
-    match service.handle(&request) {
-        Some(response) => http_response(
-            &mut stream,
-            200,
-            Some("application/json"),
-            &response.to_string(),
-        ),
-        None => http_response(&mut stream, 202, None, ""),
-    }
+    listener.set_nonblocking(true)?;
+    tokio::runtime::Runtime::new()?.block_on(async move {
+        let server = RmcpServer::new(service);
+        let config = StreamableHttpServerConfig::default()
+            .with_legacy_session_mode(true)
+            .with_json_response(true)
+            .with_allowed_hosts(["localhost", "127.0.0.1"]);
+        let mcp: StreamableHttpService<_, LocalSessionManager> =
+            StreamableHttpService::new(move || Ok(server.clone()), Default::default(), config);
+        let router = Router::new().nest_service("/mcp", mcp);
+        let listener = tokio::net::TcpListener::from_std(listener)?;
+        axum::serve(listener, router)
+            .await
+            .map_err(std::io::Error::other)
+    })
 }
 
-fn http_response(
-    stream: &mut TcpStream,
-    status: u16,
-    content_type: Option<&str>,
-    body: &str,
-) -> std::io::Result<()> {
-    let reason = match status {
-        200 => "OK",
-        202 => "Accepted",
-        400 => "Bad Request",
-        401 => "Unauthorized",
-        403 => "Forbidden",
-        404 => "Not Found",
-        413 => "Payload Too Large",
-        _ => "Error",
+async fn authorize_request(
+    State(token): State<Arc<String>>,
+    request: Request<Body>,
+    next: Next,
+) -> Response {
+    let expected = format!("Bearer {token}");
+    let authorized = request
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value == expected);
+    let mut response = if authorized {
+        next.run(request).await
+    } else {
+        (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "error": "A valid local bearer token is required." })),
+        )
+            .into_response()
     };
-    write!(
-        stream,
-        "HTTP/1.1 {status} {reason}\r\nContent-Length: {}\r\nCache-Control: no-store\r\n{}Connection: close\r\n\r\n{body}",
-        body.len(),
-        content_type
-            .map(|value| format!("Content-Type: {value}\r\n"))
-            .unwrap_or_default()
-    )?;
-    stream.flush()
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
 }
 
 #[cfg(test)]
@@ -639,12 +614,40 @@ mod tests {
     #[test]
     fn exposes_contract_and_calls_application() {
         let service = service();
-        assert_eq!(service.tools().len(), 37);
+        assert_eq!(service.tools().len(), 35);
+        assert!(service.tools().iter().all(|tool| {
+            tool.get("handlerKey").and_then(Value::as_str).is_some()
+                && tool.get("outputSchema").is_some()
+        }));
+        assert!(!service.tools().iter().any(|tool| matches!(
+            tool["name"].as_str(),
+            Some("check_training_constraints" | "evaluate_double_progression")
+        )));
         let output = service.call_result("get_athlete_profile", &json!({}));
         let profile: Value =
             serde_json::from_str(output["content"][0]["text"].as_str().unwrap()).unwrap();
         assert_eq!(profile["ownerId"], "local-user");
         assert!(profile["profileHash"].as_str().is_some());
+        assert_eq!(output["structuredContent"]["result"], profile);
+    }
+    #[test]
+    fn every_tool_has_a_valid_contract_result_fixture() {
+        let service = service();
+        let fixtures: Value =
+            serde_json::from_str(include_str!("../tests/fixtures/tool-results.json")).unwrap();
+        assert_eq!(fixtures.as_object().unwrap().len(), 35);
+
+        for (tool, registered) in service.tools().iter().zip(&service.registry) {
+            let name = tool["name"].as_str().unwrap();
+            let result = fixtures
+                .get(name)
+                .unwrap_or_else(|| panic!("missing result fixture for {name}"));
+            let envelope = json!({ "result": result });
+            assert!(
+                registered.output.validate(&envelope).is_ok(),
+                "fixture for {name} must match its outputSchema"
+            );
+        }
     }
     #[test]
     fn keeps_machine_readable_errors() {
@@ -674,11 +677,16 @@ mod tests {
                 .iter()
                 .find(|tool| tool["name"] == name)
                 .unwrap();
-            assert!(!tool["inputSchema"]["required"]
-                .as_array()
-                .is_some_and(|required| required.contains(&json!("days"))));
             assert!(
-                service.call_result(name, &json!({})).get("isError").is_none(),
+                !tool["inputSchema"]["required"]
+                    .as_array()
+                    .is_some_and(|required| required.contains(&json!("days")))
+            );
+            assert!(
+                service
+                    .call_result(name, &json!({}))
+                    .get("isError")
+                    .is_none(),
                 "{name} should accept an omitted days argument"
             );
         }
@@ -743,32 +751,80 @@ mod tests {
         assert_eq!(error["code"], "NO_CURRENT_PLAN");
     }
     #[test]
-    fn handles_json_rpc() {
-        let service = service();
-        let list = service
-            .handle(&json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {} }))
-            .unwrap();
-        assert_eq!(list["result"]["tools"].as_array().unwrap().len(), 37);
-        let call = service.handle(&json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": { "name": "estimate_1rm", "arguments": { "load": 100, "reps": 5, "unit": "kg" } } })).unwrap();
-        assert!(call["result"].get("isError").is_none());
+    fn rmcp_server_advertises_both_supported_protocols() {
+        let server = RmcpServer::new(service());
+        assert_eq!(server.tools.len(), 35);
+        assert!(server.tools.iter().all(|tool| tool.output_schema.is_some()));
+        assert_eq!(
+            server.supported_protocol_versions().as_ref(),
+            &[ProtocolVersion::V_2025_11_25, ProtocolVersion::V_2026_07_28]
+        );
     }
     #[test]
     fn serves_authenticated_loopback_http() {
+        use std::io::{Read, Write};
+        use std::net::TcpStream;
+        use std::time::Duration;
+
+        fn post(address: std::net::SocketAddr, extra_headers: &str, body: &Value) -> String {
+            let mut client = TcpStream::connect(address).unwrap();
+            client
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let body = body.to_string();
+            write!(client, "POST /mcp HTTP/1.1\r\nHost: {address}\r\n{extra_headers}Accept: application/json, text/event-stream\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}", body.len()).unwrap();
+            let mut response = String::new();
+            client.read_to_string(&mut response).unwrap();
+            response
+        }
+
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         let server = std::thread::spawn(move || {
-            let (stream, _) = listener.accept().unwrap();
-            handle_http(stream, &service(), "secret").unwrap();
+            serve_http(listener, service(), "secret").unwrap();
         });
-        let mut client = TcpStream::connect(address).unwrap();
-        let body =
-            json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {} }).to_string();
-        write!(client, "POST /mcp HTTP/1.1\r\nHost: {address}\r\nAuthorization: Bearer secret\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}", body.len()).unwrap();
-        client.shutdown(std::net::Shutdown::Write).unwrap();
-        let mut response = String::new();
-        client.read_to_string(&mut response).unwrap();
-        server.join().unwrap();
-        assert!(response.starts_with("HTTP/1.1 200 OK"));
-        assert!(response.contains("get_athlete_profile"));
+        for _ in 0..50 {
+            match TcpStream::connect(address) {
+                Ok(_) => {
+                    break;
+                }
+                Err(_) => std::thread::sleep(Duration::from_millis(10)),
+            }
+        }
+
+        let legacy = post(
+            address,
+            "Authorization: Bearer secret\r\n",
+            &json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": { "protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": { "name": "test", "version": "1" } } }),
+        );
+        assert!(legacy.starts_with("HTTP/1.1 200 OK"), "{legacy:?}");
+        assert!(legacy.contains("2025-11-25"));
+        assert!(legacy.contains("cache-control: no-store"));
+
+        let modern = post(
+            address,
+            "Authorization: Bearer secret\r\nMCP-Protocol-Version: 2026-07-28\r\nMcp-Method: server/discover\r\n",
+            &json!({ "jsonrpc": "2.0", "id": 2, "method": "server/discover", "params": { "_meta": { "io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientInfo": { "name": "test", "version": "1" }, "io.modelcontextprotocol/clientCapabilities": {} } } }),
+        );
+        assert!(modern.starts_with("HTTP/1.1 200 OK"), "{modern:?}");
+        assert!(modern.contains("supportedVersions"));
+        assert!(modern.contains("2026-07-28"));
+
+        let unauthorized = post(
+            address,
+            "",
+            &json!({ "jsonrpc": "2.0", "id": 3, "method": "ping", "params": {} }),
+        );
+        assert!(unauthorized.starts_with("HTTP/1.1 401 Unauthorized"));
+        assert!(unauthorized.contains("cache-control: no-store"));
+
+        let forbidden_origin = post(
+            address,
+            "Authorization: Bearer secret\r\nOrigin: https://example.com\r\n",
+            &json!({ "jsonrpc": "2.0", "id": 4, "method": "initialize", "params": { "protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": { "name": "test", "version": "1" } } }),
+        );
+        assert!(forbidden_origin.starts_with("HTTP/1.1 403 Forbidden"));
+
+        assert!(!server.is_finished(), "HTTP server should remain available");
     }
 }

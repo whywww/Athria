@@ -41,7 +41,7 @@ The current MCP MVP provides:
 
 - A Tauri 2 and React desktop dashboard for setup, history, training state, devices, templates, and the current mesocycle.
 - Local SQLite persistence with migrations, WAL, and restore; back up manually by copying the database file.
-- MCP v2 over stdio, plus authenticated Streamable HTTP on a loopback-only address.
+- MCP `2025-11-25` and `2026-07-28` over stdio, plus authenticated Streamable HTTP on a loopback-only address.
 - Deterministic strength and endurance metrics with formula versions and explicit data-quality indicators.
 - Plan Schema v7 validation with fixed-week, flexible-week, and interval rhythms, authoritative Weekly Sessions, structured multi-sport prescriptions, and independent phase timelines by domain.
 - A reusable Session Template Library and one editable Current Mesocycle per athlete.
@@ -274,7 +274,7 @@ Athria 的确定性 Core 负责计算和校验；连接的 MCP 客户端负责�
 
 - 基于 Tauri 2 和 React 的桌面 Dashboard，用于初始设置、训练历史、训练状态、设备连接、训练模板和当前训练周期管理。
 - 使用 SQLite、migration 和 WAL 的本地数据持久化与恢复能力；备份即手动复制数据库文件。
-- 基于 stdio 的 MCP v2，以及仅在本机回环地址提供、需要身份验证的 Streamable HTTP。
+- 基于 stdio 的 MCP `2025-11-25` 与 `2026-07-28`，以及仅在本机回环地址提供、需要身份验证的 Streamable HTTP。
 - 可复现的力量与耐力训练指标，并明确标记公式版本和数据质量。
 - 基于 Plan Schema v7 的计划校验，支持固定周、灵活周和间隔节奏、权威周处方、结构化多运动内容和各领域独立 phase timeline。
 - 可复用的 Session Template Library，以及每位运动者一个可编辑的 Current Mesocycle。

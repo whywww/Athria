@@ -13,12 +13,14 @@
     "typecheck": "tsc -b",
     "build:debug": "node scripts/desktop-build.mjs debug",
     "build:app": "node scripts/desktop-build.mjs app",
+    "test:mcp-conformance": "node scripts/mcp-conformance.mjs",
     "release:native": "node scripts/desktop-build.mjs release",
     "release:msi": "node scripts/desktop-build.mjs msi",
     "build:desktop": "pnpm release:native",
     "validate:skill": "node scripts/validate-skills.mjs"
   },
   "devDependencies": {
+    "@modelcontextprotocol/conformance": "0.1.16",
     "typescript": "7.0.2",
     "vitest": "4.1.11",
     "yaml": "2.8.1"

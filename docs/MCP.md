@@ -1,6 +1,6 @@
 # MCP setup
 
-Athria's shared Rust runtime implements the MCP v2 JSON-RPC contract. The installed desktop executable provides the stable stdio entry point without spawning a JavaScript runtime:
+Athria's shared Rust runtime uses the official RMCP 3.x SDK and supports MCP protocol versions `2025-11-25` and `2026-07-28`. The installed desktop executable provides the stable stdio entry point without spawning a JavaScript runtime:
 
 ```json
 {
@@ -25,6 +25,8 @@ ATHRIA_MCP_TOKEN=<token> athria serve --database C:\path\to\athria.sqlite3
 
 `athria serve` binds to `127.0.0.1:37373` by default and serves MCP HTTP at `/mcp`. Set `ATHRIA_ADDRESS` to another loopback address when needed.
 
+Legacy clients negotiate through `initialize`; `2026-07-28` clients use `server/discover` and per-request protocol metadata. Streamable HTTP remains loopback-only and accepts both legacy sessions and stateless `2026-07-28` requests. Athria advertises only the tools capability.
+
 The Dashboard runtime also exposes JSON-response Streamable HTTP at `http://127.0.0.1:<random-port>/mcp`. It binds only to loopback, validates the Host and Origin headers, and requires `Authorization: Bearer <runtime-token>`. The token is never exposed through MCP tools or written to the database or logs.
 
 ## Write boundary
@@ -44,6 +46,8 @@ Template and plan writes are immediate latest-state writes protected by `expecte
 Profile stores stable Personal Information (`preferredName`, optional `gender`, `heightCm`, and `birthDate`). Weight remains dated Wellness data. The Dashboard's combined `/api/personal-information` read/write contract updates these surfaces atomically; MCP continues to update stable fields through `update_athlete_profile` and dated weight through `update_wellness`.
 
 Use the provider-neutral `packages/skills/athria-training-planner` Skill for the intended workflow. Read `get_training_taxonomy` before writing a template and submit taxonomy IDs only. Save a v7 Current Mesocycle whose schedule expresses rhythm, whose `domainProgressions[]` independently cover the full cycle for every resolved Session domain, and whose complete `weeks[].sessions` hold final dated prescriptions. Effort notation is domain-specific: Strength exercises carry a numeric `targetRpe` (1–10, optional `targetRir`), while Endurance steps carry relative `heartRateZone` labels such as `Zone 1–2`. `templateRef` is optional provenance and never fills a Session. Validate and resolve blocker-relevant gaps before saving. `save_current_plan` atomically replaces the whole mesocycle in one call and returns only `{ revision, impact, blockerSummary }`; MCP tool errors carry a machine-readable `code` (for example `REVISION_CONFLICT`, `INPUT_SNAPSHOT_CHANGED`, `PLAN_HAS_BLOCKERS`, `WRITE_BUSY`).
+
+Every tool publishes an `outputSchema`. Successful calls return the original JSON serialization in `content[0].text` and the same value in `structuredContent.result`; tool execution errors retain `isError: true` and the JSON `{ error, code }` text shape. `validate_current_plan` is the only plan-validation tool, and `evaluate_progression` is the canonical progression evaluator.
 
 ## Xunji records
 
