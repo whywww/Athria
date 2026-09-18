@@ -1,18 +1,18 @@
 {
   "name": "athria-training-planner",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "purpose": "Create and revise reusable templates plus complete week-specific prescriptions for the single current Mesocycle through Athria's deterministic tools.",
   "appliesWhen": ["The user asks to create, revise, validate, or explain a training plan."],
   "doesNotApplyWhen": ["The request is for medical diagnosis, injury treatment, or unsupervised rehabilitation."],
   "requiredContext": ["AthleteProfile", "TrainingStateSnapshot", "WellnessRecord"],
   "allowedTools": [
     "get_athlete_profile", "get_training_state", "list_training_sessions", "list_wellness", "get_wellness_day",
-    "get_training_summary", "get_current_plan", "list_session_templates", "get_session_template", "get_training_taxonomy", "calculate_training_metrics",
+    "get_training_summary", "get_current_plan", "get_plan_adjustment_review", "list_session_templates", "get_session_template", "get_training_taxonomy", "calculate_training_metrics",
     "estimate_1rm", "calculate_heart_rate_zones", "evaluate_progression",
     "validate_workout", "validate_current_plan", "check_training_constraints",
     "explain_validation_result", "create_session_template", "update_session_template", "delete_session_template", "save_current_plan", "update_planned_session", "record_training_session", "set_training_session_plan_match", "allow_automatic_plan_match", "update_manual_training_session", "remove_manual_training_source", "update_wellness", "update_athlete_profile"
   ],
-  "workflow": ["read", "identify-gaps", "save-templates", "plan", "validate", "revise", "explain", "save-current-plan"],
+  "workflow": ["review", "read-targeted-evidence", "plan", "validate", "explain", "approve", "freshness-check", "save-current-plan"],
   "outputSchema": "CurrentPlan",
   "approvalPoints": ["Before deleting a template"],
   "safetyRules": [

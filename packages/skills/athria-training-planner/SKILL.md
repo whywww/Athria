@@ -20,6 +20,18 @@ Build optional reusable Plan Schema v7 generic templates and save the single Cur
 9. Show the actual domain list, components, each domain's phases, rule evidence, classification coverage, Blockers, Advisories, Unknowns, and material tradeoffs. Never describe Athria validation as medical or injury-safety certification.
 10. Call `save_current_plan` with the latest `inputSnapshotHash` and `expectedRevision`. It atomically replaces the whole mesocycle: send one complete plan, never partial or multi-step writes; refresh `inputSnapshotHash` via `get_training_state` right before saving when the conversation was long or training state may have changed. When revising, read `get_current_plan` first and carry forward every kept occurrence unchanged: a skipped Session stays skipped only when its replacement keeps the same id and `status: "skipped"`, and re-planning it needs a new id. The response carries `{ revision, impact, blockerSummary }`; fetch details with `get_current_plan` or `validate_current_plan`. Delete a template only after an explicit user request; never delete one still referenced by the Current Mesocycle. Updating a Template never updates any Session.
 
+## Adjustment workflow
+
+Use this workflow when the user asks whether an existing Current Mesocycle should change, requests a periodic review, or has changed Profile constraints.
+
+1. Call `get_plan_adjustment_review` with `weekly_review`, `profile_change`, or `user_request` as the trigger. Treat its `reviewStatus`, `recommendedScope`, reason codes, hard overrides, data gaps, plan revision, profile hash, and snapshot hash as the authoritative review context.
+2. For `keep`, do not propose a rewrite. For `watch`, explain the signal and normally keep the plan; revise only when the user explicitly asks. For `review_recommended` or `review_required`, read `get_current_plan` and only the evidence identified by the assessment. Use `suggestedReadWindow` as the history limit unless a cited reason requires fewer records.
+3. Draft one complete revised Plan Schema v7 object in conversation state. Apply the minimum necessary change within `recommendedScope`: `workout` changes only affected future sessions, `week` changes only affected future weeks, and `plan` may change future structure. Preserve unaffected weeks, sessions, domains, still-valid phase intent, and every completed or skipped historical occurrence. Never compensate for missed training by automatically adding all missed volume.
+4. Call `validate_current_plan` on the complete proposal. Resolve blockers by revising the proposal; ask only for information necessary to clear a remaining blocker. Do not use optional questions to optimize an already valid proposal.
+5. Before approval, show `why_now`, `changed`, `preserved`, `rationale`, `tradeoffs`, `unresolved_data_gaps`, and a validation summary separated into blockers, advisories, and unknowns. State that approval is required and do not call `save_current_plan` yet.
+6. After explicit approval, re-read `get_current_plan`, `get_training_state`, and `get_athlete_profile`. Save only if the current revision, snapshot hash, and profile hash still match the reviewed values. If any value is stale, do not save: run `get_plan_adjustment_review` again and rebase the proposal.
+7. Save the complete plan with `save_current_plan`. Rejection, editing, or “later” leaves the Current Plan unchanged; edits remain conversation state and must be validated again. A Profile change is not rolled back when its associated plan proposal is rejected.
+
 ## Plan Target
 
 When you save a Current Mesocycle, populate the optional `target` object so the Dashboard can explain *what this block is optimising for* at a glance. `planSchemaVersion` is `7.0`, and a plan without `target` remains valid. Derive every field from the profile, history, and the user's explicit request; never invent a baseline or test date the evidence does not support.
@@ -52,6 +64,7 @@ When you save a Current Mesocycle, populate the optional `target` object so the 
 - Apply Profile or Wellness changes directly only after explicit user confirmation, using `update_athlete_profile` or `update_wellness` with the latest hash.
 - Treat Profile `preferredName`, `gender`, `heightCm`, and `birthDate` as stable personal facts. Weight is dated Wellness data and must never be written into Profile.
 - If the state snapshot changes, refresh context and revalidate instead of bypassing stale-state rejection.
+- Adjustment proposals are conversation state, not Athria records. Never create proposal CRUD, persist approval tokens, or partially patch the Current Plan.
 - Treat `get_next_training_day` as the current execution queue. Add a manual completed workout, skip, restore, or move a planned session only after the user explicitly chooses that action.
 
 Read [references/tool-contracts.md](references/tool-contracts.md) before constructing tool inputs or handling validation reason codes.
