@@ -1,17 +1,19 @@
 //! MCP JSON-RPC adapter for the shared Rust Athria application.
 
 use athria_application::{AthriaApplication, AthriaStore};
-pub use athria_core::{AthriaError, AthriaErrorCode, Result};
 use athria_core::{
-    RpeAutoregulationInput, calculate_heart_rate_zones, calculate_training_metrics,
-    estimate_one_rep_max, evaluate_double_progression, evaluate_rpe_autoregulation,
+    AdjustmentTrigger, RpeAutoregulationInput, calculate_heart_rate_zones,
+    calculate_training_metrics, estimate_one_rep_max, evaluate_double_progression,
+    evaluate_rpe_autoregulation,
 };
+pub use athria_core::{AthriaError, AthriaErrorCode, Result};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::io::{BufRead, Read, Write};
 use std::net::{TcpListener, TcpStream};
 
 const CONTRACT: &str = include_str!("../contract.json");
+const ADJUSTMENT_TOOL_CONTRACT: &str = include_str!("../adjustment-tool.json");
 
 #[derive(Debug, Deserialize)]
 struct Contract {
@@ -26,9 +28,15 @@ pub struct McpService<S: AthriaStore> {
 
 impl<S: AthriaStore> McpService<S> {
     pub fn new(application: AthriaApplication<S>) -> Self {
+        let mut contract: Contract =
+            serde_json::from_str(CONTRACT).expect("embedded MCP contract must be valid");
+        contract.tools.push(
+            serde_json::from_str(ADJUSTMENT_TOOL_CONTRACT)
+                .expect("embedded adjustment tool contract must be valid"),
+        );
         Self {
             application,
-            contract: serde_json::from_str(CONTRACT).expect("embedded MCP contract must be valid"),
+            contract,
         }
     }
     pub fn tools(&self) -> &[Value] {
@@ -123,6 +131,18 @@ impl<S: AthriaStore> McpService<S> {
             }
             "get_current_plan" => {
                 serialize(app.get_current_plan().map_err(ToolError::application)?)
+            }
+            "get_plan_adjustment_review" => {
+                let trigger = match required_str(input, "trigger")? {
+                    "weekly_review" => AdjustmentTrigger::WeeklyReview,
+                    "profile_change" => AdjustmentTrigger::ProfileChange,
+                    "user_request" => AdjustmentTrigger::UserRequest,
+                    _ => return Err(ToolError::invalid("trigger is not an allowed value")),
+                };
+                serialize(
+                    app.review_current_plan_for_adjustment(trigger)
+                        .map_err(ToolError::application)?,
+                )
             }
             "list_session_templates" => {
                 serialize(app.list_templates().map_err(ToolError::application)?)
@@ -619,7 +639,7 @@ mod tests {
     #[test]
     fn exposes_contract_and_calls_application() {
         let service = service();
-        assert_eq!(service.tools().len(), 36);
+        assert_eq!(service.tools().len(), 37);
         let output = service.call_result("get_athlete_profile", &json!({}));
         let profile: Value =
             serde_json::from_str(output["content"][0]["text"].as_str().unwrap()).unwrap();
@@ -635,12 +655,35 @@ mod tests {
         assert_eq!(error["code"], "INVALID_INPUT");
     }
     #[test]
+    fn adjustment_review_is_read_only_and_keeps_application_errors() {
+        let service = service();
+        let tool = service
+            .tools()
+            .iter()
+            .find(|tool| tool["name"] == "get_plan_adjustment_review")
+            .unwrap();
+        assert_eq!(tool["annotations"]["readOnlyHint"], true);
+        assert_eq!(
+            tool["inputSchema"]["properties"]["trigger"]["enum"],
+            json!(["weekly_review", "profile_change", "user_request"])
+        );
+
+        let output = service.call_result(
+            "get_plan_adjustment_review",
+            &json!({ "trigger": "weekly_review" }),
+        );
+        assert_eq!(output["isError"], true);
+        let error: Value =
+            serde_json::from_str(output["content"][0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(error["code"], "NO_CURRENT_PLAN");
+    }
+    #[test]
     fn handles_json_rpc() {
         let service = service();
         let list = service
             .handle(&json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {} }))
             .unwrap();
-        assert_eq!(list["result"]["tools"].as_array().unwrap().len(), 36);
+        assert_eq!(list["result"]["tools"].as_array().unwrap().len(), 37);
         let call = service.handle(&json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": { "name": "estimate_1rm", "arguments": { "load": 100, "reps": 5, "unit": "kg" } } })).unwrap();
         assert!(call["result"].get("isError").is_none());
     }
