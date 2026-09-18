@@ -1,0 +1,48 @@
+{
+  "input": {
+    "trigger": "weekly_review",
+    "currentPlanRevision": 7,
+    "inputSnapshotHash": "snapshot-7",
+    "profileHash": "profile-3",
+    "weeklyReview": {
+      "sessions": [
+        { "sessionId": "s1", "domain": "strength", "keySession": true, "outcome": "completed" },
+        { "sessionId": "s2", "domain": "strength", "keySession": false, "outcome": "completed" },
+        { "sessionId": "s3", "domain": "endurance", "keySession": true, "outcome": "completed" },
+        { "sessionId": "s4", "domain": "strength", "keySession": false, "outcome": "skipped" }
+      ],
+      "unmatchedActualCount": 0,
+      "keySessionPersistenceWindows": 1,
+      "performance": [],
+      "healthRecovery": {
+        "status": "normal",
+        "explicitTrainingLimitation": false,
+        "interruptionDays": 0,
+        "phaseIntentInvalidated": false,
+        "evidenceRefs": []
+      },
+      "nextWeekFeasibility": { "status": "feasible" }
+    }
+  },
+  "expected": {
+    "trigger": "weekly_review",
+    "reviewStatus": "watch",
+    "recommendedScope": "none",
+    "reasons": [
+      {
+        "reasonCode": "ADHERENCE_MINOR_DEVIATION",
+        "severity": "soft",
+        "axis": { "kind": "adherence" },
+        "evidenceRefs": ["s4"],
+        "affectedScope": "none"
+      }
+    ],
+    "hardOverrides": [],
+    "dataGaps": [],
+    "currentPlanRevision": 7,
+    "inputSnapshotHash": "snapshot-7",
+    "profileHash": "profile-3",
+    "suggestedReadWindow": 1,
+    "targetedEvidenceNeeds": []
+  }
+}

@@ -9,6 +9,7 @@
 //! the injectable wall clock and the IANA time-zone helpers every store and
 //! application use case needs.
 
+pub mod adjustment;
 pub mod clock;
 pub mod date;
 pub mod error;
@@ -31,6 +32,12 @@ pub const DEFAULT_OWNER_ID: &str = "local-user";
 /// integers, so `3.0` serializes as `3`.
 pub use json::number as js_number;
 
+pub use adjustment::{
+    AdjustmentAssessment, AdjustmentInput, AdjustmentTrigger, DataGap, DomainPerformanceEvidence,
+    EvidenceAxis, EvidenceSeverity, FeasibilityStatus, HardOverride, HealthRecoveryEvidence,
+    PerformanceStatus, PlannedSessionEvidence, ReasonCode, RecommendedScope, RecoveryStatus,
+    ReviewReason, ReviewStatus, SessionOutcome, WeeklyReviewFacts, assess_adjustment,
+};
 pub use clock::{Clock, FixedClock, SystemClock};
 pub use error::{AthriaError, AthriaErrorCode, Result};
 pub use hash::{canonical, js_locale_compare, stable_hash};
