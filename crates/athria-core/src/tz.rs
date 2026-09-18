@@ -2,8 +2,7 @@
 //! TypeScript store and application layers.
 //!
 //! The TypeScript implementation formats instants with the host ICU timezone
-//! database (`localDate`, `localNoon`, `localWeekday` in `packages/data` and
-//! `packages/application`). The Rust runtime resolves the same IANA zones with
+//! database (`localDate`, `localNoon`, and `localWeekday`). The runtime resolves IANA zones with
 //! `jiff`'s bundled timezone database so desktop, CLI, MCP and mobile builds
 //! agree with each other without depending on the host zoneinfo.
 

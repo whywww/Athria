@@ -6,12 +6,12 @@ Signing: unsigned
 
 ## Build workflows
 
-- `bun run dev` runs the Tauri debug application with Vite and the TypeScript service in watch mode. It does not compile or package the sidecar.
-- `bun run build:app` compiles the sidecar and produces a directly runnable host-native application without creating an installer.
-- `bun run release:msi` compiles the sidecar and creates the MSI. `bun run build:desktop` is retained as a compatibility alias.
-- `bun run release:native` creates an MSI on Windows or an app plus DMG on Apple Silicon macOS.
+- `pnpm dev` runs the Tauri debug application with Vite and the shared Rust runtime.
+- `pnpm build:app` produces a directly runnable host-native application without creating an installer.
+- `pnpm release:msi` creates the MSI. `pnpm build:desktop` is retained as a compatibility alias.
+- `pnpm release:native` creates an MSI on Windows or an app plus DMG on Apple Silicon macOS.
 
-The checkout must be named `Athria-repo`. All generated output is machine-local under its sibling `Athria` directory; this location is intentionally not configurable. MSI builds are reserved for release and installation validation. Desktop application behavior runs in the native Rust runtime; Bun is used only as the frontend build tool and is not packaged or required at runtime.
+The checkout must be named `Athria-repo`. All generated output is machine-local under its sibling `Athria` directory; this location is intentionally not configurable. MSI builds are reserved for release and installation validation. Desktop application behavior runs in the native Rust runtime; Node.js and pnpm are development tools only and are not packaged or required at runtime.
 
 ## Current artifact
 
@@ -19,7 +19,7 @@ The checkout must be named `Athria-repo`. All generated output is machine-local 
 - Size: 47,149,056 bytes
 - SHA-256: `FB321AD29F5CE7F0F2C2F9EA8EFB98BCC9647D7B03682C6A8EFCAA81EE2EA2E3`
 
-The MSI must contain the native `athria.exe` application without an application-backend sidecar. Its `Athria.exe mcp` entry must pass initialization, tool enumeration, stdout-purity, and stderr-silence checks.
+The MSI must contain the native `athria.exe` application. Its `Athria.exe mcp` entry must pass initialization, tool enumeration, stdout-purity, and stderr-silence checks.
 
 ## Database compatibility baseline
 

@@ -1,6 +1,6 @@
 # Backup and restore
 
-Backing up means copying the active `.sqlite3` database file, whose path is shown in Settings. Include the `-wal` and `-shm` sidecar files when they exist, or copy the database while Athria is closed, so no committed data is missed. A copied file behaves like any Athria database: it can be restored in Settings or opened on another computer.
+Backing up means copying the active `.sqlite3` database file, whose path is shown in Settings. Include the companion `-wal` and `-shm` files when they exist, or copy the database while Athria is closed, so no committed data is missed. A copied file behaves like any Athria database: it can be restored in Settings or opened on another computer.
 
 A copied database contains the training records, import history, connection settings, and encrypted API keys. Each database has one `database_uuid`, one independent master key, and one database password. The master key is wrapped by the database password; when the user chooses "Remember on this computer", creates a new profile, or sets the password for the first time, the operating-system credential manager caches the master key under that database UUID so the database unlocks automatically on that machine. API keys are never written to a backup in plaintext.
 

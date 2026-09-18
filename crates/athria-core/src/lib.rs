@@ -1,12 +1,9 @@
-//! Deterministic Athria domain core, the Rust port target of `packages/core`
-//! plus the hardcoded vocabularies of `packages/schemas`.
+//! Deterministic Athria domain core and authoritative domain vocabularies.
 //!
 //! This crate must stay free of platform, filesystem, network and SQLite
 //! dependencies so every other runtime crate (and future mobile shells) can
-//! link it. It consumes the same schema-validated JSON documents the
-//! TypeScript core receives, which lets the golden fixtures under
-//! `tests/fixtures` prove that both implementations agree until the
-//! TypeScript core is retired.
+//! link it. It consumes schema-validated JSON documents, and the golden
+//! fixtures under `tests/fixtures` preserve its stable behavior.
 //!
 //! [`clock`] and [`tz`] are shared runtime services rather than pure formulas:
 //! the injectable wall clock and the IANA time-zone helpers every store and
@@ -27,7 +24,7 @@ pub mod vocab;
 mod json;
 
 /// Owner id of the single-user desktop application; byte-identical to
-/// `OWNER_ID` in `packages/schemas`.
+/// Stable owner identifier for local data.
 pub const DEFAULT_OWNER_ID: &str = "local-user";
 
 /// `JSON.stringify`-compatible number rendering: integral floats become
@@ -49,17 +46,17 @@ pub use schedule::{ScheduleOccurrence, expand_schedule};
 pub use validation::{Coverage, PlanValidation, validate_plan};
 
 /// Version of the deterministic formulas; byte-identical to `FORMULA_VERSION`
-/// in `packages/schemas`.
+/// used by persisted plans.
 pub const FORMULA_VERSION: &str = "0.2.0";
 
 /// Plan-validation rule pack version; byte-identical to `RULE_VERSION` in
-/// `packages/schemas`.
+/// used by the built-in template catalog.
 pub const RULE_VERSION: &str = "0.3.0";
 
 /// Taxonomy version stamped into classified facts; byte-identical to
-/// `TAXONOMY_VERSION` in `packages/schemas`.
+/// Stable taxonomy version.
 pub const TAXONOMY_VERSION: &str = "strength-2.0";
 
 /// Confidence an `ai_inferred` fact needs before a hard rule trusts it;
-/// byte-identical to `AI_HARD_CONFIDENCE` in `packages/schemas`.
+/// Confidence threshold used for hard validation decisions.
 pub const AI_HARD_CONFIDENCE: f64 = 0.9;

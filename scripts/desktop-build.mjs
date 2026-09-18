@@ -1,69 +1,53 @@
-import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-type Action = "dev" | "debug" | "app" | "release" | "msi";
-
-interface HostBuild {
-  platform: "windows" | "macos" | "linux";
-  rustTarget: "x86_64-pc-windows-msvc" | "aarch64-apple-darwin" | "x86_64-unknown-linux-gnu";
-  nativeDependency: string;
-}
-
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const desktopRoot = join(projectRoot, "apps", "desktop");
 const tauriRoot = join(desktopRoot, "src-tauri");
-const bunExecutable = process.execPath;
+const tauriCli = join(desktopRoot, "node_modules", "@tauri-apps", "cli", "tauri.js");
 const buildRoot = resolve(projectRoot, "..", "Athria");
 const frontendDist = join(buildRoot, "frontend");
 const cargoTargetRoot = resolve(process.env.ATHRIA_CARGO_TARGET_DIR ?? join(buildRoot, "target"));
 const temporaryRoot = join(buildRoot, "tmp");
 
-function hostBuild(): HostBuild {
+function hostBuild() {
   if (process.platform === "win32" && process.arch === "x64") {
     return {
       platform: "windows",
       rustTarget: "x86_64-pc-windows-msvc",
-      nativeDependency: "@tauri-apps+cli-win32-x64-msvc@",
     };
   }
   if (process.platform === "darwin" && process.arch === "arm64") {
     return {
       platform: "macos",
       rustTarget: "aarch64-apple-darwin",
-      nativeDependency: "@tauri-apps+cli-darwin-arm64@",
     };
   }
   if (process.platform === "linux" && process.arch === "x64") {
-    return { platform: "linux", rustTarget: "x86_64-unknown-linux-gnu", nativeDependency: "@tauri-apps+cli-linux-x64-gnu@" };
+    return { platform: "linux", rustTarget: "x86_64-unknown-linux-gnu" };
   }
   throw new Error(`Unsupported Athria desktop host: ${process.platform}/${process.arch}. Supported hosts are Windows x64, macOS ARM64 and Linux x64.`);
 }
 
-function assertNativeDependencies(host: HostBuild): void {
-  const bunStore = join(projectRoot, "node_modules", ".bun");
-  const entries = existsSync(bunStore) ? readdirSync(bunStore) : [];
-  if (!entries.some((entry) => entry.startsWith(host.nativeDependency))) {
-    throw new Error(`Dependencies for ${host.platform}/${process.arch} are not installed. Run \"bun install --force\" on this machine and try again.`);
-  }
-}
-
-function run(command: string[], environment: Record<string, string> = {}, cwd = projectRoot): void {
-  const result = Bun.spawnSync(command, {
+function run(command, environment = {}, cwd = projectRoot) {
+  const result = spawnSync(command[0], command.slice(1), {
     cwd,
     env: { ...process.env, ...environment },
     stdin: "inherit",
     stdout: "inherit",
     stderr: "inherit",
   });
-  if (result.exitCode !== 0) throw new Error(`${command[0]} exited with code ${result.exitCode}`);
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(`${command[0]} exited with code ${result.status}`);
 }
 
-function environment(host: HostBuild): Record<string, string> {
+function environment(host) {
   const rustCandidates = [join(homedir(), ".cargo", "bin"), "/opt/homebrew/opt/rustup/bin"];
   const rustBin = rustCandidates.find((directory) => existsSync(join(directory, host.platform === "windows" ? "cargo.exe" : "cargo")));
-  const pathEntries = [dirname(bunExecutable), ...(rustBin ? [rustBin] : []), process.env.PATH ?? ""];
+  const pathEntries = [...(rustBin ? [rustBin] : []), process.env.PATH ?? ""];
   const executablePath = pathEntries.join(delimiter);
   return {
     CARGO_TARGET_DIR: cargoTargetRoot,
@@ -75,7 +59,7 @@ function environment(host: HostBuild): Record<string, string> {
   };
 }
 
-function tauri(host: HostBuild, args: string[]): void {
+function tauri(host, args) {
   mkdirSync(frontendDist, { recursive: true });
   mkdirSync(cargoTargetRoot, { recursive: true });
   mkdirSync(temporaryRoot, { recursive: true });
@@ -84,16 +68,16 @@ function tauri(host: HostBuild, args: string[]): void {
   });
   const buildEnvironment = environment(host);
   if (host.platform === "macos" && args.some((argument) => argument.includes("dmg"))) buildEnvironment.CI ??= "true";
-  run([bunExecutable, "run", "--cwd", desktopRoot, "tauri", ...args, "--config", configOverride, "--target", host.rustTarget], buildEnvironment);
+  if (!existsSync(tauriCli)) throw new Error('Tauri CLI is not installed. Run "pnpm install" and try again.');
+  run([process.execPath, tauriCli, ...args, "--config", configOverride, "--target", host.rustTarget], buildEnvironment, desktopRoot);
 }
 
-const action = (process.argv[2] ?? "") as Action;
+const action = process.argv[2] ?? "";
 if (!["dev", "debug", "app", "release", "msi"].includes(action)) {
-  throw new Error("Usage: bun run scripts/desktop-build.ts <dev|debug|app|release|msi>");
+  throw new Error("Usage: node scripts/desktop-build.mjs <dev|debug|app|release|msi>");
 }
 
 const host = hostBuild();
-assertNativeDependencies(host);
 
 if (action === "dev") tauri(host, ["dev", "--config", "src-tauri/tauri.dev.conf.json"]);
 else {

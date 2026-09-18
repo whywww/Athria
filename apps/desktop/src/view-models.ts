@@ -368,7 +368,7 @@ export function formatTrainingRhythm(rhythm: AthleteProfile["trainingRhythm"]): 
   return `Every ${rhythm.intervalDays} ${rhythm.intervalDays === 1 ? "day" : "days"}`;
 }
 
-// Keep in sync with packages/schemas/src/index.ts:raceSportPresets.
+// Keep in sync with the Rust race-sport presets exposed by the application API.
 export const RACE_SPORT_PRESETS = ["Marathon", "Half Marathon", "10K", "5K", "Triathlon", "Cycling", "Swimming", "Trail Run", "Obstacle"];
 
 // Race dates are date-only values; parsing at local noon keeps the displayed

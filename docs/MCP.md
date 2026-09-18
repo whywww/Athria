@@ -1,6 +1,6 @@
 # MCP setup
 
-Athria's shared Rust runtime implements the MCP v2 JSON-RPC contract. The installed desktop executable preserves the stable stdio entry point without spawning Bun or Node:
+Athria's shared Rust runtime implements the MCP v2 JSON-RPC contract. The installed desktop executable provides the stable stdio entry point without spawning a JavaScript runtime:
 
 ```json
 {

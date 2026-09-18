@@ -73,7 +73,7 @@ See [Known limitations](docs/KNOWN_LIMITATIONS.md) for the current technical and
 
 ### Prerequisites for source builds
 
-- [Bun](https://bun.sh/) 1.4.2
+- [Node.js](https://nodejs.org/) 24 or newer and [pnpm](https://pnpm.io/) 11.19.0
 - A stable [Rust](https://www.rust-lang.org/tools/install) toolchain
 - Windows x64: Microsoft Visual C++ Build Tools and the Windows SDK
 - macOS: Apple Silicon and Xcode Command Line Tools
@@ -83,28 +83,26 @@ See [Known limitations](docs/KNOWN_LIMITATIONS.md) for the current technical and
 ```sh
 git clone https://github.com/whywww/Athria.git
 cd Athria
-bun install
-bun run dev
+pnpm install
+pnpm dev
 ```
 
-If dependencies were synchronized from a different operating system, run `bun install --force` once on the current machine.
-
-`bun run dev` starts Vite, the Tauri debug app, and the TypeScript service in watch mode. It does not build a packaged sidecar.
+`pnpm dev` starts Vite and the Tauri debug application backed by the shared Rust runtime.
 
 ### Build a desktop app
 
 ```sh
 # Directly runnable host-native debug app
-bun run build:debug
+pnpm build:debug
 
 # Directly runnable host-native release app
-bun run build:app
+pnpm build:app
 
 # Windows: MSI; macOS: app and DMG
-bun run release:native
+pnpm release:native
 ```
 
-Keep the checkout in a directory named `Athria-repo`. Every generated file is written to its sibling `Athria` directory and separated by purpose and target triple; the build location is intentionally not configurable. Packaged apps include the service sidecar and do not require Bun, Rust, Node.js, Python, Docker, or an external database at runtime.
+Keep the checkout in a directory named `Athria-repo`. Every generated file is written to its sibling `Athria` directory and separated by purpose and target triple; the build location is intentionally not configurable. Packaged apps embed the shared Rust runtime and do not require a separate Node.js, Rust, Python, Docker, or database installation.
 
 On first launch, use Settings to complete Personal Information and Profile to configure training preferences, then import or synchronize any training records you want Athria to use. Stable personal details live in Profile; dated weight entries live in Wellness.
 
@@ -169,25 +167,24 @@ Profile changes from MCP require explicit user confirmation and a current profil
 Install dependencies, then use the root workspace scripts:
 
 ```sh
-bun install
-bun run typecheck
-bun run test
-bun run check
-bun run perf:smoke
+pnpm install
+pnpm typecheck
+pnpm test
+pnpm check
+cargo test --workspace
 ```
 
 Useful commands:
 
 | Command | Purpose |
 |---|---|
-| `bun run dev` | Run the desktop app and development service |
-| `bun run service` | Run the local service directly |
-| `bun run typecheck` | Type-check all workspaces |
-| `bun run test` | Run the Vitest suite |
-| `bun run schema:export` | Regenerate exported JSON Schemas |
-| `bun run build:service` | Compile the host-native service sidecar |
-| `bun run build:app` | Build a directly runnable release app |
-| `bun run release:native` | Produce native installer artifacts |
+| `pnpm dev` | Run the Tauri desktop app in development mode |
+| `pnpm typecheck` | Type-check the desktop frontend |
+| `pnpm test` | Run the Vitest frontend suite |
+| `pnpm check` | Run frontend checks and Skill validation |
+| `cargo test --workspace` | Run the Rust workspace tests |
+| `pnpm build:app` | Build a directly runnable release app |
+| `pnpm release:native` | Produce native installer artifacts |
 
 The default development database is stored at:
 
@@ -201,16 +198,10 @@ Set `ATHRIA_DATABASE_PATH` when an isolated development database is needed. Do n
 ```text
 apps/
   desktop/       Tauri shell and React dashboard
-  service/       Bun sidecar, local HTTP API, and MCP entry point
+crates/           Shared Rust core, application, storage, integrations, MCP, and runtime
 packages/
-  application/   Shared use cases and tool registry
-  core/          Deterministic calculations and validation
-  data/          SQLite persistence and migrations
-  integrations/  Training-data adapters
-  mcp/           MCP server and transports
-  schemas/       Shared Zod contracts
   skills/        Optional provider-neutral MCP workflows
-schemas/         Exported JSON Schemas
+schemas/         Versioned JSON Schema contracts
 scripts/         Development and release tooling
 ```
 
@@ -232,7 +223,6 @@ Read [Backup and restore](docs/BACKUP.md) before moving or restoring data.
 - [MCP setup](docs/MCP.md)
 - [Backup and restore](docs/BACKUP.md)
 - [Known limitations](docs/KNOWN_LIMITATIONS.md)
-- [Development plan](docs/DEVELOPMENT_PLAN.md)
 - [Release artifacts](docs/RELEASE.md)
 
 For bugs and feature requests, use [GitHub Issues](https://github.com/whywww/Athria/issues). Include the platform, Athria version, reproduction steps, expected result, and actual result. Never attach credentials or personal training data.
@@ -243,7 +233,7 @@ Contributions are welcome. Keep changes focused on the MCP application and its d
 
 1. Open an issue before a substantial architectural or schema change.
 2. Create a focused branch and add tests for changed behavior.
-3. Run `bun run check`.
+3. Run `pnpm check` and `cargo test --workspace`.
 4. Update schemas and documentation when contracts change.
 5. Open a pull request that explains the change and how it was verified.
 
@@ -316,7 +306,7 @@ Athria 不诊断伤病、不提供治疗方案、不作医疗决定，也不保�
 
 ### 源码构建前置条件
 
-- [Bun](https://bun.sh/) 1.4.2
+- [Node.js](https://nodejs.org/) 24 或更高版本，以及 [pnpm](https://pnpm.io/) 11.19.0
 - 稳定版 [Rust](https://www.rust-lang.org/tools/install) 工具链
 - Windows x64：Microsoft Visual C++ Build Tools 和 Windows SDK
 - macOS：Apple Silicon Mac 和 Xcode Command Line Tools
@@ -326,28 +316,26 @@ Athria 不诊断伤病、不提供治疗方案、不作医疗决定，也不保�
 ```sh
 git clone https://github.com/whywww/Athria.git
 cd Athria
-bun install
-bun run dev
+pnpm install
+pnpm dev
 ```
 
-如果依赖目录由另一个操作系统同步而来，请在当前电脑上执行一次 `bun install --force`。
-
-`bun run dev` 会启动 Vite、Tauri 调试应用和监视模式下的 TypeScript 服务，但不会构建已打包的 sidecar。
+`pnpm dev` 会启动 Vite 和使用共享 Rust runtime 的 Tauri 调试应用。
 
 ### 构建桌面应用
 
 ```sh
 # 可直接运行的当前平台调试应用
-bun run build:debug
+pnpm build:debug
 
 # 可直接运行的当前平台发布应用
-bun run build:app
+pnpm build:app
 
 # Windows 生成 MSI；macOS 生成 app 和 DMG
-bun run release:native
+pnpm release:native
 ```
 
-请将代码仓库保存在名为 `Athria-repo` 的目录中。所有生成文件均写入其同级的 `Athria` 目录，并按用途和 target triple 分开存放；构建位置不可更改。打包后的应用包含服务 sidecar，运行时不需要 Bun、Rust、Node.js、Python、Docker 或外部数据库。
+请将代码仓库保存在名为 `Athria-repo` 的目录中。所有生成文件均写入其同级的 `Athria` 目录，并按用途和 target triple 分开存放；构建位置不可更改。打包后的应用内嵌共享 Rust runtime，运行时不需要另外安装 Node.js、Rust、Python、Docker 或外部数据库。
 
 首次启动后，请先在 Dashboard 中完成运动者资料和偏好设置，再导入或同步希望 Athria 使用的训练记录。
 
@@ -411,25 +399,24 @@ bun run release:native
 安装依赖后，使用根工作区脚本：
 
 ```sh
-bun install
-bun run typecheck
-bun run test
-bun run check
-bun run perf:smoke
+pnpm install
+pnpm typecheck
+pnpm test
+pnpm check
+cargo test --workspace
 ```
 
 常用命令：
 
 | 命令 | 用途 |
 |---|---|
-| `bun run dev` | 运行桌面应用和开发服务 |
-| `bun run service` | 直接运行本地服务 |
-| `bun run typecheck` | 对所有 workspace 进行类型检查 |
-| `bun run test` | 运行 Vitest 测试 |
-| `bun run schema:export` | 重新生成导出的 JSON Schema |
-| `bun run build:service` | 编译当前平台的服务 sidecar |
-| `bun run build:app` | 构建可直接运行的发布应用 |
-| `bun run release:native` | 生成原生安装包 |
+| `pnpm dev` | 以开发模式运行 Tauri 桌面应用 |
+| `pnpm typecheck` | 检查桌面前端类型 |
+| `pnpm test` | 运行 Vitest 前端测试 |
+| `pnpm check` | 运行前端检查和 Skill 校验 |
+| `cargo test --workspace` | 运行 Rust workspace 测试 |
+| `pnpm build:app` | 构建可直接运行的发布应用 |
+| `pnpm release:native` | 生成原生安装包 |
 
 默认开发数据库位置：
 
@@ -443,16 +430,10 @@ bun run perf:smoke
 ```text
 apps/
   desktop/       Tauri 外壳和 React Dashboard
-  service/       Bun sidecar、本地 HTTP API 和 MCP 入口
+crates/           共用 Rust Core、Application、存储、集成、MCP 与 runtime
 packages/
-  application/   共用的 use case 和工具注册表
-  core/          确定性计算和校验
-  data/          SQLite 持久化和 migrations
-  integrations/  训练数据适配器
-  mcp/           MCP 服务器和 transports
-  schemas/       共用的 Zod contracts
   skills/        可选、与模型提供商无关的 MCP 工作流
-schemas/         导出的 JSON Schemas
+schemas/         版本化 JSON Schema contracts
 scripts/         开发和发布工具
 ```
 
@@ -473,7 +454,6 @@ Dashboard 和 MCP 服务器调用同一个 Application Service 边界。业务�
 - [MCP 设置](docs/MCP.md)
 - [备份与恢复](docs/BACKUP.md)
 - [已知限制](docs/KNOWN_LIMITATIONS.md)
-- [开发计划](docs/DEVELOPMENT_PLAN.md)
 - [发布产物](docs/RELEASE.md)
 
 Bug 和功能建议请通过 [GitHub Issues](https://github.com/whywww/Athria/issues) 提交。请包含平台、Athria 版本、复现步骤、预期结果和实际结果。请勿附上凭据或个人训练数据。
@@ -484,7 +464,7 @@ Bug 和功能建议请通过 [GitHub Issues](https://github.com/whywww/Athria/is
 
 1. 在进行重大架构或 Schema 变更前先创建 Issue。
 2. 使用独立分支，并为行为变更添加测试。
-3. 运行 `bun run check`。
+3. 运行 `pnpm check` 和 `cargo test --workspace`。
 4. Contract 变化时同步更新 Schema 和文档。
 5. 创建 Pull Request，说明变更内容和验证方式。
 

@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use std::io::{BufRead, Read, Write};
 use std::net::{TcpListener, TcpStream};
 
-const CONTRACT: &str = include_str!("../../../packages/mcp/contract.json");
+const CONTRACT: &str = include_str!("../contract.json");
 
 #[derive(Debug, Deserialize)]
 struct Contract {

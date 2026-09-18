@@ -1,6 +1,6 @@
 //! `athleteProfileSchema` and the profile write contracts.
 //!
-//! Ported from `packages/schemas/src/index.ts` lines 79-95 and 123-125. The
+//! Athlete-profile schema parsing and normalization. The
 //! parsed profile is a 17-key document in schema declaration order, which is
 //! the order every profile response serializes in.
 

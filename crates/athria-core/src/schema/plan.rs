@@ -1,6 +1,6 @@
 //! `currentPlanSchema`, `plannedSessionSchema`, and the nested plan shapes.
 //!
-//! Ported from `packages/schemas/src/index.ts` lines 184-273, plus the
+//! Current-plan schema parsing and normalization, including the
 //! application-level action schemas the plan use cases parse. A parsed plan is
 //! the 12-key document the store writes into `current_mesocycles.data`; a
 //! parsed planned session is the 29-key document the store writes into

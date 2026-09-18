@@ -10,7 +10,7 @@ Tauri iOS / Android shell
   -> AthriaApplication
 ```
 
-The application and core crates never receive a path, document URI, keyring handle, or localhost URL. The shell owns iOS security-scoped bookmarks or Android document URIs and passes an already-open store to the runtime. Mobile never spawns Bun or Node.
+The application and core crates never receive a path, document URI, keyring handle, or localhost URL. The shell owns iOS security-scoped bookmarks or Android document URIs and passes an already-open store to the runtime. Mobile does not spawn a JavaScript runtime.
 
 Cloud documents are portable checkpoints, not live multi-device SQLite databases. A shell copies/hydrates a cloud document to a device-local working database and checkpoints or exports it back using a single-writer policy. Multi-device merge is outside this migration.
 

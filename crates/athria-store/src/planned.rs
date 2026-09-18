@@ -1,7 +1,7 @@
 //! Planned-session projection and writes: the Rust port of
 //! `AthriaRepository.listCurrentPlannedSessions`, `scheduleRevision`,
 //! `updateCurrentPlannedSessions` and `saveCurrentPlannedSessions` in
-//! `packages/data/src/index.ts`.
+//! current-plan persistence contract.
 //!
 //! The stored current mesocycle keeps the compact weekly-session shape; the
 //! projection adds occurrence identity, plan revision, phase references,

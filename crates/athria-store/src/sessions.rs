@@ -1,5 +1,5 @@
 //! Training-session reconciliation and history CRUD: the Rust port of the
-//! `AthriaRepository` session methods in `packages/data/src/index.ts`.
+//! Training-session persistence and query operations.
 //!
 //! `rebuild_canonical_sessions` clusters per-source observations into canonical
 //! sessions with the same `workout-reconciliation-v1` scoring rules and

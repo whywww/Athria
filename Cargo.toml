@@ -2,7 +2,7 @@
 resolver = "3"
 members = ["crates/*"]
 # The Tauri desktop shell stays a standalone package: its tauri-build script
-# resolves sidecar and frontend paths relative to its own directory and is
+# resolves frontend paths relative to its own directory and is
 # driven by scripts/desktop-build.ts with explicit environment overrides.
 exclude = ["apps/desktop/src-tauri"]
 

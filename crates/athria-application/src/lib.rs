@@ -1,4 +1,4 @@
-//! Athria application use cases, the Rust port of `packages/application`.
+//! Athria application use cases.
 //!
 //! [`AthriaApplication`] owns every business read and write, including the
 //! commit boundary for Hevy, intervals.icu and Xunji. Network and credential
@@ -14,10 +14,10 @@ pub mod app;
 pub mod catalog;
 pub mod store;
 
-/// `PLAN_SCHEMA_VERSION` in `packages/schemas`.
+/// Current persisted plan schema version.
 pub const PLAN_SCHEMA_VERSION: &str = "7.0";
 
-/// `TEMPLATE_CATALOG_VERSION` in `packages/schemas`.
+/// Current built-in template catalog version.
 pub const TEMPLATE_CATALOG_VERSION: &str = "2.0";
 
 pub use app::AthriaApplication;

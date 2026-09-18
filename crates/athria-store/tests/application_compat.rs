@@ -1,4 +1,4 @@
-//! Replays the TypeScript Phase 5 application contract against Rust.
+//! Replays the committed application contract fixture against Rust.
 
 use std::sync::Arc;
 
@@ -62,7 +62,7 @@ fn execute(
 }
 
 #[test]
-fn typescript_and_rust_application_contracts_match() {
+fn application_contract_fixture_matches() {
     let fixture: Value =
         serde_json::from_str(include_str!("fixtures/application.json")).expect("fixture parses");
     let clock = Arc::new(FixedClock::new(fixture["now"].as_str().unwrap()));

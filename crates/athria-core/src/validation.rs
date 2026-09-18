@@ -1,4 +1,4 @@
-//! Plan validation rule engine, ported from `packages/core` `validatePlan`.
+//! Plan validation rule engine.
 //!
 //! Rule order, reason codes, enforcement/status semantics, evidence shapes,
 //! coverage counters, data gaps and the input hash must stay identical to the

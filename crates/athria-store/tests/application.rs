@@ -2,8 +2,8 @@
 //!
 //! `AthriaApplication` is generic over the `AthriaStore` port; these tests run
 //! it against `SqliteStore` in memory with a fixed clock, which is the exact
-//! wiring the desktop shell will use. TypeScript parity for the same use cases
-//! is covered by the fixture replay (`scripts/application-compat.ts`).
+//! wiring the desktop shell uses. The committed fixture replay covers the
+//! stable application contract.
 
 use std::sync::Arc;
 

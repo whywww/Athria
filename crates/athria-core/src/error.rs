@@ -2,8 +2,7 @@
 //! every transport (Tauri IPC, MCP, CLI, HTTP).
 //!
 //! The string form of each code is byte-compatible with the TypeScript
-//! implementation: `AthriaError` codes raised by `packages/application` and
-//! the codes thrown by store implementations in `packages/data`. Frontends
+//! implementation. Application and store errors expose stable codes. Frontends
 //! and MCP clients match on these strings, so they must never change silently.
 
 use std::fmt;

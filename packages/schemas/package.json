@@ -1,9 +1,0 @@
-{
-  "name": "@athria/schemas",
-  "version": "0.2.0",
-  "private": true,
-  "type": "module",
-  "exports": { ".": "./src/index.ts" },
-  "dependencies": { "zod": "4.2.1" },
-  "scripts": { "build": "bun --bun tsc -b --pretty false", "typecheck": "bun --bun tsc -b --pretty false" }
-}

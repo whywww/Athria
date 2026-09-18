@@ -1,4 +1,4 @@
-//! Schema-shape normalizers: the Rust port target of `packages/schemas`.
+//! Authoritative schema-shape normalizers.
 //!
 //! The TypeScript schemas do two jobs: they reject malformed input and they
 //! rebuild the parsed document with defaults applied in schema declaration

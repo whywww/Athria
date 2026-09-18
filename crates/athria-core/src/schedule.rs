@@ -1,4 +1,4 @@
-//! Deterministic schedule expansion, ported from `packages/core`
+//! Deterministic schedule expansion for supported training rhythms.
 //! `expandSchedule`.
 //!
 //! The TypeScript implementation moves `Date` values at 12:00 UTC so that day

@@ -1,6 +1,0 @@
-{
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": { "rootDir": "src", "outDir": "../../../Athria/types/packages/application", "tsBuildInfoFile": "../../../Athria/types/packages/application/tsconfig.tsbuildinfo", "types": ["bun"] },
-  "include": ["src"],
-  "references": [{ "path": "../schemas" }, { "path": "../core" }, { "path": "../data" }, { "path": "../integrations" }]
-}

@@ -1,6 +1,6 @@
 //! `trainingSessionSchema` and its nested shapes.
 //!
-//! Ported from `packages/schemas/src/index.ts` lines 85-96. A parsed session is
+//! Training-session schema parsing and normalization. A parsed session is
 //! a 21-key document in schema declaration order — the order every stored
 //! `training_sessions.data` row and every session response serializes in.
 

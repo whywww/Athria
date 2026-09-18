@@ -1,6 +1,6 @@
 //! rusqlite-backed store for Athria SQLite databases.
 //!
-//! Semantics mirror `packages/data/src/index.ts`: identical tables, identical
+//! Defines the authoritative SQLite tables, migrations, and persistence
 //! upsert targets, optimistic revision checks and `BEGIN IMMEDIATE` write
 //! transactions. The training-session reconciliation engine and planned-session
 //! projection live in [`crate::sessions`] and [`crate::planned`].
@@ -251,7 +251,7 @@ pub struct SqliteStore {
     connection: Connection,
     clock: Arc<dyn Clock>,
     /// Nested-transaction depth; SQLite does not allow nested `BEGIN`, so
-    /// nested calls use savepoints like the `bun:sqlite` transactions the
+    /// nested calls use SQLite savepoints so repository operations remain
     /// TypeScript store relies on.
     depth: Cell<u32>,
 }
@@ -469,7 +469,7 @@ impl SqliteStore {
 
     /// Immediate (BEGIN IMMEDIATE) write transaction with savepoint nesting,
     /// the port of `AthriaRepository.transaction`. Nested calls inside an
-    /// open transaction use `SAVEPOINT`, matching `bun:sqlite` semantics.
+    /// open transaction use `SAVEPOINT`.
     pub fn transaction<T>(&self, work: &mut dyn FnMut() -> Result<T>) -> Result<T> {
         if self.depth.get() == 0 {
             self.connection

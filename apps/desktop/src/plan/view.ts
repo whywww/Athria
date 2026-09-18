@@ -4,7 +4,7 @@ import type { CalendarSession } from "../view-models";
  * Pure, side-effect-free helpers for the Plan calendar view.
  *
  * Week numbering follows the deterministic Core convention
- * (`packages/application` `getCalendar` / `updatePlannedSession`): a week is a
+ * (`getCalendar` / `updatePlannedSession`): a week is a
  * 7-day block anchored at the plan's `effectiveStartDate`, so
  * `weekNumber = floor(elapsedDays / 7) + 1`. All date maths run in UTC at local
  * noon to stay immune to timezone drift and DST boundaries.

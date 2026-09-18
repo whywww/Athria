@@ -4,13 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun --bun vite --configLoader runner",
-    "build": "bun --bun tsc -b && bun --bun vite build --configLoader runner",
-    "typecheck": "bun --bun tsc -b --pretty false",
+    "dev": "vite --configLoader runner",
+    "build": "tsc -b && vite build --configLoader runner",
+    "typecheck": "tsc -b --pretty false",
     "tauri": "tauri"
   },
   "dependencies": {
-    "@athria/core": "workspace:*",
     "@tanstack/react-query": "5.102.8",
     "@tauri-apps/api": "2.11.1",
     "react": "19.2.8",

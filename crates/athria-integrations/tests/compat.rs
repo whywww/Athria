@@ -5,7 +5,7 @@ use athria_integrations::{
 use serde_json::{Value, json};
 
 #[test]
-fn typescript_and_rust_integration_adapters_match() {
+fn integration_adapter_fixture_matches() {
     let fixture: Value = serde_json::from_str(include_str!("fixtures/integrations.json")).unwrap();
     let hevy = &fixture["hevy"];
     assert_eq!(

@@ -1,5 +1,5 @@
 //! Static taxonomy vocabularies and profile defaults, ported from
-//! `packages/schemas/src/index.ts` and exposed to every runtime crate.
+//! exposed to every runtime crate.
 //!
 //! The TypeScript taxonomy is a hardcoded, versioned vocabulary (see
 //! `TAXONOMY_VERSION`), so the Rust runtime keeps the same literals instead of
@@ -115,7 +115,7 @@ pub const MUSCLE_GROUP_IDS: [&str; 47] = [
     "transverse_abdominis",
 ];
 
-/// `muscleParents` from `packages/schemas/src/index.ts`.
+/// Parent groups for the strength muscle taxonomy.
 fn muscle_parent(id: &str) -> Option<&'static str> {
     Some(match id {
         "pectoralis_major_clavicular" | "pectoralis_major_sternal" => "chest",
@@ -138,7 +138,7 @@ fn muscle_parent(id: &str) -> Option<&'static str> {
     })
 }
 
-/// `title()` from `packages/schemas/src/index.ts`: `snake_case` to Title Case,
+/// Convert `snake_case` labels to Title Case,
 /// upper-casing only the first character of each segment.
 fn title(id: &str) -> String {
     id.split('_')

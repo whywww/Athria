@@ -1,4 +1,4 @@
-//! Progression and autoregulation calculators, ported from `packages/core`
+//! Progression and autoregulation calculators.
 //! (`evaluateDoubleProgression`, `evaluateRpeAutoregulation`).
 //!
 //! Both return reason codes rather than sentences so callers (UI, MCP) can

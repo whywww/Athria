@@ -1,6 +1,6 @@
 //! Persistence port for [`crate::AthriaApplication`].
 //!
-//! Ported from `packages/application/src/store.ts`. Implemented today by the
+//! Implemented by the
 //! Rust `SqliteStore` and, in tests, by in-memory fakes. The application layer
 //! depends only on this interface: it never opens a database connection and
 //! never issues SQL.
@@ -85,7 +85,7 @@ pub struct RecordImportBatchInput<'a> {
 /// The persistence port [`crate::AthriaApplication`] depends on.
 ///
 /// Every method returns [`Result`] with [`AthriaError`]; the store raises the
-/// stable codes listed in `packages/application/src/store.ts`.
+/// stable application error codes.
 pub trait AthriaStore {
     /// Runs `work` inside one immediate (write) transaction and returns its
     /// result. Nested calls become savepoints, matching the TypeScript

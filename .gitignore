@@ -5,8 +5,6 @@ coverage/
 .qoder/
 .vscode/
 .idea/
-.bun-cache/
-*.bun-build
 dist-types/
 *.log
 

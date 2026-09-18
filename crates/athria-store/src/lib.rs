@@ -1,11 +1,11 @@
 //! Persistence port for the Athria runtime, the Rust port target of the
-//! `AthriaStore` interface in `packages/application/src/store.ts`.
+//! the shared `AthriaStore` interface.
 //!
 //! Phase 2 established the crate boundary. Phase 3 added [`SqliteStore`], a
 //! rusqlite implementation that owns the Rust compatibility baseline
 //! (schema version 24). Phase 5 adds the training-session
 //! reconciliation engine, the planned-session projection and the remaining
-//! entity writes, all ported from `packages/data/src/index.ts` with the same
+//! entity writes with stable application-facing behavior and error codes.
 //! observable behavior. Opening an unsupported development version fails with
 //! `SCHEMA_VERSION_UNSUPPORTED`; fresh databases and future migrations are
 //! authoritative here. Encrypted vault persistence is also owned here while

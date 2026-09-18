@@ -1,14 +1,16 @@
 import { readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import YAML from "yaml";
 
-const projectRoot = resolve(import.meta.dir, "..");
+const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const skills = [
   "packages/skills/athria-training-planner",
   "packages/skills/athria-xunji-records",
 ];
 const allowedProperties = new Set(["name", "description", "license", "allowed-tools", "metadata"]);
 
-function fail(skill: string, message: string): never {
+function fail(skill, message) {
   throw new Error(`${skill}: ${message}`);
 }
 
@@ -17,9 +19,9 @@ for (const skill of skills) {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) fail(skill, "SKILL.md must start with valid YAML frontmatter");
 
-  const parsed: unknown = Bun.YAML.parse(match[1]!);
+  const parsed = YAML.parse(match[1]);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) fail(skill, "frontmatter must be a YAML dictionary");
-  const frontmatter = parsed as Record<string, unknown>;
+  const frontmatter = parsed;
   const unexpected = Object.keys(frontmatter).filter((key) => !allowedProperties.has(key));
   if (unexpected.length) fail(skill, `unexpected frontmatter properties: ${unexpected.join(", ")}`);
 
@@ -33,14 +35,14 @@ for (const skill of skills) {
   if (description.startsWith("[TODO:") || description.includes("<") || description.includes(">")) fail(skill, "description contains a placeholder or angle bracket");
   if (description.length > 1024) fail(skill, "description must not exceed 1024 characters");
 
-  let fence: "`" | "~" | undefined;
+  let fence;
   let fenceLength = 0;
   for (const line of content.slice(match[0].length).split(/\r?\n/)) {
     const marker = line.match(/^[ \t]*(?:(?:[-+*]|\d+[.)])[ \t]+)?(`{3,}|~{3,})(.*)$/);
     if (marker) {
-      const current = marker[1]!;
-      if (!fence) { fence = current[0] as "`" | "~"; fenceLength = current.length; }
-      else if (current[0] === fence && current.length >= fenceLength && !marker[2]!.trim()) { fence = undefined; fenceLength = 0; }
+      const current = marker[1];
+      if (!fence) { fence = current[0]; fenceLength = current.length; }
+      else if (current[0] === fence && current.length >= fenceLength && !marker[2].trim()) { fence = undefined; fenceLength = 0; }
     } else if (!fence && /^[ ]{0,3}\[TODO:[^\n]*\][ \t]*$/.test(line)) {
       fail(skill, "instructions contain an unfinished TODO placeholder");
     }

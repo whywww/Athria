@@ -1,6 +1,6 @@
 //! `AthriaApplication`: the validated use cases every shell calls.
 //!
-//! Ported from `packages/application/src/index.ts`. Each method mirrors its
+//! Each method implements an application API operation over the store.
 //! TypeScript counterpart: the same schema parse of raw input, the same
 //! optimistic-concurrency checks, the same store calls in the same order, and
 //! the same response documents.
@@ -12,7 +12,7 @@
 //! transport-level validation and land with the Tauri/CLI/MCP input schemas in
 //! Phase 7.
 //!
-//! Action schemas declared inline in `packages/application/src/index.ts` — the
+//! Action schemas validate inputs at the application boundary — the
 //! `confirmed` literals, `expectedRevision`, the `dateSchema` transport
 //! strings, the manual-update duration range and "at least one field" check —
 //! are ported here; a violation raises `INVALID_DATA`.

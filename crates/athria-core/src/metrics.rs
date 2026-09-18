@@ -1,5 +1,5 @@
 //! Training metrics and explicit-input calculators, ported from
-//! `packages/core` (`estimateOneRepMax`, `calculateHeartRateZones`,
+//! Includes one-rep-max, heart-rate-zone, and training-load calculations
 //! `calculateTrainingMetrics`).
 //!
 //! Results keep the TypeScript `MetricResult` envelope field for field —

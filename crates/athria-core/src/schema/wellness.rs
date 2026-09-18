@@ -1,6 +1,6 @@
 //! `wellnessRecordSchema` normalization.
 //!
-//! Ported from `packages/schemas/src/index.ts` lines 108-119. `fields` is a
+//! Wellness schema parsing and normalization. `fields` is a
 //! strict partial object over the 24 wellness fields, so a parsed record keeps
 //! exactly the present fields in schema declaration order — the order both the
 //! TypeScript store and the Rust store write into `wellness.data`.

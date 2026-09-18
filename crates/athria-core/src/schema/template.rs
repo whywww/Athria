@@ -1,6 +1,6 @@
 //! `sessionTemplateSchema` and its stored/builtin/create/update variants.
 //!
-//! Ported from `packages/schemas/src/index.ts` lines 149-179 and 221-224,
+//! Session-template schema parsing and normalization,
 //! 246-247. Templates are a five-way discriminated union on `domain`; the port
 //! rebuilds each variant in schema declaration order and enforces the node
 //! refinements the TypeScript `superRefine` hooks apply.

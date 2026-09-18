@@ -1,5 +1,5 @@
 //! The built-in template catalog, ported from
-//! `packages/application/src/template-catalog.ts` in source order.
+//! Built-in session template catalog in stable source order.
 //!
 //! The catalog is code-defined data: entries are never validated at runtime in
 //! TypeScript (the module casts its literals), so the port keeps the same

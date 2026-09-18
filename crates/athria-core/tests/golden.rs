@@ -1,11 +1,5 @@
-//! Golden compatibility suite: replays the TypeScript-generated fixtures under
-//! `tests/fixtures` through the Rust core and requires semantically identical
-//! output.
-//!
-//! The fixtures are produced by `bun run scripts/core-golden.ts` (see
-//! `scripts/core-golden.ts`) and are committed, so `cargo test -p athria-core`
-//! stays meaningful on a fresh clone. Regenerate them with
-//! `bun run test:compat:core` whenever the TypeScript core changes.
+//! Golden regression suite: replays the committed fixtures under
+//! `tests/fixtures` through the Rust core and verifies the stable outputs.
 //!
 //! Comparison rules: strings, booleans, null and object key sets must match
 //! exactly; numbers compare with a 1e-9 relative tolerance so equivalent
@@ -153,13 +147,13 @@ fn compare(expected: &Value, actual: &Value, path: &str) -> Option<String> {
 }
 
 #[test]
-fn golden_fixtures_match_the_typescript_core() {
+fn golden_fixtures_match_the_domain_baseline() {
     let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("fixtures");
     let entries = fs::read_dir(&directory).unwrap_or_else(|error| {
         panic!(
-            "cannot read {}: {error}; run `bun run scripts/core-golden.ts`",
+            "cannot read committed fixture {}: {error}",
             directory.display()
         )
     });
@@ -173,7 +167,7 @@ fn golden_fixtures_match_the_typescript_core() {
     paths.sort();
     assert!(
         !paths.is_empty(),
-        "no fixtures in {}; run `bun run scripts/core-golden.ts`",
+        "no committed fixtures in {}",
         directory.display()
     );
 

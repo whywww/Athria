@@ -1,12 +1,4 @@
 {
   "files": [],
-  "references": [
-    { "path": "packages/schemas" },
-    { "path": "packages/core" },
-    { "path": "packages/data" },
-    { "path": "packages/integrations" },
-    { "path": "packages/application" },
-    { "path": "packages/mcp" },
-    { "path": "apps/desktop" }
-  ]
+  "references": [{ "path": "apps/desktop" }]
 }

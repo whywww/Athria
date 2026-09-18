@@ -1,4 +1,4 @@
-//! Stable hashing, ported from `packages/core` `canonical` / `stableHash`.
+//! Stable canonical JSON hashing.
 //!
 //! `stableHash` is the content fingerprint used for optimistic-concurrency
 //! checks (`inputSnapshotHash`, profile hashes). It JSON-canonicalizes a value

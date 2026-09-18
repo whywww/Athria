@@ -8,6 +8,5 @@
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": ["vite/client"]
   },
-  "include": ["src"],
-  "references": [{ "path": "../../packages/core" }]
+  "include": ["src"]
 }

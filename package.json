@@ -2,34 +2,25 @@
   "name": "athria",
   "version": "0.2.0",
   "private": true,
-  "workspaces": ["apps/*", "packages/*"],
-  "packageManager": "bun@1.4.2",
+  "packageManager": "pnpm@11.19.0",
+  "engines": { "node": ">=24" },
   "type": "module",
   "scripts": {
-    "build": "bun run --filter '*' build",
-    "check": "bun run typecheck && bun run test",
-    "dev": "bun run scripts/desktop-build.ts dev",
-    "test": "bun --bun vitest run --configLoader runner",
-    "test:compat:store": "bun run scripts/store-compat.ts",
-    "test:compat:core": "bun run scripts/core-golden.ts && cargo test -p athria-core",
-    "test:compat:application": "bun run scripts/application-compat.ts && cargo test -p athria-store --test application_compat",
-    "test:compat:integrations": "bun run scripts/integrations-compat.ts && cargo test -p athria-integrations",
-    "typecheck": "bun --bun tsc -b",
-    "build:debug": "bun run scripts/desktop-build.ts debug",
-    "build:app": "bun run scripts/desktop-build.ts app",
-    "release:native": "bun run scripts/desktop-build.ts release",
-    "release:msi": "bun run scripts/desktop-build.ts msi",
-    "build:desktop": "bun run release:native",
-    "perf:smoke": "bun run scripts/performance-smoke.ts",
-    "schema:export": "bun run scripts/export-schemas.ts",
-    "validate:skill": "bun run scripts/validate-skills.ts",
-    "seed:v7": "bun run scripts/seed-v7-development.ts",
-    "seed:demo": "bun run scripts/seed-demo-strength-endurance.ts"
+    "build": "pnpm --filter @athria/desktop build",
+    "check": "pnpm typecheck && pnpm test && pnpm validate:skill",
+    "dev": "node scripts/desktop-build.mjs dev",
+    "test": "vitest run --configLoader runner",
+    "typecheck": "tsc -b",
+    "build:debug": "node scripts/desktop-build.mjs debug",
+    "build:app": "node scripts/desktop-build.mjs app",
+    "release:native": "node scripts/desktop-build.mjs release",
+    "release:msi": "node scripts/desktop-build.mjs msi",
+    "build:desktop": "pnpm release:native",
+    "validate:skill": "node scripts/validate-skills.mjs"
   },
   "devDependencies": {
-    "@types/bun": "1.4.2",
     "typescript": "7.0.2",
     "vitest": "4.1.11",
-    "zod": "4.2.1"
+    "yaml": "2.8.1"
   }
 }
