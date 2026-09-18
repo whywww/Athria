@@ -1,0 +1,43 @@
+{
+  "input": {
+    "trigger": "profile_change",
+    "currentPlanRevision": 7,
+    "inputSnapshotHash": "snapshot-8",
+    "profileHash": "profile-4",
+    "profileChange": {
+      "constraintMismatches": [
+        {
+          "kind": "training_rhythm",
+          "evidenceRefs": ["PROFILE_TRAINING_RHYTHM"],
+          "structural": false
+        }
+      ],
+      "planModalities": ["hypertrophy"],
+      "profileGoalModalities": ["hypertrophy"],
+      "raceTargetModalities": [],
+      "preferenceChanged": false,
+      "mesocycleDurationPreferenceChanged": false
+    }
+  },
+  "expected": {
+    "trigger": "profile_change",
+    "reviewStatus": "review_required",
+    "recommendedScope": "plan",
+    "reasons": [
+      {
+        "reasonCode": "PROFILE_TRAINING_RHYTHM_CONFLICT",
+        "severity": "hard",
+        "axis": { "kind": "profile_mismatch" },
+        "evidenceRefs": ["PROFILE_TRAINING_RHYTHM"],
+        "affectedScope": "plan"
+      }
+    ],
+    "hardOverrides": ["PROFILE_CONSTRAINT_CONFLICT"],
+    "dataGaps": [],
+    "currentPlanRevision": 7,
+    "inputSnapshotHash": "snapshot-8",
+    "profileHash": "profile-4",
+    "suggestedReadWindow": 1,
+    "targetedEvidenceNeeds": []
+  }
+}

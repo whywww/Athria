@@ -67,6 +67,14 @@ pub enum ReasonCode {
     HealthLimitation,
     TrainingInterruption,
     NextWeekInfeasible,
+    ProfileTrainingRhythmConflict,
+    ProfileSessionDurationConflict,
+    ProfileEquipmentConflict,
+    ProfileRecoveryConstraintConflict,
+    GoalPlanIntentDrift,
+    RaceTargetPlanIntentDrift,
+    PreferenceChanged,
+    MesocycleDurationPreferenceChanged,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -87,6 +95,9 @@ pub enum HardOverride {
     ExplicitHealthLimitation,
     TrainingInterruptionSevenDays,
     NextWeekStructurallyInfeasible,
+    ProfileConstraintConflict,
+    GoalPlanIntentDrift,
+    RaceTargetPlanIntentDrift,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -168,6 +179,49 @@ pub struct WeeklyReviewFacts {
     pub next_week_feasibility: FeasibilityStatus,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GoalModality {
+    Hypertrophy,
+    Strength,
+    Endurance,
+    SportSkill,
+    Recovery,
+    MindBody,
+    GeneralFitness,
+    Other,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProfileConstraintKind {
+    TrainingRhythm,
+    MaxSessionDuration,
+    Equipment,
+    ExplicitRecoveryDays,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileConstraintMismatch {
+    pub kind: ProfileConstraintKind,
+    pub evidence_refs: Vec<String>,
+    /// The caller sets this only when the mismatch cannot be repaired within
+    /// one week while preserving the current plan structure.
+    pub structural: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileChangeFacts {
+    pub constraint_mismatches: Vec<ProfileConstraintMismatch>,
+    pub plan_modalities: Vec<GoalModality>,
+    pub profile_goal_modalities: Vec<GoalModality>,
+    pub race_target_modalities: Vec<GoalModality>,
+    pub preference_changed: bool,
+    pub mesocycle_duration_preference_changed: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AdjustmentInput {
@@ -175,7 +229,10 @@ pub struct AdjustmentInput {
     pub current_plan_revision: i64,
     pub input_snapshot_hash: String,
     pub profile_hash: String,
-    pub weekly_review: WeeklyReviewFacts,
+    #[serde(default)]
+    pub weekly_review: Option<WeeklyReviewFacts>,
+    #[serde(default)]
+    pub profile_change: Option<ProfileChangeFacts>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -218,12 +275,80 @@ fn reason(
 /// Evaluates structured weekly facts with the v2 hard-override and independent
 /// soft-axis policy. It intentionally does not derive sport-science thresholds.
 pub fn assess_adjustment(input: &AdjustmentInput) -> AdjustmentAssessment {
-    let facts = &input.weekly_review;
     let mut reasons = Vec::new();
     let mut hard_overrides = Vec::new();
     let mut data_gaps = Vec::new();
     let mut targeted_evidence_needs = BTreeSet::new();
 
+    if let Some(facts) = &input.weekly_review {
+        assess_weekly_review(
+            facts,
+            &mut reasons,
+            &mut hard_overrides,
+            &mut data_gaps,
+            &mut targeted_evidence_needs,
+        );
+    }
+    if let Some(facts) = &input.profile_change {
+        assess_profile_change(facts, &mut reasons, &mut hard_overrides);
+    }
+
+    let soft_axes: BTreeSet<EvidenceAxis> = reasons
+        .iter()
+        .filter(|item| item.severity == EvidenceSeverity::Soft)
+        .map(|item| item.axis.clone())
+        .collect();
+    let persistent = reasons
+        .iter()
+        .any(|item| item.severity == EvidenceSeverity::Strong);
+    let hard = !hard_overrides.is_empty();
+    let review_status = if hard {
+        ReviewStatus::ReviewRequired
+    } else if persistent || soft_axes.len() >= 2 {
+        ReviewStatus::ReviewRecommended
+    } else if !reasons.is_empty() || !data_gaps.is_empty() {
+        ReviewStatus::Watch
+    } else {
+        ReviewStatus::Keep
+    };
+    let recommended_scope =
+        if review_status == ReviewStatus::Keep || review_status == ReviewStatus::Watch {
+            RecommendedScope::None
+        } else {
+            reasons
+                .iter()
+                .map(|item| item.affected_scope)
+                .max()
+                .unwrap_or(RecommendedScope::None)
+        };
+    let suggested_read_window = if persistent || !targeted_evidence_needs.is_empty() {
+        3
+    } else {
+        1
+    };
+
+    AdjustmentAssessment {
+        trigger: input.trigger,
+        review_status,
+        recommended_scope,
+        reasons,
+        hard_overrides,
+        data_gaps,
+        current_plan_revision: input.current_plan_revision,
+        input_snapshot_hash: input.input_snapshot_hash.clone(),
+        profile_hash: input.profile_hash.clone(),
+        suggested_read_window,
+        targeted_evidence_needs: targeted_evidence_needs.into_iter().collect(),
+    }
+}
+
+fn assess_weekly_review(
+    facts: &WeeklyReviewFacts,
+    reasons: &mut Vec<ReviewReason>,
+    hard_overrides: &mut Vec<HardOverride>,
+    data_gaps: &mut Vec<DataGap>,
+    targeted_evidence_needs: &mut BTreeSet<String>,
+) {
     let completed = facts
         .sessions
         .iter()
@@ -395,54 +520,108 @@ pub fn assess_adjustment(input: &AdjustmentInput) -> AdjustmentAssessment {
     if !data_gaps.is_empty() {
         targeted_evidence_needs.insert("missing_evidence".to_owned());
     }
+}
 
-    let soft_axes: BTreeSet<EvidenceAxis> = reasons
-        .iter()
-        .filter(|item| item.severity == EvidenceSeverity::Soft)
-        .map(|item| item.axis.clone())
-        .collect();
-    let persistent = reasons
-        .iter()
-        .any(|item| item.severity == EvidenceSeverity::Strong);
-    let hard = !hard_overrides.is_empty();
-    let review_status = if hard {
-        ReviewStatus::ReviewRequired
-    } else if persistent || soft_axes.len() >= 2 {
-        ReviewStatus::ReviewRecommended
-    } else if !reasons.is_empty() || !data_gaps.is_empty() {
-        ReviewStatus::Watch
-    } else {
-        ReviewStatus::Keep
-    };
-    let recommended_scope =
-        if review_status == ReviewStatus::Keep || review_status == ReviewStatus::Watch {
-            RecommendedScope::None
-        } else {
-            reasons
-                .iter()
-                .map(|item| item.affected_scope)
-                .max()
-                .unwrap_or(RecommendedScope::None)
+fn assess_profile_change(
+    facts: &ProfileChangeFacts,
+    reasons: &mut Vec<ReviewReason>,
+    hard_overrides: &mut Vec<HardOverride>,
+) {
+    for mismatch in &facts.constraint_mismatches {
+        let (reason_code, default_scope) = match mismatch.kind {
+            ProfileConstraintKind::TrainingRhythm => (
+                ReasonCode::ProfileTrainingRhythmConflict,
+                RecommendedScope::Plan,
+            ),
+            ProfileConstraintKind::MaxSessionDuration => (
+                ReasonCode::ProfileSessionDurationConflict,
+                RecommendedScope::Week,
+            ),
+            ProfileConstraintKind::Equipment => {
+                (ReasonCode::ProfileEquipmentConflict, RecommendedScope::Week)
+            }
+            ProfileConstraintKind::ExplicitRecoveryDays => (
+                ReasonCode::ProfileRecoveryConstraintConflict,
+                RecommendedScope::Week,
+            ),
         };
-    let suggested_read_window = if persistent || !targeted_evidence_needs.is_empty() {
-        3
-    } else {
-        1
-    };
-
-    AdjustmentAssessment {
-        trigger: input.trigger,
-        review_status,
-        recommended_scope,
-        reasons,
-        hard_overrides,
-        data_gaps,
-        current_plan_revision: input.current_plan_revision,
-        input_snapshot_hash: input.input_snapshot_hash.clone(),
-        profile_hash: input.profile_hash.clone(),
-        suggested_read_window,
-        targeted_evidence_needs: targeted_evidence_needs.into_iter().collect(),
+        hard_overrides.push(HardOverride::ProfileConstraintConflict);
+        reasons.push(reason(
+            reason_code,
+            EvidenceSeverity::Hard,
+            EvidenceAxis::ProfileMismatch,
+            mismatch.evidence_refs.clone(),
+            if mismatch.structural {
+                RecommendedScope::Plan
+            } else {
+                default_scope
+            },
+        ));
     }
+
+    let plan_modalities: BTreeSet<GoalModality> = facts.plan_modalities.iter().copied().collect();
+    let goal_drift: Vec<GoalModality> = facts
+        .profile_goal_modalities
+        .iter()
+        .copied()
+        .filter(|modality| is_structural_modality(*modality) && !plan_modalities.contains(modality))
+        .collect();
+    if !goal_drift.is_empty() {
+        hard_overrides.push(HardOverride::GoalPlanIntentDrift);
+        reasons.push(reason(
+            ReasonCode::GoalPlanIntentDrift,
+            EvidenceSeverity::Hard,
+            EvidenceAxis::ProfileMismatch,
+            goal_drift
+                .iter()
+                .map(|modality| format!("profile_goal:{modality:?}").to_lowercase())
+                .collect(),
+            RecommendedScope::Plan,
+        ));
+    }
+
+    let race_drift: Vec<GoalModality> = facts
+        .race_target_modalities
+        .iter()
+        .copied()
+        .filter(|modality| is_structural_modality(*modality) && !plan_modalities.contains(modality))
+        .collect();
+    if !race_drift.is_empty() {
+        hard_overrides.push(HardOverride::RaceTargetPlanIntentDrift);
+        reasons.push(reason(
+            ReasonCode::RaceTargetPlanIntentDrift,
+            EvidenceSeverity::Hard,
+            EvidenceAxis::ProfileMismatch,
+            race_drift
+                .iter()
+                .map(|modality| format!("race_target:{modality:?}").to_lowercase())
+                .collect(),
+            RecommendedScope::Plan,
+        ));
+    }
+
+    if facts.preference_changed {
+        reasons.push(reason(
+            ReasonCode::PreferenceChanged,
+            EvidenceSeverity::Soft,
+            EvidenceAxis::ProfileMismatch,
+            vec!["profile.preference".to_owned()],
+            RecommendedScope::None,
+        ));
+    }
+    if facts.mesocycle_duration_preference_changed {
+        reasons.push(reason(
+            ReasonCode::MesocycleDurationPreferenceChanged,
+            EvidenceSeverity::Soft,
+            EvidenceAxis::ProfileMismatch,
+            vec!["profile.mesocycleDurationWeeks".to_owned()],
+            RecommendedScope::None,
+        ));
+    }
+}
+
+fn is_structural_modality(modality: GoalModality) -> bool {
+    !matches!(modality, GoalModality::GeneralFitness | GoalModality::Other)
 }
 
 #[cfg(test)]
@@ -469,7 +648,7 @@ mod tests {
             current_plan_revision: 7,
             input_snapshot_hash: "snapshot-7".to_owned(),
             profile_hash: "profile-3".to_owned(),
-            weekly_review: WeeklyReviewFacts {
+            weekly_review: Some(WeeklyReviewFacts {
                 sessions,
                 unmatched_actual_count: 0,
                 key_session_persistence_windows: 1,
@@ -482,7 +661,30 @@ mod tests {
                     evidence_refs: vec![],
                 },
                 next_week_feasibility: FeasibilityStatus::Feasible,
-            },
+            }),
+            profile_change: None,
+        }
+    }
+
+    fn profile_input(facts: ProfileChangeFacts) -> AdjustmentInput {
+        AdjustmentInput {
+            trigger: AdjustmentTrigger::ProfileChange,
+            current_plan_revision: 7,
+            input_snapshot_hash: "snapshot-7".to_owned(),
+            profile_hash: "profile-new".to_owned(),
+            weekly_review: None,
+            profile_change: Some(facts),
+        }
+    }
+
+    fn unchanged_profile() -> ProfileChangeFacts {
+        ProfileChangeFacts {
+            constraint_mismatches: vec![],
+            plan_modalities: vec![GoalModality::Hypertrophy],
+            profile_goal_modalities: vec![GoalModality::Hypertrophy],
+            race_target_modalities: vec![],
+            preference_changed: false,
+            mesocycle_duration_preference_changed: false,
         }
     }
 
@@ -511,7 +713,7 @@ mod tests {
             session("s3", "endurance", true, SessionOutcome::Completed),
             session("s4", "strength", false, SessionOutcome::Unresolved),
         ]);
-        input.weekly_review.health_recovery.status = RecoveryStatus::Issue;
+        input.weekly_review.as_mut().unwrap().health_recovery.status = RecoveryStatus::Issue;
         let assessment = assess_adjustment(&input);
         assert_eq!(assessment.review_status, ReviewStatus::ReviewRecommended);
         assert_eq!(assessment.recommended_scope, RecommendedScope::Week);
@@ -521,9 +723,10 @@ mod tests {
     #[test]
     fn seven_day_interruption_is_a_hard_override_and_phase_loss_raises_plan_scope() {
         let mut input = input(vec![]);
-        input.weekly_review.health_recovery.interruption_days = 7;
-        input.weekly_review.health_recovery.phase_intent_invalidated = true;
-        input.weekly_review.health_recovery.evidence_refs = vec!["user_report:1".to_owned()];
+        let health = &mut input.weekly_review.as_mut().unwrap().health_recovery;
+        health.interruption_days = 7;
+        health.phase_intent_invalidated = true;
+        health.evidence_refs = vec!["user_report:1".to_owned()];
         let assessment = assess_adjustment(&input);
         assert_eq!(assessment.review_status, ReviewStatus::ReviewRequired);
         assert_eq!(assessment.recommended_scope, RecommendedScope::Plan);
@@ -536,7 +739,7 @@ mod tests {
     #[test]
     fn endurance_issue_does_not_create_strength_or_unified_performance_evidence() {
         let mut input = input(vec![]);
-        input.weekly_review.performance = vec![
+        input.weekly_review.as_mut().unwrap().performance = vec![
             DomainPerformanceEvidence {
                 domain: "strength".to_owned(),
                 status: PerformanceStatus::Normal,
@@ -562,7 +765,7 @@ mod tests {
     #[test]
     fn missing_wellness_is_a_gap_not_a_normal_recovery_result() {
         let mut input = input(vec![]);
-        input.weekly_review.health_recovery.status = RecoveryStatus::Unknown;
+        input.weekly_review.as_mut().unwrap().health_recovery.status = RecoveryStatus::Unknown;
         let assessment = assess_adjustment(&input);
         assert_eq!(assessment.review_status, ReviewStatus::Watch);
         assert!(assessment.reasons.is_empty());
@@ -580,5 +783,91 @@ mod tests {
         let first = serde_json::to_string(&assess_adjustment(&input)).unwrap();
         let second = serde_json::to_string(&assess_adjustment(&input)).unwrap();
         assert_eq!(first, second);
+    }
+
+    #[test]
+    fn training_rhythm_conflict_requires_a_plan_review() {
+        let mut facts = unchanged_profile();
+        facts.constraint_mismatches = vec![ProfileConstraintMismatch {
+            kind: ProfileConstraintKind::TrainingRhythm,
+            evidence_refs: vec!["PROFILE_TRAINING_RHYTHM".to_owned()],
+            structural: false,
+        }];
+        let assessment = assess_adjustment(&profile_input(facts));
+        assert_eq!(assessment.review_status, ReviewStatus::ReviewRequired);
+        assert_eq!(assessment.recommended_scope, RecommendedScope::Plan);
+        assert_eq!(
+            assessment.reasons[0].reason_code,
+            ReasonCode::ProfileTrainingRhythmConflict
+        );
+    }
+
+    #[test]
+    fn local_duration_conflicts_prefer_week_scope() {
+        let mut facts = unchanged_profile();
+        facts.constraint_mismatches = vec![ProfileConstraintMismatch {
+            kind: ProfileConstraintKind::MaxSessionDuration,
+            evidence_refs: vec!["session:w2-s1".to_owned()],
+            structural: false,
+        }];
+        let assessment = assess_adjustment(&profile_input(facts));
+        assert_eq!(assessment.review_status, ReviewStatus::ReviewRequired);
+        assert_eq!(assessment.recommended_scope, RecommendedScope::Week);
+    }
+
+    #[test]
+    fn structural_equipment_conflicts_allow_plan_scope() {
+        let mut facts = unchanged_profile();
+        facts.constraint_mismatches = vec![ProfileConstraintMismatch {
+            kind: ProfileConstraintKind::Equipment,
+            evidence_refs: vec!["EXERCISE_EQUIPMENT".to_owned()],
+            structural: true,
+        }];
+        let assessment = assess_adjustment(&profile_input(facts));
+        assert_eq!(assessment.recommended_scope, RecommendedScope::Plan);
+        assert_eq!(
+            assessment.reasons[0].reason_code,
+            ReasonCode::ProfileEquipmentConflict
+        );
+    }
+
+    #[test]
+    fn new_endurance_goal_and_race_drift_from_hypertrophy_plan() {
+        let mut facts = unchanged_profile();
+        facts.profile_goal_modalities = vec![GoalModality::Endurance];
+        facts.race_target_modalities = vec![GoalModality::Endurance];
+        let assessment = assess_adjustment(&profile_input(facts));
+        assert_eq!(assessment.review_status, ReviewStatus::ReviewRequired);
+        assert_eq!(assessment.recommended_scope, RecommendedScope::Plan);
+        assert!(
+            assessment
+                .hard_overrides
+                .contains(&HardOverride::GoalPlanIntentDrift)
+        );
+        assert!(
+            assessment
+                .hard_overrides
+                .contains(&HardOverride::RaceTargetPlanIntentDrift)
+        );
+    }
+
+    #[test]
+    fn preference_only_change_is_watch_without_rewrite_scope() {
+        let mut facts = unchanged_profile();
+        facts.preference_changed = true;
+        let assessment = assess_adjustment(&profile_input(facts));
+        assert_eq!(assessment.review_status, ReviewStatus::Watch);
+        assert_eq!(assessment.recommended_scope, RecommendedScope::None);
+    }
+
+    #[test]
+    fn assessment_carries_the_new_profile_hash_for_freshness_checks() {
+        let mut stale = profile_input(unchanged_profile());
+        stale.profile_hash = "profile-old".to_owned();
+        let fresh = profile_input(unchanged_profile());
+        assert_ne!(
+            assess_adjustment(&stale).profile_hash,
+            assess_adjustment(&fresh).profile_hash
+        );
     }
 }

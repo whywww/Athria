@@ -34,8 +34,9 @@ pub use json::number as js_number;
 
 pub use adjustment::{
     AdjustmentAssessment, AdjustmentInput, AdjustmentTrigger, DataGap, DomainPerformanceEvidence,
-    EvidenceAxis, EvidenceSeverity, FeasibilityStatus, HardOverride, HealthRecoveryEvidence,
-    PerformanceStatus, PlannedSessionEvidence, ReasonCode, RecommendedScope, RecoveryStatus,
+    EvidenceAxis, EvidenceSeverity, FeasibilityStatus, GoalModality, HardOverride,
+    HealthRecoveryEvidence, PerformanceStatus, PlannedSessionEvidence, ProfileChangeFacts,
+    ProfileConstraintKind, ProfileConstraintMismatch, ReasonCode, RecommendedScope, RecoveryStatus,
     ReviewReason, ReviewStatus, SessionOutcome, WeeklyReviewFacts, assess_adjustment,
 };
 pub use clock::{Clock, FixedClock, SystemClock};
