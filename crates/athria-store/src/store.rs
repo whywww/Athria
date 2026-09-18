@@ -750,8 +750,7 @@ impl SqliteStore {
     }
 
     /// Canonical training sessions, ordered most recent first like
-    /// `AthriaRepository.listSessions`. Returns the stored JSON as-is; source
-    /// summaries and plan matches stay TypeScript-only until Phase 5.
+    /// `AthriaRepository.listSessions`. Returns the stored JSON as-is.
     pub fn list_training_sessions(&self, owner_id: &str) -> Result<Vec<Value>> {
         let mut statement = self
             .connection

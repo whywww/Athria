@@ -16,4 +16,4 @@ Create a new profile writes a fresh, empty Athria database to a location you cho
 
 Older `dataDir` configuration remains readable as `<dataDir>/athria.sqlite3`; existing companion folders are left untouched but are no longer created or managed.
 
-Pre-v0.1 databases are incompatible with this MVP and have no migration or recovery path. They are not deleted automatically during development; final cutover deletion is a separate, explicit acceptance step.
+Databases older than the schema version 24 Rust compatibility baseline are incompatible with this MVP and have no migration or recovery path. They are not deleted automatically during development; final cutover deletion is a separate, explicit acceptance step.

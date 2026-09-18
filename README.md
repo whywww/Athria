@@ -214,7 +214,7 @@ The dashboard and MCP server call the same application-service boundary. Busines
 - MCP does not expose arbitrary SQL, arbitrary file reads, secrets, database deletion, or validation bypasses.
 - One database password gates access inside Athria (the app asks for it before showing data whenever this computer has not unlocked the database) and wraps the master key that encrypts saved connection keys.
 - Backups are self-contained `.sqlite3` file copies made by the user and include connection keys only as authenticated ciphertext protected by the database password.
-- Pre-v0.1 databases are not migrated into this MVP.
+- Databases older than the schema version 24 Rust compatibility baseline are not migrated into this MVP.
 
 Read [Backup and restore](docs/BACKUP.md) before moving or restoring data.
 
@@ -392,7 +392,7 @@ pnpm release:native
 5. 校验、修订并解释结果。
 6. 仅在用户确认拟议变更后保存。
 
-个人资料变更具有更严格的边界：MCP 只能提交变更建议，用户必须在 Dashboard 中批准。
+通过 MCP 修改个人资料时，必须由用户明确确认并提供当前个人资料哈希，之后会直接写入。Dashboard 中的编辑也会直接写入。
 
 ## 开发
 
@@ -445,7 +445,7 @@ Dashboard 和 MCP 服务器调用同一个 Application Service 边界。业务�
 - Streamable HTTP 需要 Bearer Token；Dashboard 管理的 MCP Token 保存在操作系统凭据管理器中，且不会通过 MCP 工具暴露。
 - MCP 不提供任意 SQL、任意文件读取、密钥访问、数据库删除或绕过校验的能力。
 - 备份为用户手动复制的 `.sqlite3` 数据库文件；连接凭据仅以受数据库密码保护的密文形式包含其中。
-- 早于 v0.1 的数据库不会迁移至当前 MVP。
+- 早于 Rust schema version 24 兼容基线的数据库不会迁移至当前 MVP。
 
 移动或恢复数据之前，请阅读[备份与恢复](docs/BACKUP.md)。
 

@@ -22,15 +22,7 @@ use athria_runtime::{ReqwestHttpClient, create_local_workspace, preview_backup};
 use athria_store::SqliteStore;
 use athria_vault::{self as vault, EncryptedSecret, VaultBundle};
 
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct McpInfo {
-    mcp_url: String,
-    token: String,
-}
-
 struct RuntimeState {
-    mcp: McpInfo,
     vault_key: Mutex<Option<Zeroizing<Vec<u8>>>>,
     application: Mutex<DesktopApplication>,
     database_path: PathBuf,
@@ -195,11 +187,6 @@ fn run_mcp_stdio() -> i32 {
             1
         }
     }
-}
-
-#[tauri::command]
-fn get_mcp_info(state: State<'_, RuntimeState>) -> McpInfo {
-    state.mcp.clone()
 }
 
 #[tauri::command]
@@ -912,10 +899,6 @@ pub fn run() -> i32 {
         }
     };
     let mcp_token = new_runtime_token();
-    let mcp = McpInfo {
-        mcp_url: format!("http://127.0.0.1:{mcp_port}/mcp"),
-        token: mcp_token.clone(),
-    };
     let database_path = current_database_path();
     let application = match SqliteStore::open(&database_path) {
         Ok(store) => AthriaApplication::new(store),
@@ -936,14 +919,12 @@ pub fn run() -> i32 {
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(RuntimeState {
-            mcp,
             vault_key: Mutex::new(None),
             application: Mutex::new(application),
             database_path: database_path.clone(),
         })
         .invoke_handler(tauri::generate_handler![
             athria_request,
-            get_mcp_info,
             vault_status,
             setup_vault,
             unlock_vault,

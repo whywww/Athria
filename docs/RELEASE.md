@@ -13,7 +13,7 @@ Signing: unsigned
 
 The checkout must be named `Athria-repo`. All generated output is machine-local under its sibling `Athria` directory; this location is intentionally not configurable. MSI builds are reserved for release and installation validation. Desktop application behavior runs in the native Rust runtime; Node.js and pnpm are development tools only and are not packaged or required at runtime.
 
-## Current artifact
+## Legacy artifact
 
 - Legacy file: `../Athria/target/x86_64-pc-windows-msvc/release/bundle/msi/Athria_0.1.0_x64_en-US.msi`
 - Size: 47,149,056 bytes

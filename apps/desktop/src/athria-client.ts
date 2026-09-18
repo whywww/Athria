@@ -2,26 +2,7 @@ export interface AthriaClient {
   request<T>(path: string, init?: RequestInit): Promise<T>;
 }
 
-interface ServiceInfo { baseUrl: string; token: string }
 type Invoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
-
-export class HttpAthriaClient implements AthriaClient {
-  constructor(
-    private readonly serviceInfo: () => Promise<ServiceInfo>,
-    private readonly fetcher: typeof fetch = fetch,
-  ) {}
-
-  async request<T>(path: string, init: RequestInit = {}): Promise<T> {
-    const service = await this.serviceInfo();
-    const response = await this.fetcher(`${service.baseUrl}${path}`, {
-      ...init,
-      headers: { Authorization: `Bearer ${service.token}`, "Content-Type": "application/json", ...init.headers },
-    });
-    const payload = await response.json() as { error?: { message?: string } };
-    if (!response.ok) throw new Error(payload.error?.message ?? `Request failed with HTTP ${response.status}`);
-    return payload as T;
-  }
-}
 
 export class TauriAthriaClient implements AthriaClient {
   constructor(private readonly invoke: Invoke) {}

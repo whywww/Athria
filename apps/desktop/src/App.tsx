@@ -7,7 +7,7 @@ import {
   paginateTrainingHistory, parseSyncRange, profilePayload, syncRangeOptions, timezoneOptions, PREFERENCE_MAX_LENGTH, RACE_SPORT_PRESETS,
   toggleEquipmentGroup,
   type AthleteProfile, type BackupPreview, type CurrentPlan, type DoctorResult, type HevyImportStatus, type ImportPreview,
-  type CalendarSession, type EquipmentCategory, type ImportResult, type NextTrainingDay, type PersonalInformation, type SyncRange, type TrainingHistorySession, type TrainingHistorySort, type TrainingTaxonomy, type TrainingSummary, type UnitSystem, type WellnessRecord, type XunjiConnectionStatus,
+  type CalendarSession, type EquipmentCategory, type ImportResult, type NextTrainingDay, type PersonalInformation, type RaceDay, type SyncRange, type TrainingHistorySession, type TrainingHistorySort, type TrainingTaxonomy, type TrainingSummary, type UnitSystem, type WellnessRecord, type XunjiConnectionStatus,
 } from "./view-models";
 import { Card, EmptyState, ErrorBanner, Loading, PrimaryPageHeader, weekdays } from "./components";
 import { CurrentPlanPage, NextTrainingDayCard } from "./plan/CurrentPlanPage";
@@ -133,7 +133,7 @@ function Profile() {
     setRaceDraft(emptyRaceDraft);
   };
   const removeRaceDay = (index: number) => setForm((current) => current ? { ...current, raceDays: current.raceDays.filter((_, itemIndex) => itemIndex !== index) } : current);
-  const beginEdit = () => { setSaved(false); setCustomGoal(""); setRaceDraft(emptyRaceDraft); setAvailableGoals([...new Set([...commonGoals, ...profile.goals])]); setForm({ ...profile, timezone: isUntouchedDefaultProfile(profile) ? deviceTimezone() : profile.timezone, goals: [...profile.goals], trainingRhythm: profile.trainingRhythm.kind === "fixed_week" ? { ...profile.trainingRhythm, days: [...profile.trainingRhythm.days] } : { ...profile.trainingRhythm }, equipment: [...profile.equipment], raceDays: profile.raceDays.map((race) => ({ ...race })).sort((left, right) => left.date.localeCompare(right.date)) }); setEditing(true); };
+  const beginEdit = () => { setSaved(false); setCustomGoal(""); setRaceDraft(emptyRaceDraft); setAvailableGoals([...new Set([...commonGoals, ...profile.goals])]); setForm({ ...profile, timezone: isUntouchedDefaultProfile(profile) ? deviceTimezone() : profile.timezone, goals: [...profile.goals], trainingRhythm: profile.trainingRhythm.kind === "fixed_week" ? { ...profile.trainingRhythm, days: [...profile.trainingRhythm.days] } : { ...profile.trainingRhythm }, equipment: [...profile.equipment], raceDays: profile.raceDays.map((race: RaceDay) => ({ ...race })).sort((left: RaceDay, right: RaceDay) => left.date.localeCompare(right.date)) }); setEditing(true); };
   const cancelEdit = () => { setForm(null); setCustomGoal(""); setRaceDraft(emptyRaceDraft); setAvailableGoals(commonGoals); setEditing(false); save.reset(); };
 
   const rhythmValid = !form || (form.trainingRhythm.kind === "fixed_week" ? form.trainingRhythm.days.length > 0 : form.trainingRhythm.kind === "flexible_week" ? form.trainingRhythm.minDaysPerWeek >= 1 && form.trainingRhythm.minDaysPerWeek <= form.trainingRhythm.targetDaysPerWeek && form.trainingRhythm.targetDaysPerWeek <= form.trainingRhythm.maxDaysPerWeek && form.trainingRhythm.maxDaysPerWeek <= 7 : form.trainingRhythm.intervalDays >= 1 && form.trainingRhythm.intervalDays <= 30);
@@ -416,7 +416,7 @@ export function Timeline() {
   const profile = useQuery({ queryKey: ["profile"], queryFn: () => api<AthleteProfile>("/api/profile") });
   const refresh = async () => { await Promise.all([client.invalidateQueries({ queryKey: ["sessions"] }), client.invalidateQueries({ queryKey: ["calendar"] }), client.invalidateQueries({ queryKey: ["summary"] }), client.invalidateQueries({ queryKey: ["state"] }), client.invalidateQueries({ queryKey: ["next-training-day"] })]); };
   const error = query.error ?? calendar.error ?? plan.error ?? profile.error;
-  const plannedNames = useMemo(() => Object.fromEntries((calendar.data ?? []).map((session) => [session.id, session.name])), [calendar.data]);
+  const plannedNames = useMemo(() => Object.fromEntries((calendar.data ?? []).map((session: CalendarSession) => [session.id, session.name])), [calendar.data]);
   const filtered = useMemo(() => filterAndSortTrainingHistory(query.data ?? [], search, sort, plannedNames), [query.data, search, sort, plannedNames]);
   const pagination = paginateTrainingHistory(filtered, page);
   useEffect(() => { if (page !== pagination.page) setPage(pagination.page); }, [page, pagination.page]);
@@ -686,7 +686,7 @@ function DatabaseGate() {
     } catch (value) { setError(value); } finally { setBusy(false); }
   };
   return <div className="modal-backdrop"><section className="connection-modal database-gate" role="dialog" aria-modal="true" aria-labelledby="database-gate-title">
-    <header><div><h2 id="database-gate-title">{setup ? "Protect this database" : resetting ? "Reset the database password" : "Unlock this database"}</h2><p>{setup ? "Set the password that protects your data in Athria and encrypts your saved connection keys. Keep it safe: if you forget it, saved connection keys cannot be recovered." : resetting ? "Set a new database password. Your training data stays intact, but saved connection keys are protected by the old password and will be removed — reconnect them in Connections afterwards." : "This database has not been unlocked on this computer. Enter its database password to continue."}</p></div></header>
+    <header><div><h2 id="database-gate-title">{setup ? "Protect this database" : resetting ? "Reset the database password" : "Unlock this database"}</h2><p>{setup ? "You're creating a new user profile. Set the password that protects your data in Athria and encrypts your saved connection keys. Keep it safe: if you forget it, saved connection keys cannot be recovered." : resetting ? "Set a new database password. Your training data stays intact, but saved connection keys are protected by the old password and will be removed — reconnect them in Connections afterwards." : "This database has not been unlocked on this computer. Enter its database password to continue."}</p></div></header>
     <div className="modal-body">
       <label>{resetting ? "New password" : "Database password"}<input type="password" autoFocus autoComplete={setup || resetting ? "new-password" : "current-password"} value={password} onChange={(event) => setPassword(event.target.value)}/></label>
       {(setup || resetting) && <label>Confirm password<input type="password" className={mismatch ? "invalid" : undefined} autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)}/></label>}

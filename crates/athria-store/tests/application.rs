@@ -1,4 +1,4 @@
-//! The Phase 5 application use cases over the real SQLite store.
+//! Application use cases over the real SQLite store.
 //!
 //! `AthriaApplication` is generic over the `AthriaStore` port; these tests run
 //! it against `SqliteStore` in memory with a fixed clock, which is the exact
