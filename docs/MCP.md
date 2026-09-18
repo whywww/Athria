@@ -32,10 +32,14 @@ The Dashboard runtime also exposes JSON-response Streamable HTTP at `http://127.
 MCP exposes read, calculation, validation, wellness, training-history, template-library, and current-plan tools. State-changing tools include:
 
 - `create_session_template`, `update_session_template`, `delete_session_template`
-- `save_current_plan`
-- `record_training_session`, `update_wellness`, `update_athlete_profile`
+- `save_current_plan`, `save_next_training_day_sessions`, `update_planned_session`
+- `record_training_session`, `set_training_session_plan_match`, `allow_automatic_plan_match`
+- `update_manual_training_session`, `remove_manual_training_source`
+- `update_wellness`, `update_athlete_profile`
 
-Template and plan writes are immediate latest-state writes protected by `expectedRevision`. Templates contain a name, one concise intent, and ordered single-domain nodes with required and optional variable keys. They never contain extra notes, use cases, identity ranges, exercises, distance, duration, sets/reps, load, recovery demand, or another executable prescription. Core validates the structure deterministically; it does not recommend dose. Built-ins can be edited (deriving a user-owned replacement with the same ID) or deleted (hiding the code-defined original, which is retained). Confirmed Profile and Wellness updates write directly with snapshot-hash protection.
+Tool annotations mark reads, calculations, creates, and append-only recording as non-destructive. Updates, replacement saves, deletes, moves, re-links, and other mutations of existing state carry `destructiveHint: true` so MCP hosts can apply an appropriately strong confirmation experience; this metadata does not replace Athria's own validation or confirmation rules.
+
+Template and plan writes are immediate latest-state writes protected by `expectedRevision`. A complete plan proposal must be validated, presented, and explicitly approved before saving; immediately before the write, the Agent re-reads the current plan, training state, and athlete profile and rebases instead of saving if the revision or hashes are stale. Next-day plan writes, planned-session actions, match changes, manual-history changes, and Profile or Wellness updates likewise require the explicit user direction described by their tool contracts. Templates contain a name, one concise intent, and ordered single-domain nodes with required and optional variable keys. They never contain extra notes, use cases, identity ranges, exercises, distance, duration, sets/reps, load, recovery demand, or another executable prescription. Core validates the structure deterministically; it does not recommend dose. Built-ins can be edited (deriving a user-owned replacement with the same ID) or deleted (hiding the code-defined original, which is retained). Confirmed Profile and Wellness updates write directly with snapshot-hash protection.
 
 Profile stores stable Personal Information (`preferredName`, optional `gender`, `heightCm`, and `birthDate`). Weight remains dated Wellness data. The Dashboard's combined `/api/personal-information` read/write contract updates these surfaces atomically; MCP continues to update stable fields through `update_athlete_profile` and dated weight through `update_wellness`.
 

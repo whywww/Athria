@@ -7,14 +7,21 @@
   "requiredContext": ["AthleteProfile", "TrainingStateSnapshot", "WellnessRecord"],
   "allowedTools": [
     "get_athlete_profile", "get_training_state", "list_training_sessions", "list_wellness", "get_wellness_day",
-    "get_training_summary", "get_current_plan", "get_plan_adjustment_review", "list_session_templates", "get_session_template", "get_training_taxonomy", "calculate_training_metrics",
+    "get_training_summary", "get_current_plan", "get_plan_adjustment_review", "get_next_training_day", "list_planned_sessions", "list_session_templates", "get_session_template", "get_training_taxonomy", "calculate_training_metrics",
     "estimate_1rm", "calculate_heart_rate_zones", "evaluate_progression",
-    "validate_workout", "validate_current_plan", "check_training_constraints",
-    "explain_validation_result", "create_session_template", "update_session_template", "delete_session_template", "save_current_plan", "update_planned_session", "record_training_session", "set_training_session_plan_match", "allow_automatic_plan_match", "update_manual_training_session", "remove_manual_training_source", "update_wellness", "update_athlete_profile"
+    "validate_current_plan", "check_training_constraints", "validate_next_training_day_sessions",
+    "create_session_template", "update_session_template", "delete_session_template", "save_current_plan", "save_next_training_day_sessions", "update_planned_session", "record_training_session", "set_training_session_plan_match", "allow_automatic_plan_match", "update_manual_training_session", "remove_manual_training_source", "update_wellness", "update_athlete_profile"
   ],
   "workflow": ["review", "read-targeted-evidence", "plan", "validate", "explain", "approve", "freshness-check", "save-current-plan"],
   "outputSchema": "CurrentPlan",
-  "approvalPoints": ["Before deleting a template"],
+  "approvalPoints": [
+    "Before save_current_plan or save_next_training_day_sessions",
+    "Before update_planned_session",
+    "Before deleting a template",
+    "Before changing a training-session plan match",
+    "Before updating or removing manual training history",
+    "Before updating Profile or Wellness"
+  ],
   "safetyRules": [
     "Do not infer missing health or recovery data.",
     "Do not bypass blocker validation, revision checks, or explicit deletion authority.",

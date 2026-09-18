@@ -655,6 +655,71 @@ mod tests {
         assert_eq!(error["code"], "INVALID_INPUT");
     }
     #[test]
+    fn optional_day_windows_use_dispatcher_defaults() {
+        assert_eq!(days(&json!({}), 30).unwrap(), 30);
+        assert_eq!(days(&json!({}), 42).unwrap(), 42);
+        assert_eq!(days(&json!({}), 7).unwrap(), 7);
+        assert_eq!(days(&json!({}), 90).unwrap(), 90);
+
+        let service = service();
+        for name in [
+            "list_training_sessions",
+            "list_wellness",
+            "list_xunji_training_sessions",
+            "get_training_summary",
+            "calculate_training_metrics",
+        ] {
+            let tool = service
+                .tools()
+                .iter()
+                .find(|tool| tool["name"] == name)
+                .unwrap();
+            assert!(!tool["inputSchema"]["required"]
+                .as_array()
+                .is_some_and(|required| required.contains(&json!("days"))));
+            assert!(
+                service.call_result(name, &json!({})).get("isError").is_none(),
+                "{name} should accept an omitted days argument"
+            );
+        }
+    }
+    #[test]
+    fn write_tool_annotations_match_the_risk_audit() {
+        let service = service();
+        let additive = ["create_session_template", "record_training_session"];
+        let destructive = [
+            "update_session_template",
+            "delete_session_template",
+            "save_current_plan",
+            "save_next_training_day_sessions",
+            "update_planned_session",
+            "set_training_session_plan_match",
+            "allow_automatic_plan_match",
+            "update_manual_training_session",
+            "remove_manual_training_source",
+            "update_wellness",
+            "update_athlete_profile",
+        ];
+
+        for tool in service
+            .tools()
+            .iter()
+            .filter(|tool| tool["annotations"]["readOnlyHint"] == json!(false))
+        {
+            let name = tool["name"].as_str().unwrap();
+            let expected = destructive.contains(&name);
+            assert_eq!(
+                tool["annotations"]["destructiveHint"],
+                json!(expected),
+                "{name}"
+            );
+            assert!(
+                additive.contains(&name) || destructive.contains(&name),
+                "unclassified write tool: {name}"
+            );
+        }
+    }
+    #[test]
     fn adjustment_review_is_read_only_and_keeps_application_errors() {
         let service = service();
         let tool = service

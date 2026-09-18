@@ -9,13 +9,44 @@ const skills = [
   "packages/skills/athria-xunji-records",
 ];
 const allowedProperties = new Set(["name", "description", "license", "allowed-tools", "metadata"]);
+const toolReferencePattern = /`((?:get|list|calculate|estimate|evaluate|validate|check|create|update|delete|save|record|set|allow|remove)_[a-z0-9_]+)`/g;
 
 function fail(skill, message) {
   throw new Error(`${skill}: ${message}`);
 }
 
+export function validateToolNames(tools) {
+  const names = tools.map((tool) => tool?.name);
+  const invalid = names.filter((name) => typeof name !== "string" || !name);
+  if (invalid.length) throw new Error("MCP contract contains a tool without a valid name");
+  const duplicates = names.filter((name, index) => names.indexOf(name) !== index);
+  if (duplicates.length) throw new Error(`MCP contract contains duplicate tools: ${[...new Set(duplicates)].join(", ")}`);
+  return new Set(names);
+}
+
+export function validateSkillTools(skill, manifest, content, contractTools) {
+  if (!Array.isArray(manifest.allowedTools)) fail(skill, "manifest allowedTools must be an array");
+  const duplicateAllowed = manifest.allowedTools.filter((name, index) => manifest.allowedTools.indexOf(name) !== index);
+  if (duplicateAllowed.length) fail(skill, `manifest contains duplicate allowedTools: ${[...new Set(duplicateAllowed)].join(", ")}`);
+  const missing = manifest.allowedTools.filter((name) => !contractTools.has(name));
+  if (missing.length) fail(skill, `manifest references unknown MCP tools: ${missing.join(", ")}`);
+
+  const referenced = [...content.matchAll(toolReferencePattern)].map((match) => match[1]);
+  const unknownReferences = referenced.filter((name) => !contractTools.has(name));
+  if (unknownReferences.length) fail(skill, `SKILL.md references unknown MCP tools: ${[...new Set(unknownReferences)].join(", ")}`);
+  const allowed = new Set(manifest.allowedTools);
+  const unauthorized = referenced.filter((name) => !allowed.has(name));
+  if (unauthorized.length) fail(skill, `SKILL.md references tools missing from manifest allowedTools: ${[...new Set(unauthorized)].join(", ")}`);
+}
+
+const contract = JSON.parse(readFileSync(join(projectRoot, "crates/athria-mcp/contract.json"), "utf8"));
+const adjustmentTool = JSON.parse(readFileSync(join(projectRoot, "crates/athria-mcp/adjustment-tool.json"), "utf8"));
+if (!Array.isArray(contract.tools)) throw new Error("crates/athria-mcp/contract.json: tools must be an array");
+const contractTools = validateToolNames([...contract.tools, adjustmentTool]);
+
 for (const skill of skills) {
   const content = readFileSync(join(projectRoot, skill, "SKILL.md"), "utf8");
+  const manifest = JSON.parse(readFileSync(join(projectRoot, skill, "manifest.json"), "utf8"));
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) fail(skill, "SKILL.md must start with valid YAML frontmatter");
 
@@ -34,6 +65,8 @@ for (const skill of skills) {
   if (typeof description !== "string" || !description) fail(skill, "frontmatter requires a non-empty string description");
   if (description.startsWith("[TODO:") || description.includes("<") || description.includes(">")) fail(skill, "description contains a placeholder or angle bracket");
   if (description.length > 1024) fail(skill, "description must not exceed 1024 characters");
+
+  validateSkillTools(skill, manifest, content, contractTools);
 
   let fence;
   let fenceLength = 0;
