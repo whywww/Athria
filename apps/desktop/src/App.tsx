@@ -7,7 +7,7 @@ import {
   paginateTrainingHistory, parseSyncRange, profilePayload, syncRangeOptions, timezoneOptions, PREFERENCE_MAX_LENGTH, RACE_SPORT_PRESETS,
   toggleEquipmentGroup,
   type AthleteProfile, type BackupPreview, type CurrentPlan, type DoctorResult, type HevyImportStatus, type ImportPreview,
-  type AdjustmentAssessment, type CalendarSession, type EquipmentCategory, type ImportResult, type NextTrainingDay, type PersonalInformation, type RaceDay, type SyncRange, type TrainingHistorySession, type TrainingHistorySort, type TrainingTaxonomy, type TrainingSummary, type UnitSystem, type WellnessRecord, type XunjiConnectionStatus,
+  type AdjustmentReminder, type CalendarSession, type EquipmentCategory, type ImportResult, type NextTrainingDay, type PersonalInformation, type RaceDay, type SyncRange, type TrainingHistorySession, type TrainingHistorySort, type TrainingTaxonomy, type TrainingSummary, type UnitSystem, type WellnessRecord, type XunjiConnectionStatus,
 } from "./view-models";
 import { Card, EmptyState, ErrorBanner, Loading, PrimaryPageHeader, weekdays } from "./components";
 import { CurrentPlanPage, NextTrainingDayCard } from "./plan/CurrentPlanPage";
@@ -71,6 +71,7 @@ function ServiceStatus() {
 }
 
 function Overview() {
+  const [acknowledgedAdjustment, setAcknowledgedAdjustment] = useState<string>();
   const profile = useQuery({ queryKey: ["profile"], queryFn: () => api<AthleteProfile>("/api/profile") });
   const today = profile.data ? localDateForTimezone(profile.data.timezone) : null;
   const range = today ? overviewDateRange(today) : null;
@@ -78,7 +79,11 @@ function Overview() {
   // P0-5: Today/Next surfaces the next training day on Overview (§3, §19).
   const nextDay = useQuery({ queryKey: ["next-training-day", today], queryFn: () => api<NextTrainingDay>(`/api/plans/next-training-day?onOrAfterDate=${today}`), enabled: today !== null });
   const plan = useQuery({ queryKey: ["current-plan"], queryFn: () => api<CurrentPlan | null>("/api/plans/current") });
-  const adjustment = useQuery({ queryKey: ["plan-adjustment-review", plan.data?.revision], queryFn: () => api<AdjustmentAssessment>("/api/plans/adjustment-review"), enabled: Boolean(plan.data) });
+  const adjustment = useQuery({
+    queryKey: ["plan-adjustment-review", plan.data?.revision, acknowledgedAdjustment],
+    queryFn: () => api<AdjustmentReminder>(`/api/plans/adjustment-review${acknowledgedAdjustment ? `?acknowledgedContext=${encodeURIComponent(acknowledgedAdjustment)}` : ""}`),
+    enabled: Boolean(plan.data),
+  });
   const wellness = useQuery({ queryKey: ["wellness", 42], queryFn: () => api<WellnessRecord[]>("/api/wellness?days=42") });
   const history = useQuery({ queryKey: ["sessions", "overview-calendar"], queryFn: () => api<TrainingHistorySession[]>("/api/sessions?days=365") });
   const calendar = useQuery({ queryKey: ["calendar", "overview-all"], queryFn: () => api<CalendarSession[]>("/api/plans/calendar") });
@@ -86,7 +91,7 @@ function Overview() {
   const error = query.error ?? profile.error ?? wellness.error ?? history.error ?? calendar.error;
   if (error || !query.data || !profile.data || !today) return <ErrorBanner error={error}/>;
   return <>
-    <OverviewDashboard summary={query.data} wellness={wellness.data ?? []} history={history.data ?? []} planned={calendar.data ?? []} today={today} timezone={profile.data.timezone} adjustment={adjustment.data}/>
+    <OverviewDashboard summary={query.data} wellness={wellness.data ?? []} history={history.data ?? []} planned={calendar.data ?? []} today={today} timezone={profile.data.timezone} adjustment={adjustment.data?.showReminder ? adjustment.data.assessment : undefined} onAcknowledgeAdjustment={adjustment.data?.showReminder ? () => setAcknowledgedAdjustment(adjustment.data.idempotencyContext) : undefined}/>
     <div className="overview-next-day" id="overview-next-day">{plan.data && !nextDay.isPending && nextDay.data ? <NextTrainingDayCard value={nextDay.data} plan={plan.data} /> : !plan.data ? <EmptyState title="No current plan" description="Plans are created by your connected AI Agent — build one to see your next training day here."/> : null}</div>
   </>;
 }

@@ -1428,6 +1428,41 @@ fn weekly_review_uses_reconciled_calendar_and_reports_missing_wellness() {
 }
 
 #[test]
+fn adjustment_acknowledgement_suppresses_only_the_same_soft_review() {
+    let app = test_app();
+    patch_profile(
+        &app,
+        json!({ "trainingRhythm": { "kind": "fixed_week", "days": [0] } }),
+    );
+    app.save_current_plan(&monday_plan_write(0)).unwrap();
+
+    let first = app
+        .review_current_plan_reminder(AdjustmentTrigger::WeeklyReview, None)
+        .unwrap();
+    assert!(first.show_reminder);
+    let acknowledged = app
+        .review_current_plan_reminder(
+            AdjustmentTrigger::WeeklyReview,
+            Some(&first.idempotency_context),
+        )
+        .unwrap();
+    assert!(!acknowledged.show_reminder);
+
+    patch_profile(
+        &app,
+        json!({ "trainingRhythm": { "kind": "fixed_week", "days": [1] } }),
+    );
+    let changed = app
+        .review_current_plan_reminder(
+            AdjustmentTrigger::ProfileChange,
+            Some(&first.idempotency_context),
+        )
+        .unwrap();
+    assert!(changed.show_reminder);
+    assert_ne!(changed.idempotency_context, first.idempotency_context);
+}
+
+#[test]
 fn adjustment_validation_combines_existing_validator_with_scope_policy() {
     let app = test_app();
     patch_profile(

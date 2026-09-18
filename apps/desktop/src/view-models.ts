@@ -38,6 +38,12 @@ export interface AdjustmentAssessment {
   suggestedReadWindow: number;
 }
 
+export interface AdjustmentReminder {
+  assessment: AdjustmentAssessment;
+  idempotencyContext: string;
+  showReminder: boolean;
+}
+
 export type UnitSystem = "metric" | "imperial";
 
 export interface RaceDay { date: string; sport: string }

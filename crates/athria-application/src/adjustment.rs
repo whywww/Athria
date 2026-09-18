@@ -12,13 +12,26 @@ use athria_core::{
     AdjustmentTrigger, AthriaError, AthriaErrorCode, FeasibilityStatus, GoalModality,
     HealthRecoveryEvidence, PlannedSessionEvidence, ProfileChangeFacts, ProfileConstraintKind,
     ProfileConstraintMismatch, RecoveryStatus, Result, SessionOutcome, WeeklyReviewFacts,
-    assess_adjustment, tz, validate_adjustment_scope, validate_plan,
+    assess_adjustment, evaluate_adjustment_reminder, tz, validate_adjustment_scope, validate_plan,
 };
 use serde_json::{Value, json};
 
 use crate::{AthriaApplication, AthriaStore};
 
 impl<S: AthriaStore> AthriaApplication<S> {
+    /// Applies the pure reminder policy to a fresh assessment. Acknowledgement
+    /// storage remains a caller concern and is not persisted as plan state.
+    pub fn review_current_plan_reminder(
+        &self,
+        trigger: AdjustmentTrigger,
+        acknowledged_context: Option<&str>,
+    ) -> Result<athria_core::AdjustmentReminder> {
+        Ok(evaluate_adjustment_reminder(
+            self.review_current_plan_for_adjustment(trigger)?,
+            acknowledged_context,
+        ))
+    }
+
     /// Reads the current authoritative facts and returns a derived assessment.
     /// The operation is read-only and deterministic for one unchanged snapshot.
     pub fn review_current_plan_for_adjustment(

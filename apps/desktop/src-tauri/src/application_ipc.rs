@@ -70,7 +70,10 @@ pub fn dispatch(
         ("POST", "/api/templates") => result(app.create_template(&input)),
         ("GET", "/api/plans/current") => result(app.get_current_plan()),
         ("GET", "/api/plans/adjustment-review") => {
-            result(app.review_current_plan_for_adjustment(AdjustmentTrigger::WeeklyReview))
+            result(app.review_current_plan_reminder(
+                AdjustmentTrigger::WeeklyReview,
+                query(&url, "acknowledgedContext").as_deref(),
+            ))
         }
         ("PUT", "/api/plans/current") => result(app.save_current_plan(&input)),
         ("POST", "/api/plans/current/validate") => result(app.validate_current_plan(&input)),

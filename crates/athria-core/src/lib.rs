@@ -16,6 +16,7 @@ pub mod error;
 pub mod hash;
 pub mod metrics;
 pub mod progression;
+pub mod reminder;
 pub mod schedule;
 pub mod schema;
 pub mod scope_diff;
@@ -51,6 +52,7 @@ pub use progression::{
     DoubleProgressionInput, RpeAutoregulationInput, evaluate_double_progression,
     evaluate_rpe_autoregulation,
 };
+pub use reminder::{AdjustmentReminder, evaluate_adjustment_reminder};
 pub use schedule::{ScheduleOccurrence, expand_schedule};
 pub use scope_diff::{
     AdjustmentPlanValidation, AdjustmentScopePolicy, ScopeDiffValidation, ScopeViolation,

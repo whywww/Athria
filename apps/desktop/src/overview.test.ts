@@ -27,12 +27,13 @@ describe("Overview", () => {
       hardOverrides: [], dataGaps: [{ code: "WELLNESS_EVIDENCE_MISSING", evidenceRefs: [] }],
       currentPlanRevision: 4, inputSnapshotHash: "snapshot", profileHash: "profile", suggestedReadWindow: 3,
     } satisfies AdjustmentAssessment;
-    const html = renderToStaticMarkup(createElement(AdjustmentReviewCard, { value: review }));
+    const html = renderToStaticMarkup(createElement(AdjustmentReviewCard, { value: review, onAcknowledge: () => undefined }));
     expect(html).toContain("Review Recommended");
     expect(html).toContain("Week review");
     expect(html).toContain("Key Session Missed");
     expect(html).toContain("Endurance");
     expect(html).toContain("Wellness Evidence Missing");
+    expect(html).toContain("Dismiss");
     expect(html).not.toContain("Save");
   });
 
