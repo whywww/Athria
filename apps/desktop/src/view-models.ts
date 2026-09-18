@@ -19,6 +19,25 @@ export interface TrainingSummary {
   };
 }
 
+export interface AdjustmentAssessment {
+  trigger: "weekly_review" | "profile_change" | "user_request";
+  reviewStatus: "keep" | "watch" | "review_recommended" | "review_required";
+  recommendedScope: "none" | "workout" | "week" | "plan";
+  reasons: Array<{
+    reasonCode: string;
+    severity: "info" | "soft" | "strong" | "hard";
+    evidenceRefs: string[];
+    affectedDomain?: string;
+    affectedScope: "none" | "workout" | "week" | "plan";
+  }>;
+  hardOverrides: string[];
+  dataGaps: Array<{ code: string; evidenceRefs: string[] }>;
+  currentPlanRevision: number;
+  inputSnapshotHash: string;
+  profileHash: string;
+  suggestedReadWindow: number;
+}
+
 export type UnitSystem = "metric" | "imperial";
 
 export interface RaceDay { date: string; sport: string }

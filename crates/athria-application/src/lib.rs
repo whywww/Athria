@@ -10,6 +10,7 @@
 //! Transports (Tauri IPC, MCP, CLI, HTTP) depend on this crate, never the
 //! reverse.
 
+mod adjustment;
 pub mod app;
 pub mod catalog;
 pub mod store;

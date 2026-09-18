@@ -1,5 +1,5 @@
 import { useEffect, useId, useState, type ReactNode } from "react";
-import { formatDistance, formatDuration, friendlyLabel, type CalendarSession, type TrainingHistorySession, type TrainingSummary, type WellnessRecord } from "./view-models";
+import { formatDistance, formatDuration, friendlyLabel, type AdjustmentAssessment, type CalendarSession, type TrainingHistorySession, type TrainingSummary, type WellnessRecord } from "./view-models";
 import { addDays, weekdayIndex } from "./plan/view";
 import { domainIconPath } from "./domain-icons";
 
@@ -339,7 +339,20 @@ function ActivityDonut({ summary }: { summary: TrainingSummary }) {
 
 function monthShift(month: string, amount: number) { const date = new Date(`${month}-01T12:00:00Z`); date.setUTCMonth(date.getUTCMonth() + amount); return date.toISOString().slice(0, 7); }
 
-export function OverviewDashboard({ summary, wellness, history, planned, today, timezone }: { summary: TrainingSummary; wellness: WellnessRecord[]; history: TrainingHistorySession[]; planned: CalendarSession[]; today: string; timezone: string }) {
+export function AdjustmentReviewCard({ value }: { value: AdjustmentAssessment }) {
+  const status = friendlyLabel(value.reviewStatus);
+  const scope = value.recommendedScope === "none" ? "No plan change" : `${friendlyLabel(value.recommendedScope)} review`;
+  return <section className={`adjustment-review adjustment-${value.reviewStatus}`} aria-label="Plan adjustment review">
+    <header><div><h2>Plan Review</h2><p>Deterministic weekly check · plan revision {value.currentPlanRevision}</p></div><span>{status}</span></header>
+    <div className="adjustment-review-body"><strong>{scope}</strong>
+      {value.reasons.length > 0 ? <ul>{value.reasons.map((reason) => <li key={`${reason.reasonCode}-${reason.affectedDomain ?? "all"}`}><b>{friendlyLabel(reason.reasonCode.toLowerCase())}</b>{reason.affectedDomain && <small>{friendlyLabel(reason.affectedDomain)}</small>}</li>)}</ul> : <p>No material adjustment signal was found.</p>}
+      {value.hardOverrides.length > 0 && <p className="adjustment-review-warning">Requires review before the next plan change.</p>}
+      {value.dataGaps.length > 0 && <p className="adjustment-review-gap">Missing evidence: {value.dataGaps.map((gap) => friendlyLabel(gap.code.toLowerCase())).join(", ")}.</p>}
+    </div>
+  </section>;
+}
+
+export function OverviewDashboard({ summary, wellness, history, planned, today, timezone, adjustment }: { summary: TrainingSummary; wellness: WellnessRecord[]; history: TrainingHistorySession[]; planned: CalendarSession[]; today: string; timezone: string; adjustment?: AdjustmentAssessment | undefined }) {
   const [visibleMonth, setVisibleMonth] = useState(today.slice(0, 7));
   const [helpOpen, setHelpOpen] = useState(false);
   const wellnessData = wellnessHighlights(wellness, today); const recovery = recoveryStatus(wellness); const week = weeklyOverview(today, history, planned, timezone); const load = weeklyLoad(today, history, planned, timezone);
@@ -356,6 +369,7 @@ export function OverviewDashboard({ summary, wellness, history, planned, today, 
   const incomplete = summary.metrics.strength.workingSets.dataQuality.completeness < 1 || summary.metrics.endurance.distanceMeters.dataQuality.completeness < 1;
 
   return <div className="overview-dashboard">
+    {adjustment && <AdjustmentReviewCard value={adjustment}/>}
     <section className="overview-summary-grid" aria-label="This week so far">
       <SummaryCard icon="workout" title="Completed Workouts" value={summary.sessionCount} className="bars-summary"><Change value={week.sessionDelta}/><MiniBars values={completedSeries} tone="green"/></SummaryCard>
       <SummaryCard icon="target" title="Plan Progress" value={`${meso.completed} / ${meso.total}`} className="plan-summary"><small>this mesocycle</small><span className="progress-ring" style={{ "--progress": `${meso.percent * 3.6}deg` } as React.CSSProperties}><b>{meso.percent}%</b></span></SummaryCard>

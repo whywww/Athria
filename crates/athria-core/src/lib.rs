@@ -18,6 +18,7 @@ pub mod metrics;
 pub mod progression;
 pub mod schedule;
 pub mod schema;
+pub mod scope_diff;
 pub mod tz;
 pub mod validation;
 pub mod vocab;
@@ -51,6 +52,10 @@ pub use progression::{
     evaluate_rpe_autoregulation,
 };
 pub use schedule::{ScheduleOccurrence, expand_schedule};
+pub use scope_diff::{
+    AdjustmentPlanValidation, AdjustmentScopePolicy, ScopeDiffValidation, ScopeViolation,
+    ScopeViolationCode, validate_adjustment_scope,
+};
 pub use validation::{Coverage, PlanValidation, validate_plan};
 
 /// Version of the deterministic formulas; byte-identical to `FORMULA_VERSION`

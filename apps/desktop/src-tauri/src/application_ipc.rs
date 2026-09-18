@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use athria_application::AthriaApplication;
+use athria_core::AdjustmentTrigger;
 use athria_store::SqliteStore;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
@@ -68,6 +69,9 @@ pub fn dispatch(
         ("GET", "/api/templates") => result(app.list_templates()),
         ("POST", "/api/templates") => result(app.create_template(&input)),
         ("GET", "/api/plans/current") => result(app.get_current_plan()),
+        ("GET", "/api/plans/adjustment-review") => {
+            result(app.review_current_plan_for_adjustment(AdjustmentTrigger::WeeklyReview))
+        }
         ("PUT", "/api/plans/current") => result(app.save_current_plan(&input)),
         ("POST", "/api/plans/current/validate") => result(app.validate_current_plan(&input)),
         ("GET", "/api/plans/next-training-day") => {
@@ -193,5 +197,19 @@ mod tests {
             dispatch(&app, Path::new("test.sqlite3"), "GET", "/api/unknown", None).unwrap_err(),
             "Route not found."
         );
+    }
+
+    #[test]
+    fn routes_adjustment_review_through_the_application() {
+        let app = AthriaApplication::new(SqliteStore::open_in_memory().unwrap());
+        let error = dispatch(
+            &app,
+            Path::new("test.sqlite3"),
+            "GET",
+            "/api/plans/adjustment-review",
+            None,
+        )
+        .unwrap_err();
+        assert_eq!(error, "There is no current plan.");
     }
 }

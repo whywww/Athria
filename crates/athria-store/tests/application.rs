@@ -8,7 +8,10 @@
 use std::sync::Arc;
 
 use athria_application::AthriaApplication;
-use athria_core::{AthriaErrorCode, FixedClock};
+use athria_core::{
+    AdjustmentScopePolicy, AdjustmentTrigger, AthriaErrorCode, FixedClock, ReasonCode,
+    RecommendedScope, ReviewStatus, ScopeViolationCode,
+};
 use athria_store::SqliteStore;
 use serde_json::{Value, json};
 
@@ -1347,6 +1350,165 @@ fn monday_plan_write(expected_revision: i64) -> Value {
         ],
         expected_revision,
     )
+}
+
+fn adjustment_scope_policy(
+    app: &AthriaApplication<SqliteStore>,
+    recommended_scope: RecommendedScope,
+) -> AdjustmentScopePolicy {
+    AdjustmentScopePolicy {
+        recommended_scope,
+        review_date: "2026-09-17".to_owned(),
+        target_session_ids: Vec::new(),
+        target_week_numbers: Vec::new(),
+        expected_plan_revision: app.get_current_plan().unwrap().unwrap()["revision"]
+            .as_i64()
+            .unwrap(),
+        input_snapshot_hash: app.snapshot_hash().unwrap(),
+        profile_hash: app.profile_hash().unwrap(),
+    }
+}
+
+#[test]
+fn adjustment_review_requires_a_current_plan() {
+    let error = test_app()
+        .review_current_plan_for_adjustment(AdjustmentTrigger::WeeklyReview)
+        .unwrap_err();
+    assert_eq!(error.code(), AthriaErrorCode::NoCurrentPlan);
+}
+
+#[test]
+fn profile_change_review_reuses_validation_and_refreshes_freshness() {
+    let app = test_app();
+    patch_profile(
+        &app,
+        json!({ "trainingRhythm": { "kind": "fixed_week", "days": [0] } }),
+    );
+    app.save_current_plan(&monday_plan_write(0)).unwrap();
+
+    let before = app
+        .review_current_plan_for_adjustment(AdjustmentTrigger::ProfileChange)
+        .unwrap();
+    assert_eq!(before.review_status, ReviewStatus::Keep);
+
+    patch_profile(
+        &app,
+        json!({ "trainingRhythm": { "kind": "fixed_week", "days": [1] } }),
+    );
+    let after = app
+        .review_current_plan_for_adjustment(AdjustmentTrigger::ProfileChange)
+        .unwrap();
+    assert_eq!(after.review_status, ReviewStatus::ReviewRequired);
+    assert_eq!(after.recommended_scope, RecommendedScope::Plan);
+    assert_eq!(
+        after.reasons[0].reason_code,
+        ReasonCode::ProfileTrainingRhythmConflict
+    );
+    assert_ne!(before.profile_hash, after.profile_hash);
+    assert_ne!(before.input_snapshot_hash, after.input_snapshot_hash);
+}
+
+#[test]
+fn weekly_review_uses_reconciled_calendar_and_reports_missing_wellness() {
+    let app = test_app();
+    patch_profile(
+        &app,
+        json!({ "trainingRhythm": { "kind": "fixed_week", "days": [0] } }),
+    );
+    app.save_current_plan(&monday_plan_write(0)).unwrap();
+
+    let review = app
+        .review_current_plan_for_adjustment(AdjustmentTrigger::WeeklyReview)
+        .unwrap();
+    assert_eq!(review.current_plan_revision, 1);
+    assert_eq!(review.review_status, ReviewStatus::Watch);
+    assert_eq!(review.recommended_scope, RecommendedScope::None);
+    assert_eq!(review.data_gaps[0].code, "WELLNESS_EVIDENCE_MISSING");
+    assert_eq!(review.suggested_read_window, 3);
+}
+
+#[test]
+fn adjustment_validation_combines_existing_validator_with_scope_policy() {
+    let app = test_app();
+    patch_profile(
+        &app,
+        json!({ "trainingRhythm": { "kind": "fixed_week", "days": [0] } }),
+    );
+    app.save_current_plan(&monday_plan_write(0)).unwrap();
+
+    let mut policy = adjustment_scope_policy(&app, RecommendedScope::Week);
+    policy.target_week_numbers = vec![2];
+    let mut proposed = app.get_current_plan().unwrap().unwrap();
+    proposed["expectedRevision"] = json!(1);
+    proposed["mesocycle"]["weeks"][1]["sessions"][0]["name"] = json!("Adjusted Run");
+
+    let accepted = app
+        .validate_current_plan_adjustment(&proposed, &policy)
+        .unwrap();
+    assert!(accepted.plan_validation.valid);
+    assert!(accepted.scope_validation.valid);
+    assert!(accepted.valid);
+
+    policy.target_week_numbers = vec![1];
+    let rejected = app
+        .validate_current_plan_adjustment(&proposed, &policy)
+        .unwrap();
+    assert!(rejected.plan_validation.valid);
+    assert!(!rejected.scope_validation.valid);
+    assert_eq!(
+        rejected.scope_validation.violations[0].code,
+        ScopeViolationCode::ChangeOutsideRecommendedScope
+    );
+    assert!(!rejected.valid);
+}
+
+#[test]
+fn adjustment_validation_never_allows_historical_session_changes() {
+    let app = test_app();
+    patch_profile(
+        &app,
+        json!({ "trainingRhythm": { "kind": "fixed_week", "days": [0] } }),
+    );
+    app.save_current_plan(&monday_plan_write(0)).unwrap();
+
+    let policy = adjustment_scope_policy(&app, RecommendedScope::Plan);
+    let mut proposed = app.get_current_plan().unwrap().unwrap();
+    proposed["expectedRevision"] = json!(1);
+    proposed["mesocycle"]["weeks"][0]["sessions"][0]["name"] = json!("Rewritten Run");
+
+    let result = app
+        .validate_current_plan_adjustment(&proposed, &policy)
+        .unwrap();
+    assert_eq!(
+        result.scope_validation.violations[0].code,
+        ScopeViolationCode::HistoricalSessionChanged
+    );
+    assert!(!result.valid);
+}
+
+#[test]
+fn adjustment_validation_rejects_stale_plan_and_input_freshness() {
+    let app = test_app();
+    patch_profile(
+        &app,
+        json!({ "trainingRhythm": { "kind": "fixed_week", "days": [0] } }),
+    );
+    app.save_current_plan(&monday_plan_write(0)).unwrap();
+    let proposed = app.get_current_plan().unwrap().unwrap();
+
+    let mut stale_revision = adjustment_scope_policy(&app, RecommendedScope::None);
+    stale_revision.expected_plan_revision = 0;
+    let revision_error = app
+        .validate_current_plan_adjustment(&proposed, &stale_revision)
+        .unwrap_err();
+    assert_eq!(revision_error.code(), AthriaErrorCode::RevisionConflict);
+
+    let mut stale_snapshot = adjustment_scope_policy(&app, RecommendedScope::None);
+    stale_snapshot.input_snapshot_hash = "stale".to_owned();
+    let snapshot_error = app
+        .validate_current_plan_adjustment(&proposed, &stale_snapshot)
+        .unwrap_err();
+    assert_eq!(snapshot_error.code(), AthriaErrorCode::InputSnapshotChanged);
 }
 
 /// Applies a profile patch under the current hash.

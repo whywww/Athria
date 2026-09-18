@@ -1,8 +1,8 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { OverviewDashboard, RecoveryHelpModal, calendarDays, formatWellnessDate, formatWellnessRange, loadAxisLabel, mesocycleProgress, overviewDateRange, recoveryRingTone, recoveryStatus, sparklineGeometry, twelveWeekConsistency, weeklyLoad, weeklyOverview, wellnessHighlights } from "./overview";
-import type { CalendarSession, TrainingHistorySession, TrainingSummary, WellnessRecord } from "./view-models";
+import { AdjustmentReviewCard, OverviewDashboard, RecoveryHelpModal, calendarDays, formatWellnessDate, formatWellnessRange, loadAxisLabel, mesocycleProgress, overviewDateRange, recoveryRingTone, recoveryStatus, sparklineGeometry, twelveWeekConsistency, weeklyLoad, weeklyOverview, wellnessHighlights } from "./overview";
+import type { AdjustmentAssessment, CalendarSession, TrainingHistorySession, TrainingSummary, WellnessRecord } from "./view-models";
 
 const quality = { completeness: 1, missingFields: [], anomalies: [] };
 const summary: TrainingSummary = {
@@ -20,6 +20,22 @@ const wellness: WellnessRecord[] = [
 ];
 
 describe("Overview", () => {
+  it("renders the read-only plan adjustment signal and missing evidence", () => {
+    const review = {
+      trigger: "weekly_review", reviewStatus: "review_recommended", recommendedScope: "week",
+      reasons: [{ reasonCode: "KEY_SESSION_MISSED", severity: "strong", evidenceRefs: ["session:s1"], affectedDomain: "endurance", affectedScope: "week" }],
+      hardOverrides: [], dataGaps: [{ code: "WELLNESS_EVIDENCE_MISSING", evidenceRefs: [] }],
+      currentPlanRevision: 4, inputSnapshotHash: "snapshot", profileHash: "profile", suggestedReadWindow: 3,
+    } satisfies AdjustmentAssessment;
+    const html = renderToStaticMarkup(createElement(AdjustmentReviewCard, { value: review }));
+    expect(html).toContain("Review Recommended");
+    expect(html).toContain("Week review");
+    expect(html).toContain("Key Session Missed");
+    expect(html).toContain("Endurance");
+    expect(html).toContain("Wellness Evidence Missing");
+    expect(html).not.toContain("Save");
+  });
+
   it("derives Monday-to-today and leap-month bounds", () => {
     expect(overviewDateRange("2028-02-29")).toEqual({ weekStart: "2028-02-28", monthStart: "2028-02-01", monthEnd: "2028-02-29" });
   });
