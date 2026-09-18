@@ -163,7 +163,7 @@ pub fn preview_backup(source: &Path, staging_directory: &Path) -> Result<BackupP
 pub fn create_local_workspace(
     target: &Path,
     database_uuid: &str,
-    envelope: &VaultEnvelope,
+    envelope: Option<&VaultEnvelope>,
 ) -> Result<PathBuf> {
     if target.exists() {
         return Err(AthriaError::new(
@@ -183,7 +183,9 @@ pub fn create_local_workspace(
     let created = (|| {
         let store = SqliteStore::open(&stage)?;
         store.set_database_uuid(database_uuid)?;
-        store.initialize_vault(envelope, &[])?;
+        if let Some(envelope) = envelope {
+            store.initialize_vault(envelope, &[])?;
+        }
         store.checkpoint()?;
         store.close();
         let reopened = SqliteStore::open(&stage)?;
@@ -300,8 +302,8 @@ mod tests {
         let id = Uuid::new_v4().to_string();
         let key = new_master_key();
         let envelope = create_envelope(&id, "password", &key).unwrap();
-        create_local_workspace(&path, &id, &envelope).unwrap();
-        assert!(create_local_workspace(&path, &id, &envelope).is_err());
+        create_local_workspace(&path, &id, Some(&envelope)).unwrap();
+        assert!(create_local_workspace(&path, &id, Some(&envelope)).is_err());
         let before = std::fs::read(&path).unwrap();
         let preview = preview_backup(&path, &root).unwrap();
         let after = std::fs::read(&path).unwrap();
@@ -322,6 +324,21 @@ mod tests {
                 .to_string_lossy()
                 .starts_with(".athria-preview-")
         }));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn creates_a_native_workspace_without_initializing_its_vault() {
+        let root = std::env::temp_dir().join(format!("athria-new-profile-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("workspace.sqlite3");
+        let id = Uuid::new_v4().to_string();
+
+        create_local_workspace(&path, &id, None).unwrap();
+
+        let store = SqliteStore::open(&path).unwrap();
+        assert_eq!(store.database_uuid().unwrap(), id);
+        assert!(store.get_vault().unwrap().envelope.is_none());
+        store.close();
         std::fs::remove_dir_all(root).unwrap();
     }
     #[test]

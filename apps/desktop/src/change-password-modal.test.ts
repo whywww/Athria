@@ -3,11 +3,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { ChangePasswordModal } from "./App";
 
-type Overrides = { value?: { password: string; confirmation: string }; error?: unknown; busy?: boolean };
+type Overrides = { value?: { currentPassword: string; password: string; confirmation: string }; error?: unknown; busy?: boolean };
 
 function render(overrides: Overrides = {}): string {
   return renderToStaticMarkup(createElement(ChangePasswordModal, {
-    value: overrides.value ?? { password: "", confirmation: "" },
+    value: overrides.value ?? { currentPassword: "", password: "", confirmation: "" },
     error: overrides.error,
     busy: overrides.busy ?? false,
     onChange: () => {},
@@ -24,15 +24,16 @@ describe("ChangePasswordModal", () => {
     expect(html).toContain("This re-wraps the database master key; your saved connection keys do not need to be entered again.");
   });
 
-  it("renders two new-password fields and focuses the first one", () => {
+  it("renders the current password and two new-password fields", () => {
     const html = render();
-    expect((html.match(/type="password"/g) ?? []).length).toBe(2);
+    expect((html.match(/type="password"/g) ?? []).length).toBe(3);
     expect((html.match(/autocomplete="new-password"/gi) ?? []).length).toBe(2);
+    expect(html).toMatch(/autocomplete="current-password"/i);
     expect(html).toContain('autofocus=""');
   });
 
   it("flags mismatching passwords and disables the submit button", () => {
-    const html = render({ value: { password: "correct horse", confirmation: "correct hors" } });
+    const html = render({ value: { currentPassword: "old password", password: "correct horse", confirmation: "correct hors" } });
     expect(html).toContain('class="invalid"');
     expect(html).toContain("Passwords do not match.");
     expect(html).toMatch(/<button type="button" disabled="">Change password<\/button>/);
@@ -40,14 +41,14 @@ describe("ChangePasswordModal", () => {
 
   it("keeps an empty draft disabled and enables the submit button once the passwords match", () => {
     expect(render()).toMatch(/<button type="button" disabled="">Change password<\/button>/);
-    const valid = render({ value: { password: "correct horse battery", confirmation: "correct horse battery" } });
+    const valid = render({ value: { currentPassword: "old password", password: "correct horse battery", confirmation: "correct horse battery" } });
     expect(valid).not.toContain('class="invalid"');
     expect(valid).not.toContain("Passwords do not match.");
     expect(valid).toMatch(/<button type="button">Change password<\/button>/);
   });
 
   it("shows the busy label and disables both actions while changing", () => {
-    const html = render({ value: { password: "correct horse battery", confirmation: "correct horse battery" }, busy: true });
+    const html = render({ value: { currentPassword: "old password", password: "correct horse battery", confirmation: "correct horse battery" }, busy: true });
     expect(html).toContain("Changing password…");
     expect(html).toMatch(/<button type="button" class="secondary" disabled="">Cancel<\/button>/);
     expect(html).toMatch(/<button type="button" disabled="">Changing password…<\/button>/);

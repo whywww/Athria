@@ -21,15 +21,16 @@ export async function syncXunji(range: SyncRange): Promise<unknown> { return inv
 export async function getXunjiStatus<T>(): Promise<T> { return invoke("xunji_status"); }
 export async function getMcpStatus(): Promise<McpStatus> { return invoke("mcp_status"); }
 
-export interface VaultStatus { databaseUuid: string; initialized: boolean; locked: boolean; legacySources: string[] }
+export interface VaultStatus { databaseUuid: string; databasePath: string; initialized: boolean; locked: boolean; remembered: boolean; legacySources: string[] }
 export async function getVaultStatus(): Promise<VaultStatus> { return invoke("vault_status"); }
-export async function setupVault(password: string): Promise<void> { await invoke("setup_vault", { password }); }
+export async function setupVault(password: string, remember: boolean): Promise<void> { await invoke("setup_vault", { password, remember }); }
 export async function unlockVault(password: string, remember: boolean): Promise<void> { await invoke("unlock_vault", { password, remember }); }
-export async function changeVaultPassword(newPassword: string, currentPassword?: string): Promise<void> { await invoke("change_vault_password", { currentPassword, newPassword }); }
+export async function changeVaultPassword(newPassword: string, currentPassword: string): Promise<void> { await invoke("change_vault_password", { currentPassword, newPassword }); }
+export async function requireVaultPassword(currentPassword: string): Promise<void> { await invoke("require_vault_password", { currentPassword }); }
 export async function resetVaultPassword(password: string): Promise<void> { await invoke("reset_vault_password", { password }); }
 export async function disconnectConnection(source: "intervals" | "xunji"): Promise<void> { await invoke("disconnect_connection", { source }); }
 
 export async function pickRestoreFile(): Promise<string | null> { return invoke<string | null>("pick_restore_file"); }
 export async function pickNewProfileDestination(): Promise<string | null> { return invoke<string | null>("pick_new_profile_destination"); }
 export async function restoreBackup(path: string): Promise<void> { return invoke("restore_backup", { path }); }
-export async function createNewProfile(path: string, password: string): Promise<void> { return invoke("create_new_profile", { path, password }); }
+export async function createNewProfile(path: string): Promise<void> { return invoke("create_new_profile", { path }); }

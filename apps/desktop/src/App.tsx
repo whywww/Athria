@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, changeVaultPassword, createNewProfile, disconnectConnection, getIntervalsStatus, getMcpStatus, getVaultStatus, getXunjiStatus, importXunjiSkill, pickNewProfileDestination, pickRestoreFile, resetVaultPassword, restoreBackup, setupVault, syncIntervals, syncXunji, testIntervals, unlockVault } from "./api";
+import { api, changeVaultPassword, createNewProfile, disconnectConnection, getIntervalsStatus, getMcpStatus, getVaultStatus, getXunjiStatus, importXunjiSkill, pickNewProfileDestination, pickRestoreFile, requireVaultPassword, resetVaultPassword, restoreBackup, setupVault, syncIntervals, syncXunji, testIntervals, unlockVault } from "./api";
 import { mcpConfig, mcpGuides } from "./mcp-guides";
 import {
   cmToImperialHeight, connectionSources, dashboardPages, deviceTimezone, equipmentGroupState, filterAndSortTrainingHistory, formatDateTime, formatDuration, formatPersonalHeight, formatPersonalWeight, formatRaceCountdown, formatRaceDateShort, formatTimezoneLabel, formatTrainingRhythm, formatTrainingSource, friendlyLabel, imperialHeightToCm, isUntouchedDefaultProfile, kgToPounds, nextRaceDay, poundsToKg,
@@ -434,8 +434,9 @@ export function Backup() {
   const databasePath = (doctor.data as DoctorResult | undefined)?.databasePath;
   const [message, setMessage] = useState(""); const [error, setError] = useState<unknown>();
   const [preview, setPreview] = useState<BackupPreview>(); const [restoring, setRestoring] = useState(false); const [creating, setCreating] = useState(false);
-  const [passwordModal, setPasswordModal] = useState(false); const [changing, setChanging] = useState(false); const [passwordDraft, setPasswordDraft] = useState({ password: "", confirmation: "" });
-  const [profileTarget, setProfileTarget] = useState<string>(); const [profilePassword, setProfilePassword] = useState(""); const [profileConfirmation, setProfileConfirmation] = useState("");
+  const [passwordModal, setPasswordModal] = useState(false); const [requireModal, setRequireModal] = useState(false); const [changing, setChanging] = useState(false); const [passwordDraft, setPasswordDraft] = useState({ currentPassword: "", password: "", confirmation: "" });
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [profileTarget, setProfileTarget] = useState<string>();
   const chooseBackup = async () => {
     setError(undefined); setMessage(""); setPreview(undefined);
     try {
@@ -452,65 +453,86 @@ export function Backup() {
     setError(undefined); setMessage("");
     try {
       const path = await pickNewProfileDestination();
-      if (path) { setProfilePassword(""); setProfileConfirmation(""); setProfileTarget(path); }
+      if (path) setProfileTarget(path);
     } catch (value) { setError(value); }
   };
   const createProfile = async () => {
     if (!profileTarget) return;
-    try { setCreating(true); setError(undefined); await createNewProfile(profileTarget, profilePassword); }
+    try { setCreating(true); setError(undefined); await createNewProfile(profileTarget); }
     catch (value) { setCreating(false); setError(value); }
   };
-  const openChangePassword = () => { setError(undefined); setPasswordDraft({ password: "", confirmation: "" }); setPasswordModal(true); };
-  const closeChangePassword = () => { setPasswordModal(false); setError(undefined); setPasswordDraft({ password: "", confirmation: "" }); };
+  const openChangePassword = () => { setError(undefined); setPasswordDraft({ currentPassword: "", password: "", confirmation: "" }); setPasswordModal(true); };
+  const closeChangePassword = () => { setPasswordModal(false); setError(undefined); setPasswordDraft({ currentPassword: "", password: "", confirmation: "" }); };
   const updateVaultPassword = async () => {
     try {
       setChanging(true); setError(undefined); setMessage("");
       if (passwordDraft.password !== passwordDraft.confirmation) throw new Error("Passwords do not match.");
-      await changeVaultPassword(passwordDraft.password);
+      await changeVaultPassword(passwordDraft.password, passwordDraft.currentPassword);
       closeChangePassword(); setMessage("Database password updated. Saved connection keys remain encrypted.");
     } catch (value) { setError(value); } finally { setChanging(false); }
   };
-  return <Card title="Backup and Restore">
-    <p>Your training data and connection keys are stored in one portable SQLite database. The database password protects access inside Athria and unlocks those keys on another computer.</p>
-    {databasePath && <p className="data-location">Local Database: <code>{databasePath}</code> <CopyButton label="Local Database" value={databasePath}/></p>}
-    <div className="section"><h3>Restore a Backup</h3><p>Choose an Athria .sqlite3 file and switch to it as your active database.</p>
-      {!preview
-        ? <button type="button" className="secondary" onClick={() => void chooseBackup()}>Choose backup</button>
-        : <div className="restore-confirm">
-          <strong>Restore this backup?</strong>
+  const requirePassword = async () => {
+    try {
+      setChanging(true); setError(undefined); setMessage("");
+      await requireVaultPassword(currentPassword);
+      setRequireModal(false); setCurrentPassword("");
+      await vault.refetch();
+      setMessage("Password will be required the next time Athria starts.");
+    } catch (value) { setError(value); } finally { setChanging(false); }
+  };
+  return <Card title="Manage database">
+    <p>All your data is stored in one portable database. Your API keys are protected by your database password.</p>
+    {databasePath && <p className="data-location">Local Database: <code>{databasePath}</code> <button type="button" className="secondary compact" onClick={() => void chooseBackup()}>Switch database</button></p>}
+    {preview && <div className="restore-confirm">
+          <strong>Switch to this database?</strong>
           <span className="restore-path">{preview.path}</span>
           <div className="restore-summary">
             <span><b>{preview.counts.workouts}</b><small>workouts</small></span>
             <span><b>{preview.counts.templates}</b><small>templates</small></span>
             <span><b>{preview.counts.plans}</b><small>plans</small></span>
           </div>
-          <p>Athria will open this file as its active database. The current database file is left untouched. Athria will restart to complete the restore.</p>
-          {preview.includesCredentials && <p>This backup includes encrypted connections. Athria will ask for this database's password when it is opened on another computer.</p>}
+          <p>Athria will open this file as its active database. The current database file is left untouched. Athria will restart to complete the switch.</p>
+          {preview.includesCredentials && <p>This database includes encrypted connections. Athria will ask for its password when it is opened on another computer.</p>}
           <div className="restore-actions">
             <button type="button" className="secondary compact" disabled={restoring} onClick={() => setPreview(undefined)}>Cancel</button>
-            <button type="button" className="compact" disabled={restoring} onClick={() => void confirmRestore()}>{restoring ? "Preparing restore…" : "Restore and restart"}</button>
+            <button type="button" className="compact" disabled={restoring} onClick={() => void confirmRestore()}>{restoring ? "Switching database…" : "Switch and restart"}</button>
           </div>
         </div>}
-    </div>
-    {vault.data?.initialized && !vault.data.locked && <div className="section"><h3>Change Database Password</h3><p>This re-wraps the database master key; your saved connection keys do not need to be entered again.</p><button type="button" className="secondary" onClick={openChangePassword}>Change password</button></div>}
-    <div className="section"><h3>Create a New Profile</h3><p>Start fresh with an empty Athria database at a location you choose. You will set its database password before it is created. Athria will switch to it and restart; the current database file is left untouched on disk.</p><button type="button" className="secondary" disabled={creating} onClick={() => void chooseProfileDestination()}>Create a new profile</button></div>
-    {profileTarget && <div className="modal-backdrop"><section className="connection-modal" role="dialog" aria-modal="true" aria-labelledby="new-profile-title"><header><div><h2 id="new-profile-title">Create a New Profile</h2><p>Set the database password for the new profile. It protects that database's data and connection keys, and it cannot be recovered.</p></div></header><div className="modal-body"><p className="restore-path">{profileTarget}</p><label>Database password<input type="password" autoFocus autoComplete="new-password" value={profilePassword} onChange={(event) => setProfilePassword(event.target.value)}/></label><label>Confirm password<input type="password" className={profilePassword !== profileConfirmation ? "invalid" : undefined} autoComplete="new-password" value={profileConfirmation} onChange={(event) => setProfileConfirmation(event.target.value)}/>{profilePassword !== profileConfirmation && <span className="field-error">Passwords do not match.</span>}</label><ErrorBanner error={error}/><div className="modal-actions"><button type="button" className="secondary" disabled={creating} onClick={() => setProfileTarget(undefined)}>Cancel</button><button type="button" disabled={creating || profilePassword.length === 0 || profilePassword !== profileConfirmation} onClick={() => void createProfile()}>{creating ? "Creating profile…" : "Create and restart"}</button></div></div></section></div>}
+    {vault.data?.initialized && !vault.data.locked && <div className="section"><h3>Edit Password Settings</h3><p>Change the database password or require it whenever Athria starts.</p><div className="restore-actions"><button type="button" className="secondary" onClick={openChangePassword}>Change password</button><button type="button" className="secondary" disabled={!vault.data.remembered} onClick={() => { setError(undefined); setCurrentPassword(""); setRequireModal(true); }}>{vault.data.remembered ? "Require password on startup" : "Password required on startup"}</button></div></div>}
+    <div className="section"><h3>Create a New Profile</h3><p>Start fresh from a new empty profile. Athria will switch to it and restart; the current database file is left untouched on disk.</p><button type="button" className="secondary" disabled={creating} onClick={() => void chooseProfileDestination()}>Create a new profile</button></div>
+    {profileTarget && <NewProfileModal target={profileTarget} error={error} busy={creating} onClose={() => setProfileTarget(undefined)} onSubmit={() => void createProfile()}/>}
     {passwordModal && <ChangePasswordModal value={passwordDraft} error={error} busy={changing} onChange={setPasswordDraft} onClose={closeChangePassword} onSubmit={() => void updateVaultPassword()}/>}
+    {requireModal && <RequirePasswordModal value={currentPassword} error={error} busy={changing} onChange={setCurrentPassword} onClose={() => { setRequireModal(false); setCurrentPassword(""); setError(undefined); }} onSubmit={() => void requirePassword()}/>}
     {message && <div className="success">{message}</div>}
     <ErrorBanner error={doctor.error ?? error}/>
   </Card>;
 }
 
-export function ChangePasswordModal({ value, error, busy, onChange, onClose, onSubmit }: { value: { password: string; confirmation: string }; error: unknown; busy: boolean; onChange: (value: { password: string; confirmation: string }) => void; onClose: () => void; onSubmit: () => void; }) {
+export function ChangePasswordModal({ value, error, busy, onChange, onClose, onSubmit }: { value: { currentPassword: string; password: string; confirmation: string }; error: unknown; busy: boolean; onChange: (value: { currentPassword: string; password: string; confirmation: string }) => void; onClose: () => void; onSubmit: () => void; }) {
   const mismatch = value.password !== value.confirmation;
   return <div className="modal-backdrop"><section className="connection-modal" role="dialog" aria-modal="true" aria-labelledby="change-password-title">
     <header><div><h2 id="change-password-title">Change Database Password</h2><p>This re-wraps the database master key; your saved connection keys do not need to be entered again.</p></div></header>
     <div className="modal-body">
-      <label>New password<input type="password" autoFocus autoComplete="new-password" value={value.password} onChange={(event) => onChange({ ...value, password: event.target.value })}/></label>
+      <label>Current password<input type="password" autoFocus autoComplete="current-password" value={value.currentPassword} onChange={(event) => onChange({ ...value, currentPassword: event.target.value })}/></label>
+      <label>New password<input type="password" autoComplete="new-password" value={value.password} onChange={(event) => onChange({ ...value, password: event.target.value })}/></label>
       <label>Confirm password<input type="password" className={mismatch ? "invalid" : undefined} autoComplete="new-password" value={value.confirmation} onChange={(event) => onChange({ ...value, confirmation: event.target.value })}/>{mismatch && <span className="field-error">Passwords do not match.</span>}</label>
       <ErrorBanner error={error}/>
-      <div className="modal-actions"><button type="button" className="secondary" disabled={busy} onClick={onClose}>Cancel</button><button type="button" disabled={busy || value.password.length === 0 || mismatch} onClick={onSubmit}>{busy ? "Changing password…" : "Change password"}</button></div>
+      <div className="modal-actions"><button type="button" className="secondary" disabled={busy} onClick={onClose}>Cancel</button><button type="button" disabled={busy || value.currentPassword.length === 0 || value.password.length === 0 || mismatch} onClick={onSubmit}>{busy ? "Changing password…" : "Change password"}</button></div>
     </div>
+  </section></div>;
+}
+
+export function RequirePasswordModal({ value, error, busy, onChange, onClose, onSubmit }: { value: string; error: unknown; busy: boolean; onChange: (value: string) => void; onClose: () => void; onSubmit: () => void; }) {
+  return <div className="modal-backdrop"><section className="connection-modal" role="dialog" aria-modal="true" aria-labelledby="require-password-title">
+    <header><div><h2 id="require-password-title">Require Password on Startup</h2><p>Confirm your current password. Athria will ask for it the next time it starts.</p></div></header>
+    <div className="modal-body"><label>Current password<input type="password" autoFocus autoComplete="current-password" value={value} onChange={(event) => onChange(event.target.value)}/></label><ErrorBanner error={error}/><div className="modal-actions"><button type="button" className="secondary" disabled={busy} onClick={onClose}>Cancel</button><button type="button" disabled={busy || value.length === 0} onClick={onSubmit}>{busy ? "Updating…" : "Require password"}</button></div></div>
+  </section></div>;
+}
+
+export function NewProfileModal({ target, error, busy, onClose, onSubmit }: { target: string; error: unknown; busy: boolean; onClose: () => void; onSubmit: () => void; }) {
+  return <div className="modal-backdrop"><section className="connection-modal" role="dialog" aria-modal="true" aria-labelledby="new-profile-title">
+    <header><div><h2 id="new-profile-title">Create a New Profile</h2><p>Athria will create an empty database at this location, switch to it, and restart. You will set its database password when it first opens.</p></div></header>
+    <div className="modal-body"><p className="restore-path">{target}</p><ErrorBanner error={error}/><div className="modal-actions"><button type="button" className="secondary" disabled={busy} onClick={onClose}>Cancel</button><button type="button" disabled={busy} onClick={onSubmit}>{busy ? "Creating profile…" : "Create and restart"}</button></div></div>
   </section></div>;
 }
 
@@ -663,38 +685,71 @@ export function Help() {
 
 const views: Record<Page, () => React.ReactElement> = { Overview, Training: Timeline, Profile, Plan: CurrentPlanPage, Connections, Settings, Help };
 
-function DatabaseGate() {
+export function DatabaseSwitchModal({ preview, error, busy, onClose, onSubmit }: { preview: BackupPreview; error: unknown; busy: boolean; onClose: () => void; onSubmit: () => void; }) {
+  return <div className="modal-backdrop"><section className="connection-modal database-gate" role="dialog" aria-modal="true" aria-labelledby="database-switch-title">
+    <header><div><h2 id="database-switch-title">Switch to this database?</h2><p>Review the selected database before Athria switches to it.</p></div></header>
+    <div className="modal-body">
+      <div className="restore-confirm">
+        <span className="restore-path">{preview.path}</span>
+        <div className="restore-summary"><span><b>{preview.counts.workouts}</b><small>workouts</small></span><span><b>{preview.counts.templates}</b><small>templates</small></span><span><b>{preview.counts.plans}</b><small>plans</small></span></div>
+        <p>Athria will switch to this database and restart. The current database file is left untouched.</p>
+        <ErrorBanner error={error}/>
+      </div>
+      <div className="modal-actions"><button type="button" className="secondary" disabled={busy} onClick={onClose}>Cancel</button><button type="button" disabled={busy} onClick={onSubmit}>{busy ? "Switching database…" : "Switch and restart"}</button></div>
+    </div>
+  </section></div>;
+}
+
+export function DatabaseGate() {
   const client = useQueryClient();
   const vault = useQuery({ queryKey: ["vault-status"], queryFn: getVaultStatus });
-  const [password, setPassword] = useState(""); const [confirmation, setConfirmation] = useState(""); const [remember, setRemember] = useState(true);
+  const [password, setPassword] = useState(""); const [confirmation, setConfirmation] = useState(""); const [remember, setRemember] = useState<boolean | null>(null);
   const [error, setError] = useState<unknown>(); const [busy, setBusy] = useState(false); const [resetting, setResetting] = useState(false);
+  const [preview, setPreview] = useState<BackupPreview>();
   if (!vault.data || (vault.data.initialized && !vault.data.locked)) return null;
   const setup = !vault.data.initialized;
+  const rememberChoice = remember ?? setup;
   const mismatch = (setup || resetting) && password !== confirmation;
   const submit = async () => {
     try {
       setBusy(true); setError(undefined);
       if (setup) {
         if (password !== confirmation) throw new Error("Passwords do not match.");
-        await setupVault(password);
+        await setupVault(password, rememberChoice);
       } else if (resetting) {
         if (password !== confirmation) throw new Error("Passwords do not match.");
         await resetVaultPassword(password);
-      } else await unlockVault(password, remember);
+      } else await unlockVault(password, rememberChoice);
       setPassword(""); setConfirmation("");
       await Promise.all([client.invalidateQueries({ queryKey: ["vault-status"] }), client.invalidateQueries({ queryKey: ["intervals-status"] }), client.invalidateQueries({ queryKey: ["xunji-status"] })]);
     } catch (value) { setError(value); } finally { setBusy(false); }
   };
+  const chooseDatabase = async () => {
+    try {
+      setError(undefined); setPreview(undefined);
+      const path = await pickRestoreFile();
+      if (path) setPreview(await api<BackupPreview>("/api/system/backup/preview", { method: "POST", body: JSON.stringify({ path }) }));
+    } catch (value) { setError(value); }
+  };
+  const switchDatabase = async () => {
+    if (!preview) return;
+    try { setBusy(true); setError(undefined); await restoreBackup(preview.path); }
+    catch (value) { setBusy(false); setError(value); }
+  };
+  if (preview) return <DatabaseSwitchModal preview={preview} error={error} busy={busy} onClose={() => { setPreview(undefined); setError(undefined); }} onSubmit={() => void switchDatabase()}/>;
   return <div className="modal-backdrop"><section className="connection-modal database-gate" role="dialog" aria-modal="true" aria-labelledby="database-gate-title">
-    <header><div><h2 id="database-gate-title">{setup ? "Protect this database" : resetting ? "Reset the database password" : "Unlock this database"}</h2><p>{setup ? "You're creating a new user profile. Set the password that protects your data in Athria and encrypts your saved connection keys. Keep it safe: if you forget it, saved connection keys cannot be recovered." : resetting ? "Set a new database password. Your training data stays intact, but saved connection keys are protected by the old password and will be removed — reconnect them in Connections afterwards." : "This database has not been unlocked on this computer. Enter its database password to continue."}</p></div></header>
+    <header><div><h2 id="database-gate-title">{setup ? "Set Database Password" : resetting ? "Reset the database password" : "Unlock this database"}</h2><p>{setup ? "Set the password that protects your data in Athria and encrypts your saved connection keys." : resetting ? "Set a new database password. Your training data stays intact." : "This database has not been unlocked on this computer. Enter its database password to continue."}</p></div></header>
     <div className="modal-body">
-      <label>{resetting ? "New password" : "Database password"}<input type="password" autoFocus autoComplete={setup || resetting ? "new-password" : "current-password"} value={password} onChange={(event) => setPassword(event.target.value)}/></label>
-      {(setup || resetting) && <label>Confirm password<input type="password" className={mismatch ? "invalid" : undefined} autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)}/></label>}
-      {!setup && !resetting && <label className="remember-field"><input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)}/>Remember on this computer</label>}
-      {mismatch && <p className="field-error">Passwords do not match.</p>}
+      <div className="gate-database-location"><span>Database</span><code title={vault.data.databasePath}>{vault.data.databasePath}</code></div>
+      {resetting && <div className="database-reset-warning" role="alert"><strong>Connections are removed</strong><span>Saved connection keys are protected by the old password and will be permanently removed. Reconnect them in Connections afterwards.</span></div>}
+      <div className="gate-fields">
+        <label>{resetting ? "New password" : "Database password"}<input type="password" autoFocus autoComplete={setup || resetting ? "new-password" : "current-password"} value={password} onChange={(event) => setPassword(event.target.value)}/></label>
+        {(setup || resetting) && <label>Confirm password<input type="password" className={mismatch ? "invalid" : undefined} autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)}/>{mismatch && <span className="field-error">Passwords do not match.</span>}</label>}
+      </div>
+      {!resetting && <label className="remember-field"><input type="checkbox" checked={rememberChoice} onChange={(event) => setRemember(event.target.checked)}/>Remember on this computer</label>}
       {setup && vault.data.legacySources.length > 0 && <p className="helper">Credentials saved on this computer by an earlier Athria version will be moved into this database securely.</p>}
       <ErrorBanner error={error}/>
-      <div className="modal-actions">{!setup && !resetting && <button type="button" className="text-button gate-forgot" onClick={() => { setResetting(true); setPassword(""); setConfirmation(""); setError(undefined); }}>Forgot password?</button>}{resetting && <button type="button" className="text-button gate-forgot" onClick={() => { setResetting(false); setPassword(""); setConfirmation(""); setError(undefined); }}>Back to unlock</button>}<button type="button" disabled={busy || ((setup || resetting) && (password.length === 0 || password !== confirmation))} onClick={() => void submit()}>{busy ? "Working…" : setup ? "Set password" : resetting ? "Reset password" : "Unlock"}</button></div>
+      <div className="modal-actions"><button type="button" className="secondary gate-switch" disabled={busy} onClick={() => void chooseDatabase()}>Switch database</button>{!setup && !resetting && <button type="button" className="text-button gate-forgot" onClick={() => { setResetting(true); setPassword(""); setConfirmation(""); setError(undefined); }}>Forgot password?</button>}{resetting && <button type="button" className="text-button gate-forgot" onClick={() => { setResetting(false); setPassword(""); setConfirmation(""); setError(undefined); }}>Back to unlock</button>}<button type="button" disabled={busy || ((setup || resetting) && (password.length === 0 || password !== confirmation))} onClick={() => void submit()}>{busy ? "Working…" : setup ? "Set password" : resetting ? "Reset password" : "Unlock"}</button></div>
     </div>
   </section></div>;
 }

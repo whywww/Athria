@@ -8,11 +8,13 @@ Restore makes a validated Athria `.sqlite3` file the active database. Select a f
 
 The database password gates access inside Athria and unlocks saved connection keys. The `.sqlite3` file itself is not encrypted at rest, so store databases and backups in locations you trust.
 
-A forgotten password cannot be recovered because the master key it wraps has no second key. The Unlock dialog offers "Forgot password?" to reset it: setting a new password wraps a fresh master key, keeps all training data, and permanently removes the saved connection keys that only the retired password could unlock. Re-enter the connection credentials in Connections afterwards.
+The Unlock dialog offers "Forgot password?" to reset the database password. Setting a new password wraps a fresh master key, keeps all training data, and permanently removes the saved connection keys that only the retired password could unlock. Re-enter the connection credentials in Connections afterwards. The password setup, unlock, and reset views also let you preview and switch to another Athria database.
+
+Settings can remove a database's remembered key after confirming the current password. The current session stays unlocked, but Athria requires the database password the next time it starts. Changing the database password also always requires the current password, even while the database is already unlocked.
 
 Restore rejects missing files, non-`.sqlite3` paths, corrupt SQLite databases, and databases without an Athria schema. Validation runs against a temporary copy, so the selected source file is never modified. Databases created by older Athria versions are migrated in place the next time Athria opens them, and a database without a password is asked to set one on first open.
 
-Create a new profile writes a fresh, empty Athria database to a location you choose and switches to it. Creation asks for the new database's password before the file is written. The new file receives the same schema as a first launch, contains no training data, and is created with its own database password, which Athria asks for when the database is opened on another computer. Athria records the selected path, stops the local service, and restarts with the new file; the previous database file is left untouched on disk. Creation rejects paths that already contain a file and paths that name the active database, so an existing backup or database is never replaced; pick a new file name instead.
+Create a new profile writes a fresh, empty Athria database to a location you choose and switches to it. The new file receives the same schema as a first launch and contains no training data. After Athria restarts with the new file, it asks you to set the database password and whether to remember it on this computer. The previous database file is left untouched on disk. Creation rejects paths that already contain a file and paths that name the active database, so an existing backup or database is never replaced; pick a new file name instead.
 
 Older `dataDir` configuration remains readable as `<dataDir>/athria.sqlite3`; existing companion folders are left untouched but are no longer created or managed.
 

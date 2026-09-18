@@ -95,7 +95,7 @@ function TemplateLibrary({ onBack, preferredName }: { onBack: () => void; prefer
   return <div className="plan-page template-library">
     <PrimaryPageHeader preferredName={preferredName} subtitle="Reusable workout patterns you can create, edit or delete." actions={<div className="actions"><button type="button" className="secondary template-library-back" onClick={onBack}><TemplateBackIcon/>Back to plan</button><button type="button" className="template-library-create" onClick={() => begin(emptyTemplate(), "create")}><TemplatePlusIcon/>Create template</button></div>}/>
     <ErrorBanner error={query.error ?? (editing ? undefined : error)}/>
-    {query.isPending ? <Loading/> : !query.data?.length ? <EmptyState title="No templates yet."/> : <div className="template-library-grid">{query.data.map((item) => <TemplateCard key={item.id} item={item} onEdit={(value) => begin(value, "edit")} onRemove={remove}/>)}</div>}
+    {query.isPending ? <Loading/> : !query.data?.length ? <EmptyState title="No templates yet."/> : <div className="template-library-grid">{query.data.map((item: StoredSessionTemplate) => <TemplateCard key={item.id} item={item} onEdit={(value) => begin(value, "edit")} onRemove={remove}/>)}</div>}
     {editing && <TemplateEditorModal value={{ template: editing.template, mode: editing.mode }} taxonomy={taxonomy.data} error={error ?? taxonomy.error} busy={saving} onChange={(template) => setEditing((current) => current ? { ...current, template } : current)} onClose={() => setEditing(null)} onSave={() => void save()}/>}
   </div>;
 }
@@ -122,7 +122,7 @@ function CurrentPlanView({ plan, templates, profile }: { plan: CurrentPlan; temp
   const [scrollToWeek, setScrollToWeek] = useState<number | null>(null);
   const requestWeek = (weekNumber: number) => { setScrollToWeek(null); requestAnimationFrame(() => setScrollToWeek(weekNumber)); };
   const handleSelectSession = (sessionId: string, triggerEl: HTMLElement | null) => { setSelectedSessionId(sessionId); sessionStorage.setItem(`${storageKey}:session`, sessionId); triggerRef.current = triggerEl; };
-  const selectedSession = calendarSessions.find((session) => session.id === selectedSessionId) ?? null;
+  const selectedSession = calendarSessions.find((session: CalendarSession) => session.id === selectedSessionId) ?? null;
   const refresh = () => { void client.invalidateQueries({ queryKey: ["calendar"] }); void client.invalidateQueries({ queryKey: ["next-training-day"] }); void client.invalidateQueries({ queryKey: ["current-plan"] }); };
   useEffect(() => {
     const main = document.querySelector("main"); if (!main) return;

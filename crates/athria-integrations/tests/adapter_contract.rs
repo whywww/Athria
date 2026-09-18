@@ -51,3 +51,17 @@ fn integration_adapter_fixture_matches() {
         );
     }
 }
+
+#[test]
+fn explicit_sync_windows_preserve_the_requested_days() {
+    for days in [1, 10, 30, 90] {
+        let actual = sync_date_window(
+            Some("2026-09-05T10:00:00Z"),
+            Some(days),
+            "2026-09-11T12:00:00.000Z",
+        )
+        .unwrap();
+
+        assert_eq!(actual.days, days);
+    }
+}

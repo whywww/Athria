@@ -212,7 +212,7 @@ The dashboard and MCP server call the same application-service boundary. Busines
 - The service listens only on `127.0.0.1`, validates the Host header, and restricts browser origins.
 - Streamable HTTP requires a bearer token; the dashboard-managed MCP token is stored in the operating-system credential manager and is not exposed through MCP tools.
 - MCP does not expose arbitrary SQL, arbitrary file reads, secrets, database deletion, or validation bypasses.
-- One database password gates access inside Athria (the app asks for it before showing data whenever this computer has not unlocked the database) and wraps the master key that encrypts saved connection keys.
+- One database password gates access inside Athria and wraps the master key that encrypts saved connection keys. When setting or entering it, you can choose whether this computer should remember it; otherwise Athria asks again after the app restarts.
 - Backups are self-contained `.sqlite3` file copies made by the user and include connection keys only as authenticated ciphertext protected by the database password.
 - Databases older than the schema version 24 Rust compatibility baseline are not migrated into this MVP.
 

@@ -263,6 +263,12 @@ fn cached_master_key(state: &RuntimeState, bundle: &VaultBundle) -> Option<Zeroi
             return Some(Zeroizing::new(key.to_vec()));
         }
     }
+    let key = remembered_master_key(bundle)?;
+    *state.vault_key.lock().expect("runtime state poisoned") = Some(Zeroizing::new(key.to_vec()));
+    Some(key)
+}
+
+fn remembered_master_key(bundle: &VaultBundle) -> Option<Zeroizing<Vec<u8>>> {
     let encoded = vault_credential(&bundle.database_uuid)
         .ok()?
         .get_password()
@@ -271,8 +277,6 @@ fn cached_master_key(state: &RuntimeState, bundle: &VaultBundle) -> Option<Zeroi
     if bundle.envelope.as_ref().is_some_and(|envelope| {
         vault::verify_master_key(&bundle.database_uuid, &key, envelope).is_ok()
     }) {
-        *state.vault_key.lock().expect("runtime state poisoned") =
-            Some(Zeroizing::new(key.to_vec()));
         Some(key)
     } else {
         None
@@ -350,6 +354,7 @@ async fn save_connection_key(
 async fn vault_status(state: State<'_, RuntimeState>) -> Result<Value, String> {
     let bundle = vault_bundle(&state).await?;
     let initialized = bundle.envelope.is_some();
+    let remembered = initialized && remembered_master_key(&bundle).is_some();
     let locked = initialized && cached_master_key(&state, &bundle).is_none();
     let legacy_sources: Vec<&str> = [
         ("intervals", "intervals-api-key"),
@@ -366,12 +371,16 @@ async fn vault_status(state: State<'_, RuntimeState>) -> Result<Value, String> {
     })
     .collect();
     Ok(
-        json!({ "databaseUuid": bundle.database_uuid, "initialized": initialized, "locked": locked, "legacySources": legacy_sources }),
+        json!({ "databaseUuid": bundle.database_uuid, "databasePath": state.database_path, "initialized": initialized, "locked": locked, "remembered": remembered, "legacySources": legacy_sources }),
     )
 }
 
 #[tauri::command]
-async fn setup_vault(state: State<'_, RuntimeState>, password: String) -> Result<Value, String> {
+async fn setup_vault(
+    state: State<'_, RuntimeState>,
+    password: String,
+    remember: bool,
+) -> Result<Value, String> {
     let bundle = vault_bundle(&state).await?;
     if bundle.envelope.is_some() {
         return Err("This database already has a password.".to_string());
@@ -416,7 +425,7 @@ async fn setup_vault(state: State<'_, RuntimeState>, password: String) -> Result
         .store()
         .initialize_vault(&envelope, &secrets)
         .map_err(|error| error.message().to_owned())?;
-    cache_master_key(&state, &bundle.database_uuid, &master, Some(true))?;
+    cache_master_key(&state, &bundle.database_uuid, &master, Some(remember))?;
     for name in ["intervals-api-key", "intervals-athlete-id", "xunji-api-key"] {
         if let Ok(entry) = credential(name) {
             let _ = entry.delete_credential();
@@ -444,7 +453,7 @@ async fn unlock_vault(
 #[tauri::command]
 async fn change_vault_password(
     state: State<'_, RuntimeState>,
-    current_password: Option<String>,
+    current_password: String,
     new_password: String,
 ) -> Result<Value, String> {
     let bundle = vault_bundle(&state).await?;
@@ -452,17 +461,7 @@ async fn change_vault_password(
         .envelope
         .as_ref()
         .ok_or_else(|| "This database has no password set yet.".to_string())?;
-    let master = if let Some(key) = cached_master_key(&state, &bundle) {
-        key
-    } else {
-        vault::unlock(
-            &bundle.database_uuid,
-            current_password
-                .as_deref()
-                .ok_or_else(|| "Enter the current database password.".to_string())?,
-            old_envelope,
-        )?
-    };
+    let master = vault::unlock(&bundle.database_uuid, &current_password, old_envelope)?;
     let envelope = vault::create_envelope(&bundle.database_uuid, &new_password, &master)?;
     state
         .application
@@ -473,6 +472,29 @@ async fn change_vault_password(
         .map_err(|error| error.message().to_owned())?;
     cache_master_key(&state, &bundle.database_uuid, &master, None)?;
     Ok(json!({ "status": "changed" }))
+}
+
+#[tauri::command]
+async fn require_vault_password(
+    state: State<'_, RuntimeState>,
+    current_password: String,
+) -> Result<Value, String> {
+    let bundle = vault_bundle(&state).await?;
+    let envelope = bundle
+        .envelope
+        .as_ref()
+        .ok_or_else(|| "This database has no password set yet.".to_string())?;
+    let master = vault::unlock(&bundle.database_uuid, &current_password, envelope)?;
+    let entry = vault_credential(&bundle.database_uuid)?;
+    if let Err(error) = entry.delete_credential() {
+        if !matches!(error, keyring::Error::NoEntry) {
+            return Err(format!(
+                "Athria could not stop remembering this database: {error}"
+            ));
+        }
+    }
+    cache_master_key(&state, &bundle.database_uuid, &master, None)?;
+    Ok(json!({ "status": "password-required" }))
 }
 
 #[tauri::command]
@@ -862,19 +884,11 @@ fn validate_new_profile_target(path: &str, current: &Path) -> Result<PathBuf, St
 }
 
 #[tauri::command]
-async fn create_new_profile(
-    app: AppHandle,
-    state: State<'_, RuntimeState>,
-    path: String,
-    password: String,
-) -> Result<Value, String> {
+async fn create_new_profile(app: AppHandle, path: String) -> Result<Value, String> {
     let target = validate_new_profile_target(&path, &current_database_path())?;
     let database_uuid = Uuid::new_v4().to_string();
-    let master = vault::new_master_key();
-    let envelope = vault::create_envelope(&database_uuid, &password, &master)?;
-    create_local_workspace(&target, &database_uuid, &envelope)
+    create_local_workspace(&target, &database_uuid, None)
         .map_err(|error| error.message().to_owned())?;
-    cache_master_key(&state, &database_uuid, &master, Some(true))?;
     write_config_to(&platform_config_root()?, &target)?;
     app.restart()
 }
@@ -929,6 +943,7 @@ pub fn run() -> i32 {
             setup_vault,
             unlock_vault,
             change_vault_password,
+            require_vault_password,
             reset_vault_password,
             disconnect_connection,
             test_intervals_credentials,

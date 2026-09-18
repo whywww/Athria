@@ -314,9 +314,24 @@ button.equipment-item.available:hover { color: #111827; border-color: #c4cad3; b
 .modal-body { padding: 19px 24px 23px; }
 .modal-body label:first-child { margin-top: 0; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 20px; padding-top: 17px; border-top: 1px solid #ebe7e1; }
-.database-gate { width: min(460px, calc(100vw - 56px)); }
-.database-gate .remember-field { display: flex; align-items: center; gap: 8px; margin: 14px 0; font-weight: 600; }.database-gate .remember-field input { width: auto; flex: 0 0 auto; margin: 0; accent-color: var(--accent); }
+.database-gate { width: min(570px, calc(100vw - 56px)); border-radius: 20px; box-shadow: 0 26px 80px rgba(20,24,31,.24); }
+.database-gate > header { position: static; padding: 27px 30px 19px; border-bottom: 0; }
+.database-gate h2 { font-size: 24px; line-height: 1.2; }
+.database-gate header p { max-width: 480px; margin-top: 7px; font-size: 12px; line-height: 1.55; }
+.database-gate .modal-body { padding: 0 30px 27px; }
+.gate-database-location { min-width: 0; display: grid; gap: 7px; margin-bottom: 18px; color: #59616c; font-size: 12px; font-weight: 700; }
+.gate-database-location code { min-width: 0; display: block; overflow: hidden; padding: 11px 13px; border: 1px solid #e2e5e9; border-radius: 10px; color: #4c5869; background: #f6f7f9; font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 12px; font-weight: 500; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.gate-fields { display: grid; gap: 13px; }
+.database-gate .gate-fields label { gap: 7px; margin: 0; font-size: 12px; }
+.database-gate .gate-fields input { height: 44px; padding: 10px 13px; border-radius: 10px; }
+.database-gate .gate-fields input:focus { border-color: rgba(255,90,55,.65); outline: 3px solid rgba(255,90,55,.12); }
+.database-gate .remember-field { display: flex; align-items: center; gap: 9px; margin: 15px 0 0; font-size: 12px; font-weight: 600; }.database-gate .remember-field input { width: 16px; height: 16px; flex: 0 0 auto; margin: 0; accent-color: var(--accent); }
+.database-gate .field-error { margin-top: 0; }
+.database-gate .modal-actions { align-items: center; margin-top: 19px; padding-top: 18px; }
+.database-gate .modal-actions button { min-height: 40px; padding-inline: 20px; }
 .database-gate .gate-forgot { margin-right: auto; margin-bottom: 0; align-self: center; }
+.database-gate .gate-switch { margin-right: auto; }.database-gate .gate-switch + .gate-forgot { margin-right: 0; }.database-reset-warning { display: grid; gap: 3px; margin-bottom: 16px; padding: 11px 13px; border: 1px solid #e8b1a7; border-radius: 10px; color: #8b2e23; background: #fbe7e2; }.database-reset-warning strong { font-size: 13px; }.database-reset-warning span { font-size: 11px; line-height: 1.45; }
+@media (max-width: 660px) { .database-gate > header { padding: 23px 22px 16px; }.database-gate .modal-body { padding: 0 22px 22px; }.database-gate .modal-actions { flex-wrap: wrap; }.database-gate .gate-switch { margin-right: 0; }.database-gate .gate-switch + .gate-forgot { order: 3; width: 100%; margin-right: 0; text-align: center; } }
 .recovery-modal { width: min(460px, calc(100vw - 56px)); max-height: calc(100vh - 56px); overflow-y: auto; border: 1px solid rgba(255,255,255,.9); border-radius: 16px; background: #fff; box-shadow: 0 24px 70px rgba(20,24,31,.22); }
 .recovery-modal > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 22px 24px 17px; border-bottom: 1px solid #ebe7e1; }
 .recovery-modal h2 { margin: 0; color: #121923; font-size: 20px; letter-spacing: -.025em; }
