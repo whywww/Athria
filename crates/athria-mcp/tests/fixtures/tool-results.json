@@ -27,7 +27,7 @@
   "save_next_training_day_sessions": {},
   "update_planned_session": {},
   "record_training_session": {},
-  "set_training_session_plan_match": {},
+  "override_training_session_plan_match": {},
   "allow_automatic_plan_match": {},
   "update_manual_training_session": {},
   "remove_manual_training_source": {},

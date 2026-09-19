@@ -68,5 +68,7 @@ When you save a Current Mesocycle, populate the optional `target` object so the 
 - If the state snapshot changes, refresh context and revalidate instead of bypassing stale-state rejection.
 - Adjustment proposals are conversation state, not Athria records. Never create proposal CRUD, persist approval tokens, or partially patch the Current Plan.
 - Treat `get_next_training_day` as the current execution queue. Add a manual completed workout, skip, restore, or move a planned session only after the user explicitly chooses that action.
+- Treat Training History ↔ Current Plan matching as Athria-owned deterministic reconciliation. Never infer, propose through a write, or choose a `plannedSessionId` during normal history recording or review.
+- Call `override_training_session_plan_match` only when the user explicitly identifies, corrects, replaces, or rejects a specific workout match. A null `plannedSessionId` means the user explicitly marks that workout intentionally unplanned and excludes it from later automatic matching. Call `allow_automatic_plan_match` only when the user explicitly revokes that exclusion and returns the workout to the deterministic matcher.
 
 Read [references/tool-contracts.md](references/tool-contracts.md) before constructing tool inputs or handling validation reason codes.

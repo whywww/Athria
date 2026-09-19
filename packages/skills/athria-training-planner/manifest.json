@@ -10,7 +10,7 @@
     "get_training_summary", "get_current_plan", "get_plan_adjustment_review", "get_next_training_day", "list_planned_sessions", "list_session_templates", "get_session_template", "get_training_taxonomy", "calculate_training_metrics",
     "estimate_1rm", "calculate_heart_rate_zones", "evaluate_progression",
     "validate_current_plan", "validate_next_training_day_sessions",
-    "create_session_template", "update_session_template", "delete_session_template", "save_current_plan", "save_next_training_day_sessions", "update_planned_session", "record_training_session", "set_training_session_plan_match", "allow_automatic_plan_match", "update_manual_training_session", "remove_manual_training_source", "update_wellness", "update_athlete_profile"
+    "create_session_template", "update_session_template", "delete_session_template", "save_current_plan", "save_next_training_day_sessions", "update_planned_session", "record_training_session", "override_training_session_plan_match", "allow_automatic_plan_match", "update_manual_training_session", "remove_manual_training_source", "update_wellness", "update_athlete_profile"
   ],
   "workflow": ["review", "read-targeted-evidence", "plan", "validate", "explain", "approve", "freshness-check", "save-current-plan"],
   "outputSchema": "CurrentPlan",

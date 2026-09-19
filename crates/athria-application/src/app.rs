@@ -851,6 +851,7 @@ impl<S: AthriaStore> AthriaApplication<S> {
         candidate.insert("ownerId".into(), Value::String(self.owner_id.clone()));
         candidate.insert("source".into(), Value::String("manual".into()));
         candidate.insert("status".into(), Value::String("completed".into()));
+        candidate.entry("plannedSessionId").or_insert(Value::Null);
         let session = parse_training_session(&Value::Object(candidate))?;
         self.store.upsert_sessions(std::slice::from_ref(&session))?;
         Ok(session)

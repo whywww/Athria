@@ -78,7 +78,7 @@ enum ToolKind {
     SaveNextTrainingDaySessions,
     UpdatePlannedSession,
     RecordTrainingSession,
-    SetTrainingSessionPlanMatch,
+    OverrideTrainingSessionPlanMatch,
     AllowAutomaticPlanMatch,
     UpdateManualTrainingSession,
     RemoveManualTrainingSource,
@@ -118,7 +118,7 @@ impl ToolKind {
             "save_next_training_day_sessions" => Self::SaveNextTrainingDaySessions,
             "update_planned_session" => Self::UpdatePlannedSession,
             "record_training_session" => Self::RecordTrainingSession,
-            "set_training_session_plan_match" => Self::SetTrainingSessionPlanMatch,
+            "override_training_session_plan_match" => Self::OverrideTrainingSessionPlanMatch,
             "allow_automatic_plan_match" => Self::AllowAutomaticPlanMatch,
             "update_manual_training_session" => Self::UpdateManualTrainingSession,
             "remove_manual_training_source" => Self::RemoveManualTrainingSource,
@@ -331,7 +331,7 @@ impl<S: AthriaStore> McpService<S> {
                 ),
             ),
             ToolKind::RecordTrainingSession => application(app.record_training_session(input)),
-            ToolKind::SetTrainingSessionPlanMatch => {
+            ToolKind::OverrideTrainingSessionPlanMatch => {
                 application(app.set_training_session_plan_match(required_str(input, "id")?, input))
             }
             ToolKind::AllowAutomaticPlanMatch => application(
@@ -701,7 +701,7 @@ mod tests {
             "save_current_plan",
             "save_next_training_day_sessions",
             "update_planned_session",
-            "set_training_session_plan_match",
+            "override_training_session_plan_match",
             "allow_automatic_plan_match",
             "update_manual_training_session",
             "remove_manual_training_source",
@@ -726,6 +726,45 @@ mod tests {
                 "unclassified write tool: {name}"
             );
         }
+    }
+    #[test]
+    fn plan_match_override_is_user_directed_and_recording_cannot_choose_a_match() {
+        let service = service();
+        assert!(
+            service
+                .tools()
+                .iter()
+                .all(|tool| tool["name"] != "set_training_session_plan_match")
+        );
+
+        let override_tool = service
+            .tools()
+            .iter()
+            .find(|tool| tool["name"] == "override_training_session_plan_match")
+            .unwrap();
+        assert!(
+            override_tool["description"]
+                .as_str()
+                .unwrap()
+                .contains("user's explicit correction")
+        );
+
+        let record_tool = service
+            .tools()
+            .iter()
+            .find(|tool| tool["name"] == "record_training_session")
+            .unwrap();
+        assert!(
+            record_tool["inputSchema"]["properties"]
+                .get("plannedSessionId")
+                .is_none()
+        );
+        assert!(
+            !record_tool["inputSchema"]["required"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("plannedSessionId"))
+        );
     }
     #[test]
     fn adjustment_review_is_read_only_and_keeps_application_errors() {
