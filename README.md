@@ -3,247 +3,97 @@
 
 # Athria
 
-**Local-first training data and planning tools for MCP clients.**
+**A local-first training workspace that helps your AI understand your training data, build plans, and make safer updates.**
 
 [![Version](https://img.shields.io/badge/version-0.2.0-315c4c)](package.json)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20x64%20%7C%20macOS%20Apple%20Silicon-315c4c)
-![Runtime](https://img.shields.io/badge/runtime-local--first-e9a23b)
+![Runtime](https://img.shields.io/badge/data-local--first-e9a23b)
 </div>
 
-[English](#english) · [简体中文](#简体中文)
+[English](#english) · [简体中文](#简体中文) · [Potential contributors / 潜在贡献者](#potential-contributors)
 
 <a id="english"></a>
 
 ## English
 
-Athria is a desktop training dashboard and MCP server that keeps an athlete's profile, wellness, training history, session templates, and single current mesocycle on their own computer. External MCP clients such as Codex, Claude Desktop, Cursor, Qoder, or Trae can use Athria's structured tools to read training state, calculate metrics, validate plans, and make controlled updates.
+### What is Athria?
 
-Athria's deterministic Core performs calculations and validation; the connected MCP client handles natural-language planning and explanation.
+Athria is a desktop app for people who want to use an AI assistant with real, structured training data instead of repeatedly explaining their history, goals, equipment, and current plan.
 
-### English contents
+Athria stores your training profile, wellness data, training history, reusable workout templates, and current training cycle on your computer. A compatible AI app can connect to Athria through MCP to read that context, use Athria's calculations and validation, and make approved updates.
 
-- [What Athria does](#what-athria-does)
-- [What Athria does not do](#what-athria-does-not-do)
-- [Why use Athria](#why-use-athria)
-- [Quick start](#quick-start)
-- [Connect an MCP client](#connect-an-mcp-client)
-- [Example workflow](#example-workflow)
-- [Development](#development)
-- [Project structure](#project-structure)
-- [Data and security](#data-and-security)
-- [Documentation and support](#documentation-and-support)
-- [Contributing](#contributing)
-- [Maintainer](#maintainer)
+**Athria is not an AI model or chat app.** You bring your own MCP-compatible AI client. Athria provides the local data and training tools; the AI client provides the conversation, reasoning, and explanations.
 
-## What Athria does
+### What can I do with it?
 
-The current MCP MVP provides:
+- **Keep training context in one place** — profile, goals, schedule, equipment, wellness, history, templates, and your current training cycle.
+- **Connect an AI assistant** — Athria includes connection guidance for ChatGPT, Claude Desktop, Cursor, Qoder, Trae, and WorkBuddy.
+- **Review your training** — let an AI assistant inspect recent sessions, summaries, wellness, and data gaps.
+- **Build and adjust plans** — create a training cycle, validate it with Athria, and save it after you approve the changes.
+- **Use reproducible calculations** — Athria provides deterministic tools for metrics such as estimated 1RM, heart-rate zones, progression, and RPE-based adjustments.
+- **Bring in existing data** — import Hevy CSV files, or synchronize read-only data from Intervals.icu and 训记 / Xunji.
+- **Keep the main database local** — no Athria account or Athria cloud database is required.
 
-- A Tauri 2 and React desktop dashboard for setup, history, training state, devices, templates, and the current mesocycle.
-- Local SQLite persistence with migrations, WAL, and restore; back up manually by copying the database file.
-- MCP `2025-11-25` and `2026-07-28` over stdio, plus authenticated Streamable HTTP on a loopback-only address.
-- Deterministic strength and endurance metrics with formula versions and explicit data-quality indicators.
-- Plan Schema v7 validation with fixed-week, flexible-week, and interval rhythms, authoritative Weekly Sessions, structured multi-sport prescriptions, and independent phase timelines by domain.
-- A reusable Session Template Library and one editable Current Mesocycle per athlete.
-- Optimistic revision checks and validation gates for MCP writes.
-- Hevy CSV import with preview-before-commit, plus read-only Intervals.icu and Xunji synchronization.
-- Five provider-neutral Skills with least-privilege boundaries: read-only coaching, cycle planning, athlete Profile/Wellness updates, immediate workout execution, and locally synchronized Xunji records.
+### Getting started
 
-Athria currently targets Windows x64 and Apple Silicon macOS. The interface is English-only.
+1. **Install Athria**  
+   Use a native desktop build for Windows x64 or Apple Silicon macOS. If you are building Athria yourself, see [Potential contributors](#potential-contributors).
 
-## What Athria does not do
+2. **Set up your profile**  
+   On first launch, create your database password, then fill in Personal Information and Profile with the training information you want Athria to use.
 
-Athria does **not** include an LLM, chat interface, hosted AI provider, account system, cloud database, mobile app, or third-party write-back. Your MCP client supplies the model and remains responsible for its own configuration and cost.
+3. **Add training data**  
+   Import or synchronize the training sources you want to use. Athria keeps missing information explicitly missing instead of guessing values.
 
-Athria also does not diagnose injuries, prescribe treatment, make medical decisions, or certify that a workout is medically safe. Missing health, recovery, load, RPE, heart-rate, or power data remains explicitly missing rather than being treated as normal.
+4. **Connect your AI client**  
+   Configure Athria as a local stdio MCP server. The command is the installed Athria executable and the argument is **mcp**. Athria includes client-specific setup guidance; the technical interface is documented in [docs/MCP.md](docs/MCP.md).
 
-See [Known limitations](docs/KNOWN_LIMITATIONS.md) for the current technical and product boundaries.
+5. **Start asking about your training**  
+   Your AI client can now use Athria's structured data and tools when answering you.
 
-## Why use Athria
+For example:
 
-- **Local by default:** core training data stays on your computer; no Athria cloud service or account is required.
-- **Works with your MCP client:** use a compatible external client instead of being locked to one model provider.
-- **Reproducible results:** calculations and rules live in a testable Core rather than in model prompts.
-- **Safer writes:** schema checks, blocker rules, snapshot freshness, ownership, and revisions protect persisted state.
-- **Honest uncertainty:** validation reports missing facts and unknown outcomes instead of inventing inputs.
-- **Inspectable workflows:** the dashboard and MCP server use the same application-service boundary.
-- **Portable data:** open or back up one standalone SQLite database; one database password gates access inside Athria and encrypts the connection keys that travel with the file.
+> Review my last 30 days of training, point out important data gaps, and summarize what has changed.
 
-## Quick start
+> Draft a four-week training cycle around my confirmed schedule and equipment. Validate it with Athria, but do not save it until I approve it.
 
-### Prerequisites for source builds
+> Check my next training day and suggest an adjustment based on my recent sessions and reported RPE.
 
-- [Node.js](https://nodejs.org/) 24 or newer and [pnpm](https://pnpm.io/) 11.19.0
-- A stable [Rust](https://www.rust-lang.org/tools/install) toolchain
-- Windows x64: Microsoft Visual C++ Build Tools and the Windows SDK
-- macOS: Apple Silicon and Xcode Command Line Tools
+When an MCP action would change important stored data, the workflow is designed around explicit user confirmation, validation, and freshness checks rather than silent overwrites.
 
-### Run the development app
+### Data, privacy, and security
 
-```sh
-git clone https://github.com/whywww/Athria.git
-cd Athria
-pnpm install
-pnpm dev
-```
+Athria is **local-first**: its primary training database lives on your computer, and Athria does not require its own cloud account.
 
-`pnpm dev` starts Vite and the Tauri debug application backed by the shared Rust runtime.
+A few details are worth knowing:
 
-### Build a desktop app
+- The local service listens on the loopback interface only; Streamable HTTP requires authentication.
+- MCP does not expose arbitrary SQL, arbitrary file access, database deletion, or stored secrets.
+- Your database password controls access inside Athria and protects saved connection keys. **The SQLite database file itself is not encrypted at rest.**
+- You can back up Athria by copying the database file while following normal SQLite-safe backup practices.
+- Local-first storage does not mean your data can never leave your computer: a connected AI client may send the Athria data it reads to its own model provider. That client's privacy policy, configuration, and cost still apply.
 
-```sh
-# Directly runnable host-native debug app
-pnpm build:debug
+### Current limitations
 
-# Directly runnable host-native release app
-pnpm build:app
+Athria is still an MVP. Today:
 
-# Windows: MSI; macOS: app and DMG
-pnpm release:native
-```
+- Official desktop targets are **Windows x64** and **Apple Silicon macOS**.
+- The app interface is **English-only**.
+- Athria has **no built-in LLM or chat interface**.
+- Hevy is import-based; Intervals.icu and Xunji integrations are read-only.
+- Athria keeps the latest reusable templates and one current editable training cycle; it is not a full plan-versioning system.
+- Missing load, RPE/RIR, heart-rate, power, recovery, or wellness data is not treated as normal or inferred automatically.
+- Athria does not diagnose injuries, prescribe treatment, or determine whether training is medically safe.
 
-Keep the checkout in a directory named `Athria-repo`. Every generated file is written to its sibling `Athria` directory and separated by purpose and target triple; the build location is intentionally not configurable. Packaged apps embed the shared Rust runtime and do not require a separate Node.js, Rust, Python, Docker, or database installation.
+See [Known limitations](docs/KNOWN_LIMITATIONS.md) for the complete current boundary.
 
-On first launch, use Settings to complete Personal Information and Profile to configure training preferences, then import or synchronize any training records you want Athria to use. Stable personal details live in Profile; dated weight entries live in Wellness.
+### Help and feedback
 
-## Connect an MCP client
-
-Use the installed Athria desktop executable as a stdio MCP server. Replace the command with the actual installation path on your computer.
-
-### Windows
-
-```json
-{
-  "mcpServers": {
-    "Athria": {
-      "command": "C:\\Program Files\\Athria\\Athria.exe",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-### macOS
-
-```json
-{
-  "mcpServers": {
-    "Athria": {
-      "command": "/Applications/Athria.app/Contents/MacOS/athria",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-Save the configuration and restart the MCP client. Athria reserves stdout for JSON-RPC and sends diagnostics to stderr.
-
-For client-specific setup paths, Streamable HTTP details, and write boundaries, read [MCP setup](docs/MCP.md). Connecting the MCP server does not automatically install the optional Skills in [`packages/skills`](packages/skills).
-
-The optional Skills are split by user intent: `athria-coach` analyzes without writing, `athria-training-planner` owns complete cycle and template changes, `athria-athlete-profile` owns confirmed Profile and Wellness updates, `athria-workout` owns immediate workout execution and history corrections, and `athria-xunji-records` reads locally synchronized Xunji data.
-
-## Example workflow
-
-After connecting Athria, ask your MCP client:
-
-```text
-Review my last 30 days of training, identify any important data gaps, and
-draft a four-week mesocycle around my confirmed schedule and equipment.
-Validate it with Athria before showing it to me. Do not save anything until
-I explicitly approve the plan.
-```
-
-A typical planning flow is:
-
-1. Read the confirmed profile, wellness, current state, taxonomy, and relevant history.
-2. Surface missing facts that matter to blocker rules.
-3. Create or update reusable session templates.
-4. Assemble a fixed-week, flexible-week, or interval mesocycle that references those templates.
-5. Validate, revise, and explain the result.
-6. Save only after the user confirms the proposed changes.
-
-Profile changes from MCP require explicit user confirmation and a current profile hash, then write directly. Dashboard edits write directly as well.
-
-## Development
-
-Install dependencies, then use the root workspace scripts:
-
-```sh
-pnpm install
-pnpm typecheck
-pnpm test
-pnpm check
-cargo test --workspace
-```
-
-Useful commands:
-
-| Command | Purpose |
-|---|---|
-| `pnpm dev` | Run the Tauri desktop app in development mode |
-| `pnpm typecheck` | Type-check the desktop frontend |
-| `pnpm test` | Run the Vitest frontend suite |
-| `pnpm check` | Run frontend checks and Skill validation |
-| `cargo test --workspace` | Run the Rust workspace tests |
-| `pnpm build:app` | Build a directly runnable release app |
-| `pnpm release:native` | Produce native installer artifacts |
-
-The default development database is stored at:
-
-- Windows: `%LOCALAPPDATA%\Athria\data\athria.sqlite3`
-- macOS: `~/Library/Application Support/Athria/data/athria.sqlite3`
-
-Set `ATHRIA_DATABASE_PATH` when an isolated development database is needed. Do not point tests or experiments at personal training data.
-
-## Project structure
-
-```text
-apps/
-  desktop/       Tauri shell and React dashboard
-crates/           Shared Rust core, application, storage, integrations, MCP, and runtime
-packages/
-  skills/        Optional provider-neutral MCP workflows
-schemas/         Versioned JSON Schema contracts
-scripts/         Development and release tooling
-```
-
-The dashboard and MCP server call the same application-service boundary. Business writes must not bypass the shared schemas, permission checks, Core validation, or persistence layer.
-
-## Data and security
-
-- The service listens only on `127.0.0.1`, validates the Host header, and restricts browser origins.
-- Streamable HTTP requires a bearer token; the dashboard-managed MCP token is stored in the operating-system credential manager and is not exposed through MCP tools.
-- MCP does not expose arbitrary SQL, arbitrary file reads, secrets, database deletion, or validation bypasses.
-- One database password gates access inside Athria and wraps the master key that encrypts saved connection keys. When setting or entering it, you can choose whether this computer should remember it; otherwise Athria asks again after the app restarts.
-- Backups are self-contained `.sqlite3` file copies made by the user and include connection keys only as authenticated ciphertext protected by the database password.
-- Databases older than the schema version 24 Rust compatibility baseline are not migrated into this MVP.
-
-Read [Backup and restore](docs/BACKUP.md) before moving or restoring data.
-
-## Documentation and support
-
-- [MCP setup](docs/MCP.md)
-- [Backup and restore](docs/BACKUP.md)
+- [MCP interface and workflows](docs/MCP.md)
 - [Known limitations](docs/KNOWN_LIMITATIONS.md)
-- [Release artifacts](docs/RELEASE.md)
+- [GitHub Issues](https://github.com/whywww/Athria/issues) for bugs and feature requests
 
-For bugs and feature requests, use [GitHub Issues](https://github.com/whywww/Athria/issues). Include the platform, Athria version, reproduction steps, expected result, and actual result. Never attach credentials or personal training data.
-
-## Contributing
-
-Contributions are welcome. Keep changes focused on the MCP application and its deterministic Core.
-
-1. Open an issue before a substantial architectural or schema change.
-2. Create a focused branch and add tests for changed behavior.
-3. Run `pnpm check` and `cargo test --workspace`.
-4. Update schemas and documentation when contracts change.
-5. Open a pull request that explains the change and how it was verified.
-
-Do not commit local databases, imports, backups, credentials, signing material, or generated build artifacts.
-
-## Maintainer
-
-Athria is maintained by [Haoyu Wei](https://github.com/whywww) and contributors.
+When reporting a bug, include your platform, Athria version, reproduction steps, expected result, and actual result. Do not attach credentials or personal training data.
 
 ---
 
@@ -251,229 +101,227 @@ Athria is maintained by [Haoyu Wei](https://github.com/whywww) and contributors.
 
 ## 简体中文
 
-Athria 是一个本地优先的桌面训练管理应用和 MCP 服务器。运动者的个人资料、偏好、训练记录、训练模板和当前训练周期均保存在自己的电脑上。Codex、Claude Desktop、Cursor、Qoder 或 Trae 等外部 MCP 客户端可以通过 Athria 的结构化工具读取训练状态、计算指标、校验计划并执行受控更新。
+### Athria 是什么？
 
-Athria 的确定性 Core 负责计算和校验；连接的 MCP 客户端负责理解自然语言、编排计划和解释结果。
+Athria 是一个本地优先的桌面训练应用，适合希望让 AI 真正理解自己训练数据的人，而不是每次都重新向 AI 解释训练经历、目标、器材和当前计划。
 
-### 中文目录
+Athria 会在你的电脑上保存个人训练资料、Wellness、训练历史、可复用训练模板和当前训练周期。兼容 MCP 的 AI 客户端可以连接 Athria，读取这些结构化信息，调用 Athria 的确定性计算和计划校验工具，并在你确认后执行受控更新。
 
-- [Athria 可以做什么](#athria-可以做什么)
-- [Athria 不做什么](#athria-不做什么)
-- [为什么使用 Athria](#为什么使用-athria)
-- [快速开始](#快速开始)
-- [连接 MCP 客户端](#连接-mcp-客户端)
-- [工作流示例](#工作流示例)
-- [开发](#开发)
-- [项目结构](#项目结构)
-- [数据与安全](#数据与安全)
-- [文档与支持](#文档与支持)
-- [参与贡献](#参与贡献)
-- [维护者](#维护者)
+**Athria 本身不是 AI 模型，也不是聊天应用。** 你需要使用自己的 MCP 兼容 AI 客户端。Athria 负责本地数据和训练工具，AI 客户端负责对话、推理和解释。
 
-## Athria 可以做什么
+### Athria 可以帮你做什么？
 
-当前 MCP MVP 提供：
+- **集中保存训练上下文** —— 个人资料、目标、日程、器材、Wellness、训练历史、模板和当前训练周期。
+- **连接 AI 助手** —— Athria 内置了 ChatGPT、Claude Desktop、Cursor、Qoder、Trae 和 WorkBuddy 的连接说明。
+- **回顾近期训练** —— 让 AI 查看近期训练、汇总指标、Wellness 和重要的数据缺口。
+- **制定和调整计划** —— 生成训练周期，先由 Athria 校验，再在你批准后保存。
+- **使用可复现的训练计算** —— 包括估算 1RM、心率区间、progression 和基于 RPE 的调整等确定性工具。
+- **导入已有训练记录** —— 支持 Hevy CSV 导入，以及 Intervals.icu 和训记的只读同步。
+- **核心数据保存在本地** —— 不需要 Athria 账号，也不依赖 Athria 云数据库。
 
-- 基于 Tauri 2 和 React 的桌面 Dashboard，用于初始设置、训练历史、训练状态、设备连接、训练模板和当前训练周期管理。
-- 使用 SQLite、migration 和 WAL 的本地数据持久化与恢复能力；备份即手动复制数据库文件。
-- 基于 stdio 的 MCP `2025-11-25` 与 `2026-07-28`，以及仅在本机回环地址提供、需要身份验证的 Streamable HTTP。
-- 可复现的力量与耐力训练指标，并明确标记公式版本和数据质量。
-- 基于 Plan Schema v7 的计划校验，支持固定周、灵活周和间隔节奏、权威周处方、结构化多运动内容和各领域独立 phase timeline。
-- 可复用的 Session Template Library，以及每位运动者一个可编辑的 Current Mesocycle。
-- 使用 revision 乐观锁和校验门禁保护 MCP 写入。
-- 提交前可预览的 Hevy CSV 导入，以及只读的 Intervals.icu 和训记同步。
-- 五个按最小权限拆分、与模型提供商无关的 Skills：只读训练分析、周期规划、Athlete Profile/Wellness 更新、近期训练执行，以及本地训记记录查询。
+### 如何开始使用
 
-Athria 当前支持 Windows x64 和 Apple Silicon Mac，界面语言目前仅为英语。
+1. **安装 Athria**  
+   使用适用于 Windows x64 或 Apple Silicon macOS 的原生桌面构建。如果你需要自己从源码构建，请看下方的[潜在贡献者](#potential-contributors)区域。
 
-## Athria 不做什么
+2. **完成个人设置**  
+   第一次启动时创建数据库密码，然后在 Personal Information 和 Profile 中填写你希望 Athria 使用的训练信息。
 
-Athria **不包含** LLM、内置聊天界面、托管的 AI Provider、账号系统、云数据库、移动应用或向第三方平台回写数据的能力。模型由 MCP 客户端提供，其配置与费用也由该客户端负责。
+3. **加入训练数据**  
+   导入或同步你希望使用的数据来源。Athria 会把缺失的数据保持为“缺失”，而不是自动猜测。
 
-Athria 不诊断伤病、不提供治疗方案、不作医疗决定，也不保证某项训练在医学上安全。缺失的健康、恢复、负重、RPE、心率或功率数据会保持为缺失状态，不会被解释为正常。
+4. **连接你的 AI 客户端**  
+   把 Athria 配置为本地 stdio MCP server。命令使用已经安装的 Athria 可执行文件，参数为 **mcp**。Athria 内置了常见客户端的连接说明，技术接口详见 [docs/MCP.md](docs/MCP.md)。
 
-当前技术和产品边界详见[已知限制](docs/KNOWN_LIMITATIONS.md)。
+5. **开始直接询问训练问题**  
+   之后你的 AI 客户端就可以在回答时读取 Athria 中的结构化训练数据，并调用相应工具。
 
-## 为什么使用 Athria
+例如：
 
-- **默认本地运行：** 核心训练数据保存在自己的电脑上，不需要 Athria 云服务或账号。
-- **兼容现有 MCP 客户端：** 可以选择兼容的外部客户端，不被单一模型提供商绑定。
-- **结果可复现：** 计算公式和规则位于可测试的 Core，而不是模型提示词中。
-- **写入更安全：** Schema、阻断规则、快照时效、数据归属和 revision 共同保护持久化状态。
-- **如实呈现不确定性：** 校验会报告缺失事实和未知结果，而不是编造输入。
-- **工作流可检查：** Dashboard 和 MCP 服务器共用同一个 Application Service 边界。
-- **数据可迁移：** 手动复制的数据库文件即完整备份，连接凭据仅以密文形式包含其中。
+> 查看我最近 30 天的训练，指出重要的数据缺口，并总结最近发生了哪些变化。
 
-## 快速开始
+> 根据我确认过的日程和器材拟定一个四周训练周期。先用 Athria 校验，但在我批准之前不要保存。
 
-### 源码构建前置条件
+> 查看我的下一个训练日，并结合最近的训练和我报告的 RPE 建议是否需要调整。
 
-- [Node.js](https://nodejs.org/) 24 或更高版本，以及 [pnpm](https://pnpm.io/) 11.19.0
-- 稳定版 [Rust](https://www.rust-lang.org/tools/install) 工具链
-- Windows x64：Microsoft Visual C++ Build Tools 和 Windows SDK
-- macOS：Apple Silicon Mac 和 Xcode Command Line Tools
+当 MCP 操作会修改重要的本地数据时，Athria 的工作流会优先要求明确确认、校验和状态新鲜度检查，而不是静默覆盖。
 
-### 运行开发版本
+### 数据、隐私与安全
 
-```sh
-git clone https://github.com/whywww/Athria.git
-cd Athria
+Athria 是**本地优先**应用：主要训练数据库保存在你的电脑上，不需要 Athria 自己的云账号。
+
+有几点需要明确：
+
+- 本地服务仅监听回环地址；Streamable HTTP 需要身份验证。
+- MCP 不暴露任意 SQL、任意文件读取、数据库删除或已保存的密钥。
+- 数据库密码用于控制 Athria 内部访问，并保护保存的连接密钥。**SQLite 数据库文件本身并没有做静态加密。**
+- 备份的核心方式是复制数据库文件，并遵循正常的 SQLite 安全备份方式。
+- “本地优先”并不代表数据绝不会离开电脑：连接的 AI 客户端可能会把它从 Athria 读取的数据发送给自己的模型提供商。该 AI 客户端自身的隐私政策、配置和费用仍然适用。
+
+### 当前限制
+
+Athria 目前仍是 MVP：
+
+- 官方桌面目标为 **Windows x64** 和 **Apple Silicon macOS**。
+- 应用界面目前**只有英文**。
+- Athria **不内置 LLM 或聊天界面**。
+- Hevy 通过文件导入；Intervals.icu 和训记目前只读。
+- Athria 保存最新的可复用模板和一个当前可编辑训练周期，并不是完整的计划版本管理系统。
+- 缺失的负重、RPE/RIR、心率、功率、恢复或 Wellness 数据不会被自动当成正常值，也不会被猜测补全。
+- Athria 不诊断伤病、不提供治疗方案，也不判断训练在医学上是否安全。
+
+完整边界请查看[已知限制](docs/KNOWN_LIMITATIONS.md)。
+
+### 帮助与反馈
+
+- [MCP 接口和工作流](docs/MCP.md)
+- [已知限制](docs/KNOWN_LIMITATIONS.md)
+- [GitHub Issues](https://github.com/whywww/Athria/issues) 用于 Bug 和功能建议
+
+提交 Bug 时，请包含平台、Athria 版本、复现步骤、预期结果和实际结果。请勿附上凭据或个人训练数据。
+
+---
+
+<a id="potential-contributors"></a>
+
+# Potential contributors / 潜在贡献者
+
+## English
+
+Athria is a Tauri 2 + React desktop application backed by a shared Rust runtime. The dashboard and MCP server use the same application-service boundary so calculations, validation, permissions, and persistence rules do not diverge between interfaces.
+
+### Development setup
+
+Prerequisites:
+
+- Node.js 24+
+- pnpm 11.19.0
+- Stable Rust toolchain
+- Windows x64: Microsoft Visual C++ Build Tools + Windows SDK
+- macOS: Apple Silicon + Xcode Command Line Tools
+
+Clone the repository into a directory named **Athria-repo** so generated build output can live in the sibling **Athria** directory:
+
+~~~sh
+git clone https://github.com/whywww/Athria.git Athria-repo
+cd Athria-repo
 pnpm install
 pnpm dev
-```
+~~~
 
-`pnpm dev` 会启动 Vite 和使用共享 Rust runtime 的 Tauri 调试应用。
+Useful checks and builds:
 
-### 构建桌面应用
-
-```sh
-# 可直接运行的当前平台调试应用
-pnpm build:debug
-
-# 可直接运行的当前平台发布应用
-pnpm build:app
-
-# Windows 生成 MSI；macOS 生成 app 和 DMG
-pnpm release:native
-```
-
-请将代码仓库保存在名为 `Athria-repo` 的目录中。所有生成文件均写入其同级的 `Athria` 目录，并按用途和 target triple 分开存放；构建位置不可更改。打包后的应用内嵌共享 Rust runtime，运行时不需要另外安装 Node.js、Rust、Python、Docker 或外部数据库。
-
-首次启动后，请先在 Dashboard 中完成运动者资料和偏好设置，再导入或同步希望 Athria 使用的训练记录。
-
-## 连接 MCP 客户端
-
-将安装后的 Athria 桌面可执行文件配置为 stdio MCP 服务器。请把示例中的命令路径替换为电脑上的实际安装路径。
-
-### Windows
-
-```json
-{
-  "mcpServers": {
-    "Athria": {
-      "command": "C:\\Program Files\\Athria\\Athria.exe",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-### macOS
-
-```json
-{
-  "mcpServers": {
-    "Athria": {
-      "command": "/Applications/Athria.app/Contents/MacOS/athria",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-保存配置后重启 MCP 客户端。Athria 的 stdout 仅用于 JSON-RPC，诊断信息会写入 stderr。
-
-各客户端的具体设置入口、Streamable HTTP 说明和写入边界详见 [MCP 设置](docs/MCP.md)。连接 MCP 服务器不会自动安装 [`packages/skills`](packages/skills) 中的可选 Skills。
-
-这些可选 Skills 按用户意图拆分：`athria-coach` 只分析不写入；`athria-training-planner` 负责完整周期与模板；`athria-athlete-profile` 负责经确认的 Profile 和 Wellness 更新；`athria-workout` 负责近期训练执行和历史修正；`athria-xunji-records` 只读本地已同步的训记数据。
-
-## 工作流示例
-
-连接 Athria 后，可以向 MCP 客户端提出：
-
-```text
-查看我最近 30 天的训练，指出会影响计划的重要数据缺口，并根据我已确认的
-时间和器材拟定一个四周训练周期。先用 Athria 完成校验，再把计划展示给我。
-在我明确批准之前，不要保存任何内容。
-```
-
-典型的计划工作流是：
-
-1. 读取已确认的个人资料、偏好、当前状态、taxonomy 和相关训练历史。
-2. 指出会影响阻断规则的缺失事实。
-3. 创建或更新可复用的训练模板。
-4. 创建引用这些模板、按自然周稀疏编排的训练周期。
-5. 校验、修订并解释结果。
-6. 仅在用户确认拟议变更后保存。
-
-通过 MCP 修改个人资料时，必须由用户明确确认并提供当前个人资料哈希，之后会直接写入。Dashboard 中的编辑也会直接写入。
-
-## 开发
-
-安装依赖后，使用根工作区脚本：
-
-```sh
-pnpm install
+~~~sh
 pnpm typecheck
 pnpm test
 pnpm check
 cargo test --workspace
-```
 
-常用命令：
+pnpm build:debug
+pnpm build:app
+pnpm release:native
+~~~
 
-| 命令 | 用途 |
-|---|---|
-| `pnpm dev` | 以开发模式运行 Tauri 桌面应用 |
-| `pnpm typecheck` | 检查桌面前端类型 |
-| `pnpm test` | 运行 Vitest 前端测试 |
-| `pnpm check` | 运行前端检查和 Skill 校验 |
-| `cargo test --workspace` | 运行 Rust workspace 测试 |
-| `pnpm build:app` | 构建可直接运行的发布应用 |
-| `pnpm release:native` | 生成原生安装包 |
+The default development database is:
+
+- Windows: %LOCALAPPDATA%\Athria\data\athria.sqlite3
+- macOS: ~/Library/Application Support/Athria/data/athria.sqlite3
+
+Use **ATHRIA_DATABASE_PATH** for isolated development data. Do not run tests or experiments against personal training data.
+
+### Repository structure
+
+~~~text
+apps/
+  desktop/       Tauri shell and React dashboard
+crates/          Shared Rust core, application, storage, integrations, MCP, runtime
+packages/
+  skills/        Optional provider-neutral MCP workflows
+schemas/         Versioned JSON Schema contracts
+scripts/         Development and release tooling
+docs/            MCP, limitations, and runtime documentation
+~~~
+
+### Contribution expectations
+
+- Keep business rules in the shared Core/application boundary rather than duplicating logic in UI or prompts.
+- Do not bypass schemas, permission checks, validation, revision checks, or persistence rules for writes.
+- Add or update tests when behavior changes.
+- Run **pnpm check** and **cargo test --workspace** before opening a PR.
+- Update schemas and documentation when contracts change.
+- Open an issue before substantial architecture or schema changes.
+- Never commit local databases, imports, backups, credentials, signing material, or generated build artifacts.
+
+Contributions and focused pull requests are welcome.
+
+## 中文
+
+Athria 使用 Tauri 2 + React 构建桌面界面，并由共享 Rust runtime 提供核心能力。Dashboard 和 MCP server 共用同一套 Application Service 边界，因此计算、校验、权限和持久化规则不会因为入口不同而出现两套实现。
+
+### 开发环境
+
+前置条件：
+
+- Node.js 24+
+- pnpm 11.19.0
+- 稳定版 Rust 工具链
+- Windows x64：Microsoft Visual C++ Build Tools + Windows SDK
+- macOS：Apple Silicon + Xcode Command Line Tools
+
+建议把仓库克隆到名为 **Athria-repo** 的目录，这样生成的构建产物会写入同级的 **Athria** 目录：
+
+~~~sh
+git clone https://github.com/whywww/Athria.git Athria-repo
+cd Athria-repo
+pnpm install
+pnpm dev
+~~~
+
+常用检查和构建命令：
+
+~~~sh
+pnpm typecheck
+pnpm test
+pnpm check
+cargo test --workspace
+
+pnpm build:debug
+pnpm build:app
+pnpm release:native
+~~~
 
 默认开发数据库位置：
 
-- Windows：`%LOCALAPPDATA%\Athria\data\athria.sqlite3`
-- macOS：`~/Library/Application Support/Athria/data/athria.sqlite3`
+- Windows：%LOCALAPPDATA%\Athria\data\athria.sqlite3
+- macOS：~/Library/Application Support/Athria/data/athria.sqlite3
 
-需要隔离的开发数据库时，请设置 `ATHRIA_DATABASE_PATH`。请勿让测试或实验使用个人训练数据。
+需要隔离开发数据时使用 **ATHRIA_DATABASE_PATH**。不要让测试或实验直接使用个人训练数据。
 
-## 项目结构
+### 项目结构
 
-```text
+~~~text
 apps/
   desktop/       Tauri 外壳和 React Dashboard
-crates/           共用 Rust Core、Application、存储、集成、MCP 与 runtime
+crates/          共用 Rust Core、Application、存储、集成、MCP 与 runtime
 packages/
   skills/        可选、与模型提供商无关的 MCP 工作流
 schemas/         版本化 JSON Schema contracts
 scripts/         开发和发布工具
-```
+docs/            MCP、限制和 runtime 文档
+~~~
 
-Dashboard 和 MCP 服务器调用同一个 Application Service 边界。业务写入不得绕过共用 Schema、权限检查、Core 校验或持久化层。
+### 贡献约定
 
-## 数据与安全
+- 业务规则应放在共享 Core / Application 边界中，不要在 UI 或 Prompt 中复制一套逻辑。
+- 所有写入都不能绕过 Schema、权限检查、校验、revision 检查或持久化规则。
+- 行为发生变化时同步增加或更新测试。
+- 提交 PR 前运行 **pnpm check** 和 **cargo test --workspace**。
+- Contract 改变时同步更新 Schema 和文档。
+- 较大的架构或 Schema 变更请先开 Issue 讨论。
+- 不要提交本地数据库、导入文件、备份、凭据、签名材料或生成的构建产物。
 
-- 服务仅监听 `127.0.0.1`，校验 Host header，并限制浏览器 Origin。
-- Streamable HTTP 需要 Bearer Token；Dashboard 管理的 MCP Token 保存在操作系统凭据管理器中，且不会通过 MCP 工具暴露。
-- MCP 不提供任意 SQL、任意文件读取、密钥访问、数据库删除或绕过校验的能力。
-- 备份为用户手动复制的 `.sqlite3` 数据库文件；连接凭据仅以受数据库密码保护的密文形式包含其中。
-- 早于 Rust schema version 24 兼容基线的数据库不会迁移至当前 MVP。
+欢迎提交聚焦、容易审阅的贡献和 Pull Request。
 
-移动或恢复数据之前，请阅读[备份与恢复](docs/BACKUP.md)。
+---
 
-## 文档与支持
-
-- [MCP 设置](docs/MCP.md)
-- [备份与恢复](docs/BACKUP.md)
-- [已知限制](docs/KNOWN_LIMITATIONS.md)
-- [发布产物](docs/RELEASE.md)
-
-Bug 和功能建议请通过 [GitHub Issues](https://github.com/whywww/Athria/issues) 提交。请包含平台、Athria 版本、复现步骤、预期结果和实际结果。请勿附上凭据或个人训练数据。
-
-## 参与贡献
-
-欢迎参与贡献。变更应聚焦当前 MCP 应用及其确定性 Core。
-
-1. 在进行重大架构或 Schema 变更前先创建 Issue。
-2. 使用独立分支，并为行为变更添加测试。
-3. 运行 `pnpm check` 和 `cargo test --workspace`。
-4. Contract 变化时同步更新 Schema 和文档。
-5. 创建 Pull Request，说明变更内容和验证方式。
-
-请勿提交本地数据库、导入文件、备份、凭据、签名材料或构建产物。
-
-## 维护者
-
-Athria 由 [Haoyu Wei](https://github.com/whywww) 和贡献者共同维护。
+Athria is maintained by [Haoyu Wei](https://github.com/whywww) and contributors.
