@@ -20,4 +20,5 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: cargo test --workspace
       - run: pnpm check
+      - run: cargo build -p athria-mcp --features conformance --example conformance_server
       - run: pnpm test:mcp-conformance
