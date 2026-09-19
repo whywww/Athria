@@ -1,0 +1,10 @@
+interface:
+  display_name: "Athria Workout"
+  short_description: "Handle today's workouts and explicit execution changes"
+  default_prompt: "Use $athria-workout to show my next training session and help me make a specific workout change."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "athria"
+      description: "Local Athria MCP server for planned-session and Training History actions"

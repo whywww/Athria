@@ -1,0 +1,10 @@
+interface:
+  display_name: "Athria Coach"
+  short_description: "Analyze training evidence and answer without changing data"
+  default_prompt: "Use $athria-coach to review my recent training and explain what the evidence suggests."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "athria"
+      description: "Local Athria MCP server for profile, training, wellness, and plan evidence"

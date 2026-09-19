@@ -1,0 +1,10 @@
+interface:
+  display_name: "Athria Athlete Profile"
+  short_description: "Set up and maintain athlete facts, constraints, and wellness"
+  default_prompt: "Use $athria-athlete-profile to update my Athria profile and assess whether my current plan is affected."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "athria"
+      description: "Local Athria MCP server for confirmed Profile and Wellness updates"

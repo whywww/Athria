@@ -47,7 +47,7 @@ The current MCP MVP provides:
 - A reusable Session Template Library and one editable Current Mesocycle per athlete.
 - Optimistic revision checks and validation gates for MCP writes.
 - Hevy CSV import with preview-before-commit, plus read-only Intervals.icu and Xunji synchronization.
-- Provider-neutral Skills for training-plan workflows and locally synchronized Xunji records.
+- Five provider-neutral Skills with least-privilege boundaries: read-only coaching, cycle planning, athlete Profile/Wellness updates, immediate workout execution, and locally synchronized Xunji records.
 
 Athria currently targets Windows x64 and Apple Silicon macOS. The interface is English-only.
 
@@ -139,6 +139,8 @@ Use the installed Athria desktop executable as a stdio MCP server. Replace the c
 Save the configuration and restart the MCP client. Athria reserves stdout for JSON-RPC and sends diagnostics to stderr.
 
 For client-specific setup paths, Streamable HTTP details, and write boundaries, read [MCP setup](docs/MCP.md). Connecting the MCP server does not automatically install the optional Skills in [`packages/skills`](packages/skills).
+
+The optional Skills are split by user intent: `athria-coach` analyzes without writing, `athria-training-planner` owns complete cycle and template changes, `athria-athlete-profile` owns confirmed Profile and Wellness updates, `athria-workout` owns immediate workout execution and history corrections, and `athria-xunji-records` reads locally synchronized Xunji data.
 
 ## Example workflow
 
@@ -280,7 +282,7 @@ Athria 的确定性 Core 负责计算和校验；连接的 MCP 客户端负责�
 - 可复用的 Session Template Library，以及每位运动者一个可编辑的 Current Mesocycle。
 - 使用 revision 乐观锁和校验门禁保护 MCP 写入。
 - 提交前可预览的 Hevy CSV 导入，以及只读的 Intervals.icu 和训记同步。
-- 面向训练计划工作流和本地训记记录的、与模型提供商无关的 Skills。
+- 五个按最小权限拆分、与模型提供商无关的 Skills：只读训练分析、周期规划、Athlete Profile/Wellness 更新、近期训练执行，以及本地训记记录查询。
 
 Athria 当前支持 Windows x64 和 Apple Silicon Mac，界面语言目前仅为英语。
 
@@ -372,6 +374,8 @@ pnpm release:native
 保存配置后重启 MCP 客户端。Athria 的 stdout 仅用于 JSON-RPC，诊断信息会写入 stderr。
 
 各客户端的具体设置入口、Streamable HTTP 说明和写入边界详见 [MCP 设置](docs/MCP.md)。连接 MCP 服务器不会自动安装 [`packages/skills`](packages/skills) 中的可选 Skills。
+
+这些可选 Skills 按用户意图拆分：`athria-coach` 只分析不写入；`athria-training-planner` 负责完整周期与模板；`athria-athlete-profile` 负责经确认的 Profile 和 Wellness 更新；`athria-workout` 负责近期训练执行和历史修正；`athria-xunji-records` 只读本地已同步的训记数据。
 
 ## 工作流示例
 

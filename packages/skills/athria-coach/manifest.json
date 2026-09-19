@@ -1,0 +1,36 @@
+{
+  "name": "athria-coach",
+  "version": "0.1.0",
+  "purpose": "Answer training questions and explain evidence from Athria without changing stored data.",
+  "appliesWhen": [
+    "The user asks how training is going, why performance may have changed, what recent history suggests, or what to consider next without requesting a stored change."
+  ],
+  "doesNotApplyWhen": [
+    "The user asks to save a plan, update their athlete information or wellness, or change or record a workout."
+  ],
+  "requiredContext": ["AthleteProfile", "TrainingStateSnapshot"],
+  "allowedTools": [
+    "get_athlete_profile",
+    "get_training_state",
+    "list_training_sessions",
+    "list_wellness",
+    "get_wellness_day",
+    "get_training_summary",
+    "get_current_plan",
+    "get_plan_adjustment_review",
+    "get_next_training_day",
+    "list_planned_sessions",
+    "get_training_taxonomy",
+    "calculate_training_metrics",
+    "estimate_1rm",
+    "calculate_heart_rate_zones",
+    "evaluate_rpe_autoregulation",
+    "evaluate_progression"
+  ],
+  "workflow": ["understand-question", "read-targeted-evidence", "calculate-if-needed", "explain-evidence", "recommend-with-boundaries"],
+  "safetyRules": [
+    "Use read-only tools only and never change Athria data.",
+    "Separate recorded facts, deterministic calculations, and coaching interpretation.",
+    "Do not infer missing health or recovery data or provide medical diagnosis or treatment."
+  ]
+}

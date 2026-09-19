@@ -1,4 +1,10 @@
 interface:
   display_name: "Athria Training Planner"
-  short_description: "Plan and validate training with the local Athria MCP server"
-  default_prompt: "Use Athria to read my training state, maintain reusable session templates, and validate and save my current Mesocycle."
+  short_description: "Create, review, and safely save complete training cycles"
+  default_prompt: "Use $athria-training-planner to review my training state and create or revise my current Mesocycle."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "athria"
+      description: "Local Athria MCP server for validated training plans"

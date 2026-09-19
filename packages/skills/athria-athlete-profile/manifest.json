@@ -1,0 +1,32 @@
+{
+  "name": "athria-athlete-profile",
+  "version": "0.1.0",
+  "purpose": "Onboard an athlete and maintain confirmed personal facts, training constraints, preferences, goals, and dated wellness data.",
+  "appliesWhen": [
+    "The user is setting up Athria or asks to change personal information, goals, schedule, equipment, restrictions, preferences, race dates, weight, or wellness."
+  ],
+  "doesNotApplyWhen": [
+    "The user asks to rewrite the Current Mesocycle or change a specific planned workout."
+  ],
+  "requiredContext": ["AthleteProfile"],
+  "allowedTools": [
+    "get_athlete_profile",
+    "get_current_plan",
+    "get_wellness_day",
+    "list_wellness",
+    "update_athlete_profile",
+    "update_wellness",
+    "get_plan_adjustment_review"
+  ],
+  "workflow": ["read-current-values", "collect-required-facts", "show-diff", "approve", "freshness-check", "update", "review-plan-impact", "handoff"],
+  "approvalPoints": [
+    "Before update_athlete_profile",
+    "Before update_wellness"
+  ],
+  "safetyRules": [
+    "Never infer or silently change athlete or wellness facts.",
+    "Do not rewrite the Current Mesocycle after a Profile or Wellness change.",
+    "Use current hashes and stop on a freshness conflict.",
+    "Do not provide medical diagnosis or injury treatment."
+  ]
+}

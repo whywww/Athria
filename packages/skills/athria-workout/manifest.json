@@ -1,0 +1,38 @@
+{
+  "name": "athria-workout",
+  "version": "0.1.0",
+  "purpose": "Inspect and execute near-term workouts without redesigning the whole Mesocycle.",
+  "appliesWhen": [
+    "The user asks what to do today, to add near-term sessions, skip, restore, or move a planned session, record or correct a manual workout, or explicitly correct a workout-plan match."
+  ],
+  "doesNotApplyWhen": [
+    "The user asks to create or materially redesign the complete Current Mesocycle."
+  ],
+  "requiredContext": ["CurrentPlan", "TrainingHistory"],
+  "allowedTools": [
+    "get_athlete_profile",
+    "get_training_state",
+    "list_training_sessions",
+    "get_current_plan",
+    "get_next_training_day",
+    "list_planned_sessions",
+    "validate_next_training_day_sessions",
+    "save_next_training_day_sessions",
+    "update_planned_session",
+    "record_training_session",
+    "override_training_session_plan_match",
+    "allow_automatic_plan_match",
+    "update_manual_training_session",
+    "remove_manual_training_source"
+  ],
+  "workflow": ["read-execution-queue", "identify-exact-action", "validate-if-adding", "show-change", "approve", "freshness-check", "write", "report-result"],
+  "approvalPoints": [
+    "Before every tool that changes a planned session, Training History, or plan match"
+  ],
+  "safetyRules": [
+    "Never rewrite the complete Current Mesocycle.",
+    "Never choose a plannedSessionId during normal recording or inferred matching.",
+    "Only override a match when the user explicitly identifies the workout and intended correction.",
+    "Preserve synced source observations when editing or removing a manual source."
+  ]
+}

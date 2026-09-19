@@ -1,30 +1,46 @@
 {
   "name": "athria-training-planner",
-  "version": "0.7.0",
-  "purpose": "Create and revise reusable templates plus complete week-specific prescriptions for the single current Mesocycle through Athria's deterministic tools.",
-  "appliesWhen": ["The user asks to create, revise, validate, or explain a training plan."],
-  "doesNotApplyWhen": ["The request is for medical diagnosis, injury treatment, or unsupervised rehabilitation."],
+  "version": "0.8.0",
+  "purpose": "Create, review, revise, validate, and save the single current Mesocycle and its reusable session templates.",
+  "appliesWhen": [
+    "The user asks to create their first training cycle, revise the current cycle, review an ending cycle, plan the next cycle, or manage session templates."
+  ],
+  "doesNotApplyWhen": [
+    "The user only wants analysis or coaching advice without changing a plan.",
+    "The user wants to update athlete facts, wellness, or one or two immediate workouts."
+  ],
   "requiredContext": ["AthleteProfile", "TrainingStateSnapshot", "WellnessRecord"],
   "allowedTools": [
-    "get_athlete_profile", "get_training_state", "list_training_sessions", "list_wellness", "get_wellness_day",
-    "get_training_summary", "get_current_plan", "get_plan_adjustment_review", "get_next_training_day", "list_planned_sessions", "list_session_templates", "get_session_template", "get_training_taxonomy", "calculate_training_metrics",
-    "estimate_1rm", "calculate_heart_rate_zones", "evaluate_progression",
-    "validate_current_plan", "validate_next_training_day_sessions",
-    "create_session_template", "update_session_template", "delete_session_template", "save_current_plan", "save_next_training_day_sessions", "update_planned_session", "record_training_session", "override_training_session_plan_match", "allow_automatic_plan_match", "update_manual_training_session", "remove_manual_training_source", "update_wellness", "update_athlete_profile"
+    "get_athlete_profile",
+    "get_training_state",
+    "list_training_sessions",
+    "list_wellness",
+    "get_training_summary",
+    "get_current_plan",
+    "get_plan_adjustment_review",
+    "list_session_templates",
+    "get_session_template",
+    "get_training_taxonomy",
+    "calculate_training_metrics",
+    "estimate_1rm",
+    "calculate_heart_rate_zones",
+    "evaluate_progression",
+    "validate_current_plan",
+    "create_session_template",
+    "update_session_template",
+    "delete_session_template",
+    "save_current_plan"
   ],
-  "workflow": ["review", "read-targeted-evidence", "plan", "validate", "explain", "approve", "freshness-check", "save-current-plan"],
+  "workflow": ["review", "read-targeted-evidence", "draft-complete-plan", "validate", "explain", "approve", "freshness-check", "save-current-plan"],
   "outputSchema": "CurrentPlan",
   "approvalPoints": [
-    "Before save_current_plan or save_next_training_day_sessions",
-    "Before update_planned_session",
-    "Before deleting a template",
-    "Before changing a training-session plan match",
-    "Before updating or removing manual training history",
-    "Before updating Profile or Wellness"
+    "Before creating, updating, or deleting a session template",
+    "Before save_current_plan"
   ],
   "safetyRules": [
     "Do not infer missing health or recovery data.",
-    "Do not bypass blocker validation, revision checks, or explicit deletion authority.",
+    "Do not bypass blocker validation, revision checks, or explicit user approval.",
+    "Do not update Profile, Wellness, individual workout execution, or Training History.",
     "Do not provide medical diagnosis or injury treatment."
   ]
 }
