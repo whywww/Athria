@@ -173,7 +173,7 @@ export function PlanEmptyState() {
     <h2>No current plan</h2>
     <p>Plans are created by your connected AI Agent — not inside Athria.</p>
     <ol className="plan-empty-steps">
-      <li><span aria-hidden="true">1</span><div><strong>Connect your AI agent</strong><p>Set up MCP from Help &amp; Support, then enable the Athria server in your agent.</p></div></li>
+      <li><span aria-hidden="true">1</span><div><strong>Connect your AI agent</strong><p>Connect it in Settings under AI Agents, then enable the Athria server in your agent.</p></div></li>
       <li><span aria-hidden="true">2</span><div><strong>Ask it to build your plan</strong><p>It creates complete Weekly Sessions from your profile, training history and synced workouts.</p></div></li>
       <li><span aria-hidden="true">3</span><div><strong>Review it here</strong><p>Phases, progressions and the weekly calendar open on this page.</p></div></li>
     </ol>

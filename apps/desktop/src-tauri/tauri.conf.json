@@ -14,6 +14,13 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "resources": {
+      "../../../packages/skills/athria-athlete-profile/": "skills/athria-athlete-profile/",
+      "../../../packages/skills/athria-coach/": "skills/athria-coach/",
+      "../../../packages/skills/athria-training-planner/": "skills/athria-training-planner/",
+      "../../../packages/skills/athria-workout/": "skills/athria-workout/",
+      "../../../packages/skills/athria-xunji-records/": "skills/athria-xunji-records/"
+    },
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"]
   }
 }

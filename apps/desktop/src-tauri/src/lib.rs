@@ -12,7 +12,9 @@ use uuid::Uuid;
 use zeroize::Zeroizing;
 
 mod application_ipc;
+mod agent_integrations;
 use application_ipc::{DesktopApplication, dispatch as dispatch_application};
+use agent_integrations::{AgentKind, resource_skills};
 use athria_application::AthriaApplication;
 use athria_integrations::{
     XUNJI_SYNC_DAYS, fetch_intervals, fetch_xunji_training, sync_date_window,
@@ -766,17 +768,42 @@ async fn xunji_status(state: State<'_, RuntimeState>) -> Result<Value, String> {
 }
 
 #[tauri::command]
-fn mcp_status() -> Result<Value, String> {
+fn mcp_status(app: AppHandle) -> Result<Value, String> {
     let executable = std::env::current_exe()
         .map_err(|error| format!("Athria could not determine its installation path: {error}"))?;
+    let skills = resource_skills(&app).ok();
+    mcp_stdio_payload(&executable, skills.as_deref())
+}
+
+fn mcp_stdio_payload(executable: &Path, skills: Option<&Path>) -> Result<Value, String> {
+    let executable = simplify_path(executable);
     let executable_path = executable
         .to_str()
         .ok_or_else(|| "Athria's installation path contains unsupported characters.".to_string())?;
+    let skills_path = skills.map(simplify_path).and_then(|path| path.to_str().map(str::to_owned));
     Ok(json!({
         "configured": true,
         "executablePath": executable_path,
-        "arguments": ["mcp"]
+        "arguments": ["mcp"],
+        "skillsPath": skills_path
     }))
+}
+
+#[tauri::command]
+fn agent_integrations_status(app: AppHandle) -> Result<Value, String> {
+    serde_json::to_value(agent_integrations::statuses(&app)?).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn install_agent_integration(app: AppHandle, agent: AgentKind) -> Result<Value, String> {
+    serde_json::to_value(agent_integrations::install(&app, agent, &platform_config_root()?))
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn remove_agent_integration(agent: AgentKind) -> Result<Value, String> {
+    serde_json::to_value(agent_integrations::remove(agent, &platform_config_root()?))
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -953,6 +980,9 @@ pub fn run() -> i32 {
             sync_xunji,
             xunji_status,
             mcp_status,
+            agent_integrations_status,
+            install_agent_integration,
+            remove_agent_integration,
             pick_restore_file,
             pick_new_profile_destination,
             restore_backup,
@@ -984,9 +1014,10 @@ pub fn run() -> i32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        extract_xunji_api_key, mcp_status, new_runtime_token, read_config_from, simplify_path,
-        validate_new_profile_target, write_config_to,
+        extract_xunji_api_key, mcp_stdio_payload, new_runtime_token, read_config_from,
+        simplify_path, validate_new_profile_target, write_config_to,
     };
+    use std::path::Path;
     use uuid::Uuid;
 
     fn temp_root(prefix: &str) -> std::path::PathBuf {
@@ -1026,13 +1057,34 @@ mod tests {
     }
 
     #[test]
-    fn reports_the_current_executable_for_mcp_stdio() {
+    fn reports_the_current_executable_and_bundled_skills_for_mcp_stdio() {
         let expected = std::env::current_exe().unwrap();
-        let status = mcp_status().unwrap();
+        let status = mcp_stdio_payload(&expected, Some(Path::new("/skills"))).unwrap();
         assert_eq!(status["configured"], true);
         assert_eq!(status["executablePath"], expected.to_str().unwrap());
         assert_eq!(status["arguments"], serde_json::json!(["mcp"]));
+        assert_eq!(status["skillsPath"], "/skills");
         assert!(expected.is_absolute());
+    }
+
+    #[test]
+    fn omits_the_skills_path_when_bundled_skills_are_missing() {
+        let status = mcp_stdio_payload(Path::new("/Athria"), None).unwrap();
+        assert_eq!(status["skillsPath"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn strips_verbatim_prefixes_from_the_mcp_stdio_paths() {
+        let status = mcp_stdio_payload(
+            Path::new(r"\\?\C:\Program Files\Athria\athria.exe"),
+            Some(Path::new(r"\\?\C:\Program Files\Athria\skills")),
+        )
+        .unwrap();
+        assert_eq!(
+            status["executablePath"],
+            r"C:\Program Files\Athria\athria.exe"
+        );
+        assert_eq!(status["skillsPath"], r"C:\Program Files\Athria\skills");
     }
 
     #[test]

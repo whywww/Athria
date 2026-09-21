@@ -1,14 +1,10 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { QueryClient } from "@tanstack/query-core";
-import { QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 import { Help } from "./App";
 
-// Help embeds McpSetup, which reads its status through React Query and needs a provider context.
 function renderHelp(): string {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return renderToStaticMarkup(createElement(QueryClientProvider, { client }, createElement(Help)));
+  return renderToStaticMarkup(createElement(Help));
 }
 
 describe("Help", () => {
@@ -23,10 +19,13 @@ describe("Help", () => {
     const html = renderHelp();
     expect((html.match(/class="faq-item"/g) ?? []).length).toBe(3);
     expect(html).toContain("Plans are created by your connected AI agent.");
+    expect(html).toContain("Connect an agent in Settings under AI Agents");
   });
 
-  it("names MCP in the agent connection card title", () => {
-    expect(renderHelp()).toContain("Connect Athria to Your AI Agent through MCP");
+  it("no longer carries the MCP connection section", () => {
+    const html = renderHelp();
+    expect(html).not.toContain("Connect Athria to Your AI Agent");
+    expect(html).not.toContain("mcp-card");
   });
 
   it("explains AI and training terms in the glossary", () => {

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, changeVaultPassword, createNewProfile, disconnectConnection, getIntervalsStatus, getMcpStatus, getVaultStatus, getXunjiStatus, importXunjiSkill, pickNewProfileDestination, pickRestoreFile, requireVaultPassword, resetVaultPassword, restoreBackup, setupVault, syncIntervals, syncXunji, testIntervals, unlockVault } from "./api";
-import { mcpConfig, mcpGuides } from "./mcp-guides";
+import { api, changeVaultPassword, createNewProfile, disconnectConnection, getAgentIntegrationsStatus, getIntervalsStatus, getMcpStatus, getVaultStatus, getXunjiStatus, importXunjiSkill, installAgentIntegration, pickNewProfileDestination, pickRestoreFile, removeAgentIntegration, requireVaultPassword, resetVaultPassword, restoreBackup, setupVault, syncIntervals, syncXunji, testIntervals, unlockVault, type AgentIntegrationStatus, type AgentKind } from "./api";
+import { agentSetupPrompt } from "./mcp-config";
 import {
   cmToImperialHeight, connectionSources, dashboardPages, deviceTimezone, equipmentGroupState, filterAndSortTrainingHistory, formatDateTime, formatDuration, formatPersonalHeight, formatPersonalWeight, formatRaceCountdown, formatRaceDateShort, formatTimezoneLabel, formatTrainingRhythm, formatTrainingSource, friendlyLabel, imperialHeightToCm, isUntouchedDefaultProfile, kgToPounds, nextRaceDay, poundsToKg,
   paginateTrainingHistory, parseSyncRange, profilePayload, syncRangeOptions, timezoneOptions, PREFERENCE_MAX_LENGTH, RACE_SPORT_PRESETS,
@@ -9,18 +9,22 @@ import {
   type AthleteProfile, type BackupPreview, type CurrentPlan, type DoctorResult, type HevyImportStatus, type ImportPreview,
   type AdjustmentReminder, type CalendarSession, type EquipmentCategory, type ImportResult, type NextTrainingDay, type PersonalInformation, type RaceDay, type SyncRange, type TrainingHistorySession, type TrainingHistorySort, type TrainingTaxonomy, type TrainingSummary, type UnitSystem, type WellnessRecord, type XunjiConnectionStatus,
 } from "./view-models";
-import { Card, EmptyState, ErrorBanner, Loading, PrimaryPageHeader, weekdays } from "./components";
+import { Card, EmptyState, ErrorBanner, Loading, PrimaryPageHeader, useModalDismiss, weekdays } from "./components";
 import { CurrentPlanPage, NextTrainingDayCard } from "./plan/CurrentPlanPage";
 import { localDateForTimezone } from "./plan/view";
 import { OverviewDashboard, overviewDateRange } from "./overview";
 import { domainIconPath } from "./domain-icons";
+import { AgentLogo } from "./agent-logos";
+import hevyLogo from "./assets/trackers/hevy.webp";
+import intervalsLogo from "./assets/trackers/intervalsicu.png";
+import xunjiLogo from "./assets/trackers/xunji.webp";
 
 type Page = (typeof dashboardPages)[number]["id"];
 const commonGoals = ["general_fitness", "build_strength", "build_muscle", "improve_endurance", "fat_loss"];
 const RACE_SPORT_OTHER = "__other__";
 const emptyRaceDraft: { date: string; sport: string; custom: string } = { date: "", sport: RACE_SPORT_PRESETS[0] ?? "Marathon", custom: "" };
 
-type IconName = "overview" | "training" | "profile" | "plan" | "devices" | "settings" | "help" | "globe" | "edit" | "target" | "preferences" | "rhythm" | "clock" | "equipment" | "sparkles" | "warning" | "notes" | "recovery" | "info" | "plus" | "refresh" | "database" | "upload" | "close" | "trophy";
+type IconName = "overview" | "training" | "profile" | "plan" | "devices" | "settings" | "help" | "globe" | "edit" | "target" | "preferences" | "rhythm" | "clock" | "equipment" | "sparkles" | "warning" | "notes" | "recovery" | "info" | "plus" | "refresh" | "database" | "upload" | "close" | "trophy" | "ellipsis" | "grid" | "chevron" | "copy" | "trash" | "check";
 
 function AppIcon({ name, className = "" }: { name: IconName; className?: string }) {
   const paths: Record<IconName, React.ReactNode> = {
@@ -49,6 +53,12 @@ function AppIcon({ name, className = "" }: { name: IconName; className?: string 
     upload: <><path d="M12 16V4M7 9l5-5 5 5"/><path d="M5 15v5h14v-5"/></>,
     close: <path d="m6 6 12 12M18 6 6 18"/>,
     trophy: <><path d="M8 4h8v4a4 4 0 0 1-8 0V4Z"/><path d="M8 6H5.5v.5a3 3 0 0 0 3 3M16 6h2.5v.5a3 3 0 0 1-3 3"/><path d="M12 11.5V20M9.5 16h5M7 20h10"/></>,
+    ellipsis: <><circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.6" fill="currentColor" stroke="none"/></>,
+    grid: <><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></>,
+    chevron: <path d="m9 6 6 6-6 6"/>,
+    copy: <><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5 15V6.5A1.5 1.5 0 0 1 6.5 5H15"/></>,
+    trash: <><path d="M4 7h16M9.5 7V4.5h5V7"/><path d="m6.5 7 .8 12.5h9.4L17.5 7"/></>,
+    check: <path d="m5 12.5 4.5 4.5L19 7"/>,
   };
   return <svg className={`app-icon ${className}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 }
@@ -260,15 +270,16 @@ export function ProfileBoard({ profile, equipmentCategories }: { profile: Athlet
   </div>;
 }
 
-type ConnectionDialog = "hevy" | "intervals" | "xunji" | null;
+type ConnectionSource = "hevy" | "intervals" | "xunji";
+type ConnectionDialog = ConnectionSource | null;
 
-function ProviderLogo({ source }: { source: "hevy" | "intervals" | "xunji" }) {
-  if (source === "intervals") return <span className="provider-logo intervals-logo" aria-hidden="true"><i/><i/><i/></span>;
-  if (source === "xunji") return <span className="provider-logo xunji-logo" aria-hidden="true"><svg viewBox="0 0 48 48"><path d="m12 11 25 26M36 11 11 36"/></svg></span>;
-  return <span className="provider-logo hevy-logo" aria-hidden="true"><svg viewBox="0 0 48 48"><path d="M12 18v12M8 20v8M36 18v12M40 20v8M12 24h24M17 15v18M31 15v18"/></svg></span>;
+const providerLogos: Record<ConnectionSource, string> = { hevy: hevyLogo, intervals: intervalsLogo, xunji: xunjiLogo };
+
+function ProviderLogo({ source }: { source: ConnectionSource }) {
+  return <span className={`provider-logo ${source}-logo`} aria-hidden="true"><img src={providerLogos[source]} alt=""/></span>;
 }
 
-function SourceCard({ source, title, description, lastSyncLabel, lastSync, action, menuLabel, onMenuAction, feedback }: { source: "hevy" | "intervals" | "xunji"; title: string; description: string; lastSyncLabel: string; lastSync: string; action: React.ReactNode; menuLabel: string; onMenuAction: () => void; feedback?: React.ReactNode }) {
+function SourceCard({ source, title, description, lastSyncLabel, lastSync, action, menuLabel, onMenuAction, feedback }: { source: ConnectionSource; title: string; description: string; lastSyncLabel: string; lastSync: string; action: React.ReactNode; menuLabel: string; onMenuAction: () => void; feedback?: React.ReactNode }) {
   return <article className="source-card"><div className="source-card-main"><ProviderLogo source={source}/><div className="source-title"><div><h2>{title}</h2></div><p>{description}</p></div><Metric icon="clock" label={lastSyncLabel} value={lastSync}/></div>{feedback}<footer>{action}<details className="source-menu"><summary aria-label={`More options for ${title}`}>•••</summary><div><button type="button" onClick={onMenuAction}>{menuLabel}</button></div></details></footer></article>;
 }
 
@@ -276,7 +287,7 @@ function Metric({ icon, label, value }: { icon: "clock" | "database" | "upload";
   return <div className="source-metric"><AppIcon name={icon}/><div><span>{label}</span><strong title={value}>{value}</strong></div></div>;
 }
 
-function AvailableSourceCard({ source, title, description, onConnect }: { source: "hevy" | "intervals" | "xunji"; title: string; description: string; onConnect: () => void }) {
+function AvailableSourceCard({ source, title, description, onConnect }: { source: ConnectionSource; title: string; description: string; onConnect: () => void }) {
   return <article className="available-source-card" role="button" tabIndex={0} aria-label={`Connect ${title}`} onClick={onConnect} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onConnect(); } }}><ProviderLogo source={source}/><div><h3>{title}</h3><p>{description}</p></div><span className="available-source-arrow" aria-hidden="true">›</span></article>;
 }
 
@@ -298,7 +309,7 @@ function Connections() {
   const [key, setKey] = useState(""); const [athleteId, setAthleteId] = useState("0");
   const onFile = async (file: File) => { try { setHevyError(undefined); setImportResult(undefined); const bytes = new Uint8Array(await file.arrayBuffer()); let binary = ""; bytes.forEach((byte) => { binary += String.fromCharCode(byte); }); setPreview(await api<ImportPreview>("/api/imports/hevy/preview", { method: "POST", body: JSON.stringify({ fileName: file.name, contentBase64: btoa(binary) }) })); } catch (value) { setHevyError(value); } };
   const closeDialog = () => { setDialog(null); setPreview(undefined); setXunjiSkill(""); setKey(""); setHevyError(undefined); setIntervalsError(undefined); setXunjiError(undefined); };
-  useEffect(() => { if (!dialog) return; const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") closeDialog(); }; window.addEventListener("keydown", onKeyDown); return () => window.removeEventListener("keydown", onKeyDown); }, [dialog]);
+  useModalDismiss(closeDialog, Boolean(dialog));
   const openIntervals = () => { setAthleteId(intervalsStatus.data?.athleteId ?? "0"); setIntervalsMessage(""); setDialog("intervals"); };
   const commit = async () => { if (!preview?.previewToken) return; try { setHevyError(undefined); setImportResult(await api<ImportResult>("/api/imports/hevy/commit", { method: "POST", body: JSON.stringify({ previewToken: preview.previewToken }) })); setPreview(undefined); setDialog(null); await client.invalidateQueries({ queryKey: ["hevy-status"] }); } catch (value) { setHevyError(value); } };
   const saveIntervals = async () => { try { setIntervalsError(undefined); await testIntervals(key, athleteId); setIntervalsMessage("Connected. Your credentials were saved securely on this device."); setKey(""); setDialog(null); await client.invalidateQueries({ queryKey: ["intervals-status"] }); } catch (value) { setIntervalsError(value); } };
@@ -488,7 +499,7 @@ export function Backup() {
   };
   return <Card title="Manage database">
     <p>All your data is stored in one portable database. Your API keys are protected by your database password.</p>
-    {databasePath && <p className="data-location">Local Database: <code>{databasePath}</code> <button type="button" className="secondary compact" onClick={() => void chooseBackup()}>Switch database</button></p>}
+    {databasePath && <p className="data-location"><span className="data-location-label">Local Database:</span><code>{databasePath}</code><button type="button" className="secondary compact" onClick={() => void chooseBackup()}>Switch Database</button></p>}
     {preview && <div className="restore-confirm">
           <strong>Switch to this database?</strong>
           <span className="restore-path">{preview.path}</span>
@@ -501,11 +512,11 @@ export function Backup() {
           {preview.includesCredentials && <p>This database includes encrypted connections. Athria will ask for its password when it is opened on another computer.</p>}
           <div className="restore-actions">
             <button type="button" className="secondary compact" disabled={restoring} onClick={() => setPreview(undefined)}>Cancel</button>
-            <button type="button" className="compact" disabled={restoring} onClick={() => void confirmRestore()}>{restoring ? "Switching database…" : "Switch and restart"}</button>
+            <button type="button" className="compact" disabled={restoring} onClick={() => void confirmRestore()}>{restoring ? "Switching Database…" : "Switch and Restart"}</button>
           </div>
         </div>}
-    {vault.data?.initialized && !vault.data.locked && <div className="section"><h3>Edit Password Settings</h3><p>Change the database password or require it whenever Athria starts.</p><div className="restore-actions"><button type="button" className="secondary" onClick={openChangePassword}>Change password</button><button type="button" className="secondary" disabled={!vault.data.remembered} onClick={() => { setError(undefined); setCurrentPassword(""); setRequireModal(true); }}>{vault.data.remembered ? "Require password on startup" : "Password required on startup"}</button></div></div>}
-    <div className="section"><h3>Create a New Profile</h3><p>Start fresh from a new empty profile. Athria will switch to it and restart; the current database file is left untouched on disk.</p><button type="button" className="secondary" disabled={creating} onClick={() => void chooseProfileDestination()}>Create a new profile</button></div>
+    {vault.data?.initialized && !vault.data.locked && <div className="section"><div className="section-heading"><div className="section-copy"><h3>Edit Password Settings</h3><p>Change the database password or require it whenever Athria starts.</p></div><div className="section-actions"><button type="button" className="secondary compact" onClick={openChangePassword}>Change Password</button><button type="button" className="secondary compact" disabled={!vault.data.remembered} onClick={() => { setError(undefined); setCurrentPassword(""); setRequireModal(true); }}>{vault.data.remembered ? "Always Require Password" : "Password Required on Startup"}</button></div></div></div>}
+    <div className="section"><div className="section-heading"><div className="section-copy"><h3>Create a New Profile</h3><p>Start fresh from a new empty profile. Athria will switch to it and restart; the current database file is left untouched.</p></div><div className="section-actions"><button type="button" className="secondary compact" disabled={creating} onClick={() => void chooseProfileDestination()}><AppIcon name="plus"/>Create Profile</button></div></div></div>
     {profileTarget && <NewProfileModal target={profileTarget} error={error} busy={creating} onClose={() => setProfileTarget(undefined)} onSubmit={() => void createProfile()}/>}
     {passwordModal && <ChangePasswordModal value={passwordDraft} error={error} busy={changing} onChange={setPasswordDraft} onClose={closeChangePassword} onSubmit={() => void updateVaultPassword()}/>}
     {requireModal && <RequirePasswordModal value={currentPassword} error={error} busy={changing} onChange={setCurrentPassword} onClose={() => { setRequireModal(false); setCurrentPassword(""); setError(undefined); }} onSubmit={() => void requirePassword()}/>}
@@ -516,29 +527,32 @@ export function Backup() {
 
 export function ChangePasswordModal({ value, error, busy, onChange, onClose, onSubmit }: { value: { currentPassword: string; password: string; confirmation: string }; error: unknown; busy: boolean; onChange: (value: { currentPassword: string; password: string; confirmation: string }) => void; onClose: () => void; onSubmit: () => void; }) {
   const mismatch = value.password !== value.confirmation;
-  return <div className="modal-backdrop"><section className="connection-modal" role="dialog" aria-modal="true" aria-labelledby="change-password-title">
-    <header><div><h2 id="change-password-title">Change Database Password</h2><p>This re-wraps the database master key; your saved connection keys do not need to be entered again.</p></div></header>
+  useModalDismiss(onClose);
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="connection-modal" role="dialog" aria-modal="true" aria-labelledby="change-password-title">
+    <header><div><h2 id="change-password-title">Change Database Password</h2><p>This re-wraps the database master key; your saved connection keys do not need to be entered again.</p></div><button type="button" className="modal-close" aria-label="Close dialog" onClick={onClose}><AppIcon name="close"/></button></header>
     <div className="modal-body">
       <label>Current password<input type="password" autoFocus autoComplete="current-password" value={value.currentPassword} onChange={(event) => onChange({ ...value, currentPassword: event.target.value })}/></label>
       <label>New password<input type="password" autoComplete="new-password" value={value.password} onChange={(event) => onChange({ ...value, password: event.target.value })}/></label>
       <label>Confirm password<input type="password" className={mismatch ? "invalid" : undefined} autoComplete="new-password" value={value.confirmation} onChange={(event) => onChange({ ...value, confirmation: event.target.value })}/>{mismatch && <span className="field-error">Passwords do not match.</span>}</label>
       <ErrorBanner error={error}/>
-      <div className="modal-actions"><button type="button" className="secondary" disabled={busy} onClick={onClose}>Cancel</button><button type="button" disabled={busy || value.currentPassword.length === 0 || value.password.length === 0 || mismatch} onClick={onSubmit}>{busy ? "Changing password…" : "Change password"}</button></div>
+      <div className="modal-actions"><button type="button" className="secondary" disabled={busy} onClick={onClose}>Cancel</button><button type="button" disabled={busy || value.currentPassword.length === 0 || value.password.length === 0 || mismatch} onClick={onSubmit}>{busy ? "Changing Password…" : "Change Password"}</button></div>
     </div>
   </section></div>;
 }
 
 export function RequirePasswordModal({ value, error, busy, onChange, onClose, onSubmit }: { value: string; error: unknown; busy: boolean; onChange: (value: string) => void; onClose: () => void; onSubmit: () => void; }) {
-  return <div className="modal-backdrop"><section className="connection-modal" role="dialog" aria-modal="true" aria-labelledby="require-password-title">
-    <header><div><h2 id="require-password-title">Require Password on Startup</h2><p>Confirm your current password. Athria will ask for it the next time it starts.</p></div></header>
-    <div className="modal-body"><label>Current password<input type="password" autoFocus autoComplete="current-password" value={value} onChange={(event) => onChange(event.target.value)}/></label><ErrorBanner error={error}/><div className="modal-actions"><button type="button" className="secondary" disabled={busy} onClick={onClose}>Cancel</button><button type="button" disabled={busy || value.length === 0} onClick={onSubmit}>{busy ? "Updating…" : "Require password"}</button></div></div>
+  useModalDismiss(onClose);
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="connection-modal" role="dialog" aria-modal="true" aria-labelledby="require-password-title">
+    <header><div><h2 id="require-password-title">Require Password on Startup</h2><p>Confirm your current password. Athria will ask for it the next time it starts.</p></div><button type="button" className="modal-close" aria-label="Close dialog" onClick={onClose}><AppIcon name="close"/></button></header>
+    <div className="modal-body"><label>Current password<input type="password" autoFocus autoComplete="current-password" value={value} onChange={(event) => onChange(event.target.value)}/></label><ErrorBanner error={error}/><div className="modal-actions"><button type="button" className="secondary" disabled={busy} onClick={onClose}>Cancel</button><button type="button" disabled={busy || value.length === 0} onClick={onSubmit}>{busy ? "Updating…" : "Require Password"}</button></div></div>
   </section></div>;
 }
 
 export function NewProfileModal({ target, error, busy, onClose, onSubmit }: { target: string; error: unknown; busy: boolean; onClose: () => void; onSubmit: () => void; }) {
-  return <div className="modal-backdrop"><section className="connection-modal" role="dialog" aria-modal="true" aria-labelledby="new-profile-title">
-    <header><div><h2 id="new-profile-title">Create a New Profile</h2><p>Athria will create an empty database at this location, switch to it, and restart. You will set its database password when it first opens.</p></div></header>
-    <div className="modal-body"><p className="restore-path">{target}</p><ErrorBanner error={error}/><div className="modal-actions"><button type="button" className="secondary" disabled={busy} onClick={onClose}>Cancel</button><button type="button" disabled={busy} onClick={onSubmit}>{busy ? "Creating profile…" : "Create and restart"}</button></div></div>
+  useModalDismiss(onClose);
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="connection-modal" role="dialog" aria-modal="true" aria-labelledby="new-profile-title">
+    <header><div><h2 id="new-profile-title">Create a New Profile</h2><p>Athria will create an empty database at this location, switch to it, and restart. You will set its database password when it first opens.</p></div><button type="button" className="modal-close" aria-label="Close dialog" onClick={onClose}><AppIcon name="close"/></button></header>
+    <div className="modal-body"><p className="restore-path">{target}</p><ErrorBanner error={error}/><div className="modal-actions"><button type="button" className="secondary" disabled={busy} onClick={onClose}>Cancel</button><button type="button" disabled={busy} onClick={onSubmit}>{busy ? "Creating Profile…" : "Create and Restart"}</button></div></div>
   </section></div>;
 }
 
@@ -613,8 +627,181 @@ function PersonalInformationCard() {
   </Card>;
 }
 
+type AgentState = "connected" | "update_available" | "needs_attention";
+
+const agentStateLabels: Record<AgentState, string> = { connected: "Connected", update_available: "Update available", needs_attention: "Needs attention" };
+
+function agentManaged({ mcp, skills }: Pick<AgentIntegrationStatus, "mcp" | "skills">): boolean {
+  const linked = (status: AgentIntegrationStatus["mcp"]) => status === "installed" || status === "outdated" || status === "conflict";
+  return linked(mcp) || linked(skills);
+}
+
+function agentState({ mcp, skills }: Pick<AgentIntegrationStatus, "mcp" | "skills">): AgentState {
+  if (mcp === "conflict" || skills === "conflict") return "needs_attention";
+  if (mcp === "outdated" || skills === "outdated") return "update_available";
+  if (mcp === "installed" && (skills === "installed" || skills === "unsupported")) return "connected";
+  return "needs_attention";
+}
+
+function AgentBadge({ integration }: { integration: AgentIntegrationStatus }) {
+  return <span className={`agent-icon agent-${integration.agent.replace(/_/g, "-")}`} aria-hidden="true"><AgentLogo agent={integration.agent}/></span>;
+}
+
+function AgentMenu({ integration, state, busy, onUpdate, onRemove }: { integration: AgentIntegrationStatus; state: AgentState; busy: boolean; onUpdate: () => void; onRemove: () => void }) {
+  const menu = useRef<HTMLDetailsElement>(null);
+  const [copied, setCopied] = useState<string>();
+  useEffect(() => {
+    const close = (event: PointerEvent) => { if (menu.current?.open && !menu.current.contains(event.target as Node)) menu.current.removeAttribute("open"); };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, []);
+  const copy = async (label: string, value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(label);
+      window.setTimeout(() => setCopied((current) => (current === label ? undefined : current)), 1600);
+    } catch { setCopied(undefined); }
+  };
+  const closeMenu = (event: React.MouseEvent<HTMLButtonElement>) => event.currentTarget.closest("details")?.removeAttribute("open");
+  return <details className="agent-menu" ref={menu}>
+    <summary aria-label={`Options for ${integration.name}`}><AppIcon name="ellipsis"/></summary>
+    <div>
+      <button type="button" className="agent-menu-path" onClick={() => void copy("mcp", integration.configPath)}><span><small>MCP config</small><code>{integration.configPath}</code></span><AppIcon name={copied === "mcp" ? "check" : "copy"}/></button>
+      {integration.skillsPath && <button type="button" className="agent-menu-path" onClick={() => void copy("skills", integration.skillsPath!)}><span><small>Skills</small><code>{integration.skillsPath}</code></span><AppIcon name={copied === "skills" ? "check" : "copy"}/></button>}
+      {state !== "connected" && <button type="button" className="agent-menu-item" disabled={busy} onClick={(event) => { closeMenu(event); onUpdate(); }}><AppIcon name="refresh"/>{state === "update_available" ? "Update" : "Repair"}</button>}
+      <div className="agent-menu-divider"/>
+      <button type="button" className="agent-menu-item danger-text" disabled={busy} onClick={(event) => { closeMenu(event); onRemove(); }}><AppIcon name="trash"/>Remove Agent</button>
+    </div>
+  </details>;
+}
+
+function AgentTile({ integration }: { integration: AgentIntegrationStatus }) {
+  const client = useQueryClient();
+  const [message, setMessage] = useState<string>();
+  const [error, setError] = useState<unknown>();
+  const install = useMutation({ mutationFn: () => installAgentIntegration(integration.agent) });
+  const remove = useMutation({ mutationFn: () => removeAgentIntegration(integration.agent) });
+  const busy = install.isPending || remove.isPending;
+  const state = agentState(integration);
+  const refresh = () => client.invalidateQueries({ queryKey: ["agent-integrations"] });
+  const update = async () => {
+    try {
+      setError(undefined); setMessage(undefined);
+      await install.mutateAsync();
+      setMessage(`Restart ${integration.name} to load the update.`);
+      await refresh();
+    } catch (value) { setError(value); }
+  };
+  const disconnect = async () => {
+    if (!window.confirm(`Remove Athria from ${integration.name}? This deletes Athria's MCP entry and the Skills it manages. Your other settings are kept.`)) return;
+    try {
+      setError(undefined); setMessage(undefined);
+      await remove.mutateAsync();
+      await refresh();
+    } catch (value) { setError(value); }
+  };
+  return <article className="agent-tile">
+    <AgentBadge integration={integration}/>
+    <div className="agent-tile-copy"><strong>{integration.name}</strong><span className={`agent-tile-state ${state}`}><i/>{agentStateLabels[state]}</span></div>
+    <AgentMenu integration={integration} state={state} busy={busy} onUpdate={() => void update()} onRemove={() => void disconnect()}/>
+    {message && <p className="agent-tile-note" role="status">{message}</p>}
+    <ErrorBanner error={error}/>
+  </article>;
+}
+
+const AGENT_TILE_WIDTH = 178;
+const AGENT_TILE_GAP = 10;
+
+export function agentTileColumns(width: number): number {
+  return Math.max(1, Math.floor((width + AGENT_TILE_GAP) / (AGENT_TILE_WIDTH + AGENT_TILE_GAP)));
+}
+
+export function splitAgentTiles(agents: AgentIntegrationStatus[], columns: number | null): { visible: AgentIntegrationStatus[]; hidden: AgentIntegrationStatus[] } {
+  if (columns === null || columns >= agents.length) return { visible: agents, hidden: [] };
+  const visible = agents.slice(0, Math.max(1, columns - 1));
+  return { visible, hidden: agents.slice(visible.length) };
+}
+
+export function AgentTiles({ agents, columns, onShowMore }: { agents: AgentIntegrationStatus[]; columns: number | null; onShowMore: () => void }) {
+  const { visible, hidden } = splitAgentTiles(agents, columns);
+  return <>
+    {visible.map((integration) => <AgentTile key={integration.agent} integration={integration}/>)}
+    {hidden.length > 0 && <button type="button" className="agent-tile agent-tile-more" onClick={onShowMore}><span className="agent-icon agent-icon-more"><AppIcon name="grid"/></span><span className="agent-tile-copy"><strong>More Agents</strong><small>{hidden.length} connected</small></span><AppIcon name="chevron" className="agent-chevron"/></button>}
+  </>;
+}
+
+function AgentPathRow({ label, path }: { label: string; path?: string | undefined }) {
+  return <div className="agent-modal-path"><small>{label}</small>{path ? <code title={path}>{path}</code> : <span className="agent-modal-unsupported">Need manual install</span>}</div>;
+}
+
+export function AddAgentModal({ onClose }: { onClose: () => void }) {
+  const client = useQueryClient();
+  const integrations = useQuery({ queryKey: ["agent-integrations"], queryFn: getAgentIntegrationsStatus, retry: false });
+  const [view, setView] = useState<"list" | "manual">("list");
+  const [pending, setPending] = useState<AgentKind>();
+  const [message, setMessage] = useState<string>();
+  const [error, setError] = useState<unknown>();
+  const manual = view === "manual";
+  const dismiss = () => { if (manual) setView("list"); else onClose(); };
+  useEffect(() => { const onKeyDown = (event: KeyboardEvent) => { if (event.key !== "Escape") return; if (view === "manual") setView("list"); else onClose(); }; window.addEventListener("keydown", onKeyDown); return () => window.removeEventListener("keydown", onKeyDown); }, [onClose, view]);
+  const candidates = (integrations.data ?? []).filter((integration) => !agentManaged(integration));
+  const connect = async (integration: AgentIntegrationStatus) => {
+    try {
+      setPending(integration.agent); setError(undefined); setMessage(undefined);
+      await installAgentIntegration(integration.agent);
+      setMessage(`Athria was added to ${integration.name}. Restart it to load Athria.`);
+      await client.invalidateQueries({ queryKey: ["agent-integrations"] });
+    } catch (value) { setError(value); } finally { setPending(undefined); }
+  };
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className="connection-modal agent-modal" role="dialog" aria-modal="true" aria-labelledby="agent-modal-title">
+      <header><div><h2 id="agent-modal-title">{manual ? "Manual Setup" : "Add Agent"}</h2>{!manual && <p>Connect Athria to your AI agent on this computer.</p>}</div><button type="button" className="modal-close" aria-label={manual ? "Back to Add Agent" : "Close dialog"} onClick={dismiss}><AppIcon name="close"/></button></header>
+      <div className="modal-body">
+        {manual ? <ManualAgentSetup/> : <>
+          {integrations.isPending ? <Loading/> : integrations.isError ? <ErrorBanner error={integrations.error}/> : candidates.length ? <ul className="agent-modal-list">{candidates.map((integration) => <li className="agent-modal-row" key={integration.agent}><AgentBadge integration={integration}/><div className="agent-modal-copy"><strong>{integration.name}</strong><AgentPathRow label="MCP" path={integration.configPath}/><AgentPathRow label="Skills" path={integration.skillsPath}/></div><button type="button" className="secondary" disabled={!integration.available || pending === integration.agent} title={integration.available ? undefined : integration.diagnostic} onClick={() => void connect(integration)}>{pending === integration.agent ? "Connecting…" : "Connect"}</button></li>)}</ul> : <p className="agent-modal-empty">All agents are connected.</p>}
+          {message && <p className="success" role="status">{message}</p>}
+          <ErrorBanner error={error}/>
+          <div className="agent-modal-footer"><button type="button" className="text-button" onClick={() => setView("manual")}>Don't see your agents? Manually add them →</button></div>
+        </>}
+      </div>
+    </section></div>;
+}
+
+export function MoreAgentsModal({ agents, onClose }: { agents: AgentIntegrationStatus[]; onClose: () => void }) {
+  useModalDismiss(onClose);
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className="connection-modal agent-modal" role="dialog" aria-modal="true" aria-labelledby="agent-more-title">
+      <header><div><h2 id="agent-more-title">More Agents</h2><p>Connected agents that do not fit in the row above.</p></div><button type="button" className="modal-close" aria-label="Close dialog" onClick={onClose}><AppIcon name="close"/></button></header>
+      <div className="modal-body"><div className="agent-grid">{agents.map((integration) => <AgentTile key={integration.agent} integration={integration}/>)}</div></div>
+    </section></div>;
+}
+
+export function AgentIntegrations() {
+  const integrations = useQuery({ queryKey: ["agent-integrations"], queryFn: getAgentIntegrationsStatus, retry: false });
+  const [adding, setAdding] = useState(false);
+  const [more, setMore] = useState(false);
+  const [grid, setGrid] = useState<HTMLDivElement | null>(null);
+  const [columns, setColumns] = useState<number | null>(null);
+  useEffect(() => {
+    if (!grid) return;
+    const update = () => { if (grid.clientWidth > 0) setColumns(agentTileColumns(grid.clientWidth)); };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(grid);
+    return () => observer.disconnect();
+  }, [grid]);
+  const connected = (integrations.data ?? []).filter(agentManaged);
+  const hidden = splitAgentTiles(connected, columns).hidden;
+  return <Card title="AI Agents" className="agent-integrations-card" action={<button type="button" className="secondary compact agent-add" onClick={() => setAdding(true)}><AppIcon name="plus"/>Add Agent</button>}>
+    <p>Connect the AI agents on this computer. Athria backs up your settings before each change.</p>
+    {integrations.isPending ? <Loading/> : integrations.isError ? <ErrorBanner error={integrations.error}/> : connected.length ? <div className="agent-grid" ref={setGrid}><AgentTiles agents={connected} columns={columns} onShowMore={() => setMore(true)}/></div> : <EmptyState title="No agents connected yet" description="Use Add Agent to connect an AI agent on this computer."/>}
+    {adding && <AddAgentModal onClose={() => setAdding(false)}/>}
+    {more && hidden.length > 0 && <MoreAgentsModal agents={hidden} onClose={() => setMore(false)}/>}
+  </Card>;
+}
+
 function Settings() {
-  return <><PersonalInformationCard/><Card title="System Status" className="system-card"><p>Athria runs locally and keeps your training data on this device.</p><ServiceStatus/></Card><Backup/></>;
+  return <div className="settings-page"><PersonalInformationCard/><Card title="System Status" className="system-card" action={<ServiceStatus/>}><p>Athria runs locally and keeps your training data on this device.</p></Card><AgentIntegrations/><Backup/></div>;
 }
 
 function CopyButton({ label, value }: { label: string; value: string }) {
@@ -629,33 +816,30 @@ function CopyButton({ label, value }: { label: string; value: string }) {
   return <><button type="button" className="secondary compact" onClick={() => void copy()}>{state === "copied" ? "Copied" : state === "failed" ? "Copy failed" : "Copy"}</button><span className="sr-only" aria-live="polite">{state === "copied" ? `${label} copied.` : state === "failed" ? `${label} could not be copied.` : ""}</span></>;
 }
 
-function Copyable({ label, value, block = false }: { label: string; value: string; block?: boolean }) {
-  return <div className={`copyable ${block ? "block" : ""}`}><div><small>{label}</small>{block ? <pre>{value}</pre> : <code>{value}</code>}</div><CopyButton label={label} value={value}/></div>;
+function PromptBlock({ label, value }: { label: string; value: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const collapsible = value.includes("\n");
+  const toggle = () => { if (collapsible) setExpanded((open) => !open); };
+  return <div className={`agent-prompt${expanded ? " expanded" : ""}`}>
+    <button type="button" className="agent-prompt-text" disabled={!collapsible} aria-expanded={collapsible ? expanded : undefined} onClick={toggle}><code>{value}</code><AppIcon name="chevron" className="agent-prompt-chevron"/></button>
+    <CopyButton label={label} value={value}/>
+  </div>;
 }
 
-function McpSetup() {
+const TEST_PROMPT = "Show my recent training sessions";
+
+export function ManualAgentSetup() {
   const status = useQuery({ queryKey: ["mcp-status"], queryFn: getMcpStatus, retry: false });
   if (status.isPending) return <Loading/>;
   if (status.isError) return <div className="error" role="alert">Athria could not determine its installation path. Close and reopen Athria, then try again. {status.error instanceof Error ? status.error.message : String(status.error)}</div>;
-  const executablePath = status.data.executablePath;
-  const config = mcpConfig(executablePath);
-  return <>
-    <p className="mcp-intro">Connect a supported desktop agent to your local Athria data. The command shown below uses this copy of Athria, wherever it is installed.</p>
-    <div className="mcp-guides">
-      {mcpGuides.map((guide) => <details key={guide.id} className="mcp-guide">
-        <summary><span>{guide.name}</span><small>{guide.path}</small></summary>
-        <div className="mcp-guide-content"><p>{guide.instructions}</p>
-          <div className="mcp-fields">
-            <Copyable label="Name" value="Athria"/><Copyable label="Transport" value="STDIO"/>
-            <Copyable label="Command" value={executablePath}/><Copyable label="Arguments" value={status.data.arguments.join(" ")}/>
-          </div>
-          {(guide.mode === "config" || guide.id === "qoder") && <Copyable label={guide.id === "qoder" ? "JSON option" : "Configuration"} value={config} block/>}
-        </div>
-      </details>)}
-    </div>
-    <div className="mcp-finish"><strong>Finish and check</strong><ol><li>Save the server, then restart or re-enable MCP if your agent asks you to.</li><li>In a new conversation, ask: <code>Show my recent training sessions</code></li></ol></div>
-    <div className="notice"><strong>If it does not connect:</strong> Confirm that Athria is still installed at the Command path shown above. Then reopen the agent and enable the Athria server again.</div>
-  </>;
+  const { executablePath, skillsPath } = status.data;
+  return <div className="agent-manual">
+    <p className="agent-manual-intro">Add Athria from your agent's own settings. This works with any agent that supports MCP and Skills.</p>
+    <ol className="agent-manual-steps">
+      <li><strong>Copy this prompt into your agent</strong><span>Send it to your agent as your next message. It adds Athria's MCP server and Skills for itself.</span><PromptBlock label="Setup prompt" value={agentSetupPrompt({ executablePath, skillsPath })}/>{!skillsPath && <p className="notice">Athria's Skills folder was not found. Reinstall Athria and try again.</p>}</li>
+      <li><strong>Restart and test</strong><span>Restart your agent, then ask in a new conversation:</span><PromptBlock label="Test prompt" value={TEST_PROMPT}/></li>
+    </ol>
+  </div>;
 }
 
 export function Help() {
@@ -663,12 +847,11 @@ export function Help() {
     <Card title="Help & Support">
       <p>Athria is your local-first training companion. Use Connections to connect data sources, Profile to confirm your preferences, and Plan to review Agent-created training plans.</p>
       <div className="help-faq">
-        <details className="faq-item"><summary><span>How do I create a new plan?</span></summary><div className="faq-answer"><p>Plans are created by your connected AI agent. Connect an agent through MCP below, then ask it to build your plan — it uses your Profile, training history and synced workouts. Open Plan to review the Weekly Sessions it saves. Reusable Session Templates can be built in the Plan page's Template Library.</p></div></details>
+        <details className="faq-item"><summary><span>How do I create a new plan?</span></summary><div className="faq-answer"><p>Plans are created by your connected AI agent. Connect an agent in Settings under AI Agents, then ask it to build your plan — it uses your Profile, training history and synced workouts. Open Plan to review the Weekly Sessions it saves. Reusable Session Templates can be built in the Plan page's Template Library.</p></div></details>
         <details className="faq-item"><summary><span>How do I import my training data?</span></summary><div className="faq-answer"><p>Open Connections and pick a source: Hevy (import a CSV export), Intervals.icu (sync endurance activities) or Xunji (sync strength and training records). Then use Sync now whenever you want to pull in new workouts.</p></div></details>
         <details className="faq-item"><summary><span>How do I back up my data and sync it with my own cloud?</span></summary><div className="faq-answer"><p>Athria has no cloud of its own — every workout, plan, profile and encrypted connection key lives in one local database file, whose path is shown in Settings. Copy the file anywhere, including a folder synced by your own cloud drive. On another computer, restore the file; Athria asks for that database's password before it shows your data and uses it to unlock saved connections.</p></div></details>
       </div>
     </Card>
-    <Card title="Connect Athria to Your AI Agent through MCP" className="mcp-card"><McpSetup/></Card>
     <Card title="Glossary">
       <p>Plain-language definitions of the AI and training terms used across Athria. No prior background is needed.</p>
       <h3 className="glossary-heading">AI &amp; Data</h3>
@@ -692,8 +875,9 @@ export function Help() {
 const views: Record<Page, () => React.ReactElement> = { Overview, Training: Timeline, Profile, Plan: CurrentPlanPage, Connections, Settings, Help };
 
 export function DatabaseSwitchModal({ preview, error, busy, onClose, onSubmit }: { preview: BackupPreview; error: unknown; busy: boolean; onClose: () => void; onSubmit: () => void; }) {
-  return <div className="modal-backdrop"><section className="connection-modal database-gate" role="dialog" aria-modal="true" aria-labelledby="database-switch-title">
-    <header><div><h2 id="database-switch-title">Switch to this database?</h2><p>Review the selected database before Athria switches to it.</p></div></header>
+  useModalDismiss(onClose);
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="connection-modal database-gate" role="dialog" aria-modal="true" aria-labelledby="database-switch-title">
+    <header><div><h2 id="database-switch-title">Switch to this database?</h2><p>Review the selected database before Athria switches to it.</p></div><button type="button" className="modal-close" aria-label="Close dialog" onClick={onClose}><AppIcon name="close"/></button></header>
     <div className="modal-body">
       <div className="restore-confirm">
         <span className="restore-path">{preview.path}</span>
@@ -769,5 +953,5 @@ export function App() {
   const navIcons: Record<Page, IconName> = { Overview: "overview", Training: "training", Profile: "profile", Plan: "plan", Connections: "devices", Settings: "settings", Help: "help" };
   const NavItems = ({ items }: { items: typeof dashboardPages[number][] }) => <>{items.map((item) => <button key={item.id} className={item.id === page ? "active" : ""} aria-current={item.id === page ? "page" : undefined} onClick={() => setPage(item.id)}><AppIcon name={navIcons[item.id]}/>{item.label}</button>)}</>;
   const preferredName = profile.data?.preferredName || "Athlete";
-  return <><DatabaseGate/><div className="shell"><aside><div className="brand"><img src="/athria-logo.svg" alt="Athria" /></div><nav aria-label="Main navigation"><NavItems items={primaryPages}/></nav><div className="sidebar-lower"><nav className="support-nav" aria-label="Support navigation"><NavItems items={supportPages}/></nav></div></aside><main className="primary-main">{page !== "Plan" && page !== "Profile" && <PrimaryPageHeader preferredName={preferredName} subtitle={page === "Overview" ? "Let's keep the momentum going. Here's your overview for today." : page === "Training" ? "All your training in one place — every domain, every workout." : page === "Connections" ? "Sync your data from the apps and devices you use. Keep everything in one place." : page === "Settings" ? "Your personal information, system status, and local database." : page === "Help" ? "Guides for plans, training data, backups and connecting your AI agent through MCP." : "Your AI fitness hub. Local-first. Data you own."}/>}<View/></main></div></>;
+  return <><DatabaseGate/><div className="shell"><aside><div className="brand"><img src="/athria-logo.svg" alt="Athria" /></div><nav aria-label="Main navigation"><NavItems items={primaryPages}/></nav><div className="sidebar-lower"><nav className="support-nav" aria-label="Support navigation"><NavItems items={supportPages}/></nav></div></aside><main className="primary-main">{page !== "Plan" && page !== "Profile" && <PrimaryPageHeader preferredName={preferredName} subtitle={page === "Overview" ? "Let's keep the momentum going. Here's your overview for today." : page === "Training" ? "All your training in one place — every domain, every workout." : page === "Connections" ? "Sync your data from the apps and devices you use. Keep everything in one place." : page === "Settings" ? "Your personal information, system status, and local database." : page === "Help" ? "Guides for plans, training data, backups and connecting your AI agent." : "Your AI fitness hub. Local-first. Data you own."}/>}<View/></main></div></>;
 }

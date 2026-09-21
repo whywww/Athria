@@ -1,7 +1,8 @@
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { formatDistance, formatDuration, friendlyLabel, type AdjustmentAssessment, type CalendarSession, type TrainingHistorySession, type TrainingSummary, type WellnessRecord } from "./view-models";
 import { addDays, weekdayIndex } from "./plan/view";
 import { domainIconPath } from "./domain-icons";
+import { useModalDismiss } from "./components";
 
 const domainOrder = ["strength", "endurance", "sport_skill", "mind_body", "recovery"] as const;
 const weekdayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -300,13 +301,9 @@ function SummaryCard({ icon, title, value, children, className = "" }: { icon: "
 }
 
 export function RecoveryHelpModal({ onClose }: { onClose: () => void }) {
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  useModalDismiss(onClose);
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-    <section className="recovery-modal" role="dialog" aria-modal="true" aria-labelledby="recovery-help-title">
+    <section className="connection-modal recovery-modal" role="dialog" aria-modal="true" aria-labelledby="recovery-help-title">
       <header><div><h2 id="recovery-help-title">How We Calculate Overall Readiness</h2><p>One score that sums up how ready you are to train.</p></div><button type="button" className="modal-close" aria-label="Close dialog" onClick={onClose}><svg className="app-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>
       <div className="modal-body">
         <p className="recovery-help-lead">We compare the signals you track with your own recent baseline (up to 28 days):</p>
@@ -399,7 +396,7 @@ export function OverviewDashboard({ summary, wellness, history, planned, today, 
         <div className="consistency-note"><TrophyIcon/><div><strong>{monthCompleted.size ? "Nice consistency!" : "Your month starts here"}</strong><small>{monthCompleted.size ? `You've been active ${monthCompleted.size} day${monthCompleted.size === 1 ? "" : "s"} this month.` : "Complete a workout to begin your streak."}</small></div></div>
       </section></div>
       <section className="overview-panel overview-wellness"><header><h2>Wellness</h2>{wellnessData && <time dateTime={wellnessData.end}>{formatWellnessRange(wellnessData.start, wellnessData.end)}</time>}</header>
-        {!wellnessData ? <p className="overview-empty">No wellness data yet. Connect Intervals.icu or record a wellness check-in.</p> : <div className="wellness-grid">{wellnessData.values.map((item) => <article className={`wellness-${item.tone}`} key={item.key}><div className="wellness-copy"><span>{item.label}</span><strong>{item.display}</strong><small className={wellnessDeltaTone(item.key, item.delta)}>{item.delta === null ? "No earlier value" : `${item.delta > 0 ? "↑" : item.delta < 0 ? "↓" : "→"} ${Math.abs(item.delta)} from previous`}</small></div><Sparkline values={item.series}/></article>)}</div>}
+        {!wellnessData ? <p className="overview-empty">No wellness data yet.<br/>Connect to a data source or record with your AI agent.</p> : <div className="wellness-grid">{wellnessData.values.map((item) => <article className={`wellness-${item.tone}`} key={item.key}><div className="wellness-copy"><span>{item.label}</span><strong>{item.display}</strong><small className={wellnessDeltaTone(item.key, item.delta)}>{item.delta === null ? "No earlier value" : `${item.delta > 0 ? "↑" : item.delta < 0 ? "↓" : "→"} ${Math.abs(item.delta)} from previous`}</small></div><Sparkline values={item.series}/></article>)}</div>}
       </section></div>
       {helpOpen && <RecoveryHelpModal onClose={() => setHelpOpen(false)}/>}
   </div>;

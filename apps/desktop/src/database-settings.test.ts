@@ -13,9 +13,13 @@ describe("database settings", () => {
     const html = renderToStaticMarkup(createElement(QueryClientProvider, { client }, createElement(Backup)));
     expect(html).toContain("Manage database");
     expect(html).toContain("All your data is stored in one portable database.");
-    expect(html).toContain("Switch database");
+    expect(html).toContain("Switch Database");
     expect(html).toContain("Edit Password Settings");
-    expect(html).toContain("Require password on startup");
+    expect(html).toContain("Always Require Password");
+    expect(html).toContain('class="section-heading"');
+    expect(html).toContain('class="section-actions"');
+    expect(html).toContain("Create Profile");
+    expect(html).not.toContain("on disk");
     expect(html).not.toContain("Restore a Backup");
     expect(html).not.toContain("Choose backup");
     expect(html).not.toMatch(/>Copy<\/button>/);

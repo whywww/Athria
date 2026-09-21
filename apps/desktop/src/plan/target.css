@@ -1,10 +1,10 @@
 /* Plan summary card: measurements and type hierarchy follow the supplied
    1448px reference while remaining fluid inside the desktop shell. */
 .plan-templates-button {
-  min-height: 42px; display: inline-flex; align-items: center; gap: 12px;
-  padding: 0 18px; border-color: #d8dce2 !important; border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 12px;
+  padding: 8px 16px; border-color: #d8dce2 !important; border-radius: 999px;
   color: #111827 !important; background: var(--surface, #fff) !important;
-  box-shadow: 0 3px 10px rgba(17,24,39,.025); font-size: 12px; font-weight: 750;
+  box-shadow: 0 3px 10px rgba(17,24,39,.025); font-size: 12px; font-weight: 600;
 }
 .plan-templates-button svg { width: 17px; height: 17px; }
 .plan-templates-button:hover { border-color: #c4cad3 !important; background: var(--surface-hover, #f2f2f7) !important; }
@@ -150,7 +150,7 @@ button.pdb-phase-arrow:focus-visible { outline: 2px solid #567fb8; outline-offse
 .pdb-track-list { min-width: 0; flex: 1 1 auto; display: flex; align-items: flex-start; }
 .pdb-track-item[data-tail="true"] { padding-right: 24px; }
 .pdb-nav-back, .pdb-nav-spacer { width: 24px; flex: 0 0 24px; display: grid; place-items: center; margin-top: 34px; color: #a2a8b0; }
-button.pdb-nav-back { padding: 0; border: 0; background: none; cursor: pointer; }
+button.pdb-nav-back { padding: 0; border: 0; background: none; cursor: pointer; font-size: inherit; }
 button.pdb-nav-back:hover { color: #52627b; }
 button.pdb-nav-back:focus-visible { outline: 2px solid #567fb8; outline-offset: 3px; border-radius: 6px; }
 .pdb-nav-back svg { width: 16px; height: 16px; stroke-width: 2; }

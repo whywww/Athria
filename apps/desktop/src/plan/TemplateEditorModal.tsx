@@ -97,7 +97,7 @@ export function TemplateEditorModal({ value, taxonomy, error, busy, onChange, on
   };
 
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-    <section className="template-modal" role="dialog" aria-modal="true" aria-labelledby="template-modal-title" ref={panelRef} tabIndex={-1}>
+    <section className="connection-modal template-modal" role="dialog" aria-modal="true" aria-labelledby="template-modal-title" ref={panelRef} tabIndex={-1}>
       <header className="template-modal-header">
         <div><h2 id="template-modal-title">{modeTitles[mode]}</h2><p>Define a stable single-domain pattern. Weekly Sessions own every executable dose.</p></div>
         <button type="button" className="modal-close" aria-label="Close dialog" onClick={onClose}><ModalCloseIcon/></button>
