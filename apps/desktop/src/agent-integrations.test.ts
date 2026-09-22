@@ -36,7 +36,7 @@ const claudeCode: AgentIntegrationStatus = { agent: "claude_code", name: "Claude
 const claudeDesktop: AgentIntegrationStatus = { agent: "claude_desktop", name: "Claude Desktop", available: true, mcp: "installed", skills: "unverified", configPath: "C:/Users/test/AppData/Roaming/Claude/claude_desktop_config.json", skillsMode: "gui_managed", skillReports: [], restartRequired: false };
 const trio = [codex, claudeCode, claudeDesktop];
 
-const qoderCn: AgentIntegrationStatus = { agent: "qoder_cn", name: "Qoder CN", available: true, mcp: "missing", skills: "missing", configPath: "C:/Users/test/.qoder-cn/mcp.json", skillsPath: "C:/Users/test/.qoder-cn/skills", skillsMode: "filesystem", skillReports: [], restartRequired: false };
+const qoderCn: AgentIntegrationStatus = { agent: "qoder_cn", name: "Qoder CN", available: true, mcp: "missing", skills: "missing", configPath: "C:/Users/test/.qoder-cn/settings.json", skillsPath: "C:/Users/test/.qoder-cn/skills", skillsMode: "filesystem", skillReports: [], restartRequired: false };
 const traeCn: AgentIntegrationStatus = { agent: "trae_cn", name: "Trae CN", available: true, mcp: "missing", skills: "missing", configPath: "C:/Users/test/.trae-cn/mcp.json", skillsPath: "C:/Users/test/.trae-cn/skills", skillsMode: "filesystem", skillReports: [], restartRequired: false };
 const cursor: AgentIntegrationStatus = { agent: "cursor", name: "Cursor", available: true, mcp: "missing", skills: "missing", configPath: "C:/Users/test/.cursor/mcp.json", skillsPath: "C:/Users/test/.cursor/skills", skillsMode: "filesystem", skillReports: [], restartRequired: false };
 const workBuddy: AgentIntegrationStatus = { agent: "workbuddy", name: "WorkBuddy", available: false, mcp: "missing", skills: "missing", configPath: "C:/Users/test/.workbuddy/mcp.json", skillsPath: "C:/Users/test/.workbuddy/skills", skillsMode: "filesystem", skillReports: [], restartRequired: false, diagnostic: "WorkBuddy was not detected. You can configure it after installing the agent." };
@@ -338,7 +338,7 @@ describe("agent tile layout math", () => {
 
 describe("shortenHomePath", () => {
   it("rewrites the home prefix as a tilde with forward slashes", () => {
-    expect(shortenHomePath("C:\\Users\\test\\.qoder-cn\\mcp.json", "C:\\Users\\test")).toBe("~/.qoder-cn/mcp.json");
+    expect(shortenHomePath("C:\\Users\\test\\.qoder-cn\\settings.json", "C:\\Users\\test")).toBe("~/.qoder-cn/settings.json");
     expect(shortenHomePath("/Users/test/.cursor/skills", "/Users/test")).toBe("~/.cursor/skills");
     expect(shortenHomePath("/home/test/.trae-cn/mcp.json", "/home/test/")).toBe("~/.trae-cn/mcp.json");
   });

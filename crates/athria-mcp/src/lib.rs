@@ -14,6 +14,7 @@ use std::collections::HashSet;
 use std::net::TcpListener;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt};
 
 use axum::{
     Json, Router,
@@ -35,6 +36,11 @@ use rmcp::{
 };
 
 const CONTRACT: &str = include_str!("../contract.json");
+
+/// The newest revision whose wire shape this server actually emits. Advertising
+/// a newer one makes era-negotiating clients negotiate it and then reject our
+/// results on local schema validation.
+const MAX_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::V_2025_11_25;
 
 #[derive(Debug, Deserialize)]
 struct Contract {
@@ -444,10 +450,7 @@ impl<S: AthriaStore + Send + 'static> ServerHandler for RmcpServer<S> {
     }
 
     fn supported_protocol_versions(&self) -> Cow<'static, [ProtocolVersion]> {
-        Cow::Owned(vec![
-            ProtocolVersion::V_2025_11_25,
-            ProtocolVersion::V_2026_07_28,
-        ])
+        Cow::Owned(vec![MAX_PROTOCOL_VERSION])
     }
 
     fn list_tools(
@@ -544,13 +547,84 @@ fn blocker_summary(validation: &Value) -> Value {
 
 pub fn serve_stdio<S: AthriaStore + Send + 'static>(service: McpService<S>) -> std::io::Result<()> {
     tokio::runtime::Runtime::new()?.block_on(async move {
+        let input = tokio::io::BufReader::new(tokio::io::stdin());
         let running = RmcpServer::new(service)
-            .serve(rmcp::transport::stdio())
+            .serve((filtered_stdio(input, tokio::io::stdout()), tokio::io::stdout()))
             .await
             .map_err(std::io::Error::other)?;
         running.waiting().await.map_err(std::io::Error::other)?;
         Ok(())
     })
+}
+
+enum PreSessionLine {
+    /// A `server/discover` probe with the answer to send back instead of the line.
+    Discover(Value),
+    Initialize,
+    Forward,
+}
+
+/// Answers a leading `server/discover` probe itself instead of letting the
+/// protocol handler dispatch it: dispatching marks the session as requiring a
+/// per-request `_meta` envelope, which then fails every request of the legacy
+/// flow the probing client falls back to.
+fn classify_pre_session_line(line: &[u8]) -> PreSessionLine {
+    let Ok(value) = serde_json::from_slice::<Value>(line) else {
+        return PreSessionLine::Forward;
+    };
+    match value.get("method").and_then(Value::as_str) {
+        Some("server/discover") => PreSessionLine::Discover(json!({
+            "jsonrpc": "2.0",
+            "id": value.get("id").cloned().unwrap_or(Value::Null),
+            "error": {
+                "code": -32022,
+                "message": "Unsupported protocol version",
+                "data": {
+                    "requested": value.pointer("/params/_meta").and_then(|meta| meta.get("io.modelcontextprotocol/protocolVersion")).cloned().unwrap_or(Value::Null),
+                    "supported": [MAX_PROTOCOL_VERSION.as_str()],
+                },
+            },
+        })),
+        Some("initialize") => PreSessionLine::Initialize,
+        _ => PreSessionLine::Forward,
+    }
+}
+
+/// Streams the caller's stdin to the protocol handler, intercepting probe lines
+/// until an `initialize` request ends the pre-session window.
+fn filtered_stdio<R, W>(input: R, replies: W) -> tokio::io::DuplexStream
+where
+    R: AsyncBufRead + Unpin + Send + 'static,
+    W: AsyncWrite + Unpin + Send + 'static,
+{
+    let (mut forwarded, reader) = tokio::io::duplex(8 * 1024);
+    tokio::spawn(async move {
+        let mut input = input;
+        let mut replies = replies;
+        let mut line = Vec::new();
+        let mut session_started = false;
+        while input.read_until(b'\n', &mut line).await.unwrap_or(0) > 0 {
+            if !session_started {
+                match classify_pre_session_line(&line) {
+                    PreSessionLine::Discover(reply) => {
+                        let written = replies.write_all(format!("{reply}\n").as_bytes()).await;
+                        line.clear();
+                        if written.is_err() || replies.flush().await.is_err() {
+                            break;
+                        }
+                        continue;
+                    }
+                    PreSessionLine::Initialize => session_started = true,
+                    PreSessionLine::Forward => {}
+                }
+            }
+            if forwarded.write_all(&line).await.is_err() {
+                break;
+            }
+            line.clear();
+        }
+    });
+    reader
 }
 
 /// Minimal Streamable HTTP JSON-response adapter. It deliberately binds only
@@ -823,14 +897,46 @@ mod tests {
         assert_eq!(error["code"], "NO_CURRENT_PLAN");
     }
     #[test]
-    fn rmcp_server_advertises_both_supported_protocols() {
+    fn rmcp_server_advertises_only_the_wire_it_emits() {
         let server = RmcpServer::new(service());
         assert_eq!(server.tools.len(), 36);
         assert!(server.tools.iter().all(|tool| tool.output_schema.is_some()));
         assert_eq!(
             server.supported_protocol_versions().as_ref(),
-            &[ProtocolVersion::V_2025_11_25, ProtocolVersion::V_2026_07_28]
+            &[ProtocolVersion::V_2025_11_25]
         );
+    }
+
+    #[test]
+    fn pre_session_discover_probe_is_answered_without_reaching_the_handler() {
+        use tokio::io::AsyncReadExt;
+        let probe = json!({ "jsonrpc": "2.0", "id": "server-discover-probe-1", "method": "server/discover", "params": { "_meta": { "io.modelcontextprotocol/protocolVersion": "2026-07-28" } } });
+        let initialize = json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": { "protocolVersion": "2025-11-25" } });
+        let later_discover = json!({ "jsonrpc": "2.0", "id": 3, "method": "server/discover", "params": {} });
+        let script = format!("{probe}\n{initialize}\n{later_discover}\n");
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let (mut script_writer, script_reader) = tokio::io::duplex(4096);
+            let (reply_writer, mut replies) = tokio::io::duplex(4096);
+            let mut forwarded =
+                filtered_stdio(tokio::io::BufReader::new(script_reader), reply_writer);
+            script_writer.write_all(script.as_bytes()).await.unwrap();
+            drop(script_writer);
+            let mut passed = String::new();
+            forwarded.read_to_string(&mut passed).await.unwrap();
+            let mut answered = String::new();
+            replies.read_to_string(&mut answered).await.unwrap();
+            assert!(!passed.contains("server/discover-probe-1"), "{passed}");
+            assert!(passed.contains("\"method\":\"initialize\""), "{passed}");
+            assert!(passed.contains("\"id\":3"), "{passed}");
+            let rejection: Value = serde_json::from_str(answered.trim()).unwrap();
+            assert_eq!(rejection["id"], "server-discover-probe-1");
+            assert_eq!(rejection["error"]["code"], -32022);
+            assert_eq!(rejection["error"]["data"]["requested"], "2026-07-28");
+            assert_eq!(
+                rejection["error"]["data"]["supported"],
+                json!(["2025-11-25"])
+            );
+        });
     }
     #[test]
     fn serves_authenticated_loopback_http() {
@@ -873,14 +979,17 @@ mod tests {
         assert!(legacy.contains("2025-11-25"));
         assert!(legacy.contains("cache-control: no-store"));
 
-        let modern = post(
+        let unsupported_revision = post(
             address,
             "Authorization: Bearer secret\r\nMCP-Protocol-Version: 2026-07-28\r\nMcp-Method: server/discover\r\n",
             &json!({ "jsonrpc": "2.0", "id": 2, "method": "server/discover", "params": { "_meta": { "io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientInfo": { "name": "test", "version": "1" }, "io.modelcontextprotocol/clientCapabilities": {} } } }),
         );
-        assert!(modern.starts_with("HTTP/1.1 200 OK"), "{modern:?}");
-        assert!(modern.contains("supportedVersions"));
-        assert!(modern.contains("2026-07-28"));
+        assert!(
+            unsupported_revision.starts_with("HTTP/1.1 400 Bad Request"),
+            "{unsupported_revision:?}"
+        );
+        assert!(unsupported_revision.contains("-32022"));
+        assert!(unsupported_revision.contains("2025-11-25"));
 
         let unauthorized = post(
             address,

@@ -254,7 +254,7 @@ fn paths(agent: AgentKind) -> Result<AgentPaths, String> {
             })
         }
         AgentKind::QoderCn => Ok(AgentPaths {
-            config: home.join(".qoder-cn/mcp.json"),
+            config: home.join(".qoder-cn/settings.json"),
             skills: skills(".qoder-cn/skills"),
         }),
         AgentKind::TraeCn => Ok(AgentPaths {
@@ -1497,7 +1497,7 @@ mod tests {
     #[test]
     fn agent_config_paths_are_stable() {
         let cases = [
-            (AgentKind::QoderCn, ".qoder-cn/mcp.json", ".qoder-cn/skills"),
+            (AgentKind::QoderCn, ".qoder-cn/settings.json", ".qoder-cn/skills"),
             (AgentKind::TraeCn, ".trae-cn/mcp.json", ".trae-cn/skills"),
             (AgentKind::Cursor, ".cursor/mcp.json", ".cursor/skills"),
             (AgentKind::WorkBuddy, ".workbuddy/mcp.json", ".workbuddy/skills"),
