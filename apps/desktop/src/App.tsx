@@ -948,7 +948,7 @@ export function AgentIntegrations() {
   }, [grid]);
   const connected = sortAgentRoster((integrations.data ?? []).filter(agentManaged));
   const hidden = splitAgentTiles(connected, columns).hidden;
-  return <Card title="AI Agents" className="agent-integrations-card" action={<button type="button" className="secondary compact agent-add" onClick={() => setAdding(true)}><AppIcon name="plus"/>Add Agent</button>}>
+  return <Card title="Connect to Your AI Agents" className="agent-integrations-card" action={<button type="button" className="secondary compact agent-add" onClick={() => setAdding(true)}><AppIcon name="plus"/>Add Agent</button>}>
     <p>Connect the AI agents on this computer. Athria backs up your settings before each change.</p>
     {integrations.isPending ? <Loading/> : integrations.isError ? <ErrorBanner error={integrations.error}/> : connected.length ? <div className="agent-grid" ref={setGrid}><AgentTiles agents={connected} columns={columns} onShowMore={() => setMore(true)}/></div> : <EmptyState title="No agents connected yet" description="Use Add Agent to connect an AI agent on this computer."/>}
     {adding && <AddAgentModal onClose={() => setAdding(false)}/>}
@@ -973,11 +973,8 @@ function CopyButton({ label, value }: { label: string; value: string }) {
 }
 
 function PromptBlock({ label, value }: { label: string; value: string }) {
-  const [expanded, setExpanded] = useState(false);
-  const collapsible = value.includes("\n");
-  const toggle = () => { if (collapsible) setExpanded((open) => !open); };
-  return <div className={`agent-prompt${expanded ? " expanded" : ""}`}>
-    <button type="button" className="agent-prompt-text" disabled={!collapsible} aria-expanded={collapsible ? expanded : undefined} onClick={toggle}><code>{value}</code><AppIcon name="chevron" className="agent-prompt-chevron"/></button>
+  return <div className="agent-prompt">
+    <div className="agent-prompt-text"><code>{value}</code></div>
     <CopyButton label={label} value={value}/>
   </div>;
 }
@@ -1009,8 +1006,8 @@ export function ManualAgentSetup({ existing = [], onConnected = () => {} }: { ex
     <PromptBlock label="Path request prompt" value={PATH_PROMPT}/>
     <div className="agent-manual-fields">
       <label>Agent name<input value={name} autoFocus onChange={(event) => setName(event.target.value)} placeholder="My Agent"/>{duplicate && <span className="field-error">An agent with this name already exists.</span>}</label>
-      <label>MCP config file<input value={configPath} onChange={(event) => setConfigPath(event.target.value)} placeholder="C:\\path\\to\\mcp.json"/></label>
-      <label>Skills folder<input value={skillsPath} onChange={(event) => setSkillsPath(event.target.value)} placeholder="C:\\path\\to\\skills"/></label>
+      <label>MCP config file<input value={configPath} onChange={(event) => setConfigPath(event.target.value)} placeholder="~/path/to/mcp.json"/></label>
+      <label>Skills folder<input value={skillsPath} onChange={(event) => setSkillsPath(event.target.value)} placeholder="~/path/to/skills"/></label>
     </div>
     <ErrorBanner error={error}/>
     <div className="modal-actions"><button type="button" disabled={!valid || busy} onClick={() => void connect()}>{busy ? "Testing…" : "Test connection"}</button></div>

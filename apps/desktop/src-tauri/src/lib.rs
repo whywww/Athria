@@ -6,7 +6,11 @@ use std::{
     path::{Path, PathBuf},
     sync::Mutex,
 };
-use tauri::{AppHandle, State};
+use tauri::{
+    AppHandle, Manager, State, WindowEvent,
+    menu::{Menu, MenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+};
 use tauri_plugin_dialog::DialogExt;
 use uuid::Uuid;
 use zeroize::Zeroizing;
@@ -868,6 +872,47 @@ fn install_agent_integration(app: AppHandle, agent: String) -> Result<Value, Str
     ))
 }
 
+const TRAY_OPEN_ID: &str = "open";
+const TRAY_QUIT_ID: &str = "quit";
+
+fn show_main_window(app: &AppHandle) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    let _ = window.show();
+    let _ = window.unminimize();
+    let _ = window.set_focus();
+}
+
+fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
+    let open = MenuItem::with_id(app, TRAY_OPEN_ID, "Open Athria", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, TRAY_QUIT_ID, "Quit Athria", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&open, &quit])?;
+
+    TrayIconBuilder::with_id("athria-tray")
+        .icon(tauri::include_image!("icons/32x32.png"))
+        .tooltip("Athria")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            TRAY_OPEN_ID => show_main_window(app),
+            TRAY_QUIT_ID => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                show_main_window(&tray.app_handle());
+            }
+        })
+        .build(app)?;
+    Ok(())
+}
+
 #[tauri::command]
 fn add_custom_agent(app: AppHandle, name: String, config_path: String, skills_path: String) -> Result<Value, String> {
     command_json(agent_integrations::add_custom_agent(&app, &name, &config_path, &skills_path, &platform_config_root()?))
@@ -1049,6 +1094,9 @@ pub fn run() -> i32 {
     let rust_mcp_token = mcp_token.clone();
 
     let result = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _, _| {
+            show_main_window(app);
+        }))
         .plugin(tauri_plugin_dialog::init())
         .manage(RuntimeState {
             vault_key: Mutex::new(None),
@@ -1084,6 +1132,7 @@ pub fn run() -> i32 {
             create_new_profile
         ])
         .setup(move |app| {
+            setup_tray(app.handle())?;
             std::thread::spawn(move || {
                 if let Err(error) = serve_http(
                     mcp_listener,
@@ -1095,6 +1144,14 @@ pub fn run() -> i32 {
             });
             let _ = app;
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if window.label() == "main"
+                && let WindowEvent::CloseRequested { api, .. } = event
+            {
+                api.prevent_close();
+                let _ = window.hide();
+            }
         })
         .run(tauri::generate_context!());
     match result {

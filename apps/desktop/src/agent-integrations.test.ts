@@ -236,6 +236,9 @@ describe("ManualAgentSetup", () => {
     expect(html).toContain("Agent name");
     expect(html).toContain("MCP config file");
     expect(html).toContain("Skills folder");
+    expect(html).toContain('placeholder="~/path/to/mcp.json"');
+    expect(html).toContain('placeholder="~/path/to/skills"');
+    expect(html).not.toContain("agent-prompt-chevron");
     expect(html).toContain('disabled=""');
     expect(html).toContain("Test connection");
   });

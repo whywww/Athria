@@ -25,12 +25,12 @@ describe("settings page", () => {
   it("renders every card with the agents Athria knows", () => {
     const markup = renderSettings([filesystemAgent, guiAgent]);
     expect(markup).toContain("Personal Information");
-    expect(markup).toContain("AI Agents");
+    expect(markup).toContain("Connect to Your AI Agents");
     expect(markup).toContain("Claude Desktop");
     expect(markup).toContain("Codex");
   });
 
   it("renders with no connected agents", () => {
-    expect(renderSettings([])).toContain("AI Agents");
+    expect(renderSettings([])).toContain("Connect to Your AI Agents");
   });
 });

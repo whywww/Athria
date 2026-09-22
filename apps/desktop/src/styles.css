@@ -390,6 +390,7 @@ button.equipment-item.available:hover { color: #111827; border-color: #c4cad3; b
 .agent-modal-footer { display: grid; justify-items: center; margin-top: 14px; }
 .agent-modal-footer .text-button { margin-bottom: 0; color: #6f7684; font-size: 12.5px; font-weight: 400; }
 .agent-modal-footer .text-button:hover { color: #3f4a5c; text-decoration: underline; }
+.agent-modal .modal-actions { margin-top: 16px; padding-top: 14px; }
 .agent-manual-intro { margin: 0; color: #6f7684; font-size: 12.5px; line-height: 1.45; }
 .agent-manual-steps { margin: 12px 0 0; padding-left: 19px; display: grid; gap: 12px; color: #4a5568; font-size: 12.5px; line-height: 1.5; }
 .agent-manual-steps li { padding-left: 3px; }
@@ -397,14 +398,10 @@ button.equipment-item.available:hover { color: #111827; border-color: #c4cad3; b
 .agent-manual-steps span { display: block; margin-top: 2px; color: #6f7684; }
 .agent-manual { padding-left: 6px; }
 .agent-manual .agent-prompt { min-width: 0; display: grid; justify-items: start; gap: 8px; margin-top: 8px; }
-.agent-manual .agent-prompt-text { width: 100%; min-width: 0; display: flex; align-items: flex-start; gap: 8px; padding: 9px 11px; border: 0; border-radius: 12px; background: #f5f3ef; color: #252b30; font: 12px/1.5 "Cascadia Code", Consolas, monospace; text-align: left; cursor: pointer; }
-.agent-manual .agent-prompt-text:disabled { opacity: 1; cursor: default; }
-.agent-manual .agent-prompt-text code { min-width: 0; padding: 0; border-radius: 0; background: transparent; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.agent-manual .agent-prompt.expanded .agent-prompt-text code { overflow: visible; text-overflow: clip; white-space: pre-wrap; overflow-wrap: anywhere; }
-.agent-manual .agent-prompt-chevron { width: 14px; height: 14px; flex: 0 0 auto; margin-top: 2px; color: #9aa0a6; transform: rotate(90deg); transition: transform .15s ease; }
-.agent-manual .agent-prompt.expanded .agent-prompt-chevron { transform: rotate(-90deg); }
-.agent-manual-fields { display: grid; gap: 11px; margin-top: 16px; }
-.agent-manual-fields label { display: grid; gap: 6px; color: #263955; font-size: 12px; font-weight: 650; }
+.agent-manual .agent-prompt-text { width: 100%; min-width: 0; display: flex; align-items: flex-start; gap: 8px; padding: 9px 11px; border: 0; border-radius: 12px; background: #f5f3ef; color: #252b30; font: 12px/1.5 "Cascadia Code", Consolas, monospace; text-align: left; }
+.agent-manual .agent-prompt-text code { min-width: 0; padding: 0; border-radius: 0; background: transparent; overflow: visible; text-overflow: clip; white-space: pre-wrap; overflow-wrap: anywhere; }
+.agent-manual-fields { display: grid; gap: 12px; margin-top: 12px; }
+.agent-manual-fields label { display: grid; gap: 7px; margin: 0; color: #263955; font-size: 12px; font-weight: 650; }
 .agent-manual-fields input { width: 100%; box-sizing: border-box; }
 .agent-custom { color: #fff; background: linear-gradient(135deg, #667eea, #7a5fb5); }
 .agent-custom-initial { font-size: 16px; font-weight: 750; line-height: 1; }
