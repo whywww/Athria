@@ -109,6 +109,7 @@ dependencies = [
  "athria-integrations",
  "athria-mcp",
  "athria-runtime",
+ "athria-skills",
  "athria-store",
  "athria-vault",
  "base64 0.22.1",
@@ -116,7 +117,6 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
@@ -163,6 +163,7 @@ version = "0.1.0"
 dependencies = [
  "athria-application",
  "athria-core",
+ "athria-skills",
  "athria-store",
  "axum",
  "jsonschema",
@@ -186,6 +187,16 @@ dependencies = [
  "serde",
  "serde_json",
  "uuid",
+]
+
+[[package]]
+name = "athria-skills"
+version = "0.1.0"
+dependencies = [
+ "athria-core",
+ "serde",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]

@@ -2,17 +2,31 @@ import { invoke } from "@tauri-apps/api/core";
 import { TauriAthriaClient } from "./athria-client";
 import type { IntervalsConnectionStatus, SyncRange } from "./view-models";
 
-export interface McpStatus { configured: boolean; executablePath: string; arguments: ["mcp"]; skillsPath: string | null }
-export type AgentKind = "codex" | "claude_code" | "claude_desktop" | "qoder_cn" | "trae_cn" | "cursor" | "workbuddy";
-export type IntegrationComponentStatus = "installed" | "outdated" | "missing" | "conflict" | "unsupported" | "unavailable";
+export interface McpStatus { configured: boolean; executablePath: string; arguments: ["mcp"]; skillsPath: string | null; homeDir: string | null }
+export type OfficialAgentKind = "codex" | "claude_code" | "claude_desktop" | "qoder_cn" | "trae_cn" | "cursor" | "workbuddy";
+export type AgentKind = string;
+export type IntegrationComponentStatus = "installed" | "outdated" | "modified" | "missing" | "conflict" | "unsupported" | "unavailable" | "unverified";
+/** How an agent receives Athria Skills: Athria copies into filesystem agents; the user installs them in a GUI-managed agent. */
+export type SkillsMode = "filesystem" | "gui_managed";
+export interface SkillReportView {
+  name: string;
+  reportedVersion?: string;
+  expectedVersion: string;
+  current: boolean;
+  lastSeenAt?: string;
+}
+export interface SkillArchiveView { name: string; version: string; path: string }
 export interface AgentIntegrationStatus {
   agent: AgentKind;
   name: string;
   available: boolean;
   mcp: IntegrationComponentStatus;
   skills: IntegrationComponentStatus;
+  skillsMode: SkillsMode;
   configPath: string;
   skillsPath?: string;
+  skillArchiveDir?: string;
+  skillReports: SkillReportView[];
   restartRequired: boolean;
   diagnostic?: string;
 }
@@ -22,7 +36,14 @@ export interface AgentIntegrationResult {
   skills: IntegrationComponentStatus;
   restartRequired: boolean;
   backupPath?: string;
+  skillArchiveDir?: string;
+  skillArchives: SkillArchiveView[];
 }
+export interface SkillUpdate { name: string; installedVersion: string; bundledVersion: string }
+export interface AgentSkillUpdate { agent: AgentKind; name: string; skills: SkillUpdate[] }
+export interface AgentSkillUpdateFailure { agent: AgentKind; message: string }
+export interface SkillReconciliationResult { updated: AgentSkillUpdate[]; conflicts: AgentSkillUpdate[]; failures: AgentSkillUpdateFailure[] }
+export interface SkillUpdateResult { agent: AgentKind; skills: string[]; backupPath?: string }
 
 const client = new TauriAthriaClient(invoke);
 
@@ -42,6 +63,10 @@ export async function getXunjiStatus<T>(): Promise<T> { return invoke("xunji_sta
 export async function getMcpStatus(): Promise<McpStatus> { return invoke("mcp_status"); }
 export async function getAgentIntegrationsStatus(): Promise<AgentIntegrationStatus[]> { return invoke("agent_integrations_status"); }
 export async function installAgentIntegration(agent: AgentKind): Promise<AgentIntegrationResult> { return invoke("install_agent_integration", { agent }); }
+export async function addCustomAgent(name: string, configPath: string, skillsPath: string): Promise<AgentIntegrationResult> { return invoke("add_custom_agent", { name, configPath, skillsPath }); }
+export async function reconcileAgentSkills(): Promise<SkillReconciliationResult> { return invoke("reconcile_agent_skills"); }
+export async function resolveAgentSkillUpdate(agent: AgentKind, action: "replace" | "backup_replace"): Promise<SkillUpdateResult> { return invoke("resolve_agent_skill_update", { agent, action }); }
+export async function openSkillArchiveFolder(): Promise<void> { await invoke("open_skill_archive_folder"); }
 export async function removeAgentIntegration(agent: AgentKind): Promise<AgentIntegrationResult> { return invoke("remove_agent_integration", { agent }); }
 
 export interface VaultStatus { databaseUuid: string; databasePath: string; initialized: boolean; locked: boolean; remembered: boolean; legacySources: string[] }

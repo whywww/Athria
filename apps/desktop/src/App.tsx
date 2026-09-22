@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, changeVaultPassword, createNewProfile, disconnectConnection, getAgentIntegrationsStatus, getIntervalsStatus, getMcpStatus, getVaultStatus, getXunjiStatus, importXunjiSkill, installAgentIntegration, pickNewProfileDestination, pickRestoreFile, removeAgentIntegration, requireVaultPassword, resetVaultPassword, restoreBackup, setupVault, syncIntervals, syncXunji, testIntervals, unlockVault, type AgentIntegrationStatus, type AgentKind } from "./api";
-import { agentSetupPrompt } from "./mcp-config";
+import { addCustomAgent, api, changeVaultPassword, createNewProfile, disconnectConnection, getAgentIntegrationsStatus, getIntervalsStatus, getMcpStatus, getVaultStatus, getXunjiStatus, importXunjiSkill, installAgentIntegration, openSkillArchiveFolder, pickNewProfileDestination, pickRestoreFile, reconcileAgentSkills, removeAgentIntegration, requireVaultPassword, resetVaultPassword, resolveAgentSkillUpdate, restoreBackup, setupVault, syncIntervals, syncXunji, testIntervals, unlockVault, type AgentIntegrationResult, type AgentIntegrationStatus, type AgentKind, type AgentSkillUpdate, type AgentSkillUpdateFailure, type OfficialAgentKind, type SkillArchiveView, type SkillUpdateResult } from "./api";
 import {
   cmToImperialHeight, connectionSources, dashboardPages, deviceTimezone, equipmentGroupState, filterAndSortTrainingHistory, formatDateTime, formatDuration, formatPersonalHeight, formatPersonalWeight, formatRaceCountdown, formatRaceDateShort, formatTimezoneLabel, formatTrainingRhythm, formatTrainingSource, friendlyLabel, imperialHeightToCm, isUntouchedDefaultProfile, kgToPounds, nextRaceDay, poundsToKg,
   paginateTrainingHistory, parseSyncRange, profilePayload, syncRangeOptions, timezoneOptions, PREFERENCE_MAX_LENGTH, RACE_SPORT_PRESETS,
@@ -76,7 +75,7 @@ function goalTone(goal: string) {
 
 function ServiceStatus() {
   const health = useQuery({ queryKey: ["doctor"], queryFn: () => api<DoctorResult>("/api/system/doctor"), retry: 3, retryDelay: 500 });
-  const label = health.isPending ? "Starting…" : health.isError ? "Service unavailable" : "Local service";
+  const label = health.isPending ? "Starting…" : health.isError ? "Service Unavailable" : "Local Service";
   return <span className={`status ${health.isError ? "offline" : ""}`}><i/>{label}</span>;
 }
 
@@ -609,7 +608,7 @@ function PersonalInformationCard() {
     if (weightChanged) payload.weightKg = weightText.trim() ? weightKgDraft : null;
     save.mutate(payload);
   };
-  const genderLabel = value.gender ? friendlyLabel(value.gender) : "Not specified";
+  const genderLabel = value.gender ? friendlyLabel(value.gender) : "-";
   const validWeight = !weightChanged || !weightText.trim() || (weightKgDraft >= 20 && weightKgDraft <= 500);
   const valid = Boolean(form?.preferredName.trim()) && (heightCmDraft === null || (heightCmDraft >= 50 && heightCmDraft <= 250)) && validWeight && (!form?.birthDate || form.birthDate <= new Date().toISOString().slice(0, 10));
   return <Card title="Personal Information" className="personal-information-card" action={form ? <div className="actions"><button className="secondary compact" onClick={cancel}>Cancel</button><button className="compact" disabled={!valid || save.isPending} onClick={submit}>{save.isPending ? "Saving…" : "Save"}</button></div> : <button className="secondary compact" onClick={begin}><span aria-hidden="true">✎</span>Edit</button>}>
@@ -622,34 +621,65 @@ function PersonalInformationCard() {
         : <div className="imperial-height"><span className="imperial-field"><input type="number" min="0" max="8" step="1" aria-label="Height feet" value={feetText} onChange={(event) => { setFeetText(event.target.value); setHeightTouched(true); }}/><em>ft</em></span><span className="imperial-field"><input type="number" min="0" max="11.9" step="0.1" aria-label="Height inches" value={inchesText} onChange={(event) => { setInchesText(event.target.value); setHeightTouched(true); }}/><em>in</em></span></div>}</label>
       <label><span>Weight <em>{unit === "metric" ? "kg" : "lb"}</em></span><input type="number" min={unit === "metric" ? "20" : "44"} max={unit === "metric" ? "500" : "1103"} step="0.1" value={weightText} onChange={(event) => { setWeightText(event.target.value); setWeightChanged(true); }}/></label>
       <label><span>Birth date</span><input type="date" max={new Date().toISOString().slice(0, 10)} value={form.birthDate ?? ""} onChange={(event) => setForm({ ...form, birthDate: event.target.value || null })}/></label>
-    </div> : <dl className="personal-information-summary"><div><dt>Preferred name</dt><dd>{value.preferredName}</dd></div><div><dt>Gender</dt><dd>{genderLabel}</dd></div><div><dt>Height</dt><dd>{value.heightCm == null ? "Not specified" : formatPersonalHeight(value.heightCm, value.unitSystem)}</dd></div><div><dt>Weight {value.weightDate && <small>{value.weightDate}</small>}</dt><dd>{value.weightKg == null ? "Not recorded" : formatPersonalWeight(value.weightKg, value.unitSystem)}</dd></div><div><dt>Birth date</dt><dd>{value.birthDate ?? "Not specified"}</dd></div></dl>}
+    </div> : <dl className="personal-information-summary"><div><dt>Preferred name</dt><dd>{value.preferredName}</dd></div><div><dt>Gender</dt><dd>{genderLabel}</dd></div><div><dt>Height</dt><dd>{value.heightCm == null ? "-" : formatPersonalHeight(value.heightCm, value.unitSystem)}</dd></div><div><dt>Weight {value.weightDate && <small>{value.weightDate}</small>}</dt><dd>{value.weightKg == null ? "-" : formatPersonalWeight(value.weightKg, value.unitSystem)}</dd></div><div><dt>Birth date</dt><dd>{value.birthDate ?? "-"}</dd></div></dl>}
     <ErrorBanner error={save.error}/>
   </Card>;
 }
 
-type AgentState = "connected" | "update_available" | "needs_attention";
+type AgentState = "connected" | "update_available" | "needs_attention" | "skills_setup_required";
 
-const agentStateLabels: Record<AgentState, string> = { connected: "Connected", update_available: "Update available", needs_attention: "Needs attention" };
+const agentStateLabels: Record<AgentState, string> = { connected: "Connected", update_available: "Update available", needs_attention: "Needs attention", skills_setup_required: "Skills setup required" };
 
 function agentManaged({ mcp, skills }: Pick<AgentIntegrationStatus, "mcp" | "skills">): boolean {
-  const linked = (status: AgentIntegrationStatus["mcp"]) => status === "installed" || status === "outdated" || status === "conflict";
+  const linked = (status: AgentIntegrationStatus["mcp"]) => status === "installed" || status === "outdated" || status === "modified" || status === "conflict";
   return linked(mcp) || linked(skills);
 }
 
-function agentState({ mcp, skills }: Pick<AgentIntegrationStatus, "mcp" | "skills">): AgentState {
-  if (mcp === "conflict" || skills === "conflict") return "needs_attention";
+/** A GUI-managed agent installs Skills in its own settings, so Athria prepares archives and waits for the handshake. */
+function guiSkillsAwaitingSetup({ skills, skillsMode }: Pick<AgentIntegrationStatus, "skills" | "skillsMode">): boolean {
+  return skillsMode === "gui_managed" && (skills === "unverified" || skills === "missing");
+}
+
+function agentState({ mcp, skills, skillsMode }: Pick<AgentIntegrationStatus, "mcp" | "skills" | "skillsMode">): AgentState {
+  if (mcp === "conflict" || skills === "conflict" || skills === "modified") return "needs_attention";
+  if (guiSkillsAwaitingSetup({ skills, skillsMode })) return "skills_setup_required";
   if (mcp === "outdated" || skills === "outdated") return "update_available";
   if (mcp === "installed" && (skills === "installed" || skills === "unsupported")) return "connected";
   return "needs_attention";
 }
 
+/** Skills location to show: the agent's Skills folder, or the archives Athria prepared for a GUI-managed agent. */
+function agentSkillsLocation({ skillsPath, skillArchiveDir }: Pick<AgentIntegrationStatus, "skillsPath" | "skillArchiveDir">): string | undefined {
+  return skillsPath ?? skillArchiveDir;
+}
+
 function AgentBadge({ integration }: { integration: AgentIntegrationStatus }) {
-  return <span className={`agent-icon agent-${integration.agent.replace(/_/g, "-")}`} aria-hidden="true"><AgentLogo agent={integration.agent}/></span>;
+  const official = ["codex", "claude_code", "claude_desktop", "qoder_cn", "trae_cn", "cursor", "workbuddy"].includes(integration.agent);
+  const initial = Array.from(integration.name.trim())[0]?.toLocaleUpperCase() ?? "?";
+  return <span className={`agent-icon agent-${integration.agent.replace(/_/g, "-")}${official ? "" : " agent-custom"}`} aria-hidden="true">{official ? <AgentLogo agent={integration.agent as OfficialAgentKind}/> : <span className="agent-custom-initial">{initial}</span>}</span>;
 }
 
 function AgentMenu({ integration, state, busy, onUpdate, onRemove }: { integration: AgentIntegrationStatus; state: AgentState; busy: boolean; onUpdate: () => void; onRemove: () => void }) {
   const menu = useRef<HTMLDetailsElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const home = useHomeDir();
   const [copied, setCopied] = useState<string>();
+  const [flipped, setFlipped] = useState(false);
+  const [aligned, setAligned] = useState(false);
+  useEffect(() => {
+    const element = menu.current;
+    if (!element) return;
+    const align = () => {
+      if (!element.open) { setFlipped(false); setAligned(false); return; }
+      const naturalLeft = element.getBoundingClientRect().right - (panel.current?.offsetWidth ?? 0);
+      let bounds = element.parentElement;
+      while (bounds && bounds !== document.body && getComputedStyle(bounds).overflowY === "visible") bounds = bounds.parentElement;
+      setFlipped(naturalLeft < (bounds ?? document.documentElement).getBoundingClientRect().left + 8);
+      setAligned(true);
+    };
+    element.addEventListener("toggle", align);
+    return () => element.removeEventListener("toggle", align);
+  }, []);
   useEffect(() => {
     const close = (event: PointerEvent) => { if (menu.current?.open && !menu.current.contains(event.target as Node)) menu.current.removeAttribute("open"); };
     document.addEventListener("pointerdown", close);
@@ -663,12 +693,15 @@ function AgentMenu({ integration, state, busy, onUpdate, onRemove }: { integrati
     } catch { setCopied(undefined); }
   };
   const closeMenu = (event: React.MouseEvent<HTMLButtonElement>) => event.currentTarget.closest("details")?.removeAttribute("open");
+  const skillsLocation = agentSkillsLocation(integration);
   return <details className="agent-menu" ref={menu}>
     <summary aria-label={`Options for ${integration.name}`}><AppIcon name="ellipsis"/></summary>
-    <div>
-      <button type="button" className="agent-menu-path" onClick={() => void copy("mcp", integration.configPath)}><span><small>MCP config</small><code>{integration.configPath}</code></span><AppIcon name={copied === "mcp" ? "check" : "copy"}/></button>
-      {integration.skillsPath && <button type="button" className="agent-menu-path" onClick={() => void copy("skills", integration.skillsPath!)}><span><small>Skills</small><code>{integration.skillsPath}</code></span><AppIcon name={copied === "skills" ? "check" : "copy"}/></button>}
-      {state !== "connected" && <button type="button" className="agent-menu-item" disabled={busy} onClick={(event) => { closeMenu(event); onUpdate(); }}><AppIcon name="refresh"/>{state === "update_available" ? "Update" : "Repair"}</button>}
+    <div ref={panel} className={[flipped ? "agent-menu-flipped" : undefined, aligned ? undefined : "agent-menu-hidden"].filter(Boolean).join(" ") || undefined}>
+      <button type="button" className="agent-menu-path" title={integration.configPath} onClick={() => void copy("mcp", integration.configPath)}><span><small>MCP</small><code>{shortenHomePath(integration.configPath, home)}</code></span><AppIcon name={copied === "mcp" ? "check" : "copy"}/></button>
+      {skillsLocation && <button type="button" className="agent-menu-path" title={skillsLocation} onClick={() => void copy("skills", skillsLocation)}><span><small>Skills</small><code>{shortenHomePath(skillsLocation, home)}</code></span><AppIcon name={copied === "skills" ? "check" : "copy"}/></button>}
+      {integration.skillsMode === "gui_managed"
+        ? <button type="button" className="agent-menu-item" disabled={busy} onClick={(event) => { closeMenu(event); onUpdate(); }}><AppIcon name="refresh"/>Update MCP / Skills</button>
+        : state !== "connected" && <button type="button" className="agent-menu-item" disabled={busy} onClick={(event) => { closeMenu(event); onUpdate(); }}><AppIcon name="refresh"/>{state === "update_available" ? "Update" : "Repair"}</button>}
       <div className="agent-menu-divider"/>
       <button type="button" className="agent-menu-item danger-text" disabled={busy} onClick={(event) => { closeMenu(event); onRemove(); }}><AppIcon name="trash"/>Remove Agent</button>
     </div>
@@ -679,16 +712,22 @@ function AgentTile({ integration }: { integration: AgentIntegrationStatus }) {
   const client = useQueryClient();
   const [message, setMessage] = useState<string>();
   const [error, setError] = useState<unknown>();
+  const [guide, setGuide] = useState<AgentGuide>();
   const install = useMutation({ mutationFn: () => installAgentIntegration(integration.agent) });
   const remove = useMutation({ mutationFn: () => removeAgentIntegration(integration.agent) });
   const busy = install.isPending || remove.isPending;
   const state = agentState(integration);
   const refresh = () => client.invalidateQueries({ queryKey: ["agent-integrations"] });
   const update = async () => {
+    if (integration.skills === "modified") {
+      window.dispatchEvent(new CustomEvent("athria-resolve-skill-update", { detail: integration.agent }));
+      return;
+    }
     try {
       setError(undefined); setMessage(undefined);
-      await install.mutateAsync();
-      setMessage(`Restart ${integration.name} to load the update.`);
+      const result = await install.mutateAsync();
+      const next = guideFor(integration, result, true);
+      if (next) setGuide(next); else setMessage(`Restart ${integration.name} to load the update.`);
       await refresh();
     } catch (value) { setError(value); }
   };
@@ -706,10 +745,44 @@ function AgentTile({ integration }: { integration: AgentIntegrationStatus }) {
     <AgentMenu integration={integration} state={state} busy={busy} onUpdate={() => void update()} onRemove={() => void disconnect()}/>
     {message && <p className="agent-tile-note" role="status">{message}</p>}
     <ErrorBanner error={error}/>
+    {guide && <SkillArchiveGuideModal guide={guide} onClose={() => setGuide(undefined)}/>}
   </article>;
 }
 
-const AGENT_TILE_WIDTH = 178;
+/** Athria's upload guidance for an agent that installs Skills in its own settings. */
+type AgentGuide = { name: string; archiveDir?: string | undefined; archives: SkillArchiveView[]; updating: boolean };
+
+function guideFor(integration: AgentIntegrationStatus, result: AgentIntegrationResult, updating: boolean): AgentGuide | undefined {
+  if (integration.skillsMode !== "gui_managed") return undefined;
+  return { name: integration.name, archiveDir: result.skillArchiveDir, archives: result.skillArchives, updating };
+}
+
+export function SkillArchiveGuideModal({ guide, onClose }: { guide: AgentGuide; onClose: () => void }) {
+  useModalDismiss(onClose);
+  const [error, setError] = useState<unknown>();
+  const openArchives = async () => {
+    try { setError(undefined); await openSkillArchiveFolder(); } catch (value) { setError(value); }
+  };
+  const count = guide.archives.length;
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className="connection-modal skill-archive-modal" role="dialog" aria-modal="true" aria-labelledby="skill-archive-title">
+      <header><div><h2 id="skill-archive-title">{guide.updating ? `${guide.name} needs the refreshed Skills` : `Finish connecting ${guide.name}`}</h2><p>{guide.updating ? "Athria refreshed the MCP configuration and prepared the latest Skill archives." : "Athria connected the MCP server and prepared Athria's Skills for upload."}</p></div><button type="button" className="modal-close" aria-label="Close dialog" onClick={onClose}><AppIcon name="close"/></button></header>
+      <div className="modal-body">
+        <ol className="agent-manual-steps">
+          <li><strong>Open Skills in {guide.name}</strong><span>Choose Customize, then Skills.</span></li>
+          <li><strong>Upload each Athria Skill</strong><span>Use Upload skill and choose {count > 0 ? `the ${count} ZIP file${count === 1 ? "" : "s"}` : "the ZIP files"} Athria prepared. {guide.name} accepts one Skill per ZIP.</span></li>
+        </ol>
+        {guide.archiveDir && <div className="agent-archive-path"><small>Skill archives</small><code title={guide.archiveDir}>{guide.archiveDir}</code></div>}
+        {count > 0 && <ul className="agent-archive-list">{guide.archives.map((archive) => <li key={archive.name}><strong>{archive.name}</strong><span>{archive.version}</span></li>)}</ul>}
+        <p className="agent-archive-note">Athria shows Connected once {guide.name} runs a Skill and reports the version it loaded.</p>
+        <ErrorBanner error={error}/>
+        <div className="modal-actions"><button type="button" className="secondary" disabled={!guide.archiveDir} onClick={() => void openArchives()}>Open ZIP folder</button><button type="button" onClick={onClose}>Done</button></div>
+      </div>
+    </section>
+  </div>;
+}
+
+const AGENT_TILE_WIDTH = 220;
 const AGENT_TILE_GAP = 10;
 
 export function agentTileColumns(width: number): number {
@@ -730,8 +803,23 @@ export function AgentTiles({ agents, columns, onShowMore }: { agents: AgentInteg
   </>;
 }
 
-function AgentPathRow({ label, path }: { label: string; path?: string | undefined }) {
-  return <div className="agent-modal-path"><small>{label}</small>{path ? <code title={path}>{path}</code> : <span className="agent-modal-unsupported">Need manual install</span>}</div>;
+function useHomeDir(): string | undefined {
+  const status = useQuery({ queryKey: ["mcp-status"], queryFn: getMcpStatus, retry: false });
+  return status.data?.homeDir ?? undefined;
+}
+
+/** Shows paths inside the home folder as `~/…`. Display only: hover and copy keep the real path. */
+export function shortenHomePath(path: string, home?: string | undefined): string {
+  if (!home) return path;
+  const base = home.replaceAll("\\", "/").replace(/\/+$/, "");
+  const normalized = path.replaceAll("\\", "/");
+  const prefix = `${base}/`;
+  const matched = /^[a-z]:\//i.test(normalized) ? normalized.toLowerCase().startsWith(prefix.toLowerCase()) : normalized.startsWith(prefix);
+  return matched ? `~${normalized.slice(base.length)}` : path;
+}
+
+function AgentPathRow({ label, path, home, empty = "Need manual install" }: { label: string; path?: string | undefined; home?: string | undefined; empty?: string }) {
+  return <div className="agent-modal-path"><small>{label}</small>{path ? <code title={path}>{shortenHomePath(path, home)}</code> : <span className="agent-modal-unsupported">{empty}</span>}</div>;
 }
 
 export function AddAgentModal({ onClose }: { onClose: () => void }) {
@@ -739,17 +827,20 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
   const integrations = useQuery({ queryKey: ["agent-integrations"], queryFn: getAgentIntegrationsStatus, retry: false });
   const [view, setView] = useState<"list" | "manual">("list");
   const [pending, setPending] = useState<AgentKind>();
+  const [guide, setGuide] = useState<AgentGuide>();
   const [message, setMessage] = useState<string>();
   const [error, setError] = useState<unknown>();
   const manual = view === "manual";
   const dismiss = () => { if (manual) setView("list"); else onClose(); };
-  useEffect(() => { const onKeyDown = (event: KeyboardEvent) => { if (event.key !== "Escape") return; if (view === "manual") setView("list"); else onClose(); }; window.addEventListener("keydown", onKeyDown); return () => window.removeEventListener("keydown", onKeyDown); }, [onClose, view]);
-  const candidates = (integrations.data ?? []).filter((integration) => !agentManaged(integration));
+  useEffect(() => { const onKeyDown = (event: KeyboardEvent) => { if (event.key !== "Escape" || guide) return; if (view === "manual") setView("list"); else onClose(); }; window.addEventListener("keydown", onKeyDown); return () => window.removeEventListener("keydown", onKeyDown); }, [onClose, view, guide]);
+  const roster = sortAgentRoster(integrations.data ?? []);
+  const home = useHomeDir();
   const connect = async (integration: AgentIntegrationStatus) => {
     try {
       setPending(integration.agent); setError(undefined); setMessage(undefined);
-      await installAgentIntegration(integration.agent);
-      setMessage(`Athria was added to ${integration.name}. Restart it to load Athria.`);
+      const result = await installAgentIntegration(integration.agent);
+      const next = guideFor(integration, result, false);
+      if (next) setGuide(next); else setMessage(`Athria was added to ${integration.name}. Restart it to load Athria.`);
       await client.invalidateQueries({ queryKey: ["agent-integrations"] });
     } catch (value) { setError(value); } finally { setPending(undefined); }
   };
@@ -757,13 +848,14 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
     <section className="connection-modal agent-modal" role="dialog" aria-modal="true" aria-labelledby="agent-modal-title">
       <header><div><h2 id="agent-modal-title">{manual ? "Manual Setup" : "Add Agent"}</h2>{!manual && <p>Connect Athria to your AI agent on this computer.</p>}</div><button type="button" className="modal-close" aria-label={manual ? "Back to Add Agent" : "Close dialog"} onClick={dismiss}><AppIcon name="close"/></button></header>
       <div className="modal-body">
-        {manual ? <ManualAgentSetup/> : <>
-          {integrations.isPending ? <Loading/> : integrations.isError ? <ErrorBanner error={integrations.error}/> : candidates.length ? <ul className="agent-modal-list">{candidates.map((integration) => <li className="agent-modal-row" key={integration.agent}><AgentBadge integration={integration}/><div className="agent-modal-copy"><strong>{integration.name}</strong><AgentPathRow label="MCP" path={integration.configPath}/><AgentPathRow label="Skills" path={integration.skillsPath}/></div><button type="button" className="secondary" disabled={!integration.available || pending === integration.agent} title={integration.available ? undefined : integration.diagnostic} onClick={() => void connect(integration)}>{pending === integration.agent ? "Connecting…" : "Connect"}</button></li>)}</ul> : <p className="agent-modal-empty">All agents are connected.</p>}
+        {manual ? <ManualAgentSetup existing={roster} onConnected={() => { setView("list"); void client.invalidateQueries({ queryKey: ["agent-integrations"] }); }}/> : <>
+          {integrations.isPending ? <Loading/> : integrations.isError ? <ErrorBanner error={integrations.error}/> : roster.length ? <ul className="agent-modal-list">{roster.map((integration) => <li className="agent-modal-row" key={integration.agent}><AgentBadge integration={integration}/><div className="agent-modal-copy"><strong>{integration.name}</strong><AgentPathRow label="MCP" path={integration.configPath} home={home}/>{integration.skillsMode === "gui_managed" ? <AgentPathRow label="Skills" path={agentSkillsLocation(integration)} home={home} empty="Athria prepares these when you Connect"/> : <AgentPathRow label="Skills" path={integration.skillsPath} home={home}/>}</div>{agentManaged(integration) ? (integration.skillsMode === "gui_managed" && agentState(integration) !== "connected" ? <span className="agent-modal-pending" role="img" aria-label={agentStateLabels[agentState(integration)]} title={agentStateLabels[agentState(integration)]}>{agentStateLabels[agentState(integration)]}</span> : <span className="agent-modal-connected" role="img" aria-label="Connected" title="Connected"><AppIcon name="check"/></span>) : <button type="button" className="secondary" disabled={!integration.available || pending === integration.agent} title={integration.available ? undefined : integration.diagnostic} onClick={() => void connect(integration)}>{pending === integration.agent ? "Connecting…" : "Connect"}</button>}</li>)}</ul> : null}
           {message && <p className="success" role="status">{message}</p>}
           <ErrorBanner error={error}/>
           <div className="agent-modal-footer"><button type="button" className="text-button" onClick={() => setView("manual")}>Don't see your agents? Manually add them →</button></div>
         </>}
       </div>
+      {guide && <SkillArchiveGuideModal guide={guide} onClose={() => setGuide(undefined)}/>}
     </section></div>;
 }
 
@@ -773,7 +865,71 @@ export function MoreAgentsModal({ agents, onClose }: { agents: AgentIntegrationS
     <section className="connection-modal agent-modal" role="dialog" aria-modal="true" aria-labelledby="agent-more-title">
       <header><div><h2 id="agent-more-title">More Agents</h2><p>Connected agents that do not fit in the row above.</p></div><button type="button" className="modal-close" aria-label="Close dialog" onClick={onClose}><AppIcon name="close"/></button></header>
       <div className="modal-body"><div className="agent-grid">{agents.map((integration) => <AgentTile key={integration.agent} integration={integration}/>)}</div></div>
-    </section></div>;
+  </section></div>;
+}
+
+export function SkillUpdateConflictModal({ conflict, result, busy, error, onResolve, onClose }: { conflict: AgentSkillUpdate; result: SkillUpdateResult | undefined; busy: boolean; error: unknown; onResolve: (action: "replace" | "backup_replace") => void; onClose: () => void }) {
+  useModalDismiss(onClose, !busy);
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (!busy && event.target === event.currentTarget) onClose(); }}>
+    <section className="connection-modal skill-update-modal" role="dialog" aria-modal="true" aria-labelledby="skill-update-title">
+      <header><div><h2 id="skill-update-title">{result ? "Skills updated" : `${conflict.name} Skills were modified`}</h2><p>{result ? "The bundled Athria Skills are now installed." : "A newer Athria version is available, but these installed Skills contain local changes."}</p></div><button type="button" className="modal-close" aria-label="Close dialog" disabled={busy} onClick={onClose}><AppIcon name="close"/></button></header>
+      <div className="modal-body">
+        {result ? <>{result.backupPath && <div className="skill-update-backup"><strong>Backup saved</strong><code>{result.backupPath}</code></div>}</> : <>
+          <ul className="skill-update-list">{conflict.skills.map((skill) => <li key={skill.name}><strong>{skill.name}</strong><span>{skill.installedVersion} → {skill.bundledVersion}</span></li>)}</ul>
+          <p className="skill-update-warning">Replace permanently discards the local changes. Backup &amp; Replace saves the current copies first.</p>
+        </>}
+        <ErrorBanner error={error}/>
+        <div className="modal-actions">{result ? <button type="button" onClick={onClose}>Done</button> : <><button type="button" className="secondary" disabled={busy} onClick={onClose}>Not now</button><button type="button" className="secondary" disabled={busy} onClick={() => onResolve("replace")}>{busy ? "Updating…" : "Replace"}</button><button type="button" disabled={busy} onClick={() => onResolve("backup_replace")}>{busy ? "Updating…" : "Backup & Replace"}</button></>}</div>
+      </div>
+    </section>
+  </div>;
+}
+
+export function AgentSkillUpdateCoordinator() {
+  const client = useQueryClient();
+  const started = useRef(false);
+  const [conflicts, setConflicts] = useState<AgentSkillUpdate[]>([]);
+  const [failures, setFailures] = useState<AgentSkillUpdateFailure[]>([]);
+  const [result, setResult] = useState<SkillUpdateResult>();
+  const [error, setError] = useState<unknown>();
+  const [busy, setBusy] = useState(false);
+  const scan = async (requestedAgent?: AgentKind) => {
+    try {
+      const response = await reconcileAgentSkills();
+      setFailures(response.failures);
+      if (response.updated.length > 0) await client.invalidateQueries({ queryKey: ["agent-integrations"] });
+      const next = requestedAgent ? response.conflicts.filter((item) => item.agent === requestedAgent) : response.conflicts;
+      setConflicts(next);
+      setResult(undefined);
+      setError(undefined);
+    } catch (value) {
+      setFailures([{ agent: requestedAgent ?? "codex", message: value instanceof Error ? value.message : String(value) }]);
+    }
+  };
+  useEffect(() => {
+    if (!started.current) {
+      started.current = true;
+      void scan();
+    }
+    const open = (event: Event) => void scan((event as CustomEvent<AgentKind>).detail);
+    window.addEventListener("athria-resolve-skill-update", open);
+    return () => window.removeEventListener("athria-resolve-skill-update", open);
+  }, []);
+  const current = conflicts[0];
+  const close = () => {
+    setConflicts((items) => items.slice(1));
+    setResult(undefined);
+    setError(undefined);
+  };
+  const resolve = async (action: "replace" | "backup_replace") => {
+    if (!current) return;
+    try {
+      setBusy(true); setError(undefined);
+      setResult(await resolveAgentSkillUpdate(current.agent, action));
+      await client.invalidateQueries({ queryKey: ["agent-integrations"] });
+    } catch (value) { setError(value); } finally { setBusy(false); }
+  };
+  return <>{failures.length > 0 && <div className="skill-update-failures" role="alert"><span>{failures.map((failure) => failure.message).join(" ")}</span><button type="button" aria-label="Dismiss Skill update error" onClick={() => setFailures([])}>×</button></div>}{current && <SkillUpdateConflictModal conflict={current} result={result} busy={busy} error={error} onResolve={(action) => void resolve(action)} onClose={close}/>}</>;
 }
 
 export function AgentIntegrations() {
@@ -790,7 +946,7 @@ export function AgentIntegrations() {
     observer.observe(grid);
     return () => observer.disconnect();
   }, [grid]);
-  const connected = (integrations.data ?? []).filter(agentManaged);
+  const connected = sortAgentRoster((integrations.data ?? []).filter(agentManaged));
   const hidden = splitAgentTiles(connected, columns).hidden;
   return <Card title="AI Agents" className="agent-integrations-card" action={<button type="button" className="secondary compact agent-add" onClick={() => setAdding(true)}><AppIcon name="plus"/>Add Agent</button>}>
     <p>Connect the AI agents on this computer. Athria backs up your settings before each change.</p>
@@ -800,7 +956,7 @@ export function AgentIntegrations() {
   </Card>;
 }
 
-function Settings() {
+export function Settings() {
   return <div className="settings-page"><PersonalInformationCard/><Card title="System Status" className="system-card" action={<ServiceStatus/>}><p>Athria runs locally and keeps your training data on this device.</p></Card><AgentIntegrations/><Backup/></div>;
 }
 
@@ -826,19 +982,38 @@ function PromptBlock({ label, value }: { label: string; value: string }) {
   </div>;
 }
 
-const TEST_PROMPT = "Show my recent training sessions";
+export function sortAgentRoster(agents: AgentIntegrationStatus[]): AgentIntegrationStatus[] {
+  return [...agents].sort((left, right) => Number(right.available) - Number(left.available) || left.name.localeCompare(right.name, undefined, { sensitivity: "base" }));
+}
 
-export function ManualAgentSetup() {
-  const status = useQuery({ queryKey: ["mcp-status"], queryFn: getMcpStatus, retry: false });
-  if (status.isPending) return <Loading/>;
-  if (status.isError) return <div className="error" role="alert">Athria could not determine its installation path. Close and reopen Athria, then try again. {status.error instanceof Error ? status.error.message : String(status.error)}</div>;
-  const { executablePath, skillsPath } = status.data;
+const PATH_PROMPT = "Tell me your agent name, the absolute path to your MCP config file, and the absolute path to your Skills folder.";
+
+export function ManualAgentSetup({ existing = [], onConnected = () => {} }: { existing?: AgentIntegrationStatus[]; onConnected?: () => void }) {
+  const [name, setName] = useState("");
+  const [configPath, setConfigPath] = useState("");
+  const [skillsPath, setSkillsPath] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>();
+  const trimmedName = name.trim();
+  const duplicate = existing.some((agent) => agent.name.localeCompare(trimmedName, undefined, { sensitivity: "base" }) === 0);
+  const valid = Boolean(trimmedName && configPath.trim() && skillsPath.trim() && !duplicate);
+  const connect = async () => {
+    try {
+      setBusy(true); setError(undefined);
+      await addCustomAgent(trimmedName, configPath.trim(), skillsPath.trim());
+      onConnected();
+    } catch (value) { setError(value); } finally { setBusy(false); }
+  };
   return <div className="agent-manual">
-    <p className="agent-manual-intro">Add Athria from your agent's own settings. This works with any agent that supports MCP and Skills.</p>
-    <ol className="agent-manual-steps">
-      <li><strong>Copy this prompt into your agent</strong><span>Send it to your agent as your next message. It adds Athria's MCP server and Skills for itself.</span><PromptBlock label="Setup prompt" value={agentSetupPrompt({ executablePath, skillsPath })}/>{!skillsPath && <p className="notice">Athria's Skills folder was not found. Reinstall Athria and try again.</p>}</li>
-      <li><strong>Restart and test</strong><span>Restart your agent, then ask in a new conversation:</span><PromptBlock label="Test prompt" value={TEST_PROMPT}/></li>
-    </ol>
+    <p className="agent-manual-intro">Ask your agent for these filesystem locations, then Athria can configure and verify the connection automatically.</p>
+    <PromptBlock label="Path request prompt" value={PATH_PROMPT}/>
+    <div className="agent-manual-fields">
+      <label>Agent name<input value={name} autoFocus onChange={(event) => setName(event.target.value)} placeholder="My Agent"/>{duplicate && <span className="field-error">An agent with this name already exists.</span>}</label>
+      <label>MCP config file<input value={configPath} onChange={(event) => setConfigPath(event.target.value)} placeholder="C:\\path\\to\\mcp.json"/></label>
+      <label>Skills folder<input value={skillsPath} onChange={(event) => setSkillsPath(event.target.value)} placeholder="C:\\path\\to\\skills"/></label>
+    </div>
+    <ErrorBanner error={error}/>
+    <div className="modal-actions"><button type="button" disabled={!valid || busy} onClick={() => void connect()}>{busy ? "Testing…" : "Test connection"}</button></div>
   </div>;
 }
 
@@ -866,7 +1041,7 @@ export function Help() {
         <section><strong>Template</strong><span>A reusable single-domain pattern, such as "Lower Strength A". Templates carry structure only — no exercises or sets.</span></section>
         <section><strong>Training domain</strong><span>The five training types Athria plans around: strength, endurance, sport skill, mind-body and recovery.</span></section>
         <section><strong>RPE / RIR</strong><span>Two effort scales: RPE rates how hard a set felt (usually 1–10); RIR counts the good reps still left in reserve.</span></section>
-        <section><strong>Heart rate zone</strong><span>Five training zones calculated from your measured maximum heart rate — never from age. Endurance sessions can be prescribed by zone, so intensity follows your actual heart rate.</span></section>
+        <section><strong>Heart rate zone</strong><span>A personal heart-rate range used to indicate effort level. Check your zone ranges in your watch or fitness app.</span></section>
       </div>
     </Card>
   </>;
@@ -953,5 +1128,5 @@ export function App() {
   const navIcons: Record<Page, IconName> = { Overview: "overview", Training: "training", Profile: "profile", Plan: "plan", Connections: "devices", Settings: "settings", Help: "help" };
   const NavItems = ({ items }: { items: typeof dashboardPages[number][] }) => <>{items.map((item) => <button key={item.id} className={item.id === page ? "active" : ""} aria-current={item.id === page ? "page" : undefined} onClick={() => setPage(item.id)}><AppIcon name={navIcons[item.id]}/>{item.label}</button>)}</>;
   const preferredName = profile.data?.preferredName || "Athlete";
-  return <><DatabaseGate/><div className="shell"><aside><div className="brand"><img src="/athria-logo.svg" alt="Athria" /></div><nav aria-label="Main navigation"><NavItems items={primaryPages}/></nav><div className="sidebar-lower"><nav className="support-nav" aria-label="Support navigation"><NavItems items={supportPages}/></nav></div></aside><main className="primary-main">{page !== "Plan" && page !== "Profile" && <PrimaryPageHeader preferredName={preferredName} subtitle={page === "Overview" ? "Let's keep the momentum going. Here's your overview for today." : page === "Training" ? "All your training in one place — every domain, every workout." : page === "Connections" ? "Sync your data from the apps and devices you use. Keep everything in one place." : page === "Settings" ? "Your personal information, system status, and local database." : page === "Help" ? "Guides for plans, training data, backups and connecting your AI agent." : "Your AI fitness hub. Local-first. Data you own."}/>}<View/></main></div></>;
+  return <><DatabaseGate/><AgentSkillUpdateCoordinator/><div className="shell"><aside><div className="brand"><img src="/athria-logo.svg" alt="Athria" /></div><nav aria-label="Main navigation"><NavItems items={primaryPages}/></nav><div className="sidebar-lower"><nav className="support-nav" aria-label="Support navigation"><NavItems items={supportPages}/></nav></div></aside><main className="primary-main">{page !== "Plan" && page !== "Profile" && <PrimaryPageHeader preferredName={preferredName} subtitle={page === "Overview" ? "Let's keep the momentum going. Here's your overview for today." : page === "Training" ? "All your training in one place — every domain, every workout." : page === "Connections" ? "Sync your data from the apps and devices you use. Keep everything in one place." : page === "Settings" ? "Your personal information, system status, and local database." : page === "Help" ? "Guides for plans, training data, backups and connecting your AI agent." : "Your AI fitness hub. Local-first. Data you own."}/>}<View/></main></div></>;
 }

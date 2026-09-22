@@ -13,6 +13,7 @@ required-features = ["conformance"]
 [dependencies]
 athria-application = { workspace = true }
 athria-core = { workspace = true }
+athria-skills = { workspace = true }
 athria-store = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

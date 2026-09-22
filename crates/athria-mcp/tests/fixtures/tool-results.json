@@ -33,5 +33,6 @@
   "remove_manual_training_source": {},
   "update_wellness": {},
   "update_athlete_profile": {},
-  "get_plan_adjustment_review": {}
+  "get_plan_adjustment_review": {},
+  "report_skill_version": { "recorded": true, "skill": "athria-coach" }
 }

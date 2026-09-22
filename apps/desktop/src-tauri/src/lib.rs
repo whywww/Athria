@@ -14,7 +14,7 @@ use zeroize::Zeroizing;
 mod application_ipc;
 mod agent_integrations;
 use application_ipc::{DesktopApplication, dispatch as dispatch_application};
-use agent_integrations::{AgentKind, resource_skills};
+use agent_integrations::{AgentKind, SkillUpdateAction, home_dir, resource_skills};
 use athria_application::AthriaApplication;
 use athria_integrations::{
     XUNJI_SYNC_DAYS, fetch_intervals, fetch_xunji_training, sync_date_window,
@@ -182,12 +182,25 @@ fn run_mcp_stdio() -> i32 {
             return 1;
         }
     };
-    match serve_stdio(McpService::new(AthriaApplication::new(store))) {
+    match serve_stdio(mcp_service(AthriaApplication::new(store))) {
         Ok(()) => 0,
         Err(error) => {
             eprintln!("Athria MCP stdio failed: {error}");
             1
         }
+    }
+}
+
+/// Wires the Skill handshake report sink, which is how Athria verifies the
+/// Skills a GUI-managed agent (Claude Desktop) actually loaded.
+fn mcp_service(application: AthriaApplication<SqliteStore>) -> McpService<SqliteStore> {
+    let service = McpService::new(application);
+    match platform_config_root() {
+        Ok(root) => service.with_skill_reports(agent_integrations::gui_skill_reports_path(
+            &root,
+            AgentKind::ClaudeDesktop,
+        )),
+        Err(_) => service,
     }
 }
 
@@ -781,29 +794,107 @@ fn mcp_stdio_payload(executable: &Path, skills: Option<&Path>) -> Result<Value, 
         .to_str()
         .ok_or_else(|| "Athria's installation path contains unsupported characters.".to_string())?;
     let skills_path = skills.map(simplify_path).and_then(|path| path.to_str().map(str::to_owned));
+    let home_dir = home_dir()
+        .ok()
+        .map(|path| simplify_path(&path).to_string_lossy().into_owned());
     Ok(json!({
         "configured": true,
         "executablePath": executable_path,
         "arguments": ["mcp"],
-        "skillsPath": skills_path
+        "skillsPath": skills_path,
+        "homeDir": home_dir
     }))
+}
+
+/// Serializes a command payload for the frontend.
+///
+/// Never hand a `Result` straight to `serde_json::to_value`: `Result` itself
+/// implements `Serialize`, so the payload would reach the frontend wrapped as
+/// `{"Ok": ...}` instead of as the value, and callers indexing into it (for
+/// example `.filter` over the agent list) would fail at runtime.
+fn command_json<T: serde::Serialize>(payload: Result<T, String>) -> Result<Value, String> {
+    serde_json::to_value(payload?).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
 fn agent_integrations_status(app: AppHandle) -> Result<Value, String> {
-    serde_json::to_value(agent_integrations::statuses(&app)?).map_err(|error| error.to_string())
+    command_json(agent_integrations::statuses(&app, &platform_config_root()?))
+}
+
+/// Reveals the folder holding the prepared Skill archives. The path is resolved
+/// here rather than supplied by the caller, so the frontend can never ask
+/// Athria to open an arbitrary location.
+#[tauri::command]
+fn open_skill_archive_folder() -> Result<(), String> {
+    let directory =
+        agent_integrations::gui_skill_archive_dir(&platform_config_root()?, AgentKind::ClaudeDesktop);
+    if !directory.is_dir() {
+        return Err(
+            "Athria has not prepared the Claude Desktop Skill archives yet. Connect Claude Desktop first."
+                .to_string(),
+        );
+    }
+    open_folder(&directory)
+}
+
+fn spawn_folder_opener(command: &mut std::process::Command, path: &Path) -> Result<(), String> {
+    command
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("Athria could not open {}: {error}", path.display()))
+}
+
+#[cfg(windows)]
+fn open_folder(path: &Path) -> Result<(), String> {
+    spawn_folder_opener(std::process::Command::new("explorer").arg(path), path)
+}
+
+#[cfg(target_os = "macos")]
+fn open_folder(path: &Path) -> Result<(), String> {
+    spawn_folder_opener(std::process::Command::new("open").arg(path), path)
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+fn open_folder(path: &Path) -> Result<(), String> {
+    spawn_folder_opener(std::process::Command::new("xdg-open").arg(path), path)
 }
 
 #[tauri::command]
-fn install_agent_integration(app: AppHandle, agent: AgentKind) -> Result<Value, String> {
-    serde_json::to_value(agent_integrations::install(&app, agent, &platform_config_root()?))
-        .map_err(|error| error.to_string())
+fn install_agent_integration(app: AppHandle, agent: String) -> Result<Value, String> {
+    command_json(agent_integrations::install_by_id(
+        &app,
+        &agent,
+        &platform_config_root()?,
+    ))
 }
 
 #[tauri::command]
-fn remove_agent_integration(agent: AgentKind) -> Result<Value, String> {
-    serde_json::to_value(agent_integrations::remove(agent, &platform_config_root()?))
-        .map_err(|error| error.to_string())
+fn add_custom_agent(app: AppHandle, name: String, config_path: String, skills_path: String) -> Result<Value, String> {
+    command_json(agent_integrations::add_custom_agent(&app, &name, &config_path, &skills_path, &platform_config_root()?))
+}
+
+#[tauri::command]
+fn reconcile_agent_skills(app: AppHandle) -> Result<Value, String> {
+    command_json(agent_integrations::reconcile_skills(&app, &platform_config_root()?))
+}
+
+#[tauri::command]
+fn resolve_agent_skill_update(
+    app: AppHandle,
+    agent: String,
+    action: SkillUpdateAction,
+) -> Result<Value, String> {
+    command_json(agent_integrations::resolve_skill_update_by_id(
+        &app,
+        &agent,
+        action,
+        &platform_config_root()?,
+    ))
+}
+
+#[tauri::command]
+fn remove_agent_integration(agent: String) -> Result<Value, String> {
+    command_json(agent_integrations::remove_by_id(&agent, &platform_config_root()?))
 }
 
 #[tauri::command]
@@ -982,7 +1073,11 @@ pub fn run() -> i32 {
             mcp_status,
             agent_integrations_status,
             install_agent_integration,
+            add_custom_agent,
+            reconcile_agent_skills,
+            resolve_agent_skill_update,
             remove_agent_integration,
+            open_skill_archive_folder,
             pick_restore_file,
             pick_new_profile_destination,
             restore_backup,
@@ -992,7 +1087,7 @@ pub fn run() -> i32 {
             std::thread::spawn(move || {
                 if let Err(error) = serve_http(
                     mcp_listener,
-                    McpService::new(mcp_application),
+                    mcp_service(mcp_application),
                     &rust_mcp_token,
                 ) {
                     eprintln!("Athria MCP HTTP stopped: {error}");
@@ -1014,9 +1109,10 @@ pub fn run() -> i32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        extract_xunji_api_key, mcp_stdio_payload, new_runtime_token, read_config_from,
+        command_json, extract_xunji_api_key, mcp_stdio_payload, new_runtime_token, read_config_from,
         simplify_path, validate_new_profile_target, write_config_to,
     };
+    use serde_json::{Value, json};
     use std::path::Path;
     use uuid::Uuid;
 
@@ -1208,5 +1304,20 @@ mod tests {
         );
         assert_eq!(std::fs::read(&existing).unwrap(), b"keep");
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn command_payloads_are_serialized_without_a_result_wrapper() {
+        let list = command_json::<Vec<Value>>(Ok(vec![json!({ "agent": "codex" })])).unwrap();
+        assert!(list.is_array(), "{list}");
+        assert_eq!(list[0]["agent"], "codex");
+
+        let object = command_json::<Value>(Ok(json!({ "agent": "codex" }))).unwrap();
+        assert!(object.is_object(), "{object}");
+
+        assert_eq!(
+            command_json::<Value>(Err("nope".into())).unwrap_err(),
+            "nope"
+        );
     }
 }

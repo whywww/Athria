@@ -1,5 +1,5 @@
 # Repository workflow
 
-- After modifying application code, always run `pnpm build:app` before handing the work back to the user.
-- Treat the runnable desktop application build as part of completion, in addition to relevant type checks and tests.
-- Report whether the App build succeeded and include the generated application path in the final response.
+- After modifying application code, run the relevant tests only: `pnpm test` and `pnpm typecheck`, plus `cargo test` when Rust code changed.
+- Do not rebuild the desktop app as part of handing work back; the user builds it themselves.
+- Report the test results in the final response instead of a build artifact path.

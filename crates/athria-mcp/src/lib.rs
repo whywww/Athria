@@ -12,6 +12,7 @@ use serde_json::{Value, json};
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::net::TcpListener;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use axum::{
@@ -84,6 +85,7 @@ enum ToolKind {
     RemoveManualTrainingSource,
     UpdateWellness,
     UpdateAthleteProfile,
+    ReportSkillVersion,
 }
 
 impl ToolKind {
@@ -124,6 +126,7 @@ impl ToolKind {
             "remove_manual_training_source" => Self::RemoveManualTrainingSource,
             "update_wellness" => Self::UpdateWellness,
             "update_athlete_profile" => Self::UpdateAthleteProfile,
+            "report_skill_version" => Self::ReportSkillVersion,
             _ => return None,
         })
     }
@@ -133,6 +136,10 @@ pub struct McpService<S: AthriaStore> {
     application: AthriaApplication<S>,
     contract: Contract,
     registry: Vec<RegisteredTool>,
+    /// Where `report_skill_version` records the Skill versions an agent
+    /// actually loaded. Athria sets this on the transports a GUI-managed
+    /// Skills agent spawns; other transports accept the handshake unrecorded.
+    skill_reports: Option<PathBuf>,
 }
 
 impl<S: AthriaStore> McpService<S> {
@@ -172,7 +179,14 @@ impl<S: AthriaStore> McpService<S> {
             application,
             contract,
             registry,
+            skill_reports: None,
         }
+    }
+    /// Records reported Skill versions in `path`, which is how Athria verifies
+    /// the Skills a GUI-managed agent actually loaded.
+    pub fn with_skill_reports(mut self, path: PathBuf) -> Self {
+        self.skill_reports = Some(path);
+        self
     }
     pub fn tools(&self) -> &[Value] {
         &self.contract.tools
@@ -352,6 +366,21 @@ impl<S: AthriaStore> McpService<S> {
                 ),
             ),
             ToolKind::UpdateAthleteProfile => application(app.update_profile(input)),
+            ToolKind::ReportSkillVersion => {
+                let report = athria_skills::ReportInput {
+                    skill: required_str(input, "skill")?.to_string(),
+                    version: required_str(input, "version")?.to_string(),
+                    hash: required_str(input, "hash")?.to_string(),
+                };
+                let Some(path) = &self.skill_reports else {
+                    return Ok(json!({ "recorded": false, "skill": report.skill }));
+                };
+                athria_skills::record_report(path, &report).map_err(|message| ToolError {
+                    code: "INTERNAL_ERROR".into(),
+                    message,
+                })?;
+                Ok(json!({ "recorded": true, "skill": report.skill }))
+            }
         }
     }
 }
@@ -614,7 +643,7 @@ mod tests {
     #[test]
     fn exposes_contract_and_calls_application() {
         let service = service();
-        assert_eq!(service.tools().len(), 35);
+        assert_eq!(service.tools().len(), 36);
         assert!(service.tools().iter().all(|tool| {
             tool.get("handlerKey").and_then(Value::as_str).is_some()
                 && tool.get("outputSchema").is_some()
@@ -635,7 +664,7 @@ mod tests {
         let service = service();
         let fixtures: Value =
             serde_json::from_str(include_str!("../tests/fixtures/tool-results.json")).unwrap();
-        assert_eq!(fixtures.as_object().unwrap().len(), 35);
+        assert_eq!(fixtures.as_object().unwrap().len(), 36);
 
         for (tool, registered) in service.tools().iter().zip(&service.registry) {
             let name = tool["name"].as_str().unwrap();
@@ -694,7 +723,11 @@ mod tests {
     #[test]
     fn write_tool_annotations_match_the_risk_audit() {
         let service = service();
-        let additive = ["create_session_template", "record_training_session"];
+        let additive = [
+            "create_session_template",
+            "record_training_session",
+            "report_skill_version",
+        ];
         let destructive = [
             "update_session_template",
             "delete_session_template",
@@ -792,7 +825,7 @@ mod tests {
     #[test]
     fn rmcp_server_advertises_both_supported_protocols() {
         let server = RmcpServer::new(service());
-        assert_eq!(server.tools.len(), 35);
+        assert_eq!(server.tools.len(), 36);
         assert!(server.tools.iter().all(|tool| tool.output_schema.is_some()));
         assert_eq!(
             server.supported_protocol_versions().as_ref(),
@@ -865,5 +898,57 @@ mod tests {
         assert!(forbidden_origin.starts_with("HTTP/1.1 403 Forbidden"));
 
         assert!(!server.is_finished(), "HTTP server should remain available");
+    }
+
+    #[test]
+    fn report_skill_version_records_into_the_configured_sink() {
+        let dir = std::env::temp_dir().join(format!(
+            "athria-mcp-skill-reports-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("skill-reports.json");
+        let service = service().with_skill_reports(path.clone());
+        let output = service.call_result(
+            "report_skill_version",
+            &json!({ "skill": "athria-coach", "version": "0.1.0", "hash": "abc123" }),
+        );
+        assert!(output.get("isError").is_none(), "{output}");
+        let recorded: Value =
+            serde_json::from_str(output["content"][0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(recorded, json!({ "recorded": true, "skill": "athria-coach" }));
+        let reports = athria_skills::read_reports(&path);
+        let coach = &reports.reports["athria-coach"];
+        assert_eq!(coach.version, "0.1.0");
+        assert_eq!(coach.hash, "abc123");
+        assert!(!coach.last_seen_at.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn report_skill_version_without_a_sink_is_accepted_but_not_recorded() {
+        let output = service().call_result(
+            "report_skill_version",
+            &json!({ "skill": "athria-coach", "version": "0.1.0", "hash": "abc" }),
+        );
+        assert!(output.get("isError").is_none(), "{output}");
+        let recorded: Value =
+            serde_json::from_str(output["content"][0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(recorded, json!({ "recorded": false, "skill": "athria-coach" }));
+    }
+
+    #[test]
+    fn report_skill_version_requires_a_complete_identity() {
+        for input in [
+            json!({}),
+            json!({ "skill": "athria-coach" }),
+            json!({ "skill": "athria-coach", "version": "0.1.0" }),
+        ] {
+            let output = service().call_result("report_skill_version", &input);
+            assert_eq!(output["isError"], true, "{input}");
+            let error: Value =
+                serde_json::from_str(output["content"][0]["text"].as_str().unwrap()).unwrap();
+            assert_eq!(error["code"], "INVALID_INPUT", "{input}");
+        }
     }
 }

@@ -276,6 +276,18 @@ Agent 解释结果
 
 ---
 
+## 9. Skill 版本握手
+
+Claude Desktop 的 Skills 由用户在 Claude 自己的设置里安装，Athria 无法读取其已安装列表。Athria 为此类 Agent 导出 Skill ZIP 时，会在导出的 `SKILL.md` 中注入一段握手说明（不修改 `packages/skills` 中的原始 Skill）。
+
+| Tool | 功能 |
+| --- | --- |
+| `report_skill_version` | 记录宿主 Agent 实际加载的 Skill 版本与内容 hash。只写入 Athria 本地报告文件，不修改任何训练数据。 |
+
+调用参数为 `skill`、`version`、`hash`，取值来自导出 Skill 中写明的字面量。Skill 首次实际运行时调用一次即可；Athria 用这些报告判断 Claude Desktop 显示 Connected 还是 Need update。只有当 Athria 为 Agent 配置了报告落盘位置时才会记录，否则返回 `{"recorded": false}` 而不报错。
+
+---
+
 ## 写操作与确认
 
 以下操作会改变 Athria 本地状态。Agent 应遵循工具 contract 中的 confirmation、revision 和 snapshot 要求：
@@ -289,6 +301,8 @@ Agent 解释结果
 - Profile / Wellness 更新
 
 其中删除、替换、移动、重新关联等操作属于 destructive mutation，应特别避免在没有用户明确意图的情况下执行。
+
+例外：`report_skill_version` 只写本地 Skill 版本报告，不触碰训练数据，因此不需要用户确认，也不属于上表。
 
 ---
 

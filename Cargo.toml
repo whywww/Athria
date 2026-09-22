@@ -16,5 +16,6 @@ athria-core = { path = "crates/athria-core" }
 athria-integrations = { path = "crates/athria-integrations" }
 athria-mcp = { path = "crates/athria-mcp" }
 athria-runtime = { path = "crates/athria-runtime" }
+athria-skills = { path = "crates/athria-skills" }
 athria-store = { path = "crates/athria-store" }
 athria-vault = { path = "crates/athria-vault" }

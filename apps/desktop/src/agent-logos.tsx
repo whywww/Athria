@@ -3,12 +3,12 @@ import cursorLogo from "./assets/agents/cursor.svg";
 import qoderLogo from "./assets/agents/qoder.svg";
 import traeLogo from "./assets/agents/TRAE.svg";
 import workbuddyLogo from "./assets/agents/WorkBuddy.png";
-import type { AgentKind } from "./api";
+import type { OfficialAgentKind } from "./api";
 
 /** Official vendor marks for the agents Athria connects to. Marks that need to inherit colour are inlined as SVG nodes, the rest load their asset from src/assets/agents. */
 type AgentMark = { kind: "svg"; viewBox: string; node: ReactNode } | { kind: "image"; src: string };
 
-const marks: Record<AgentKind, AgentMark> = {
+const marks: Record<OfficialAgentKind, AgentMark> = {
   codex: {
     kind: "svg",
     viewBox: "1.68 1.75 16.65 16.5",
@@ -30,7 +30,7 @@ const marks: Record<AgentKind, AgentMark> = {
   workbuddy: { kind: "image", src: workbuddyLogo },
 };
 
-export function AgentLogo({ agent }: { agent: AgentKind }) {
+export function AgentLogo({ agent }: { agent: OfficialAgentKind }) {
   const mark = marks[agent];
   return mark.kind === "image"
     ? <img className="agent-logo" src={mark.src} alt="" aria-hidden="true"/>

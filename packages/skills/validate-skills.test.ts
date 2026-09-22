@@ -48,6 +48,20 @@ describe("skill tool validation", () => {
     expect(() => validateWriteToolOwnership([["coach", { allowedTools: [] }]], contract))
       .toThrow("write tools must have exactly one Skill owner: save_current_plan");
   });
+
+  it("lets every Skill call the shared export handshake without owning it", () => {
+    const contract = { tools: [
+      { ...tool("report_skill_version"), annotations: { readOnlyHint: false } },
+      { ...tool("save_current_plan"), annotations: { readOnlyHint: false } },
+    ] };
+    const owners = validateWriteToolOwnership([
+      ["coach", { allowedTools: ["report_skill_version"] }],
+      ["planner", { allowedTools: ["report_skill_version", "save_current_plan"] }],
+      ["workout", { allowedTools: [] }],
+    ], contract);
+    expect(owners.get("report_skill_version")).toBeUndefined();
+    expect(owners.get("save_current_plan")).toBe("planner");
+  });
 });
 
 describe("Athria Skill routing and least privilege", () => {

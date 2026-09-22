@@ -64,6 +64,14 @@ export function validateSkillTools(skill, manifest, content, contractTools) {
   if (unauthorized.length) fail(skill, `SKILL.md references tools missing from manifest allowedTools: ${[...new Set(unauthorized)].join(", ")}`);
 }
 
+/**
+ * Write tools that any Skill may call and therefore must not be owned by a
+ * single Skill. `report_skill_version` is the Claude Desktop export handshake:
+ * it reports which Skill version the host actually loaded, so every exported
+ * Skill carries it while it stays an honest write tool in the MCP contract.
+ */
+const sharedWriteTools = new Set(["report_skill_version"]);
+
 export function validateWriteToolOwnership(skillManifests, contract) {
   const writeTools = new Set(contract.tools
     .filter((tool) => tool.annotations?.readOnlyHint === false)
@@ -72,14 +80,14 @@ export function validateWriteToolOwnership(skillManifests, contract) {
 
   for (const [skill, manifest] of skillManifests) {
     for (const tool of manifest.allowedTools) {
-      if (!writeTools.has(tool)) continue;
+      if (!writeTools.has(tool) || sharedWriteTools.has(tool)) continue;
       const previous = owners.get(tool);
       if (previous) fail(skill, `write tool ${tool} is already owned by ${previous}`);
       owners.set(tool, skill);
     }
   }
 
-  const unowned = [...writeTools].filter((tool) => !owners.has(tool));
+  const unowned = [...writeTools].filter((tool) => !owners.has(tool) && !sharedWriteTools.has(tool));
   if (unowned.length) throw new Error(`write tools must have exactly one Skill owner: ${unowned.join(", ")}`);
   return owners;
 }

@@ -111,6 +111,7 @@ version = "0.1.0"
 dependencies = [
  "athria-application",
  "athria-core",
+ "athria-skills",
  "athria-store",
  "axum",
  "jsonschema",
@@ -134,6 +135,16 @@ dependencies = [
  "serde",
  "serde_json",
  "uuid",
+]
+
+[[package]]
+name = "athria-skills"
+version = "0.1.0"
+dependencies = [
+ "athria-core",
+ "serde",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]
