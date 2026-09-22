@@ -3,7 +3,7 @@
 
 # Athria
 
-**A local-first training workspace that helps your AI understand your training data, build plans, and make safer updates.**
+**Connect your training data to the AI you already use.**
 
 [![Version](https://img.shields.io/badge/version-0.2.0-315c4c)](package.json)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20x64%20%7C%20macOS%20Apple%20Silicon-315c4c)
@@ -18,82 +18,97 @@
 
 ### What is Athria?
 
-Athria is a desktop app for people who want to use an AI assistant with real, structured training data instead of repeatedly explaining their history, goals, equipment, and current plan.
+Athria is a free training data and AI companion.
 
-Athria stores your training profile, wellness data, training history, reusable workout templates, and current training cycle on your computer. A compatible AI app can connect to Athria through MCP to read that context, use Athria's calculations and validation, and make approved updates.
+It brings training records from different places together, so the AI you already use can access them with your permission and provide training suggestions and plans based on your actual training.
 
-**Athria is not an AI model or chat app.** You bring your own MCP-compatible AI client. Athria provides the local data and training tools; the AI client provides the conversation, reasoning, and explanations.
+You do not need to explain your recent training, current plan, available equipment, or goals again in every new conversation. Athria keeps this information organized so it can remain useful across conversations.
+
+You can also use Athria itself to view your training history, recent status, and current plan.
+
+Athria does not tie you to a specific AI. You choose the AI; Athria connects it to your training data.
+
+> **Athria is currently an Alpha project under active development and has not had an official release.** Features and data formats may still change.
 
 ### What can I do with it?
 
-- **Keep training context in one place** — profile, goals, schedule, equipment, wellness, history, templates, and your current training cycle.
-- **Connect an AI assistant** — Athria includes connection guidance for ChatGPT, Claude Desktop, Cursor, Qoder, Trae, and WorkBuddy.
-- **Review your training** — let an AI assistant inspect recent sessions, summaries, wellness, and data gaps.
-- **Build and adjust plans** — create a training cycle, validate it with Athria, and save it after you approve the changes.
-- **Use reproducible calculations** — Athria provides deterministic tools for metrics such as estimated 1RM, heart-rate zones, progression, and RPE-based adjustments.
-- **Bring in existing data** — import Hevy CSV files, or synchronize read-only data from Intervals.icu and 训记 / Xunji.
-- **Keep the main database local** — no Athria account or Athria cloud database is required.
+- **Bring training data together** — keep your profile, training history, current plan, and day-to-day status in one place.
+- **Connect the AI you already use** — let an AI use this context with your permission instead of providing the same background every time.
+- **Get personalized training suggestions** — use your goals, recent training, schedule, equipment, and training feedback as context.
+- **Build and adjust training plans** — create training schedules around your situation and update them as training progresses.
+- **Keep recommendations consistent** — Athria provides shared calculations and plan checks instead of leaving every AI to calculate or guess independently.
+- **Bring in existing records** — import or synchronize supported training sources and organize them in one place.
+- **View training visually** — use Athria as a hub for your training data, recent status, plans, and connected sources.
+- **Keep core data local** — the main training database stays on your computer and does not require an Athria cloud account.
+
+In short:
+
+**Athria organizes your training data; the AI you choose can use it to help with your training.**
 
 ### Getting started
 
 1. **Install Athria**  
-   Use a native desktop build for Windows x64 or Apple Silicon macOS. If you are building Athria yourself, see [Potential contributors](#potential-contributors).
+   Current development builds target Windows x64 and Apple Silicon macOS. If you want to build from source, see [Potential contributors](#potential-contributors).
 
-2. **Set up your profile**  
-   On first launch, create your database password, then fill in Personal Information and Profile with the training information you want Athria to use.
+2. **Add your basic information**  
+   Enter your training goals, schedule, equipment, and other information you want an AI to consider.
 
-3. **Add training data**  
-   Import or synchronize the training sources you want to use. Athria keeps missing information explicitly missing instead of guessing values.
+3. **Add training records**  
+   Import existing records or connect one of the currently supported training data sources.
 
-4. **Connect your AI client**  
-   Configure Athria as a local stdio MCP server. The command is the installed Athria executable and the argument is **mcp**. Athria includes client-specific setup guidance; the technical interface is documented in [docs/MCP.md](docs/MCP.md).
+4. **Connect your AI**  
+   Athria can connect to ChatGPT, Claude, and other compatible AI clients. Follow the connection guidance in the app. Technical details are available in [docs/MCP.md](docs/MCP.md).
 
-5. **Start asking about your training**  
-   Your AI client can now use Athria's structured data and tools when answering you.
+5. **Start using it**  
+   Your AI can now use Athria data and training tools within the access you allow.
 
 For example:
 
-> Review my last 30 days of training, point out important data gaps, and summarize what has changed.
+> Summarize my last month of training and point out any important changes.
 
-> Draft a four-week training cycle around my confirmed schedule and equipment. Validate it with Athria, but do not save it until I approve it.
+> Based on my goals, schedule, equipment, and recent training, draft a four-week training plan. Check it first and do not save it until I approve it.
 
-> Check my next training day and suggest an adjustment based on my recent sessions and reported RPE.
+> Look at my next training session and tell me whether my recent training and RPE suggest an adjustment.
 
-When an MCP action would change important stored data, the workflow is designed around explicit user confirmation, validation, and freshness checks rather than silent overwrites.
+Before important training data or plans are changed, Athria is designed to require the relevant checks and confirmation rather than silently overwriting existing information.
 
 ### Data, privacy, and security
 
-Athria is **local-first**: its primary training database lives on your computer, and Athria does not require its own cloud account.
+Athria keeps its main training database on your computer and does not require an Athria cloud account.
 
-A few details are worth knowing:
+A few things are worth knowing:
 
-- The local service listens on the loopback interface only; Streamable HTTP requires authentication.
-- MCP does not expose arbitrary SQL, arbitrary file access, database deletion, or stored secrets.
-- Your database password controls access inside Athria and protects saved connection keys. **The SQLite database file itself is not encrypted at rest.**
-- You can back up Athria by copying the database file while following normal SQLite-safe backup practices.
-- Local-first storage does not mean your data can never leave your computer: a connected AI client may send the Athria data it reads to its own model provider. That client's privacy policy, configuration, and cost still apply.
+- Athria does not give a connected AI arbitrary access to files, the database, database deletion, or saved secrets.
+- The database password controls access inside Athria and protects saved connection keys.
+- **The database file itself is not currently encrypted at rest.** Someone with direct access to that file may still be able to read it with SQLite tools.
+- Your database can be backed up locally.
+- When you allow a third-party AI client to use Athria data, that client may send the data it reads to its own model provider. Its privacy policy, configuration, and pricing still apply.
+- Athria itself is free; AI services you choose to connect may have their own charges.
 
 ### Current limitations
 
-Athria is still an MVP. Today:
+Athria is currently an **Alpha project under active development and has not had an official release**.
 
-- Official desktop targets are **Windows x64** and **Apple Silicon macOS**.
-- The app interface is **English-only**.
-- Athria has **no built-in LLM or chat interface**.
-- Hevy is import-based; Intervals.icu and Xunji integrations are read-only.
-- Athria keeps the latest reusable templates and one current editable training cycle; it is not a full plan-versioning system.
-- Missing load, RPE, heart-rate, power, recovery, or wellness data is not treated as normal or inferred automatically.
-- Athria does not diagnose injuries, prescribe treatment, or determine whether training is medically safe.
+Current limitations include:
+
+- Development and testing currently focus on **Windows x64** and **Apple Silicon macOS**.
+- The app interface is currently **English-only**.
+- Athria does **not include its own AI model or chat interface**.
+- Hevy currently uses file import; Intervals.icu and Xunji synchronization are read-only.
+- Athria currently manages the latest reusable templates and one editable training cycle rather than full plan history and versioning.
+- Missing load, RPE, heart-rate, power, recovery, or wellness data is not guessed or filled automatically.
+- Analysis and rules for some training domains are still under development.
+- Athria does not diagnose injuries, provide medical treatment, or determine whether training is medically safe.
 
 See [Known limitations](docs/KNOWN_LIMITATIONS.md) for the complete current boundary.
 
 ### Help and feedback
 
-- [MCP interface and workflows](docs/MCP.md)
+- [AI connection and MCP workflows](docs/MCP.md)
 - [Known limitations](docs/KNOWN_LIMITATIONS.md)
 - [GitHub Issues](https://github.com/whywww/Athria/issues) for bugs and feature requests
 
-When reporting a bug, include your platform, Athria version, reproduction steps, expected result, and actual result. Do not attach credentials or personal training data.
+When reporting a bug, include your platform, Athria version, reproduction steps, expected result, and actual result. Do not upload passwords, API keys, personal training databases, or other sensitive data.
 
 ---
 
@@ -103,82 +118,97 @@ When reporting a bug, include your platform, Athria version, reproduction steps,
 
 ### Athria 是什么？
 
-Athria 是一个本地优先的桌面训练应用，适合希望让 AI 真正理解自己训练数据的人，而不是每次都重新向 AI 解释训练经历、目标、器材和当前计划。
+Athria 是一个免费的训练数据和 AI 助手。
 
-Athria 会在你的电脑上保存个人训练资料、Wellness、训练历史、可复用训练模板和当前训练周期。兼容 MCP 的 AI 客户端可以连接 Athria，读取这些结构化信息，调用 Athria 的确定性计算和计划校验工具，并在你确认后执行受控更新。
+它把你分散在不同地方的训练记录集中起来，让你常用的 AI 可以在你的允许下了解这些数据，并根据你的实际训练情况提供更适合你的训练建议和计划。
 
-**Athria 本身不是 AI 模型，也不是聊天应用。** 你需要使用自己的 MCP 兼容 AI 客户端。Athria 负责本地数据和训练工具，AI 客户端负责对话、推理和解释。
+你不需要每次和 AI 对话时重新解释自己最近练了什么、目前的计划是什么、有哪些器材或者训练目标。Athria 会持续保存和整理这些信息，让它们可以在不同的对话中继续使用。
 
-### Athria 可以帮你做什么？
+你也可以直接在 Athria 中查看自己的训练记录、近期状态和训练计划。
 
-- **集中保存训练上下文** —— 个人资料、目标、日程、器材、Wellness、训练历史、模板和当前训练周期。
-- **连接 AI 助手** —— Athria 内置了 ChatGPT、Claude Desktop、Cursor、Qoder、Trae 和 WorkBuddy 的连接说明。
-- **回顾近期训练** —— 让 AI 查看近期训练、汇总指标、Wellness 和重要的数据缺口。
-- **制定和调整计划** —— 生成训练周期，先由 Athria 校验，再在你批准后保存。
-- **使用可复现的训练计算** —— 包括估算 1RM、心率区间、progression 和基于 RPE 的调整等确定性工具。
-- **导入已有训练记录** —— 支持 Hevy CSV 导入，以及 Intervals.icu 和训记的只读同步。
-- **核心数据保存在本地** —— 不需要 Athria 账号，也不依赖 Athria 云数据库。
+Athria 不绑定特定的 AI。你可以继续使用自己选择的 AI，Athria 负责在它和你的训练数据之间建立连接。
+
+> **Athria 目前处于 Alpha 开发阶段，尚未正式发布。** 功能和数据格式仍可能发生变化。
+
+### Athria 可以做什么？
+
+- **集中训练数据** —— 把个人资料、训练记录、训练计划和身体状态等信息整理到一个地方。
+- **连接你常用的 AI** —— 让 AI 在你的允许下使用这些数据，不需要每次重新提供背景信息。
+- **提供个性化训练建议** —— 根据你的目标、近期训练、时间安排、器材和训练反馈提供建议。
+- **制定和调整训练计划** —— 根据你的实际情况生成训练安排，并随着训练进展进行调整。
+- **规范训练建议** —— Athria 提供统一的训练计算和计划检查，减少不同 AI 自行猜测或使用不同计算方式带来的差异。
+- **整合已有记录** —— 可以导入或同步其他训练应用的数据，并统一整理。
+- **可视化查看训练** —— 在 Athria 中查看和管理训练数据、近期状态和计划。
+- **数据保存在本地** —— 核心训练数据库保存在自己的电脑上，不需要 Athria 云账号。
+
+简单来说：
+
+**Athria 保存和整理你的训练数据，你选择的 AI 使用这些数据帮助你训练。**
 
 ### 如何开始使用
 
 1. **安装 Athria**  
-   使用适用于 Windows x64 或 Apple Silicon macOS 的原生桌面构建。如果你需要自己从源码构建，请看下方的[潜在贡献者](#potential-contributors)区域。
+   当前开发版本支持 Windows x64 和 Apple Silicon macOS。如果需要从源码运行，请查看下方的[潜在贡献者](#potential-contributors)部分。
 
-2. **完成个人设置**  
-   第一次启动时创建数据库密码，然后在 Personal Information 和 Profile 中填写你希望 Athria 使用的训练信息。
+2. **填写基本信息**  
+   添加你的训练目标、时间安排、器材和其他希望 AI 在提供建议时考虑的信息。
 
-3. **加入训练数据**  
-   导入或同步你希望使用的数据来源。Athria 会把缺失的数据保持为“缺失”，而不是自动猜测。
+3. **加入训练记录**  
+   你可以导入已有记录，也可以连接目前支持的训练数据来源。
 
-4. **连接你的 AI 客户端**  
-   把 Athria 配置为本地 stdio MCP server。命令使用已经安装的 Athria 可执行文件，参数为 **mcp**。Athria 内置了常见客户端的连接说明，技术接口详见 [docs/MCP.md](docs/MCP.md)。
+4. **连接你的 AI**  
+   Athria 可以连接 ChatGPT、Claude 和其他兼容的 AI 客户端。按照应用内的连接说明完成设置即可。详细接口信息见 [docs/MCP.md](docs/MCP.md)。
 
-5. **开始直接询问训练问题**  
-   之后你的 AI 客户端就可以在回答时读取 Athria 中的结构化训练数据，并调用相应工具。
+5. **开始使用**  
+   之后就可以直接向 AI 询问与你训练相关的问题。
 
 例如：
 
-> 查看我最近 30 天的训练，指出重要的数据缺口，并总结最近发生了哪些变化。
+> 总结一下我最近一个月的训练情况，有哪些值得注意的变化？
 
-> 根据我确认过的日程和器材拟定一个四周训练周期。先用 Athria 校验，但在我批准之前不要保存。
+> 根据我的目标、时间安排和最近的训练，帮我安排接下来四周的训练。先检查计划，在我确认之前不要保存。
 
-> 查看我的下一个训练日，并结合最近的训练和我报告的 RPE 建议是否需要调整。
+> 看一下我下一次应该练什么，并根据最近几次训练和 RPE 判断是否需要调整。
 
-当 MCP 操作会修改重要的本地数据时，Athria 的工作流会优先要求明确确认、校验和状态新鲜度检查，而不是静默覆盖。
+在修改重要的训练数据或计划前，Athria 会要求相应的确认，而不是直接覆盖已有内容。
 
 ### 数据、隐私与安全
 
-Athria 是**本地优先**应用：主要训练数据库保存在你的电脑上，不需要 Athria 自己的云账号。
+Athria 的核心训练数据保存在你的电脑上，不需要注册 Athria 云账号。
 
-有几点需要明确：
+需要注意：
 
-- 本地服务仅监听回环地址；Streamable HTTP 需要身份验证。
-- MCP 不暴露任意 SQL、任意文件读取、数据库删除或已保存的密钥。
-- 数据库密码用于控制 Athria 内部访问，并保护保存的连接密钥。**SQLite 数据库文件本身并没有做静态加密。**
-- 备份的核心方式是复制数据库文件，并遵循正常的 SQLite 安全备份方式。
-- “本地优先”并不代表数据绝不会离开电脑：连接的 AI 客户端可能会把它从 Athria 读取的数据发送给自己的模型提供商。该 AI 客户端自身的隐私政策、配置和费用仍然适用。
+- Athria 不会向连接的 AI 开放任意文件或数据库访问。
+- 数据库密码用于控制 Athria 内部访问，并保护保存的连接密钥。
+- **当前数据库文件本身尚未加密。** 如果其他人可以直接访问该文件，仍可能读取其中的数据。
+- 数据库可以进行本地备份。
+- 当你选择让第三方 AI 使用 Athria 中的数据时，相应数据可能会发送给该 AI 的服务商。具体处理方式取决于你使用的 AI 服务及其隐私政策。
+- Athria 本身免费；你选择连接的 AI 服务可能有自己的收费方式。
 
 ### 当前限制
 
-Athria 目前仍是 MVP：
+Athria 目前处于 **Alpha 开发阶段，尚未正式发布**。
 
-- 官方桌面目标为 **Windows x64** 和 **Apple Silicon macOS**。
-- 应用界面目前**只有英文**。
-- Athria **不内置 LLM 或聊天界面**。
-- Hevy 通过文件导入；Intervals.icu 和训记目前只读。
-- Athria 保存最新的可复用模板和一个当前可编辑训练周期，并不是完整的计划版本管理系统。
-- 缺失的负重、RPE、心率、功率、恢复或 Wellness 数据不会被自动当成正常值，也不会被猜测补全。
-- Athria 不诊断伤病、不提供治疗方案，也不判断训练在医学上是否安全。
+当前主要限制包括：
 
-完整边界请查看[已知限制](docs/KNOWN_LIMITATIONS.md)。
+- 目前主要开发和测试 **Windows x64** 和 **Apple Silicon macOS** 版本。
+- 应用界面目前只有英文。
+- Athria 本身不提供聊天功能，需要连接你选择的 AI。
+- 当前支持 Hevy 文件导入，以及 Intervals.icu 和训记的只读同步。
+- 目前主要管理最新的可复用模板和一个正在使用的训练周期，还没有完整的训练计划历史和版本管理。
+- 没有记录的负重、RPE、心率、功率、恢复或 Wellness 数据不会由 Athria 自动猜测或补全。
+- 部分训练领域的分析和规则仍在开发中。
+- Athria 不用于诊断伤病、提供医疗治疗方案或判断训练在医学上是否安全。
+
+更完整的当前边界见[已知限制](docs/KNOWN_LIMITATIONS.md)。
 
 ### 帮助与反馈
 
-- [MCP 接口和工作流](docs/MCP.md)
+- [使用 AI 连接 Athria](docs/MCP.md)
 - [已知限制](docs/KNOWN_LIMITATIONS.md)
 - [GitHub Issues](https://github.com/whywww/Athria/issues) 用于 Bug 和功能建议
 
-提交 Bug 时，请包含平台、Athria 版本、复现步骤、预期结果和实际结果。请勿附上凭据或个人训练数据。
+提交 Bug 时，请包含操作系统、Athria 版本、复现步骤、预期结果和实际结果。请勿上传密码、API Key、个人训练数据库或其他敏感数据。
 
 ---
 
