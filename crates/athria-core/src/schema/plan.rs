@@ -887,9 +887,6 @@ fn parse_plan_exercise(value: &Value, path: &str) -> Result<Value> {
         Value::from(required_int(value, "repsMax", path)?),
     );
     exercise.insert("targetRpe".into(), number_or_null(value, "targetRpe"));
-    if let Some(rir) = value.get("targetRir") {
-        exercise.insert("targetRir".into(), rir.clone());
-    }
     exercise.insert("restSeconds".into(), int_or(value, "restSeconds", 90));
     exercise.insert(
         "referenceLoad".into(),

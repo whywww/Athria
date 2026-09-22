@@ -80,7 +80,6 @@ function ServiceStatus() {
 }
 
 function Overview() {
-  const [acknowledgedAdjustment, setAcknowledgedAdjustment] = useState<string>();
   const profile = useQuery({ queryKey: ["profile"], queryFn: () => api<AthleteProfile>("/api/profile") });
   const today = profile.data ? localDateForTimezone(profile.data.timezone) : null;
   const range = today ? overviewDateRange(today) : null;
@@ -89,8 +88,8 @@ function Overview() {
   const nextDay = useQuery({ queryKey: ["next-training-day", today], queryFn: () => api<NextTrainingDay>(`/api/plans/next-training-day?onOrAfterDate=${today}`), enabled: today !== null });
   const plan = useQuery({ queryKey: ["current-plan"], queryFn: () => api<CurrentPlan | null>("/api/plans/current") });
   const adjustment = useQuery({
-    queryKey: ["plan-adjustment-review", plan.data?.revision, acknowledgedAdjustment],
-    queryFn: () => api<AdjustmentReminder>(`/api/plans/adjustment-review${acknowledgedAdjustment ? `?acknowledgedContext=${encodeURIComponent(acknowledgedAdjustment)}` : ""}`),
+    queryKey: ["plan-adjustment-review", plan.data?.revision],
+    queryFn: () => api<AdjustmentReminder>("/api/plans/adjustment-review"),
     enabled: Boolean(plan.data),
   });
   const wellness = useQuery({ queryKey: ["wellness", 42], queryFn: () => api<WellnessRecord[]>("/api/wellness?days=42") });
@@ -100,7 +99,7 @@ function Overview() {
   const error = query.error ?? profile.error ?? wellness.error ?? history.error ?? calendar.error;
   if (error || !query.data || !profile.data || !today) return <ErrorBanner error={error}/>;
   return <>
-    <OverviewDashboard summary={query.data} wellness={wellness.data ?? []} history={history.data ?? []} planned={calendar.data ?? []} today={today} timezone={profile.data.timezone} adjustment={adjustment.data?.showReminder ? adjustment.data.assessment : undefined} onAcknowledgeAdjustment={adjustment.data?.showReminder ? () => setAcknowledgedAdjustment(adjustment.data.idempotencyContext) : undefined}/>
+    <OverviewDashboard summary={query.data} wellness={wellness.data ?? []} history={history.data ?? []} planned={calendar.data ?? []} today={today} timezone={profile.data.timezone} adjustment={adjustment.data?.showReminder ? adjustment.data.assessment : undefined}/>
     <div className="overview-next-day" id="overview-next-day">{plan.data && !nextDay.isPending && nextDay.data ? <NextTrainingDayCard value={nextDay.data} plan={plan.data} /> : !plan.data ? <EmptyState title="No current plan" description="Plans are created by your connected AI Agent — build one to see your next training day here."/> : null}</div>
   </>;
 }
@@ -1037,7 +1036,7 @@ export function Help() {
         <section><strong>Mesocycle</strong><span>Your multi-week plan: start date, Weekly Sessions, phase progressions and adjustment rules.</span></section>
         <section><strong>Template</strong><span>A reusable single-domain pattern, such as "Lower Strength A". Templates carry structure only — no exercises or sets.</span></section>
         <section><strong>Training domain</strong><span>The five training types Athria plans around: strength, endurance, sport skill, mind-body and recovery.</span></section>
-        <section><strong>RPE / RIR</strong><span>Two effort scales: RPE rates how hard a set felt (usually 1–10); RIR counts the good reps still left in reserve.</span></section>
+        <section><strong>RPE</strong><span>Rates how hard a set felt, usually 1–10. Drives load autoregulation.</span></section>
         <section><strong>Heart rate zone</strong><span>A personal heart-rate range used to indicate effort level. Check your zone ranges in your watch or fitness app.</span></section>
       </div>
     </Card>

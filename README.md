@@ -82,7 +82,7 @@ Athria is still an MVP. Today:
 - Athria has **no built-in LLM or chat interface**.
 - Hevy is import-based; Intervals.icu and Xunji integrations are read-only.
 - Athria keeps the latest reusable templates and one current editable training cycle; it is not a full plan-versioning system.
-- Missing load, RPE/RIR, heart-rate, power, recovery, or wellness data is not treated as normal or inferred automatically.
+- Missing load, RPE, heart-rate, power, recovery, or wellness data is not treated as normal or inferred automatically.
 - Athria does not diagnose injuries, prescribe treatment, or determine whether training is medically safe.
 
 See [Known limitations](docs/KNOWN_LIMITATIONS.md) for the complete current boundary.
@@ -167,7 +167,7 @@ Athria 目前仍是 MVP：
 - Athria **不内置 LLM 或聊天界面**。
 - Hevy 通过文件导入；Intervals.icu 和训记目前只读。
 - Athria 保存最新的可复用模板和一个当前可编辑训练周期，并不是完整的计划版本管理系统。
-- 缺失的负重、RPE/RIR、心率、功率、恢复或 Wellness 数据不会被自动当成正常值，也不会被猜测补全。
+- 缺失的负重、RPE、心率、功率、恢复或 Wellness 数据不会被自动当成正常值，也不会被猜测补全。
 - Athria 不诊断伤病、不提供治疗方案，也不判断训练在医学上是否安全。
 
 完整边界请查看[已知限制](docs/KNOWN_LIMITATIONS.md)。

@@ -1156,19 +1156,6 @@
                                             }
                                           ]
                                         },
-                                        "targetRir": {
-                                          "description": "Optional RIR (reps in reserve) alternative effort notation for strength exercises.",
-                                          "anyOf": [
-                                            {
-                                              "type": "number",
-                                              "minimum": 0,
-                                              "maximum": 10
-                                            },
-                                            {
-                                              "type": "null"
-                                            }
-                                          ]
-                                        },
                                         "restSeconds": {
                                           "default": 90,
                                           "type": "integer",

@@ -32,6 +32,7 @@ describe("ProgressionByDomain", () => {
     expect(html).not.toContain("Progress repetitions");
     expect(html.indexOf("Foundation")).toBeLessThan(html.indexOf("Build"));
     expect(html.match(/pdb-phase-arrow/g)).toHaveLength(2);
+    expect(html.match(/pdb-nav-spacer/g)).toHaveLength(2);
   });
 
   it("supports a single phase and non-strength domains without inventing body copy", () => {
@@ -46,6 +47,7 @@ describe("ProgressionByDomain", () => {
     expect(html).not.toContain("This focus stays hidden");
     expect(html).not.toContain("pdb-phase-progression");
     expect(html).not.toContain("pdb-phase-arrow");
+    expect(html).toContain("pdb-nav-spacer");
   });
 
   it("windows long tracks to three phases and exposes scroll arrows", () => {

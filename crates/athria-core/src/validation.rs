@@ -574,10 +574,7 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
         }
         let effort_missing: Vec<&str> = strength_exercises
             .iter()
-            .filter(|exercise| {
-                is_null_or_missing(exercise, "targetRpe")
-                    && is_null_or_missing(exercise, "targetRir")
-            })
+            .filter(|exercise| is_null_or_missing(exercise, "targetRpe"))
             .map(|exercise| string_field(exercise, "id"))
             .collect();
         results.push(rule(

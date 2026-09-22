@@ -1,8 +1,9 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { AdjustmentReviewCard, OverviewDashboard, RecoveryHelpModal, calendarDays, formatWellnessDate, formatWellnessRange, loadAxisLabel, mesocycleProgress, overviewDateRange, recoveryRingTone, recoveryStatus, sparklineGeometry, twelveWeekConsistency, weeklyLoad, weeklyOverview, wellnessHighlights } from "./overview";
+import { AdjustmentReviewNotice, OverviewDashboard, RecoveryHelpModal, calendarDays, formatWellnessDate, formatWellnessRange, loadAxisLabel, mesocycleProgress, overviewDateRange, recoveryRingTone, recoveryStatus, sparklineGeometry, twelveWeekConsistency, weeklyLoad, weeklyOverview, wellnessHighlights } from "./overview";
 import type { AdjustmentAssessment, CalendarSession, TrainingHistorySession, TrainingSummary, WellnessRecord } from "./view-models";
+import { adjustmentReasonMessage } from "./view-models";
 
 const quality = { completeness: 1, missingFields: [], anomalies: [] };
 const summary: TrainingSummary = {
@@ -20,21 +21,49 @@ const wellness: WellnessRecord[] = [
 ];
 
 describe("Overview", () => {
-  it("renders the read-only plan adjustment signal and missing evidence", () => {
-    const review = {
-      trigger: "weekly_review", reviewStatus: "review_recommended", recommendedScope: "week",
-      reasons: [{ reasonCode: "KEY_SESSION_MISSED", severity: "strong", evidenceRefs: ["session:s1"], affectedDomain: "endurance", affectedScope: "week" }],
-      hardOverrides: [], dataGaps: [{ code: "WELLNESS_EVIDENCE_MISSING", evidenceRefs: [] }],
-      currentPlanRevision: 4, inputSnapshotHash: "snapshot", profileHash: "profile", suggestedReadWindow: 3,
-    } satisfies AdjustmentAssessment;
-    const html = renderToStaticMarkup(createElement(AdjustmentReviewCard, { value: review, onAcknowledge: () => undefined }));
-    expect(html).toContain("Review Recommended");
-    expect(html).toContain("Week review");
-    expect(html).toContain("Key Session Missed");
-    expect(html).toContain("Endurance");
-    expect(html).toContain("Wellness Evidence Missing");
-    expect(html).toContain("Dismiss");
-    expect(html).not.toContain("Save");
+  const reviewOf = (reviewStatus: AdjustmentAssessment["reviewStatus"], reasons: AdjustmentAssessment["reasons"], dataGaps: AdjustmentAssessment["dataGaps"] = []) => ({
+    trigger: "weekly_review", reviewStatus, recommendedScope: "week", reasons, hardOverrides: [], dataGaps,
+    currentPlanRevision: 4, inputSnapshotHash: "snapshot", profileHash: "profile", suggestedReadWindow: 3,
+  } satisfies AdjustmentAssessment);
+
+  it("renders one tier-colored line naming the strongest review reason", () => {
+    const review = reviewOf("review_recommended", [
+      { reasonCode: "ADHERENCE_MINOR_DEVIATION", severity: "soft", evidenceRefs: [], affectedScope: "none" },
+      { reasonCode: "KEY_SESSION_MISSED", severity: "strong", evidenceRefs: ["session:s1"], affectedDomain: "endurance", affectedScope: "week" },
+    ], [{ code: "WELLNESS_EVIDENCE_MISSING", evidenceRefs: [] }]);
+    const html = renderToStaticMarkup(createElement(AdjustmentReviewNotice, { value: review }));
+    expect(html).toContain("Ask your agent to review the plan: You missed a key Endurance session this week.");
+    expect(html).toContain("adjustment-notice-review_recommended");
+    expect(html).not.toContain("You missed 1 of the 4 sessions");
+    expect(html).not.toContain("Plan Review");
+    expect(html).not.toContain("Dismiss");
+    expect(html).not.toContain("Missing evidence");
+  });
+
+  it("escalates the required tier and keeps the neutral copy for watch", () => {
+    const required = renderToStaticMarkup(createElement(AdjustmentReviewNotice, { value: reviewOf("review_required", [{ reasonCode: "PROFILE_TRAINING_RHYTHM_CONFLICT", severity: "hard", evidenceRefs: [], affectedScope: "plan" }]) }));
+    expect(required).toContain("Plan review required — ask your agent: Your weekly training rhythm no longer matches the plan.");
+    expect(required).toContain("adjustment-notice-review_required");
+
+    const watch = renderToStaticMarkup(createElement(AdjustmentReviewNotice, { value: reviewOf("watch", [{ reasonCode: "ADHERENCE_MINOR_DEVIATION", severity: "soft", evidenceRefs: [], affectedScope: "none" }]) }));
+    expect(watch).toContain("Weekly check: You missed 1 of the 4 sessions planned for this week.");
+    expect(watch).toContain("adjustment-notice-watch");
+  });
+
+  it("stays silent when only evidence is missing and no reason was found", () => {
+    const html = renderToStaticMarkup(createElement(AdjustmentReviewNotice, { value: reviewOf("watch", [], [{ code: "WELLNESS_EVIDENCE_MISSING", evidenceRefs: [] }]) }));
+    expect(html).toBe("");
+  });
+
+  it("falls back to a title-cased label for reason codes the mapping does not know", () => {
+    const html = renderToStaticMarkup(createElement(AdjustmentReviewNotice, { value: reviewOf("watch", [{ reasonCode: "SOME_NEW_SIGNAL", severity: "soft", evidenceRefs: [], affectedScope: "none" }]) }));
+    expect(html).toContain("Some New Signal");
+  });
+
+  it("omits the domain from review reasons that carry none", () => {
+    const reason = (value: Partial<AdjustmentAssessment["reasons"][number]>) => ({ reasonCode: "KEY_SESSION_MISSED", severity: "soft", evidenceRefs: [], affectedScope: "week", ...value }) as AdjustmentAssessment["reasons"][number];
+    expect(adjustmentReasonMessage(reason({}))).toBe("You missed a key session this week.");
+    expect(adjustmentReasonMessage(reason({ reasonCode: "PROFILE_EQUIPMENT_CONFLICT", affectedDomain: "strength" }))).toBe("Some planned exercises need equipment you no longer have.");
   });
 
   it("derives Monday-to-today and leap-month bounds", () => {

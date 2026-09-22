@@ -26,14 +26,13 @@ const SPORT_ROLES: [&str; 8] = [
 const RECOVERY_ROLES: [&str; 3] = ["down_regulation", "mobility", "easy_movement"];
 const MIND_BODY_ROLES: [&str; 4] = ["centering", "practice_flow", "breathing", "down_regulation"];
 
-const STRENGTH_VARIABLES: [&str; 10] = [
+const STRENGTH_VARIABLES: [&str; 9] = [
     "exercise_selection",
     "sets",
     "repetitions",
     "duration",
     "load",
     "rpe",
-    "rir",
     "rest",
     "tempo",
     "alternatives",

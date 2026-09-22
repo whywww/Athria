@@ -43,6 +43,7 @@ function DomainTrack({ domain, phases, currentWeek, onSelectPhase }: {
   useEffect(() => { setStart(Math.min(currentIndex, lastStart)); }, [currentIndex, lastStart]);
 
   const canForward = start < lastStart;
+  const canBack = phases.length > VISIBLE_PHASES && start > 0;
   const visiblePhases = phases.slice(start, start + VISIBLE_PHASES);
 
   return (
@@ -52,9 +53,9 @@ function DomainTrack({ domain, phases, currentWeek, onSelectPhase }: {
         <h4 className="pdb-domain-name">{friendlyLabel(domain)}</h4>
       </div>
       <div className="pdb-track">
-        {phases.length > VISIBLE_PHASES && (start > 0
+        {canBack
           ? <button type="button" className="pdb-nav-back" aria-label="Show earlier phases" onClick={() => setStart(start - 1)}><ArrowIcon className="pdb-arrow-back"/></button>
-          : <span className="pdb-nav-spacer" aria-hidden="true"/>)}
+          : <span className="pdb-nav-spacer" aria-hidden="true"/>}
         <div className="pdb-track-list" role="list">
           {visiblePhases.map((phase, offset) => {
             const index = start + offset;

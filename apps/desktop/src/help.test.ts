@@ -33,7 +33,7 @@ describe("Help", () => {
     expect(html).toContain("Model Context Protocol");
     expect(html).toContain("e.g., Claude, ChatGPT");
     expect(html).toContain("Mesocycle");
-    expect(html).toContain("RPE / RIR");
+    expect(html).toContain("Rates how hard a set felt");
     expect(html).toContain("Heart rate zone");
   });
 });

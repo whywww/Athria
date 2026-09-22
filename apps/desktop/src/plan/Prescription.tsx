@@ -24,14 +24,14 @@ function CompactEnduranceTargets({ step }: { step: EnduranceStep }) {
   return <>{values.length > 0 && <span className="rx-targets">{values.join(" · ")}</span>}{step.notes && <small>{step.notes}</small>}</>;
 }
 
-function PrescriptionPanel({ component, summary, meta, children }: { component: PlanComponent; summary?: string | undefined; meta?: string | undefined; children: ReactNode }) {
+function PrescriptionPanel({ component, summary, meta, chip, children }: { component: PlanComponent; summary?: string | undefined; meta?: string | undefined; chip?: string | undefined; children: ReactNode }) {
   const domain = component.domain.value;
   return <article className={`rx-panel${domain ? ` rx-panel-${domain}` : ""}`}>
     <header className="rx-panel-header">
       <span className="rx-eyebrow">Prescription</span>
       <div className="rx-panel-title-row">
         <div className="rx-panel-copy"><h4>{component.name}</h4>{summary && <span className="rx-panel-summary">{summary}</span>}</div>
-        {(domain || meta) && <span className="rx-panel-aside">{domain && <span className="rx-domain" title={friendlyLabel(domain)}><svg className="rx-domain-glyph" data-domain-icon={domain} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{domainIconPath(domain)}</svg><span>{friendlyLabel(domain)}</span></span>}{meta && <span className="rx-panel-meta">{meta}</span>}</span>}
+        {(domain || meta || chip) && <span className="rx-panel-aside">{chip && <span className="rx-panel-chip">{chip}</span>}{domain && <span className="rx-domain" title={friendlyLabel(domain)}><svg className="rx-domain-glyph" data-domain-icon={domain} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{domainIconPath(domain)}</svg><span>{friendlyLabel(domain)}</span></span>}{meta && <span className="rx-panel-meta">{meta}</span>}</span>}
       </div>
     </header>
     {children}
@@ -43,22 +43,22 @@ function StrengthPrescription({ component, summary, meta }: { component: PlanCom
   return <PrescriptionPanel component={component} summary={summary ?? `${exerciseCount} ${exerciseCount === 1 ? "exercise" : "exercises"}`} meta={meta}>
     <div className="rx-table rx-strength-table" role="table" aria-label={`${component.name} exercises`}>
       <div className="rx-table-row rx-table-header" role="row">
-        <span role="columnheader">#</span><span role="columnheader">Exercise</span><span role="columnheader">Sets × Reps</span><span role="columnheader">Effort</span><span role="columnheader">Rest</span>
+        <span role="columnheader">#</span><span role="columnheader">Exercise</span><span role="columnheader">Sets × Reps</span><span role="columnheader">Effort</span><span role="columnheader">Rest</span><span role="columnheader">Notes</span>
       </div>
       <div role="rowgroup">
         {component.prescription.exercises.map((exercise, index) => {
           const movement = exercise.classification.primaryMovement?.value;
           const reps = exercise.repsMin === exercise.repsMax ? exercise.repsMin : `${exercise.repsMin}–${exercise.repsMax}`;
           const load = exercise.referenceLoad == null ? null : `${exercise.referenceLoad}${exercise.referenceLoadUnit ? ` ${exercise.referenceLoadUnit}` : ""}`;
-          const effort = [exercise.targetRpe ? `RPE ${exercise.targetRpe}` : null, exercise.targetRir != null ? `RIR ${exercise.targetRir}` : null];
+          const effort = exercise.targetRpe ? `RPE ${exercise.targetRpe}` : null;
           const details = [exercise.notes || null, exercise.tempo ? `Tempo ${exercise.tempo}` : null, exercise.alternatives?.length ? `Alternatives: ${exercise.alternatives.join(", ")}` : null].filter((value): value is string => Boolean(value));
           return <div className="rx-table-row rx-strength-row" role="row" key={exercise.id}>
             <span className="rx-index" data-label="#" role="cell">{index + 1}</span>
-            <span className="rx-primary-cell rx-exercise-cell" data-label="Exercise" role="cell">{movement != null && <small className="rx-movement-pill">{friendlyLabel(String(movement))}</small>}<strong>{exercise.displayName}</strong></span>
-            <span data-label="Sets × Reps" role="cell"><strong>{exercise.sets} × {reps}</strong>{load && <small>{load}</small>}</span>
-            <span data-label="Effort" role="cell"><Values values={effort} empty="Controlled" /></span>
+            <span className="rx-primary-cell" data-label="Exercise" role="cell"><strong>{exercise.displayName}</strong>{movement != null && <small>{friendlyLabel(String(movement))}</small>}</span>
+            <span data-label="Sets × Reps" role="cell">{exercise.sets} × {reps}{load && <small>{load}</small>}</span>
+            <span data-label="Effort" role="cell"><Values values={[effort]} empty="Controlled" /></span>
             <span data-label="Rest" role="cell">{formatRest(exercise.restSeconds)}</span>
-            <span className="rx-strength-details" data-label="Notes" role="cell">{details.length ? details.map((value, detailIndex) => <span key={`${value}-${detailIndex}`}>{value}</span>) : <span className="rx-empty-value">—</span>}</span>
+            <span className="rx-notes-cell" data-label="Notes" role="cell"><Values values={details} /></span>
           </div>;
         })}
       </div>
@@ -109,6 +109,37 @@ function EndurancePrescription({ component, summary, meta }: { component: PlanCo
   </PrescriptionPanel>;
 }
 
+const blockColumns = { sport_skill: { column: "Drill", noun: "drill" }, mind_body: { column: "Technique", noun: "technique" }, recovery: { column: "Movement", noun: "movement" } } as const;
+
+function BlockList({ prescription }: { prescription: Extract<PlanComponent["prescription"], { kind: "sport_skill" | "recovery" | "mind_body" }> }) {
+  if (prescription.kind === "sport_skill") return <div className="rx-blocks"><strong>{friendlyLabel(prescription.sessionType)}</strong>{prescription.blocks.map((block, index) => <div className="rx-block" key={`${block.name}-${index}`}><b>{friendlyLabel(block.role)} · {block.name}</b><span>{[block.durationMinutes ? `${block.durationMinutes} min` : null, block.intensity].filter(Boolean).join(" · ")}</span>{block.instructions && <small>{block.instructions}</small>}</div>)}</div>;
+  return <div className="rx-blocks">{prescription.blocks.map((block, index) => <div className="rx-block" key={`${block.name}-${index}`}><b>{block.name}</b>{block.durationMinutes && <span>{block.durationMinutes} min</span>}{block.instructions && <small>{block.instructions}</small>}</div>)}</div>;
+}
+
+function BlocksPrescription({ component, summary, meta }: { component: PlanComponent & { prescription: Extract<PlanComponent["prescription"], { kind: "sport_skill" | "recovery" | "mind_body" }> }; summary?: string | undefined; meta?: string | undefined }) {
+  const prescription = component.prescription;
+  const isSport = prescription.kind === "sport_skill";
+  const blocks = prescription.blocks;
+  const count = blocks.length;
+  const { column, noun } = blockColumns[prescription.kind];
+  return <PrescriptionPanel component={component} summary={summary ?? `${count} ${count === 1 ? noun : `${noun}s`}`} meta={meta} chip={isSport ? friendlyLabel(prescription.sessionType) : undefined}>
+    <div className={`rx-table rx-blocks-table${isSport ? "" : " rx-blocks-table-plain"}`} role="table" aria-label={`${component.name} blocks`}>
+      <div className="rx-table-row rx-table-header" role="row">
+        <span role="columnheader">#</span><span role="columnheader">{column}</span><span role="columnheader">Duration</span>{isSport && <span role="columnheader">Intensity</span>}<span role="columnheader">Notes</span>
+      </div>
+      <div role="rowgroup">
+        {blocks.map((block, index) => <div className="rx-table-row rx-blocks-row" role="row" key={`${block.name}-${index}`}>
+          <span className="rx-index" data-label="#" role="cell">{index + 1}</span>
+          <span className="rx-primary-cell" data-label={column} role="cell">{"role" in block ? <><strong>{friendlyLabel(block.role)}</strong><small>{block.name}</small></> : <strong>{block.name}</strong>}</span>
+          <span className="rx-metric-cell" data-label="Duration" role="cell"><Values values={[block.durationMinutes ? `${block.durationMinutes} min` : null]}/></span>
+          {isSport && <span className="rx-metric-cell" data-label="Intensity" role="cell"><Values values={["intensity" in block ? block.intensity : null]}/></span>}
+          <span className="rx-notes-cell" data-label="Notes" role="cell"><Values values={[block.instructions]}/></span>
+        </div>)}
+      </div>
+    </div>
+  </PrescriptionPanel>;
+}
+
 export function Prescription({ component, variant = "detailed", fallbackNotes, summary, meta }: { component: PlanComponent; variant?: "detailed" | "compact"; fallbackNotes?: string | undefined; summary?: string | undefined; meta?: string | undefined }) {
   const prescription = component.prescription;
   if (prescription.kind === "strength") {
@@ -121,9 +152,10 @@ export function Prescription({ component, variant = "detailed", fallbackNotes, s
       ? <li className="rx-repeat" key={`${segment.name}-${index}`}><strong>{segment.repetitions} × {segment.name}</strong><div><span>Work · {segment.work.name}</span><CompactEnduranceTargets step={segment.work}/>{segment.recovery && <><span>Recovery · {segment.recovery.name}</span><CompactEnduranceTargets step={segment.recovery}/></>}</div>{segment.notes && <small>{segment.notes}</small>}</li>
       : <li key={`${segment.name}-${index}`}><strong>{friendlyLabel(segment.role)} · {segment.name}</strong><CompactEnduranceTargets step={segment}/></li>)}</ol>;
   }
-  let content: ReactNode;
-  if (prescription.kind === "sport_skill") content = <div className="rx-blocks"><strong>{friendlyLabel(prescription.sessionType)}</strong>{prescription.blocks.map((block, index) => <div className="rx-block" key={`${block.name}-${index}`}><b>{friendlyLabel(block.role)} · {block.name}</b><span>{[block.durationMinutes ? `${block.durationMinutes} min` : null, block.intensity].filter(Boolean).join(" · ")}</span>{block.instructions && <small>{block.instructions}</small>}</div>)}</div>;
-  else if ("blocks" in prescription) content = <div className="rx-blocks">{prescription.blocks.map((block, index) => <div className="rx-block" key={`${block.name}-${index}`}><b>{block.name}</b>{block.durationMinutes && <span>{block.durationMinutes} min</span>}{block.instructions && <small>{block.instructions}</small>}</div>)}</div>;
-  else content = <p className="rx-legacy">{prescription.notes || fallbackNotes || "No structured prescription is available."}</p>;
-  return variant === "detailed" ? <PrescriptionPanel component={component} summary={summary} meta={meta}><div className="rx-simple-content">{content}</div></PrescriptionPanel> : content;
+  if ("blocks" in prescription) {
+    if (variant === "detailed") return <BlocksPrescription component={component as PlanComponent & { prescription: typeof prescription }} summary={summary} meta={meta}/>;
+    return <BlockList prescription={prescription}/>;
+  }
+  const legacy = <p className="rx-legacy">{prescription.notes || fallbackNotes || "No structured prescription is available."}</p>;
+  return variant === "detailed" ? <PrescriptionPanel component={component} summary={summary} meta={meta}><div className="rx-simple-content">{legacy}</div></PrescriptionPanel> : legacy;
 }

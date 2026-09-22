@@ -8,7 +8,7 @@
 - Hevy supports the migrated CSV aliases and preview-before-commit behavior. A current real export remains a release gate.
 - Intervals.icu is read-only. Real-account fields, timezone behavior, overlapping sync, and partial failure remain a release gate until temporary credentials are supplied.
 - Maximum heart rate must be explicitly entered. Athria does not infer it from age.
-- Missing load, RPE/RIR, heart-rate, power, recovery, or wellness data remains missing; it is never interpreted as normal.
+- Missing load, RPE, heart-rate, power, recovery, or wellness data remains missing; it is never interpreted as normal.
 - Strength and endurance metrics are kept separate. There is no combined fatigue/readiness score, Critical Power, W', PMC, MEV/MAV/MRV, automated medical judgment, or complex periodization generator.
 - Core blocker rules cover structure and typed equipment, duration, training-rhythm, and explicit-recovery constraints. Free-text `injuries` and `constraintNotes` are context only (max 10 entries of 200 characters each, one issue per entry, no duplicates). Training-volume balance and similar heuristics remain advisory.
 - Strength has a scientific rule pack. Endurance, Sport skill, Mind-body, and Recovery currently have structured components but no domain-specific scientific rules.

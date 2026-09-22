@@ -10,7 +10,7 @@ const render = (component: PlanComponent, variant: "detailed" | "compact" = "det
 
 const exercise: PlanExercise = {
   id: "rdl", displayName: "Romanian Deadlift", canonicalKey: "romanian_deadlift",
-  sets: 3, repsMin: 8, repsMax: 10, targetRpe: 7, targetRir: 2, restSeconds: 120,
+  sets: 3, repsMin: 8, repsMax: 10, targetRpe: 7, restSeconds: 120,
   referenceLoad: 60, referenceLoadUnit: "kg", tempo: "3-1-1", alternatives: ["Good Morning"],
   notes: "Stop with two reps in reserve.",
   classification: {
@@ -23,7 +23,7 @@ const strength: PlanComponent = {
   id: "strength", name: "Strength main block", domain: fact("strength"),
   prescription: { kind: "strength", exercises: [
     exercise,
-    { ...exercise, id: "row", displayName: "Seated Row", targetRpe: null, targetRir: null, referenceLoad: null, referenceLoadUnit: null, tempo: null, alternatives: [], notes: "", classification: { ...exercise.classification, primaryMovement: fact(null) } },
+    { ...exercise, id: "row", displayName: "Seated Row", targetRpe: null, referenceLoad: null, referenceLoadUnit: null, tempo: null, alternatives: [], notes: "", classification: { ...exercise.classification, primaryMovement: fact(null) } },
   ] },
 };
 
@@ -38,19 +38,25 @@ const endurance: PlanComponent = {
   ] },
 };
 
-describe("Prescription", () => {
-  it("renders the Apple-style strength table with layered exercise details", () => {
-    const html = render(strength);
-    for (const value of ["Prescription", "Strength main block", "2 exercises", 'data-domain-icon="strength"', "Sets × Reps", "Effort", "Romanian Deadlift", "rx-movement-pill", "Hinge", "3 × 8–10", "60 kg", "RPE 7", "RIR 2", "2 min", "Tempo 3-1-1", "Alternatives: Good Morning", "Controlled", "rx-strength-details"]) expect(html).toContain(value);
-    expect(html).not.toContain('role="columnheader">Notes');
-  });
+const sport: PlanComponent = {
+  id: "sport", name: "Ball control session", domain: fact("sport_skill"),
+  prescription: { kind: "sport_skill", sessionType: "practice", blocks: [
+    { name: "Rondo 4v2", role: "technical", durationMinutes: 12, intensity: "Moderate", instructions: "Two-touch limit." },
+    { name: "Small-sided games", role: "small_sided_game", durationMinutes: 20 },
+  ] },
+};
 
-  it("keeps the unified Effort header when no exercise prescribes RIR", () => {
-    const rpeOnly: PlanComponent = { ...strength, prescription: { kind: "strength", exercises: [{ ...exercise, targetRir: null }] } };
-    const html = render(rpeOnly);
-    expect(html).toContain("1 exercise");
-    expect(html).toContain('role="columnheader">Effort</span>');
-    expect(html).not.toContain('role="columnheader">RPE</span>');
+const recovery: PlanComponent = {
+  id: "recovery", name: "Down-regulation", domain: fact("recovery"),
+  prescription: { kind: "recovery", blocks: [{ name: "Box breathing", durationMinutes: 6, instructions: "Nasal breathing only." }] },
+};
+
+describe("Prescription", () => {
+  it("renders the strength table with a rightmost notes column", () => {
+    const html = render(strength);
+    for (const value of ["Prescription", "Strength main block", "2 exercises", 'data-domain-icon="strength"', "Sets × Reps", "Effort", "Romanian Deadlift", "Hinge", "3 × 8–10", "60 kg", "RPE 7", "2 min", "Tempo 3-1-1", "Alternatives: Good Morning", "Controlled", "rx-notes-cell"]) expect(html).toContain(value);
+    expect(html).toContain('role="columnheader">Notes</span>');
+    expect(html).not.toContain("RIR");
   });
 
   it("renders endurance modules and nested work/recovery rows without losing targets", () => {
@@ -66,6 +72,27 @@ describe("Prescription", () => {
     expect(html).toContain("1 module");
     expect(html).toContain("Tempo running");
     expect(html).not.toContain("Easy jog recovery");
+  });
+
+  it("renders sport skill blocks as a table with the session type in the header chip", () => {
+    const html = render(sport);
+    for (const value of ["rx-blocks-table", "rx-panel-chip", "Practice", "2 drills", ">Drill<", ">Duration<", ">Intensity<", ">Notes<", "Technical", "Rondo 4v2", "12 min", "Moderate", "Two-touch limit.", "Small Sided Game"]) expect(html).toContain(value);
+    expect(html).not.toContain("rx-blocks-table-plain");
+  });
+
+  it("renders recovery blocks as a table without an intensity column or chip", () => {
+    const html = render(recovery);
+    for (const value of ["rx-blocks-table", "rx-blocks-table-plain", "1 movement", ">Movement<", ">Duration<", ">Notes<", "Box breathing", "6 min", "Nasal breathing only."]) expect(html).toContain(value);
+    expect(html).not.toContain("Intensity");
+    expect(html).not.toContain("rx-panel-chip");
+  });
+
+  it("keeps compact block rendering free of the table chrome", () => {
+    const html = render(sport, "compact");
+    expect(html).toContain("rx-blocks");
+    expect(html).toContain("Practice");
+    expect(html).toContain("Technical · Rondo 4v2");
+    expect(html).not.toContain("rx-blocks-table");
   });
 
   it("keeps compact strength rendering free of detailed panel chrome", () => {

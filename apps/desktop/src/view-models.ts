@@ -79,7 +79,6 @@ export interface PlanExercise {
   repsMin: number;
   repsMax: number;
   targetRpe: number | null;
-  targetRir?: number | null;
   restSeconds: number;
   referenceLoad: number | null;
   referenceLoadUnit: "kg" | "lb" | null;
@@ -421,6 +420,36 @@ export function validationMessage(result: ValidationResult): string {
   const details = [...Object.values(result.evidence), ...result.missingFacts].filter((value) => value !== null && value !== undefined).map(String).join(", ");
   const label = friendlyLabel(result.reasonCode);
   return details ? `${label}: ${details}` : label;
+}
+
+// Mirrors the closed ReasonCode enum in crates/athria-core/src/adjustment.rs. The "{domain}"
+// placeholder expands to "Endurance " or nothing, so one template covers both cases.
+const adjustmentReasonMessages: Record<string, string> = {
+  ADHERENCE_MINOR_DEVIATION: "You missed 1 of the 4 sessions planned for this week.",
+  ADHERENCE_LOW_COMPLETION: "You completed 2 or fewer of the 4 sessions planned for this week.",
+  KEY_SESSION_MISSED: "You missed a key {domain}session this week.",
+  KEY_SESSION_ISSUE_PERSISTENT: "Key {domain}sessions have been missed two weeks in a row.",
+  DOMAIN_PERFORMANCE_ISSUE: "{domain}performance is below the plan.",
+  DOMAIN_PERFORMANCE_ISSUE_PERSISTENT: "{domain}performance has been below the plan for two weeks.",
+  RECOVERY_SIGNAL: "Your recent wellness data suggests recovery is lagging.",
+  HEALTH_LIMITATION: "A recorded health limitation is not reflected in the plan.",
+  TRAINING_INTERRUPTION: "Training has been interrupted for 7 days or more.",
+  NEXT_WEEK_INFEASIBLE: "Next week cannot fit the plan as written.",
+  PROFILE_TRAINING_RHYTHM_CONFLICT: "Your weekly training rhythm no longer matches the plan.",
+  PROFILE_SESSION_DURATION_CONFLICT: "Some sessions are longer than your maximum session duration.",
+  PROFILE_EQUIPMENT_CONFLICT: "Some planned exercises need equipment you no longer have.",
+  PROFILE_RECOVERY_CONSTRAINT_CONFLICT: "The plan does not keep your required recovery days free.",
+  GOAL_PLAN_INTENT_DRIFT: "The plan no longer matches your current goals.",
+  RACE_TARGET_PLAN_INTENT_DRIFT: "The plan no longer matches your race targets.",
+  PREFERENCE_CHANGED: "Your training preference changed since the plan was built.",
+  MESOCYCLE_DURATION_PREFERENCE_CHANGED: "Your preferred mesocycle length changed since the plan was built.",
+};
+
+export function adjustmentReasonMessage(reason: AdjustmentAssessment["reasons"][number]): string {
+  const message = adjustmentReasonMessages[reason.reasonCode];
+  if (!message) return friendlyLabel(reason.reasonCode.toLowerCase());
+  const domain = reason.affectedDomain ? `${friendlyLabel(reason.affectedDomain)} ` : "";
+  return message.replace("{domain}", domain);
 }
 
 export function deviceTimezone(): string {
