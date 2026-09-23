@@ -47,6 +47,8 @@ Athria does not tie you to a specific AI. You choose the AI; Athria connects it 
 - **Build and adjust training plans** — create training schedules around your situation and update them as training progresses.
 - **Keep recommendations consistent** — Athria provides shared calculations and plan checks instead of leaving every AI to calculate or guess independently.
 - **Bring in existing records** — import or synchronize supported training sources and organize them in one place.
+
+Currently supported training apps include **Xunji (训记)** and **Intervals.icu**, with **Hevy** supported through file import.
 - **View training visually** — use Athria as a hub for your training data, recent status, plans, and connected sources.
 - **Keep core data local** — the main training database stays on your computer and does not require an Athria cloud account.
 
@@ -147,6 +149,8 @@ Athria 不绑定特定的 AI。你可以继续使用自己选择的 AI，Athria 
 - **制定和调整训练计划** —— 根据你的实际情况生成训练安排，并随着训练进展进行调整。
 - **规范训练建议** —— Athria 提供统一的训练计算和计划检查，减少不同 AI 自行猜测或使用不同计算方式带来的差异。
 - **整合已有记录** —— 可以导入或同步其他训练应用的数据，并统一整理。
+
+目前支持的训练应用包括 **训记（Xunji）** 和 **Intervals.icu**，同时支持通过文件导入 **Hevy** 数据。
 - **可视化查看训练** —— 在 Athria 中查看和管理训练数据、近期状态和计划。
 - **数据保存在本地** —— 核心训练数据库保存在自己的电脑上，不需要 Athria 云账号。
 
