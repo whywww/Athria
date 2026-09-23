@@ -12,6 +12,17 @@
 
 [English](#english) · [简体中文](#简体中文) · [Potential contributors / 潜在贡献者](#potential-contributors)
 
+<div align="center">
+  <img src="screenshots/overview.png" alt="Overview" width="49%">
+  <img src="screenshots/training.png" alt="Training" width="49%"><br>
+  <img src="screenshots/plan-1.png" alt="Training plan" width="32%">
+  <img src="screenshots/plan-2.png" alt="Training plan details" width="32%">
+  <img src="screenshots/plan-3.png" alt="Training plan session" width="32%"><br>
+  <img src="screenshots/profile-1.png" alt="Profile" width="32%">
+  <img src="screenshots/profile-2.png" alt="Profile details" width="32%">
+  <img src="screenshots/agents.png" alt="AI agents" width="32%">
+</div>
+
 <a id="english"></a>
 
 ## English
