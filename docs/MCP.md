@@ -90,22 +90,29 @@ Template 表示可复用的训练结构或 archetype，不保存具体的 execut
 | Tool | 功能 |
 | --- | --- |
 | `get_current_plan` | 获取当前唯一可编辑的 Mesocycle。 |
-| `validate_current_plan` | 对候选 Current Plan 做确定性验证，不保存。 |
-| `save_current_plan` | 用户明确批准后，原子地替换当前完整 Mesocycle。 |
+| `create_plan_draft` | 创建持久化 Mesocycle 草稿，或从 Current Plan 克隆。 |
+| `list_plan_drafts` | 列出可跨对话恢复的草稿摘要。 |
+| `get_plan_draft` | 获取草稿摘要或指定的一周。 |
+| `upsert_plan_draft_week` | 向草稿原子写入一个完整周。 |
+| `validate_plan_draft` | 组装并验证完整草稿，不保存 Current Plan。 |
+| `commit_plan_draft` | 用户明确批准后，原子地替换 Current Plan。 |
+| `discard_plan_draft` | 丢弃未提交草稿，不修改 Current Plan。 |
 | `get_plan_adjustment_review` | 基于最新 Profile、Training、Calendar 和 Wellness 判断当前计划是否需要 review，并返回原因、范围、hard overrides 和 data gaps。不会修改计划。 |
 
-### `save_current_plan`
+### Plan draft workflow
 
-这是完整计划写入接口，不是 patch。
+Current Plan 不接受 MCP inline 完整写入。草稿按周持久化到 Athria SQLite；正式计划仍只在最终 commit 时原子替换。
 
 推荐流程：
 
 ```text
 读取当前 Profile / State / Plan
         ↓
-生成完整候选计划
+create_plan_draft / 恢复已有 draft
         ↓
-validate_current_plan
+按周 upsert_plan_draft_week
+        ↓
+validate_plan_draft
         ↓
 向用户展示变化
         ↓
@@ -113,7 +120,7 @@ validate_current_plan
         ↓
 重新检查 revision / snapshot / profile freshness
         ↓
-save_current_plan
+commit_plan_draft
 ```
 
 如果数据已经变化，应重新读取和 rebase，而不是覆盖新状态。
@@ -227,13 +234,15 @@ get_training_taxonomy
         ↓
 读取必要的 History / Wellness
         ↓
-生成候选 Plan
+create_plan_draft（或恢复已有草稿）
         ↓
-validate_current_plan
+逐周 upsert_plan_draft_week
+        ↓
+validate_plan_draft
         ↓
 用户确认
         ↓
-save_current_plan
+commit_plan_draft
 ```
 
 ### 临时调整下一训练日

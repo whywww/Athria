@@ -158,6 +158,26 @@ pub trait AthriaStore {
     fn dismiss_template(&self, id: &str, owner_id: &str) -> Result<()>;
 
     fn get_current_plan(&self, owner_id: &str) -> Result<Option<Value>>;
+    fn create_plan_draft(&self, draft: &Value) -> Result<Value>;
+    fn list_plan_drafts(&self, owner_id: &str) -> Result<Vec<Value>>;
+    fn get_plan_draft(&self, draft_id: &str, owner_id: &str) -> Result<Option<Value>>;
+    fn list_plan_draft_weeks(&self, draft_id: &str) -> Result<Vec<Value>>;
+    fn save_plan_draft_week(
+        &self,
+        draft_id: &str,
+        owner_id: &str,
+        expected_revision: i64,
+        week: &Value,
+    ) -> Result<Value>;
+    fn set_plan_draft_status(
+        &self,
+        draft_id: &str,
+        owner_id: &str,
+        expected_revision: i64,
+        status: &str,
+        committed_plan_revision: Option<i64>,
+        commit_result: Option<&Value>,
+    ) -> Result<Value>;
     fn save_current_plan(
         &self,
         plan: &Value,

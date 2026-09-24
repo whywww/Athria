@@ -2,7 +2,7 @@
 //! the shared `AthriaStore` interface.
 //!
 //! [`SqliteStore`] is the rusqlite implementation that owns the Rust
-//! compatibility baseline (schema version 24), the training-session
+//! compatibility baseline (schema version 25), the training-session
 //! reconciliation engine, planned-session projection, and entity writes with
 //! stable application-facing behavior and error codes. Opening an unsupported development version fails with
 //! `SCHEMA_VERSION_UNSUPPORTED`; fresh databases and future migrations are

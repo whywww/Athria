@@ -248,7 +248,10 @@ fn profile_change_facts(profile: &Value, plan: &Value, results: &[Value]) -> Pro
                 } else {
                     refs
                 },
-                structural: kind == ProfileConstraintKind::TrainingRhythm,
+                structural: kind == ProfileConstraintKind::TrainingRhythm
+                    && failed.iter().any(|result| {
+                        result["enforcement"].as_str() == Some("blocker")
+                    }),
             });
         }
     }

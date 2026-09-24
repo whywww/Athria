@@ -548,6 +548,10 @@ fn validate_mesocycle(mesocycle: &Value, duration_weeks: i64, path: &str) -> Res
 }
 
 /// `planWeekSchema.parse(value)`.
+pub fn parse_plan_week(value: &Value) -> Result<Value> {
+    parse_week(value, "plan.mesocycle.week")
+}
+
 fn parse_week(value: &Value, path: &str) -> Result<Value> {
     object(value, path)?;
     let mut week = Map::new();

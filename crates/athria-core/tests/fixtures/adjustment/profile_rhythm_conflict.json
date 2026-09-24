@@ -21,18 +21,18 @@
   },
   "expected": {
     "trigger": "profile_change",
-    "reviewStatus": "review_required",
-    "recommendedScope": "plan",
+    "reviewStatus": "watch",
+    "recommendedScope": "none",
     "reasons": [
       {
         "reasonCode": "PROFILE_TRAINING_RHYTHM_CONFLICT",
-        "severity": "hard",
+        "severity": "soft",
         "axis": { "kind": "profile_mismatch" },
         "evidenceRefs": ["PROFILE_TRAINING_RHYTHM"],
-        "affectedScope": "plan"
+        "affectedScope": "none"
       }
     ],
-    "hardOverrides": ["PROFILE_CONSTRAINT_CONFLICT"],
+    "hardOverrides": [],
     "dataGaps": [],
     "currentPlanRevision": 7,
     "inputSnapshotHash": "snapshot-8",

@@ -11,12 +11,12 @@ Own the lifecycle of the user's single Current Mesocycle. Do not update Profile,
 
 1. Read `get_athlete_profile`, `get_training_state`, `list_wellness`, and `get_training_taxonomy`. Keep the profile hash, `inputSnapshotHash`, taxonomy version, and hard-confidence threshold.
 2. Read only the training history and summaries needed for the requested cycle. Use `get_current_plan` when revising or replacing an existing plan.
-3. Draft one complete Plan Schema v7 proposal in conversation state. It must have an explicit `effectiveStartDate`, the Profile's rhythm-only schedule, complete `weeks[]`, a full-cycle progression timeline for every resolved domain, and executable prescriptions for every session. Templates are optional provenance, never the executable plan.
-4. Call `validate_current_plan`. Resolve blocker failures and blocker unknowns. Ask only for a fact needed to clear a remaining blocker; do not invent loads, effort, availability, equipment, recovery, or injury status.
+3. Create or recover a persistent plan draft. For a new plan call `create_plan_draft` with Plan Schema v7 metadata but no `weeks`; when revising use `current_plan` and preserve unaffected weeks. Write one complete week at a time with `upsert_plan_draft_week`. Templates are optional provenance, never the executable plan.
+4. Call `validate_plan_draft`. Resolve blocker failures and blocker unknowns. Ask only for a fact needed to clear a remaining blocker; do not invent loads, effort, availability, equipment, recovery, or injury status.
 5. Show the plan's goal, domain phases, representative prescriptions, validation blockers/advisories/unknowns, material tradeoffs, and what will replace the current plan.
 6. Obtain explicit approval for the complete proposal. Editing, rejection, or “later” is not approval.
 7. After approval, re-read `get_current_plan`, `get_training_state`, and `get_athlete_profile`. Rebase, revalidate, and ask again if the revision, snapshot hash, or profile hash changed.
-8. Call `save_current_plan` once with the complete plan, latest `inputSnapshotHash`, and expected revision. Never use partial or multi-step plan writes.
+8. Call `commit_plan_draft` once with the draft ID, latest `inputSnapshotHash`, expected plan and draft revisions, and `confirmed: true`. Never make a partial Current Plan write. Use `list_plan_drafts` to resume work in a later conversation and `discard_plan_draft` for abandoned work.
 
 ## Adjustment workflow
 

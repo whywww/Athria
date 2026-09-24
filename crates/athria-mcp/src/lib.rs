@@ -65,6 +65,13 @@ enum ToolKind {
     GetXunjiSyncStatus,
     GetTrainingSummary,
     GetCurrentPlan,
+    CreatePlanDraft,
+    ListPlanDrafts,
+    GetPlanDraft,
+    UpsertPlanDraftWeek,
+    ValidatePlanDraft,
+    CommitPlanDraft,
+    DiscardPlanDraft,
     GetPlanAdjustmentReview,
     ListSessionTemplates,
     GetSessionTemplate,
@@ -74,14 +81,12 @@ enum ToolKind {
     CalculateHeartRateZones,
     EvaluateProgression,
     EvaluateRpeAutoregulation,
-    ValidateCurrentPlan,
     GetNextTrainingDay,
     ListPlannedSessions,
     ValidateNextTrainingDaySessions,
     CreateSessionTemplate,
     UpdateSessionTemplate,
     DeleteSessionTemplate,
-    SaveCurrentPlan,
     SaveNextTrainingDaySessions,
     UpdatePlannedSession,
     RecordTrainingSession,
@@ -106,6 +111,13 @@ impl ToolKind {
             "get_xunji_sync_status" => Self::GetXunjiSyncStatus,
             "get_training_summary" => Self::GetTrainingSummary,
             "get_current_plan" => Self::GetCurrentPlan,
+            "create_plan_draft" => Self::CreatePlanDraft,
+            "list_plan_drafts" => Self::ListPlanDrafts,
+            "get_plan_draft" => Self::GetPlanDraft,
+            "upsert_plan_draft_week" => Self::UpsertPlanDraftWeek,
+            "validate_plan_draft" => Self::ValidatePlanDraft,
+            "commit_plan_draft" => Self::CommitPlanDraft,
+            "discard_plan_draft" => Self::DiscardPlanDraft,
             "get_plan_adjustment_review" => Self::GetPlanAdjustmentReview,
             "list_session_templates" => Self::ListSessionTemplates,
             "get_session_template" => Self::GetSessionTemplate,
@@ -115,14 +127,12 @@ impl ToolKind {
             "calculate_heart_rate_zones" => Self::CalculateHeartRateZones,
             "evaluate_progression" => Self::EvaluateProgression,
             "evaluate_rpe_autoregulation" => Self::EvaluateRpeAutoregulation,
-            "validate_current_plan" => Self::ValidateCurrentPlan,
             "get_next_training_day" => Self::GetNextTrainingDay,
             "list_planned_sessions" => Self::ListPlannedSessions,
             "validate_next_training_day_sessions" => Self::ValidateNextTrainingDaySessions,
             "create_session_template" => Self::CreateSessionTemplate,
             "update_session_template" => Self::UpdateSessionTemplate,
             "delete_session_template" => Self::DeleteSessionTemplate,
-            "save_current_plan" => Self::SaveCurrentPlan,
             "save_next_training_day_sessions" => Self::SaveNextTrainingDaySessions,
             "update_planned_session" => Self::UpdatePlannedSession,
             "record_training_session" => Self::RecordTrainingSession,
@@ -267,6 +277,38 @@ impl<S: AthriaStore> McpService<S> {
             ToolKind::GetCurrentPlan => {
                 serialize(app.get_current_plan().map_err(ToolError::application)?)
             }
+            ToolKind::CreatePlanDraft => application(app.create_plan_draft(input)),
+            ToolKind::ListPlanDrafts => {
+                serialize(app.list_plan_drafts().map_err(ToolError::application)?)
+            }
+            ToolKind::GetPlanDraft => application(app.get_plan_draft(
+                required_str(input, "draftId")?,
+                input.get("weekNumber").and_then(Value::as_i64),
+            )),
+            ToolKind::UpsertPlanDraftWeek => application(
+                app.upsert_plan_draft_week(
+                    required_str(input, "draftId")?,
+                    required_i64(input, "expectedDraftRevision")?,
+                    input
+                        .get("week")
+                        .ok_or_else(|| ToolError::invalid("week is required"))?,
+                ),
+            ),
+            ToolKind::ValidatePlanDraft => serialize(
+                app.validate_plan_draft(required_str(input, "draftId")?)
+                    .map_err(ToolError::application)?,
+            ),
+            ToolKind::CommitPlanDraft => application(app.commit_plan_draft(
+                required_str(input, "draftId")?,
+                required_i64(input, "expectedDraftRevision")?,
+                required_i64(input, "expectedPlanRevision")?,
+                required_str(input, "inputSnapshotHash")?,
+                input.get("confirmed") == Some(&Value::Bool(true)),
+            )),
+            ToolKind::DiscardPlanDraft => application(app.discard_plan_draft(
+                required_str(input, "draftId")?,
+                required_i64(input, "expectedDraftRevision")?,
+            )),
             ToolKind::GetPlanAdjustmentReview => {
                 let trigger = match required_str(input, "trigger")? {
                     "weekly_review" => AdjustmentTrigger::WeeklyReview,
@@ -308,10 +350,6 @@ impl<S: AthriaStore> McpService<S> {
             ToolKind::EvaluateRpeAutoregulation => application(evaluate_rpe_autoregulation(
                 &parse::<RpeAutoregulationInput>(input)?,
             )),
-            ToolKind::ValidateCurrentPlan => serialize(
-                app.validate_current_plan(input)
-                    .map_err(ToolError::application)?,
-            ),
             ToolKind::GetNextTrainingDay => application(
                 app.get_next_training_day(input.get("onOrAfterDate").and_then(Value::as_str)),
             ),
@@ -331,14 +369,6 @@ impl<S: AthriaStore> McpService<S> {
                 required_str(input, "id")?,
                 input.get("expectedRevision").and_then(Value::as_i64),
             )),
-            ToolKind::SaveCurrentPlan => {
-                let saved = app
-                    .save_current_plan(input)
-                    .map_err(ToolError::application)?;
-                Ok(
-                    json!({ "revision": saved["plan"]["revision"], "impact": saved["impact"], "blockerSummary": blocker_summary(&saved["validation"]) }),
-                )
-            }
             ToolKind::SaveNextTrainingDaySessions => {
                 application(app.save_next_training_day_sessions(input))
             }
@@ -529,6 +559,12 @@ fn required_f64(input: &Value, name: &str) -> std::result::Result<f64, ToolError
         .and_then(Value::as_f64)
         .ok_or_else(|| ToolError::invalid(format!("{name} must be a number")))
 }
+fn required_i64(input: &Value, name: &str) -> std::result::Result<i64, ToolError> {
+    input
+        .get(name)
+        .and_then(Value::as_i64)
+        .ok_or_else(|| ToolError::invalid(format!("{name} must be an integer")))
+}
 fn days(input: &Value, default: i64) -> std::result::Result<i64, ToolError> {
     let value = input.get("days").and_then(Value::as_i64).unwrap_or(default);
     if (1..=365).contains(&value) {
@@ -537,19 +573,14 @@ fn days(input: &Value, default: i64) -> std::result::Result<i64, ToolError> {
         Err(ToolError::invalid("days must be an integer from 1 to 365"))
     }
 }
-fn blocker_summary(validation: &Value) -> Value {
-    let results = validation["results"]
-        .as_array()
-        .map(Vec::as_slice)
-        .unwrap_or(&[]);
-    json!({ "valid": validation["valid"], "blockers": results.iter().filter(|item| item["enforcement"] == "blocker" && (item["status"] == "fail" || item["status"] == "unknown")).count(), "advisories": results.iter().filter(|item| item["enforcement"] == "advisory").count(), "blockingDataGaps": validation["dataGaps"].as_array().map(|items| items.iter().filter(|item| item["blocking"] == true).count()).unwrap_or(0) })
-}
-
 pub fn serve_stdio<S: AthriaStore + Send + 'static>(service: McpService<S>) -> std::io::Result<()> {
     tokio::runtime::Runtime::new()?.block_on(async move {
         let input = tokio::io::BufReader::new(tokio::io::stdin());
         let running = RmcpServer::new(service)
-            .serve((filtered_stdio(input, tokio::io::stdout()), tokio::io::stdout()))
+            .serve((
+                filtered_stdio(input, tokio::io::stdout()),
+                tokio::io::stdout(),
+            ))
             .await
             .map_err(std::io::Error::other)?;
         running.waiting().await.map_err(std::io::Error::other)?;
@@ -717,14 +748,19 @@ mod tests {
     #[test]
     fn exposes_contract_and_calls_application() {
         let service = service();
-        assert_eq!(service.tools().len(), 36);
+        assert_eq!(service.tools().len(), 41);
         assert!(service.tools().iter().all(|tool| {
             tool.get("handlerKey").and_then(Value::as_str).is_some()
                 && tool.get("outputSchema").is_some()
         }));
         assert!(!service.tools().iter().any(|tool| matches!(
             tool["name"].as_str(),
-            Some("check_training_constraints" | "evaluate_double_progression")
+            Some(
+                "check_training_constraints"
+                    | "evaluate_double_progression"
+                    | "validate_current_plan"
+                    | "save_current_plan"
+            )
         )));
         let output = service.call_result("get_athlete_profile", &json!({}));
         let profile: Value =
@@ -738,7 +774,7 @@ mod tests {
         let service = service();
         let fixtures: Value =
             serde_json::from_str(include_str!("../tests/fixtures/tool-results.json")).unwrap();
-        assert_eq!(fixtures.as_object().unwrap().len(), 36);
+        assert_eq!(fixtures.as_object().unwrap().len(), 41);
 
         for (tool, registered) in service.tools().iter().zip(&service.registry) {
             let name = tool["name"].as_str().unwrap();
@@ -801,6 +837,8 @@ mod tests {
             "create_session_template",
             "record_training_session",
             "report_skill_version",
+            "create_plan_draft",
+            "upsert_plan_draft_week",
         ];
         let destructive = [
             "update_session_template",
@@ -814,6 +852,8 @@ mod tests {
             "remove_manual_training_source",
             "update_wellness",
             "update_athlete_profile",
+            "commit_plan_draft",
+            "discard_plan_draft",
         ];
 
         for tool in service
@@ -899,7 +939,7 @@ mod tests {
     #[test]
     fn rmcp_server_advertises_only_the_wire_it_emits() {
         let server = RmcpServer::new(service());
-        assert_eq!(server.tools.len(), 36);
+        assert_eq!(server.tools.len(), 41);
         assert!(server.tools.iter().all(|tool| tool.output_schema.is_some()));
         assert_eq!(
             server.supported_protocol_versions().as_ref(),
@@ -912,7 +952,8 @@ mod tests {
         use tokio::io::AsyncReadExt;
         let probe = json!({ "jsonrpc": "2.0", "id": "server-discover-probe-1", "method": "server/discover", "params": { "_meta": { "io.modelcontextprotocol/protocolVersion": "2026-07-28" } } });
         let initialize = json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": { "protocolVersion": "2025-11-25" } });
-        let later_discover = json!({ "jsonrpc": "2.0", "id": 3, "method": "server/discover", "params": {} });
+        let later_discover =
+            json!({ "jsonrpc": "2.0", "id": 3, "method": "server/discover", "params": {} });
         let script = format!("{probe}\n{initialize}\n{later_discover}\n");
         tokio::runtime::Runtime::new().unwrap().block_on(async {
             let (mut script_writer, script_reader) = tokio::io::duplex(4096);
@@ -1011,10 +1052,8 @@ mod tests {
 
     #[test]
     fn report_skill_version_records_into_the_configured_sink() {
-        let dir = std::env::temp_dir().join(format!(
-            "athria-mcp-skill-reports-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("athria-mcp-skill-reports-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let path = dir.join("skill-reports.json");
         let service = service().with_skill_reports(path.clone());
@@ -1025,7 +1064,10 @@ mod tests {
         assert!(output.get("isError").is_none(), "{output}");
         let recorded: Value =
             serde_json::from_str(output["content"][0]["text"].as_str().unwrap()).unwrap();
-        assert_eq!(recorded, json!({ "recorded": true, "skill": "athria-coach" }));
+        assert_eq!(
+            recorded,
+            json!({ "recorded": true, "skill": "athria-coach" })
+        );
         let reports = athria_skills::read_reports(&path);
         let coach = &reports.reports["athria-coach"];
         assert_eq!(coach.version, "0.1.0");
@@ -1043,7 +1085,10 @@ mod tests {
         assert!(output.get("isError").is_none(), "{output}");
         let recorded: Value =
             serde_json::from_str(output["content"][0]["text"].as_str().unwrap()).unwrap();
-        assert_eq!(recorded, json!({ "recorded": false, "skill": "athria-coach" }));
+        assert_eq!(
+            recorded,
+            json!({ "recorded": false, "skill": "athria-coach" })
+        );
     }
 
     #[test]

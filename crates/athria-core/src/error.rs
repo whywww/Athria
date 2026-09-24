@@ -19,6 +19,9 @@ use std::fmt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AthriaErrorCode {
     CompletedSessionCannotBeReplaced,
+    DraftIncomplete,
+    DraftNotFound,
+    DraftRevisionConflict,
     DuplicatePlannedSessionId,
     ExplicitRecoveryInterval,
     FutureSessionCannotBeCompleted,
@@ -45,6 +48,7 @@ pub enum AthriaErrorCode {
     PlannedSessionSkipped,
     PlanEnded,
     PlanHasBlockers,
+    PlanRevisionConflict,
     PlanWeekNotFound,
     PlanWorkoutDateMismatch,
     ProfileTrainingRhythm,
@@ -61,8 +65,11 @@ pub enum AthriaErrorCode {
 
 impl AthriaErrorCode {
     /// All known codes; the wire lookup [`Self::from_wire`] is built from it.
-    pub const ALL: [Self; 39] = [
+    pub const ALL: [Self; 43] = [
         Self::CompletedSessionCannotBeReplaced,
+        Self::DraftIncomplete,
+        Self::DraftNotFound,
+        Self::DraftRevisionConflict,
         Self::DuplicatePlannedSessionId,
         Self::ExplicitRecoveryInterval,
         Self::FutureSessionCannotBeCompleted,
@@ -89,6 +96,7 @@ impl AthriaErrorCode {
         Self::PlannedSessionSkipped,
         Self::PlanEnded,
         Self::PlanHasBlockers,
+        Self::PlanRevisionConflict,
         Self::PlanWeekNotFound,
         Self::PlanWorkoutDateMismatch,
         Self::ProfileTrainingRhythm,
@@ -107,6 +115,9 @@ impl AthriaErrorCode {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::CompletedSessionCannotBeReplaced => "COMPLETED_SESSION_CANNOT_BE_REPLACED",
+            Self::DraftIncomplete => "DRAFT_INCOMPLETE",
+            Self::DraftNotFound => "DRAFT_NOT_FOUND",
+            Self::DraftRevisionConflict => "DRAFT_REVISION_CONFLICT",
             Self::DuplicatePlannedSessionId => "DUPLICATE_PLANNED_SESSION_ID",
             Self::ExplicitRecoveryInterval => "EXPLICIT_RECOVERY_INTERVAL",
             Self::FutureSessionCannotBeCompleted => "FUTURE_SESSION_CANNOT_BE_COMPLETED",
@@ -133,6 +144,7 @@ impl AthriaErrorCode {
             Self::PlannedSessionSkipped => "PLANNED_SESSION_SKIPPED",
             Self::PlanEnded => "PLAN_ENDED",
             Self::PlanHasBlockers => "PLAN_HAS_BLOCKERS",
+            Self::PlanRevisionConflict => "PLAN_REVISION_CONFLICT",
             Self::PlanWeekNotFound => "PLAN_WEEK_NOT_FOUND",
             Self::PlanWorkoutDateMismatch => "PLAN_WORKOUT_DATE_MISMATCH",
             Self::ProfileTrainingRhythm => "PROFILE_TRAINING_RHYTHM",

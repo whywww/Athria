@@ -22,11 +22,17 @@ use crate::sessions::js_number_value;
 pub use athria_core::DEFAULT_OWNER_ID;
 
 /// Latest schema version this store opens and creates.
-pub const SUPPORTED_SCHEMA_VERSION: i64 = 24;
+pub const SUPPORTED_SCHEMA_VERSION: i64 = 25;
 
 /// Canonical Rust compatibility baseline. Future changes must add explicit
 /// Rust migrations from this schema rather than silently replacing it.
-const SCHEMA_V24_SQL: &str = include_str!("schema/schema-v24.sql");
+const SCHEMA_V25_SQL: &str = include_str!("schema/schema-v25.sql");
+const MIGRATION_V25_SQL: &str = "
+CREATE TABLE plan_drafts (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, data TEXT NOT NULL, base_plan_revision INTEGER NOT NULL, input_snapshot_hash TEXT NOT NULL, draft_revision INTEGER NOT NULL, status TEXT NOT NULL, committed_plan_revision INTEGER, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE plan_draft_weeks (draft_id TEXT NOT NULL, week_number INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY(draft_id, week_number), FOREIGN KEY(draft_id) REFERENCES plan_drafts(id) ON DELETE CASCADE);
+CREATE INDEX plan_drafts_owner_status ON plan_drafts(owner_id, status, updated_at DESC);
+INSERT INTO athria_migrations(version, applied_at) VALUES (25, CURRENT_TIMESTAMP);
+";
 
 pub(crate) fn database_error(error: rusqlite::Error) -> AthriaError {
     if let rusqlite::Error::SqliteFailure(inner, _) = &error {
@@ -426,7 +432,7 @@ impl SqliteStore {
         Self::open_with_clock(path, Arc::new(SystemClock))
     }
 
-    /// In-memory store used by unit tests; bootstraps a fresh v24 database.
+    /// In-memory store used by unit tests; bootstraps a fresh v25 database.
     pub fn open_in_memory() -> Result<Self> {
         Self::open_in_memory_with_clock(Arc::new(SystemClock))
     }
@@ -531,6 +537,10 @@ impl SqliteStore {
         }
         match self.schema_version()? {
             SUPPORTED_SCHEMA_VERSION => Ok(()),
+            24 => self
+                .connection
+                .execute_batch(&format!("BEGIN IMMEDIATE; {MIGRATION_V25_SQL} COMMIT;"))
+                .map_err(database_error),
             version if version < SUPPORTED_SCHEMA_VERSION => Err(AthriaError::new(
                 AthriaErrorCode::SchemaVersionUnsupported,
                 format!(
@@ -566,7 +576,7 @@ impl SqliteStore {
 
     fn bootstrap_fresh_schema(&self) -> Result<()> {
         let mut sql = String::from("BEGIN IMMEDIATE;\n");
-        sql.push_str(SCHEMA_V24_SQL);
+        sql.push_str(SCHEMA_V25_SQL);
         // Mirror the TypeScript migration rows 1..=24 so both implementations
         // agree on the applied-migration set of a fresh database.
         for version in 1..=SUPPORTED_SCHEMA_VERSION {
@@ -931,6 +941,94 @@ impl SqliteStore {
             .optional()
             .map_err(database_error)?;
         data.map(|value| parse_json_column(&value)).transpose()
+    }
+
+    pub fn create_plan_draft(&self, draft: &Value) -> Result<Value> {
+        self.connection.execute(
+            "INSERT INTO plan_drafts(id, owner_id, data, base_plan_revision, input_snapshot_hash, draft_revision, status, committed_plan_revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, ?8, ?9)",
+            params![draft["id"].as_str().ok_or_else(|| missing_field("id"))?, owner_of(draft), draft["data"].to_string(), draft["basePlanRevision"].as_i64().ok_or_else(|| missing_field("basePlanRevision"))?, draft["inputSnapshotHash"].as_str().ok_or_else(|| missing_field("inputSnapshotHash"))?, draft["draftRevision"].as_i64().ok_or_else(|| missing_field("draftRevision"))?, draft["status"].as_str().ok_or_else(|| missing_field("status"))?, draft["createdAt"].as_str().ok_or_else(|| missing_field("createdAt"))?, draft["updatedAt"].as_str().ok_or_else(|| missing_field("updatedAt"))?],
+        ).map_err(database_error)?;
+        Ok(draft.clone())
+    }
+
+    pub fn list_plan_drafts(&self, owner_id: &str) -> Result<Vec<Value>> {
+        let mut statement = self.connection.prepare("SELECT id, data, base_plan_revision, input_snapshot_hash, draft_revision, status, committed_plan_revision, created_at, updated_at FROM plan_drafts WHERE owner_id=?1 AND status='open' ORDER BY updated_at DESC").map_err(database_error)?;
+        let rows = statement
+            .query_map(params![owner_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, i64>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, Option<i64>>(6)?,
+                    row.get::<_, String>(7)?,
+                    row.get::<_, String>(8)?,
+                ))
+            })
+            .map_err(database_error)?;
+        rows.map(|row| { let (id,data,base,snapshot,revision,status,committed,created,updated)=row.map_err(database_error)?; Ok(json!({"id":id,"ownerId":owner_id,"data":parse_json_column(&data)?,"basePlanRevision":base,"inputSnapshotHash":snapshot,"draftRevision":revision,"status":status,"committedPlanRevision":committed,"createdAt":created,"updatedAt":updated})) }).collect()
+    }
+
+    pub fn get_plan_draft(&self, draft_id: &str, owner_id: &str) -> Result<Option<Value>> {
+        let row = self.connection.query_row(
+            "SELECT data, base_plan_revision, input_snapshot_hash, draft_revision, status, committed_plan_revision, created_at, updated_at FROM plan_drafts WHERE id=?1 AND owner_id=?2",
+            params![draft_id, owner_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?, row.get::<_, String>(2)?, row.get::<_, i64>(3)?, row.get::<_, String>(4)?, row.get::<_, Option<i64>>(5)?, row.get::<_, String>(6)?, row.get::<_, String>(7)?)),
+        ).optional().map_err(database_error)?;
+        row.map(|(data, base, snapshot, revision, status, committed, created, updated)| Ok(json!({"id":draft_id,"ownerId":owner_id,"data":parse_json_column(&data)?,"basePlanRevision":base,"inputSnapshotHash":snapshot,"draftRevision":revision,"status":status,"committedPlanRevision":committed,"createdAt":created,"updatedAt":updated}))).transpose()
+    }
+
+    pub fn list_plan_draft_weeks(&self, draft_id: &str) -> Result<Vec<Value>> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT data FROM plan_draft_weeks WHERE draft_id=?1 ORDER BY week_number")
+            .map_err(database_error)?;
+        let rows = statement
+            .query_map(params![draft_id], |row| row.get::<_, String>(0))
+            .map_err(database_error)?;
+        rows.map(|row| parse_json_column(&row.map_err(database_error)?))
+            .collect()
+    }
+
+    pub fn save_plan_draft_week(
+        &self,
+        draft_id: &str,
+        owner_id: &str,
+        expected_revision: i64,
+        week: &Value,
+    ) -> Result<Value> {
+        self.transaction(&mut || {
+            let draft = self.get_plan_draft(draft_id, owner_id)?.ok_or_else(|| AthriaError::new(AthriaErrorCode::DraftNotFound, "DRAFT_NOT_FOUND"))?;
+            if draft["status"] != "open" { return Err(AthriaError::new(AthriaErrorCode::DraftNotFound, "The plan draft is no longer editable.")); }
+            if draft["draftRevision"].as_i64() != Some(expected_revision) { return Err(AthriaError::new(AthriaErrorCode::DraftRevisionConflict, "DRAFT_REVISION_CONFLICT")); }
+            let week_number = week["weekNumber"].as_i64().ok_or_else(|| missing_field("weekNumber"))?;
+            self.connection.execute("INSERT INTO plan_draft_weeks(draft_id, week_number, data) VALUES (?1, ?2, ?3) ON CONFLICT(draft_id, week_number) DO UPDATE SET data=excluded.data", params![draft_id, week_number, week.to_string()]).map_err(database_error)?;
+            let revision = expected_revision + 1;
+            self.connection.execute("UPDATE plan_drafts SET draft_revision=?3, updated_at=?4 WHERE id=?1 AND owner_id=?2", params![draft_id, owner_id, revision, self.now()]).map_err(database_error)?;
+            self.get_plan_draft(draft_id, owner_id)?.ok_or_else(|| AthriaError::new(AthriaErrorCode::DraftNotFound, "DRAFT_NOT_FOUND"))
+        })
+    }
+
+    pub fn set_plan_draft_status(
+        &self,
+        draft_id: &str,
+        owner_id: &str,
+        expected_revision: i64,
+        status: &str,
+        committed_plan_revision: Option<i64>,
+        commit_result: Option<&Value>,
+    ) -> Result<Value> {
+        let changed = self.connection.execute("UPDATE plan_drafts SET status=?4, committed_plan_revision=?5, data=COALESCE(?6, data), updated_at=?7 WHERE id=?1 AND owner_id=?2 AND draft_revision=?3 AND status='open'", params![draft_id, owner_id, expected_revision, status, committed_plan_revision, commit_result.map(Value::to_string), self.now()]).map_err(database_error)?;
+        if changed == 0 {
+            return Err(AthriaError::new(
+                AthriaErrorCode::DraftRevisionConflict,
+                "DRAFT_REVISION_CONFLICT",
+            ));
+        }
+        self.get_plan_draft(draft_id, owner_id)?
+            .ok_or_else(|| AthriaError::new(AthriaErrorCode::DraftNotFound, "DRAFT_NOT_FOUND"))
     }
 
     /// Upserts the plan after an optimistic revision check, mirroring
@@ -1311,7 +1409,42 @@ mod tests {
     }
 
     #[test]
-    fn rejects_databases_from_unsupported_schema_versions() {
+    fn plan_drafts_survive_database_reopen() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("draft.sqlite3");
+        let draft = json!({
+            "id": "draft-1", "ownerId": DEFAULT_OWNER_ID, "data": {"title":"Draft"},
+            "basePlanRevision": 0, "inputSnapshotHash": "snapshot", "draftRevision": 0,
+            "status": "open", "createdAt": "2026-09-24T00:00:00.000Z", "updatedAt": "2026-09-24T00:00:00.000Z"
+        });
+        {
+            let store = SqliteStore::open(&path).unwrap();
+            store.create_plan_draft(&draft).unwrap();
+            store
+                .save_plan_draft_week(
+                    "draft-1",
+                    DEFAULT_OWNER_ID,
+                    0,
+                    &json!({"weekNumber":1,"sessions":[]}),
+                )
+                .unwrap();
+        }
+        let reopened = SqliteStore::open(&path).unwrap();
+        assert_eq!(
+            reopened
+                .get_plan_draft("draft-1", DEFAULT_OWNER_ID)
+                .unwrap()
+                .unwrap()["draftRevision"],
+            1
+        );
+        assert_eq!(
+            reopened.list_plan_draft_weeks("draft-1").unwrap(),
+            vec![json!({"weekNumber":1,"sessions":[]})]
+        );
+    }
+
+    #[test]
+    fn migrates_v24_and_rejects_other_unsupported_schema_versions() {
         let directory = tempfile::tempdir().unwrap();
 
         let older = directory.path().join("older.sqlite3");
@@ -1327,10 +1460,19 @@ mod tests {
             AthriaErrorCode::SchemaVersionUnsupported
         );
 
+        let v24 = directory.path().join("v24.sqlite3");
+        {
+            let store = SqliteStore::open(&v24).unwrap();
+            store.connection.execute_batch("DROP INDEX plan_drafts_owner_status; DROP TABLE plan_draft_weeks; DROP TABLE plan_drafts; DELETE FROM athria_migrations WHERE version = 25;").unwrap();
+        }
+        let migrated = SqliteStore::open(&v24).unwrap();
+        assert_eq!(migrated.schema_version().unwrap(), 25);
+        assert!(migrated.table_exists("plan_drafts").unwrap());
+
         let newer = directory.path().join("newer.sqlite3");
         {
             let store = SqliteStore::open(&newer).unwrap();
-            store.connection.execute("INSERT INTO athria_migrations(version, applied_at) VALUES (25, CURRENT_TIMESTAMP)", []).unwrap();
+            store.connection.execute("INSERT INTO athria_migrations(version, applied_at) VALUES (26, CURRENT_TIMESTAMP)", []).unwrap();
         }
         assert_eq!(
             SqliteStore::open(&newer).unwrap_err().code(),

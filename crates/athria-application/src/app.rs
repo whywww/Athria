@@ -25,8 +25,8 @@ use std::sync::Arc;
 use athria_core::date::{add_days, day_difference, monday_weekday};
 use athria_core::schema::{
     PersonalInformationWrite, merge_profile, parse_current_plan, parse_current_plan_write,
-    parse_next_training_day_write, parse_personal_information, parse_planned_session,
-    parse_planned_session_action, parse_profile, parse_profile_update,
+    parse_next_training_day_write, parse_personal_information, parse_plan_week,
+    parse_planned_session, parse_planned_session_action, parse_profile, parse_profile_update,
     parse_session_template_create, parse_session_template_update, parse_training_session,
     parse_wellness_patch, parse_wellness_record, template_variables,
 };
@@ -390,9 +390,18 @@ fn blocker_failure_message(validation: &PlanValidation) -> String {
         format!(" ({})", reasons.join(", "))
     };
     format!(
-        "Plan has {} blocking issue(s){suffix}. Call validate_current_plan for the full report.",
+        "Plan has {} blocking issue(s){suffix}. Validate the complete plan draft for the full report.",
         failed.len()
     )
+}
+
+fn blocker_summary(validation: &PlanValidation) -> Value {
+    json!({
+        "valid": validation.valid,
+        "blockers": validation.results.iter().filter(|item| item["enforcement"] == "blocker" && matches!(item["status"].as_str(), Some("fail" | "unknown"))).count(),
+        "advisories": validation.results.iter().filter(|item| item["enforcement"] == "advisory").count(),
+        "blockingDataGaps": validation.data_gaps.iter().filter(|item| item["blocking"] == true).count(),
+    })
 }
 
 /// `{ ...session, status, updatedAt }` for the skip/restore occurrences.
@@ -1345,6 +1354,310 @@ impl<S: AthriaStore> AthriaApplication<S> {
     /// `getCurrentPlan()`.
     pub fn get_current_plan(&self) -> Result<Option<Value>> {
         self.store.get_current_plan(&self.owner_id)
+    }
+
+    /// Starts a persisted plan draft. `current_plan` clones the editable plan
+    /// so an agent only needs to replace the weeks it changes.
+    pub fn create_plan_draft(&self, value: &Value) -> Result<Value> {
+        let mode = value
+            .get("mode")
+            .and_then(Value::as_str)
+            .ok_or_else(|| invalid_input("planDraft.mode is required"))?;
+        let mut data = match mode {
+            "new" => value
+                .get("plan")
+                .cloned()
+                .ok_or_else(|| invalid_input("planDraft.plan is required"))?,
+            "current_plan" => self.get_current_plan()?.ok_or_else(|| {
+                failure(
+                    AthriaErrorCode::NoCurrentPlan,
+                    "There is no current plan.",
+                    409,
+                )
+            })?,
+            _ => return Err(invalid_input("planDraft.mode must be new or current_plan")),
+        };
+        let base_revision = self
+            .get_current_plan()?
+            .and_then(|plan| plan["revision"].as_i64())
+            .unwrap_or(0);
+        let object = data
+            .as_object_mut()
+            .ok_or_else(|| invalid_input("planDraft.plan must be an object"))?;
+        object.remove("revision");
+        object.remove("updatedAt");
+        object.remove("expectedRevision");
+        let weeks = object
+            .get_mut("mesocycle")
+            .and_then(Value::as_object_mut)
+            .and_then(|mesocycle| mesocycle.remove("weeks"))
+            .unwrap_or_else(|| Value::Array(Vec::new()));
+        if mode == "new" && !weeks.as_array().is_some_and(Vec::is_empty) {
+            return Err(invalid_input("new plan drafts must not include weeks"));
+        }
+        let timestamp = self.now_iso();
+        let draft = json!({"id":Uuid::new_v4().to_string(),"ownerId":self.owner_id,"data":data,"basePlanRevision":base_revision,"inputSnapshotHash":self.snapshot_hash()?,"draftRevision":0,"status":"open","createdAt":timestamp,"updatedAt":timestamp});
+        let created = self.store.create_plan_draft(&draft)?;
+        for week in weeks.as_array().into_iter().flatten() {
+            self.store.save_plan_draft_week(
+                created["id"].as_str().unwrap(),
+                &self.owner_id,
+                self.store
+                    .get_plan_draft(created["id"].as_str().unwrap(), &self.owner_id)?
+                    .unwrap()["draftRevision"]
+                    .as_i64()
+                    .unwrap(),
+                week,
+            )?;
+        }
+        self.plan_draft_summary(created["id"].as_str().unwrap())
+    }
+
+    fn plan_draft_summary(&self, draft_id: &str) -> Result<Value> {
+        let draft = self
+            .store
+            .get_plan_draft(draft_id, &self.owner_id)?
+            .ok_or_else(|| {
+                failure(
+                    AthriaErrorCode::DraftNotFound,
+                    "The plan draft was not found.",
+                    404,
+                )
+            })?;
+        let duration = draft["data"]["mesocycle"]["durationWeeks"]
+            .as_i64()
+            .unwrap_or(0);
+        let existing: Vec<i64> = self
+            .store
+            .list_plan_draft_weeks(draft_id)?
+            .iter()
+            .filter_map(|week| week["weekNumber"].as_i64())
+            .collect();
+        let missing: Vec<i64> = (1..=duration)
+            .filter(|week| !existing.contains(week))
+            .collect();
+        Ok(
+            json!({"draftId":draft["id"],"draftRevision":draft["draftRevision"],"basePlanRevision":draft["basePlanRevision"],"inputSnapshotHash":draft["inputSnapshotHash"],"status":draft["status"],"existingWeekNumbers":existing,"missingWeekNumbers":missing,"createdAt":draft["createdAt"],"updatedAt":draft["updatedAt"]}),
+        )
+    }
+
+    pub fn list_plan_drafts(&self) -> Result<Vec<Value>> {
+        self.store
+            .list_plan_drafts(&self.owner_id)?
+            .into_iter()
+            .map(|draft| self.plan_draft_summary(draft["id"].as_str().unwrap()))
+            .collect()
+    }
+
+    pub fn get_plan_draft(&self, draft_id: &str, week_number: Option<i64>) -> Result<Value> {
+        let summary = self.plan_draft_summary(draft_id)?;
+        if let Some(number) = week_number {
+            let week = self
+                .store
+                .list_plan_draft_weeks(draft_id)?
+                .into_iter()
+                .find(|week| week["weekNumber"].as_i64() == Some(number))
+                .ok_or_else(|| {
+                    failure(
+                        AthriaErrorCode::PlanWeekNotFound,
+                        "The draft week was not found.",
+                        404,
+                    )
+                })?;
+            Ok(json!({"summary":summary,"week":week}))
+        } else {
+            Ok(summary)
+        }
+    }
+
+    pub fn upsert_plan_draft_week(
+        &self,
+        draft_id: &str,
+        expected_revision: i64,
+        week: &Value,
+    ) -> Result<Value> {
+        let draft = self
+            .store
+            .get_plan_draft(draft_id, &self.owner_id)?
+            .ok_or_else(|| {
+                failure(
+                    AthriaErrorCode::DraftNotFound,
+                    "The plan draft was not found.",
+                    404,
+                )
+            })?;
+        if draft["status"] != "open" {
+            return Err(failure(
+                AthriaErrorCode::DraftNotFound,
+                "The plan draft is no longer editable.",
+                404,
+            ));
+        }
+        let week = parse_plan_week(week)?;
+        let duration = draft["data"]["mesocycle"]["durationWeeks"]
+            .as_i64()
+            .unwrap_or(0);
+        let week_number = week["weekNumber"].as_i64().unwrap_or(0);
+        if !(1..=duration).contains(&week_number) {
+            return Err(invalid_input(
+                "week.weekNumber is outside the draft mesocycle",
+            ));
+        }
+        let start = draft["data"]["effectiveStartDate"]
+            .as_str()
+            .unwrap_or_default();
+        for session in week["sessions"].as_array().into_iter().flatten() {
+            let date = session["scheduledDate"].as_str().unwrap_or_default();
+            let elapsed = day_difference(start, date);
+            if elapsed < 0 || elapsed / 7 + 1 != week_number {
+                return Err(invalid_input(
+                    "session date must fall inside its draft week",
+                ));
+            }
+        }
+        self.store
+            .save_plan_draft_week(draft_id, &self.owner_id, expected_revision, &week)?;
+        self.plan_draft_summary(draft_id)
+    }
+
+    fn assembled_plan_draft(
+        &self,
+        draft_id: &str,
+        expected_revision: i64,
+        snapshot_hash: &str,
+    ) -> Result<Value> {
+        let draft = self
+            .store
+            .get_plan_draft(draft_id, &self.owner_id)?
+            .ok_or_else(|| {
+                failure(
+                    AthriaErrorCode::DraftNotFound,
+                    "The plan draft was not found.",
+                    404,
+                )
+            })?;
+        let mut plan = draft["data"].clone();
+        plan["mesocycle"]["weeks"] = Value::Array(self.store.list_plan_draft_weeks(draft_id)?);
+        plan["expectedRevision"] = Value::from(expected_revision);
+        plan["inputSnapshotHash"] = Value::String(snapshot_hash.to_owned());
+        Ok(plan)
+    }
+
+    pub fn validate_plan_draft(&self, draft_id: &str) -> Result<PlanValidation> {
+        let draft = self
+            .store
+            .get_plan_draft(draft_id, &self.owner_id)?
+            .ok_or_else(|| {
+                failure(
+                    AthriaErrorCode::DraftNotFound,
+                    "The plan draft was not found.",
+                    404,
+                )
+            })?;
+        let plan = self.assembled_plan_draft(
+            draft_id,
+            draft["basePlanRevision"].as_i64().unwrap_or(0),
+            draft["inputSnapshotHash"].as_str().unwrap_or(""),
+        )?;
+        let duration = plan["mesocycle"]["durationWeeks"].as_i64().unwrap_or(0);
+        let numbers: HashSet<i64> = self
+            .store
+            .list_plan_draft_weeks(draft_id)?
+            .iter()
+            .filter_map(|week| week["weekNumber"].as_i64())
+            .collect();
+        if !(1..=duration).all(|number| numbers.contains(&number)) {
+            return Err(failure(
+                AthriaErrorCode::DraftIncomplete,
+                "The plan draft is missing one or more weeks.",
+                409,
+            ));
+        }
+        self.validate_current_plan(&plan)
+    }
+
+    pub fn commit_plan_draft(
+        &self,
+        draft_id: &str,
+        expected_draft_revision: i64,
+        expected_plan_revision: i64,
+        input_snapshot_hash: &str,
+        confirmed: bool,
+    ) -> Result<Value> {
+        if !confirmed {
+            return Err(invalid_input("commitPlanDraft.confirmed: expected true"));
+        }
+        let draft = self
+            .store
+            .get_plan_draft(draft_id, &self.owner_id)?
+            .ok_or_else(|| {
+                failure(
+                    AthriaErrorCode::DraftNotFound,
+                    "The plan draft was not found.",
+                    404,
+                )
+            })?;
+        if draft["status"] == "committed" {
+            let mut replay = draft["data"].clone();
+            replay["idempotentReplay"] = Value::Bool(true);
+            return Ok(replay);
+        }
+        if draft["draftRevision"].as_i64() != Some(expected_draft_revision) {
+            return Err(failure(
+                AthriaErrorCode::DraftRevisionConflict,
+                "The plan draft changed. Refresh and try again.",
+                409,
+            ));
+        }
+        if draft["basePlanRevision"].as_i64() != Some(expected_plan_revision) {
+            return Err(failure(
+                AthriaErrorCode::PlanRevisionConflict,
+                "The current plan changed since this draft was created. Create a fresh draft and rebase the changes.",
+                409,
+            ));
+        }
+        let validation = self.validate_plan_draft(draft_id)?;
+        let summary = blocker_summary(&validation);
+        let plan =
+            self.assembled_plan_draft(draft_id, expected_plan_revision, input_snapshot_hash)?;
+        let mut commit_result = None;
+        self.store.transaction(&mut || {
+            let saved = self
+                .save_current_plan(&plan)
+                .map_err(|error| match error.code() {
+                    AthriaErrorCode::RevisionConflict => failure(
+                        AthriaErrorCode::PlanRevisionConflict,
+                        "The current plan changed. Refresh and rebase the draft.",
+                        409,
+                    ),
+                    _ => error,
+                })?;
+            let result = json!({"revision":saved["plan"]["revision"],"impact":saved["impact"],"blockerSummary":summary,"idempotentReplay":false});
+            self.store.set_plan_draft_status(
+                draft_id,
+                &self.owner_id,
+                expected_draft_revision,
+                "committed",
+                saved["plan"]["revision"].as_i64(),
+                Some(&result),
+            )?;
+            commit_result = Some(result);
+            Ok(())
+        })?;
+        Ok(commit_result.expect("commit transaction sets result"))
+    }
+
+    pub fn discard_plan_draft(&self, draft_id: &str, expected_revision: i64) -> Result<Value> {
+        self.store
+            .set_plan_draft_status(
+                draft_id,
+                &self.owner_id,
+                expected_revision,
+                "discarded",
+                None,
+                None,
+            )
+            .map(|_| json!({"draftId":draft_id,"discarded":true}))
     }
 
     /// `assertTemplateReferences`: every referenced session template must

@@ -15,6 +15,19 @@ CREATE TABLE connection_sync_state (owner_id TEXT NOT NULL, source TEXT NOT NULL
 
 CREATE TABLE current_mesocycles (owner_id TEXT PRIMARY KEY, data TEXT NOT NULL, revision INTEGER NOT NULL, updated_at TEXT NOT NULL);
 
+CREATE TABLE plan_drafts (
+          id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, data TEXT NOT NULL,
+          base_plan_revision INTEGER NOT NULL, input_snapshot_hash TEXT NOT NULL,
+          draft_revision INTEGER NOT NULL, status TEXT NOT NULL,
+          committed_plan_revision INTEGER, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        );
+
+CREATE TABLE plan_draft_weeks (
+          draft_id TEXT NOT NULL, week_number INTEGER NOT NULL, data TEXT NOT NULL,
+          PRIMARY KEY(draft_id, week_number),
+          FOREIGN KEY(draft_id) REFERENCES plan_drafts(id) ON DELETE CASCADE
+        );
+
 CREATE TABLE import_batches (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, source TEXT NOT NULL, content_hash TEXT NOT NULL, file_name TEXT NOT NULL, parser_version TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL, created_at TEXT NOT NULL);
 
 CREATE TABLE plan_workout_matches (
@@ -85,6 +98,8 @@ CREATE UNIQUE INDEX plan_matches_owner_plan ON plan_workout_matches(owner_id,pla
 CREATE UNIQUE INDEX plan_matches_owner_workout ON plan_workout_matches(owner_id,training_session_id);
 
 CREATE INDEX planned_session_events_owner_session ON planned_session_events(owner_id,planned_session_id);
+
+CREATE INDEX plan_drafts_owner_status ON plan_drafts(owner_id, status, updated_at DESC);
 
 CREATE INDEX session_sources_canonical ON training_session_sources(training_session_id);
 

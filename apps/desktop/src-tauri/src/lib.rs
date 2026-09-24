@@ -4,7 +4,10 @@ use std::{
     fs,
     net::TcpListener,
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{
+        Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 use tauri::{
     AppHandle, Manager, State, WindowEvent,
@@ -874,6 +877,11 @@ fn install_agent_integration(app: AppHandle, agent: String) -> Result<Value, Str
 
 const TRAY_OPEN_ID: &str = "open";
 const TRAY_QUIT_ID: &str = "quit";
+static EXIT_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+fn should_hide_main_window_on_close(window_label: &str, exit_requested: bool) -> bool {
+    window_label == "main" && !exit_requested
+}
 
 fn show_main_window(app: &AppHandle) {
     let Some(window) = app.get_webview_window("main") else {
@@ -896,7 +904,10 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
             TRAY_OPEN_ID => show_main_window(app),
-            TRAY_QUIT_ID => app.exit(0),
+            TRAY_QUIT_ID => {
+                EXIT_REQUESTED.store(true, Ordering::SeqCst);
+                app.exit(0);
+            }
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
@@ -1146,8 +1157,10 @@ pub fn run() -> i32 {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if window.label() == "main"
-                && let WindowEvent::CloseRequested { api, .. } = event
+            if should_hide_main_window_on_close(
+                window.label(),
+                EXIT_REQUESTED.load(Ordering::SeqCst),
+            ) && let WindowEvent::CloseRequested { api, .. } = event
             {
                 api.prevent_close();
                 let _ = window.hide();
@@ -1166,8 +1179,9 @@ pub fn run() -> i32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        command_json, extract_xunji_api_key, mcp_stdio_payload, new_runtime_token, read_config_from,
-        simplify_path, validate_new_profile_target, write_config_to,
+        command_json, extract_xunji_api_key, mcp_stdio_payload, new_runtime_token,
+        read_config_from, should_hide_main_window_on_close, simplify_path,
+        validate_new_profile_target, write_config_to,
     };
     use serde_json::{Value, json};
     use std::path::Path;
@@ -1177,6 +1191,13 @@ mod tests {
         let root = std::env::temp_dir().join(format!("{prefix}-{}", Uuid::new_v4().simple()));
         std::fs::create_dir_all(&root).unwrap();
         root
+    }
+
+    #[test]
+    fn tray_quit_does_not_get_blocked_by_close_to_tray_behavior() {
+        assert!(should_hide_main_window_on_close("main", false));
+        assert!(!should_hide_main_window_on_close("main", true));
+        assert!(!should_hide_main_window_on_close("settings", false));
     }
 
     #[test]

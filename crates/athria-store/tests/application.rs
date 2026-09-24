@@ -9,8 +9,8 @@ use std::sync::Arc;
 
 use athria_application::AthriaApplication;
 use athria_core::{
-    AdjustmentScopePolicy, AdjustmentTrigger, AthriaErrorCode, FixedClock, ReasonCode,
-    RecommendedScope, ReviewStatus, ScopeViolationCode,
+    AdjustmentScopePolicy, AdjustmentTrigger, AthriaErrorCode, EvidenceSeverity, FixedClock,
+    ReasonCode, RecommendedScope, ReviewStatus, ScopeViolationCode,
 };
 use athria_store::SqliteStore;
 use serde_json::{Value, json};
@@ -1352,6 +1352,84 @@ fn monday_plan_write(expected_revision: i64) -> Value {
     )
 }
 
+#[test]
+fn plan_drafts_persist_weeks_validate_and_commit_atomically() {
+    let app = test_app();
+    patch_profile(
+        &app,
+        json!({ "trainingRhythm": { "kind": "fixed_week", "days": [0] } }),
+    );
+    let complete = monday_plan_write(0);
+    let weeks = complete["mesocycle"]["weeks"].as_array().unwrap().clone();
+    let mut metadata = complete.clone();
+    metadata["mesocycle"]["weeks"] = json!([]);
+    let created = app
+        .create_plan_draft(&json!({ "mode": "new", "plan": metadata }))
+        .unwrap();
+    let id = created["draftId"].as_str().unwrap();
+    assert_eq!(created["missingWeekNumbers"], json!([1, 2]));
+
+    let first = app.upsert_plan_draft_week(id, 0, &weeks[0]).unwrap();
+    assert_eq!(first["draftRevision"], 1);
+    let stale = app.upsert_plan_draft_week(id, 0, &weeks[1]).unwrap_err();
+    assert_eq!(stale.code(), AthriaErrorCode::DraftRevisionConflict);
+    let incomplete = app.validate_plan_draft(id).unwrap_err();
+    assert_eq!(incomplete.code(), AthriaErrorCode::DraftIncomplete);
+
+    let ready = app.upsert_plan_draft_week(id, 1, &weeks[1]).unwrap();
+    assert_eq!(ready["missingWeekNumbers"], json!([]));
+    assert!(app.validate_plan_draft(id).unwrap().valid);
+    let snapshot = app.snapshot_hash().unwrap();
+    let committed = app.commit_plan_draft(id, 2, 0, &snapshot, true).unwrap();
+    assert_eq!(committed["revision"], 1);
+    assert_eq!(
+        app.get_current_plan().unwrap().unwrap()["mesocycle"]["weeks"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        app.commit_plan_draft(id, 2, 0, &snapshot, true).unwrap()["idempotentReplay"],
+        true
+    );
+    assert_eq!(
+        app.upsert_plan_draft_week(id, 2, &weeks[0])
+            .unwrap_err()
+            .code(),
+        AthriaErrorCode::DraftNotFound
+    );
+}
+
+#[test]
+fn current_plan_drafts_clone_weeks_and_discard_without_changing_plan() {
+    let app = test_app();
+    patch_profile(
+        &app,
+        json!({ "trainingRhythm": { "kind": "fixed_week", "days": [0] } }),
+    );
+    app.save_current_plan(&monday_plan_write(0)).unwrap();
+    let created = app
+        .create_plan_draft(&json!({ "mode": "current_plan" }))
+        .unwrap();
+    assert_eq!(created["existingWeekNumbers"], json!([1, 2]));
+    assert_eq!(created["draftRevision"], 2);
+    let id = created["draftId"].as_str().unwrap();
+    assert_eq!(app.list_plan_drafts().unwrap().len(), 1);
+    assert_eq!(
+        app.get_plan_draft(id, Some(1)).unwrap()["week"]["weekNumber"],
+        1
+    );
+    app.discard_plan_draft(id, 2).unwrap();
+    assert_eq!(app.get_current_plan().unwrap().unwrap()["revision"], 1);
+    assert_eq!(
+        app.upsert_plan_draft_week(id, 2, &plan_week(1, vec![]))
+            .unwrap_err()
+            .code(),
+        AthriaErrorCode::DraftNotFound
+    );
+}
+
 fn adjustment_scope_policy(
     app: &AthriaApplication<SqliteStore>,
     recommended_scope: RecommendedScope,
@@ -1406,6 +1484,40 @@ fn profile_change_review_reuses_validation_and_refreshes_freshness() {
     );
     assert_ne!(before.profile_hash, after.profile_hash);
     assert_ne!(before.input_snapshot_hash, after.input_snapshot_hash);
+}
+
+#[test]
+fn compatible_flexible_profile_change_is_a_watch_not_a_required_review() {
+    let app = test_app();
+    patch_profile(
+        &app,
+        json!({ "trainingRhythm": { "kind": "fixed_week", "days": [0] } }),
+    );
+    app.save_current_plan(&monday_plan_write(0)).unwrap();
+
+    patch_profile(
+        &app,
+        json!({
+            "trainingRhythm": {
+                "kind": "flexible_week",
+                "targetDaysPerWeek": 1,
+                "minDaysPerWeek": 1,
+                "maxDaysPerWeek": 2
+            }
+        }),
+    );
+    let review = app
+        .review_current_plan_for_adjustment(AdjustmentTrigger::ProfileChange)
+        .unwrap();
+
+    assert_eq!(review.review_status, ReviewStatus::Watch);
+    assert_eq!(review.recommended_scope, RecommendedScope::None);
+    assert!(review.hard_overrides.is_empty());
+    assert_eq!(review.reasons[0].severity, EvidenceSeverity::Soft);
+    assert_eq!(
+        review.reasons[0].reason_code,
+        ReasonCode::ProfileTrainingRhythmConflict
+    );
 }
 
 #[test]
@@ -1618,7 +1730,7 @@ fn saved_plans_materialize_weekly_occurrences_with_impact_and_revision() {
     assert_eq!(rejected.code(), AthriaErrorCode::PlanHasBlockers);
     assert_eq!(
         rejected.message(),
-        "Plan has 1 blocking issue(s) (PROFILE_TRAINING_RHYTHM:fail). Call validate_current_plan for the full report."
+        "Plan has 1 blocking issue(s) (PROFILE_TRAINING_RHYTHM:fail). Validate the complete plan draft for the full report."
     );
     assert_eq!(rejected.status(), 409);
     assert!(

@@ -1,6 +1,10 @@
 {
-  "get_athlete_profile": { "ownerId": "local-user" },
-  "get_training_state": { "ownerId": "local-user" },
+  "get_athlete_profile": {
+    "ownerId": "local-user"
+  },
+  "get_training_state": {
+    "ownerId": "local-user"
+  },
   "list_training_sessions": [],
   "list_wellness": [],
   "get_wellness_day": {},
@@ -16,14 +20,12 @@
   "calculate_heart_rate_zones": {},
   "evaluate_rpe_autoregulation": {},
   "evaluate_progression": {},
-  "validate_current_plan": {},
   "get_next_training_day": {},
   "list_planned_sessions": [],
   "validate_next_training_day_sessions": {},
   "create_session_template": {},
   "update_session_template": {},
   "delete_session_template": {},
-  "save_current_plan": {},
   "save_next_training_day_sessions": {},
   "update_planned_session": {},
   "record_training_session": {},
@@ -34,5 +36,15 @@
   "update_wellness": {},
   "update_athlete_profile": {},
   "get_plan_adjustment_review": {},
-  "report_skill_version": { "recorded": true, "skill": "athria-coach" }
+  "report_skill_version": {
+    "recorded": true,
+    "skill": "athria-coach"
+  },
+  "create_plan_draft": {},
+  "list_plan_drafts": {},
+  "get_plan_draft": {},
+  "upsert_plan_draft_week": {},
+  "validate_plan_draft": {},
+  "commit_plan_draft": {},
+  "discard_plan_draft": {}
 }

@@ -25,17 +25,22 @@
     "estimate_1rm",
     "calculate_heart_rate_zones",
     "evaluate_progression",
-    "validate_current_plan",
+    "create_plan_draft",
+    "list_plan_drafts",
+    "get_plan_draft",
+    "upsert_plan_draft_week",
+    "validate_plan_draft",
+    "commit_plan_draft",
+    "discard_plan_draft",
     "create_session_template",
     "update_session_template",
-    "delete_session_template",
-    "save_current_plan"
+    "delete_session_template"
   ],
-  "workflow": ["review", "read-targeted-evidence", "draft-complete-plan", "validate", "explain", "approve", "freshness-check", "save-current-plan"],
+  "workflow": ["review", "read-targeted-evidence", "create-or-resume-draft", "upsert-weeks", "validate", "explain", "approve", "freshness-check", "commit-plan-draft"],
   "outputSchema": "CurrentPlan",
   "approvalPoints": [
     "Before creating, updating, or deleting a session template",
-    "Before save_current_plan"
+    "Before commit_plan_draft"
   ],
   "safetyRules": [
     "Do not infer missing health or recovery data.",

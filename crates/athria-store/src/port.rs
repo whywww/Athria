@@ -169,6 +169,46 @@ impl AthriaStore for SqliteStore {
     fn get_current_plan(&self, owner_id: &str) -> Result<Option<Value>> {
         SqliteStore::get_current_plan(self, owner_id)
     }
+    fn create_plan_draft(&self, draft: &Value) -> Result<Value> {
+        SqliteStore::create_plan_draft(self, draft)
+    }
+    fn list_plan_drafts(&self, owner_id: &str) -> Result<Vec<Value>> {
+        SqliteStore::list_plan_drafts(self, owner_id)
+    }
+    fn get_plan_draft(&self, draft_id: &str, owner_id: &str) -> Result<Option<Value>> {
+        SqliteStore::get_plan_draft(self, draft_id, owner_id)
+    }
+    fn list_plan_draft_weeks(&self, draft_id: &str) -> Result<Vec<Value>> {
+        SqliteStore::list_plan_draft_weeks(self, draft_id)
+    }
+    fn save_plan_draft_week(
+        &self,
+        draft_id: &str,
+        owner_id: &str,
+        expected_revision: i64,
+        week: &Value,
+    ) -> Result<Value> {
+        SqliteStore::save_plan_draft_week(self, draft_id, owner_id, expected_revision, week)
+    }
+    fn set_plan_draft_status(
+        &self,
+        draft_id: &str,
+        owner_id: &str,
+        expected_revision: i64,
+        status: &str,
+        committed_plan_revision: Option<i64>,
+        commit_result: Option<&Value>,
+    ) -> Result<Value> {
+        SqliteStore::set_plan_draft_status(
+            self,
+            draft_id,
+            owner_id,
+            expected_revision,
+            status,
+            committed_plan_revision,
+            commit_result,
+        )
+    }
 
     /// The `deletedSessionIds` / `updatedSessions` arguments are ignored, like
     /// `AthriaRepository.saveCurrentPlan`: the plan document is the only input

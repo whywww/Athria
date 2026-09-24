@@ -85,7 +85,8 @@ describe("Athria Skill routing and least privilege", () => {
   });
 
   it("keeps cycle writes in Planner and immediate execution writes in Workout", () => {
-    expect(planner.allowedTools).toEqual(expect.arrayContaining(["save_current_plan", "validate_current_plan"]));
+    expect(planner.allowedTools).toEqual(expect.arrayContaining(["create_plan_draft", "upsert_plan_draft_week", "validate_plan_draft", "commit_plan_draft"]));
+    expect(planner.allowedTools).not.toEqual(expect.arrayContaining(["save_current_plan", "validate_current_plan"]));
     expect(planner.allowedTools).not.toEqual(expect.arrayContaining(["update_athlete_profile", "update_planned_session", "record_training_session"]));
     expect(workout.allowedTools).toEqual(expect.arrayContaining(["get_next_training_day", "update_planned_session", "record_training_session"]));
     expect(workout.allowedTools).not.toContain("save_current_plan");

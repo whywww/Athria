@@ -528,6 +528,16 @@ fn assess_profile_change(
     hard_overrides: &mut Vec<HardOverride>,
 ) {
     for mismatch in &facts.constraint_mismatches {
+        if mismatch.kind == ProfileConstraintKind::TrainingRhythm && !mismatch.structural {
+            reasons.push(reason(
+                ReasonCode::ProfileTrainingRhythmConflict,
+                EvidenceSeverity::Soft,
+                EvidenceAxis::ProfileMismatch,
+                mismatch.evidence_refs.clone(),
+                RecommendedScope::None,
+            ));
+            continue;
+        }
         let (reason_code, default_scope) = match mismatch.kind {
             ProfileConstraintKind::TrainingRhythm => (
                 ReasonCode::ProfileTrainingRhythmConflict,
@@ -786,12 +796,27 @@ mod tests {
     }
 
     #[test]
-    fn training_rhythm_conflict_requires_a_plan_review() {
+    fn compatible_training_rhythm_drift_is_only_a_watch() {
         let mut facts = unchanged_profile();
         facts.constraint_mismatches = vec![ProfileConstraintMismatch {
             kind: ProfileConstraintKind::TrainingRhythm,
             evidence_refs: vec!["PROFILE_TRAINING_RHYTHM".to_owned()],
             structural: false,
+        }];
+        let assessment = assess_adjustment(&profile_input(facts));
+        assert_eq!(assessment.review_status, ReviewStatus::Watch);
+        assert_eq!(assessment.recommended_scope, RecommendedScope::None);
+        assert!(assessment.hard_overrides.is_empty());
+        assert_eq!(assessment.reasons[0].severity, EvidenceSeverity::Soft);
+    }
+
+    #[test]
+    fn structural_training_rhythm_conflict_requires_a_plan_review() {
+        let mut facts = unchanged_profile();
+        facts.constraint_mismatches = vec![ProfileConstraintMismatch {
+            kind: ProfileConstraintKind::TrainingRhythm,
+            evidence_refs: vec!["PROFILE_TRAINING_RHYTHM".to_owned()],
+            structural: true,
         }];
         let assessment = assess_adjustment(&profile_input(facts));
         assert_eq!(assessment.review_status, ReviewStatus::ReviewRequired);

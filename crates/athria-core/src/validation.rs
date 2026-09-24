@@ -147,13 +147,6 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
             }
         }
         scheduled_dates.sort();
-        let mut expected_dates: Vec<String> = schedule_occurrences
-            .iter()
-            .map(|occurrence| occurrence.scheduled_date.clone())
-            .collect();
-        expected_dates.sort();
-        let same_dates = scheduled_dates == expected_dates;
-
         let rhythm = field(profile, "trainingRhythm");
         let rhythm_kind = string_field(rhythm, "kind");
         let rhythm_parameters_match = match rhythm_kind {
@@ -184,6 +177,20 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
             }
         };
         let weekly_rhythm_matches = match rhythm_kind {
+            "fixed_week" => {
+                let mut profile_days: Vec<i64> = array_field(rhythm, "days")
+                    .iter()
+                    .filter_map(Value::as_i64)
+                    .collect();
+                profile_days.sort_unstable();
+                let mut actual_days: Vec<i64> = scheduled_dates
+                    .iter()
+                    .map(|date| date::monday_weekday(date) as i64)
+                    .collect();
+                actual_days.sort_unstable();
+                actual_days.dedup();
+                actual_days == profile_days
+            }
             "flexible_week" => {
                 let min_days = int_field(rhythm, "minDaysPerWeek");
                 let max_days = int_field(rhythm, "maxDaysPerWeek");
@@ -205,7 +212,7 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
                         .windows(2)
                         .all(|pair| date::day_difference(&pair[0], &pair[1]) == interval_days)
             }
-            _ => same_dates,
+            _ => false,
         };
 
         let mut component_ids: Vec<String> = Vec::new();
@@ -275,10 +282,19 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
             Value::Null,
             "structure",
         ));
+        let (rhythm_enforcement, rhythm_status) = if !weekly_rhythm_matches
+            || (rhythm_kind != "flexible_week" && !rhythm_parameters_match)
+        {
+            ("blocker", "fail")
+        } else if !rhythm_parameters_match {
+            ("advisory", "fail")
+        } else {
+            ("blocker", "pass")
+        };
         results.push(rule(
-            "blocker",
+            rhythm_enforcement,
             "PROFILE_TRAINING_RHYTHM",
-            if rhythm_parameters_match && weekly_rhythm_matches { "pass" } else { "fail" },
+            rhythm_status,
             &[],
             json!({ "profileRhythm": rhythm, "planSchedule": schedule, "scheduledDates": scheduled_dates }),
             &[],
@@ -797,6 +813,34 @@ mod tests {
             .expect("rule must run");
         assert_eq!(advisory["status"], "pass");
         assert_eq!(advisory["enforcement"], "advisory");
+    }
+
+    #[test]
+    fn compatible_flexible_rhythm_metadata_drift_is_advisory() {
+        let draft =
+            json!({ "mesocycle": two_high_session_plan(), "effectiveStartDate": "2026-09-07" });
+        let mut flexible_profile = profile(Value::Null);
+        flexible_profile["trainingRhythm"] = json!({
+            "kind": "flexible_week",
+            "targetDaysPerWeek": 1,
+            "minDaysPerWeek": 1,
+            "maxDaysPerWeek": 2,
+        });
+
+        let validation = validate_plan(
+            &flexible_profile,
+            &draft,
+            "2026-09-17T00:00:00.000Z",
+        );
+
+        assert!(validation.valid);
+        let rhythm = validation
+            .results
+            .iter()
+            .find(|item| item["reasonCode"] == "PROFILE_TRAINING_RHYTHM")
+            .expect("rule must run");
+        assert_eq!(rhythm["status"], "fail");
+        assert_eq!(rhythm["enforcement"], "advisory");
     }
 
     #[test]
