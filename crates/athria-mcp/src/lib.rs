@@ -204,6 +204,9 @@ impl<S: AthriaStore> McpService<S> {
         self.skill_reports = Some(path);
         self
     }
+    pub fn replace_application(&mut self, application: AthriaApplication<S>) {
+        self.application = application;
+    }
     pub fn tools(&self) -> &[Value] {
         &self.contract.tools
     }
@@ -423,6 +426,7 @@ impl<S: AthriaStore> McpService<S> {
 
 struct RmcpServer<S: AthriaStore + Send + 'static> {
     service: Arc<Mutex<McpService<S>>>,
+    refresh: Option<Arc<dyn Fn(&mut McpService<S>) -> Result<(), String> + Send + Sync>>,
     tools: Arc<Vec<Tool>>,
     server_name: Arc<str>,
     server_version: Arc<str>,
@@ -432,6 +436,7 @@ impl<S: AthriaStore + Send + 'static> Clone for RmcpServer<S> {
     fn clone(&self) -> Self {
         Self {
             service: Arc::clone(&self.service),
+            refresh: self.refresh.clone(),
             tools: Arc::clone(&self.tools),
             server_name: Arc::clone(&self.server_name),
             server_version: Arc::clone(&self.server_version),
@@ -440,7 +445,15 @@ impl<S: AthriaStore + Send + 'static> Clone for RmcpServer<S> {
 }
 
 impl<S: AthriaStore + Send + 'static> RmcpServer<S> {
+    #[cfg(any(test, feature = "conformance"))]
     fn new(service: McpService<S>) -> Self {
+        Self::with_refresh(service, None)
+    }
+
+    fn with_refresh(
+        service: McpService<S>,
+        refresh: Option<Arc<dyn Fn(&mut McpService<S>) -> Result<(), String> + Send + Sync>>,
+    ) -> Self {
         let server_name: Arc<str> = service.contract.server["name"]
             .as_str()
             .expect("MCP server name must be a string")
@@ -462,10 +475,24 @@ impl<S: AthriaStore + Send + 'static> RmcpServer<S> {
             .collect();
         Self {
             service: Arc::new(Mutex::new(service)),
+            refresh,
             tools: Arc::new(tools),
             server_name,
             server_version,
         }
+    }
+
+    fn call_named(&self, name: &str, input: Value) -> Result<CallToolResponse, ErrorData> {
+        if self.get_tool(name).is_none() {
+            return Err(ErrorData::invalid_params(format!("Unknown tool: {name}"), None));
+        }
+        let mut service = self.service.lock().expect("MCP service lock must not be poisoned");
+        if let Some(refresh) = &self.refresh {
+            refresh(&mut service).map_err(|error| ErrorData::internal_error(error, None))?;
+        }
+        serde_json::from_value::<CallToolResult>(service.call_result(name, &input))
+            .map(CallToolResponse::from)
+            .map_err(|error| ErrorData::internal_error(error.to_string(), None))
     }
 }
 
@@ -500,22 +527,7 @@ impl<S: AthriaStore + Send + 'static> ServerHandler for RmcpServer<S> {
         request: CallToolRequestParams,
         _context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> impl Future<Output = Result<CallToolResponse, ErrorData>> + Send + '_ {
-        let result = if self.get_tool(&request.name).is_none() {
-            Err(ErrorData::invalid_params(
-                format!("Unknown tool: {}", request.name),
-                None,
-            ))
-        } else {
-            let input = Value::Object(request.arguments.unwrap_or_default());
-            let value = self
-                .service
-                .lock()
-                .expect("MCP service lock must not be poisoned")
-                .call_result(&request.name, &input);
-            serde_json::from_value::<CallToolResult>(value)
-                .map(CallToolResponse::from)
-                .map_err(|error| ErrorData::internal_error(error.to_string(), None))
-        };
+        let result = self.call_named(&request.name, Value::Object(request.arguments.unwrap_or_default()));
         std::future::ready(result)
     }
 }
@@ -574,9 +586,16 @@ fn days(input: &Value, default: i64) -> std::result::Result<i64, ToolError> {
     }
 }
 pub fn serve_stdio<S: AthriaStore + Send + 'static>(service: McpService<S>) -> std::io::Result<()> {
+    serve_stdio_with_refresh(service, None)
+}
+
+pub fn serve_stdio_with_refresh<S: AthriaStore + Send + 'static>(
+    service: McpService<S>,
+    refresh: Option<Arc<dyn Fn(&mut McpService<S>) -> Result<(), String> + Send + Sync>>,
+) -> std::io::Result<()> {
     tokio::runtime::Runtime::new()?.block_on(async move {
         let input = tokio::io::BufReader::new(tokio::io::stdin());
-        let running = RmcpServer::new(service)
+        let running = RmcpServer::with_refresh(service, refresh)
             .serve((
                 filtered_stdio(input, tokio::io::stdout()),
                 tokio::io::stdout(),
@@ -666,10 +685,19 @@ pub fn serve_http<S: AthriaStore + Send + 'static>(
     service: McpService<S>,
     bearer_token: &str,
 ) -> std::io::Result<()> {
+    serve_http_with_refresh(listener, service, bearer_token, None)
+}
+
+pub fn serve_http_with_refresh<S: AthriaStore + Send + 'static>(
+    listener: TcpListener,
+    service: McpService<S>,
+    bearer_token: &str,
+    refresh: Option<Arc<dyn Fn(&mut McpService<S>) -> Result<(), String> + Send + Sync>>,
+) -> std::io::Result<()> {
     let token = Arc::new(bearer_token.to_owned());
     listener.set_nonblocking(true)?;
     tokio::runtime::Runtime::new()?.block_on(async move {
-        let server = RmcpServer::new(service);
+        let server = RmcpServer::with_refresh(service, refresh);
         let config = StreamableHttpServerConfig::default()
             .with_legacy_session_mode(true)
             .with_json_response(true)
@@ -768,6 +796,41 @@ mod tests {
         assert_eq!(profile["ownerId"], "local-user");
         assert!(profile["profileHash"].as_str().is_some());
         assert_eq!(output["structuredContent"]["result"], profile);
+    }
+    #[test]
+    fn existing_mcp_service_uses_replaced_database_on_next_call() {
+        let mut service = service();
+        let next = AthriaApplication::new(SqliteStore::open_in_memory().unwrap());
+        next.update_profile(&json!({
+            "patch": { "preferredName": "New database" },
+            "expectedProfileHash": next.profile_hash().unwrap(),
+            "confirmed": true
+        })).unwrap();
+        service.replace_application(next);
+        let result = service.call_result("get_athlete_profile", &json!({}));
+        assert_eq!(result["structuredContent"]["result"]["preferredName"], "New database");
+    }
+    #[test]
+    fn active_mcp_session_refreshes_before_the_next_tool_call() {
+        let changed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let refresh_flag = Arc::clone(&changed);
+        let server = RmcpServer::with_refresh(service(), Some(Arc::new(move |service| {
+            if refresh_flag.swap(false, std::sync::atomic::Ordering::SeqCst) {
+                let next = AthriaApplication::new(SqliteStore::open_in_memory().unwrap());
+                next.update_profile(&json!({
+                    "patch": { "preferredName": "Switched" },
+                    "expectedProfileHash": next.profile_hash().unwrap(),
+                    "confirmed": true
+                })).unwrap();
+                service.replace_application(next);
+            }
+            Ok(())
+        })));
+        let CallToolResponse::Complete(first) = server.call_named("get_athlete_profile", json!({})).unwrap() else { panic!("expected a completed tool call") };
+        assert_ne!(first.structured_content.unwrap()["result"]["preferredName"], "Switched");
+        changed.store(true, std::sync::atomic::Ordering::SeqCst);
+        let CallToolResponse::Complete(second) = server.call_named("get_athlete_profile", json!({})).unwrap() else { panic!("expected a completed tool call") };
+        assert_eq!(second.structured_content.unwrap()["result"]["preferredName"], "Switched");
     }
     #[test]
     fn every_tool_has_a_valid_contract_result_fixture() {

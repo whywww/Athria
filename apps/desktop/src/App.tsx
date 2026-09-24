@@ -9,7 +9,7 @@ import {
   type AdjustmentReminder, type CalendarSession, type EquipmentCategory, type ImportResult, type NextTrainingDay, type PersonalInformation, type RaceDay, type SyncRange, type TrainingHistorySession, type TrainingHistorySort, type TrainingTaxonomy, type TrainingSummary, type UnitSystem, type WellnessRecord, type XunjiConnectionStatus,
 } from "./view-models";
 import { Card, EmptyState, ErrorBanner, Loading, PrimaryPageHeader, useModalDismiss, weekdays } from "./components";
-import { CurrentPlanPage, NextTrainingDayCard } from "./plan/CurrentPlanPage";
+import { CurrentPlanPage, NextTrainingDayCard, TemplateLibrary } from "./plan/CurrentPlanPage";
 import { localDateForTimezone } from "./plan/view";
 import { OverviewDashboard, overviewDateRange } from "./overview";
 import { domainIconPath } from "./domain-icons";
@@ -444,6 +444,7 @@ export function Timeline() {
 }
 
 export function Backup() {
+  const client = useQueryClient();
   const doctor = useQuery({ queryKey: ["backup-doctor"], queryFn: () => api<DoctorResult>("/api/system/doctor") });
   const vault = useQuery({ queryKey: ["vault-status"], queryFn: getVaultStatus });
   const databasePath = (doctor.data as DoctorResult | undefined)?.databasePath;
@@ -461,7 +462,7 @@ export function Backup() {
   };
   const confirmRestore = async () => {
     if (!preview) return;
-    try { setRestoring(true); setError(undefined); await restoreBackup(preview.path); }
+    try { setRestoring(true); setError(undefined); await restoreBackup(preview.path); await client.cancelQueries(); client.clear(); window.location.reload(); }
     catch (value) { setRestoring(false); setError(value); }
   };
   const chooseProfileDestination = async () => {
@@ -473,7 +474,7 @@ export function Backup() {
   };
   const createProfile = async () => {
     if (!profileTarget) return;
-    try { setCreating(true); setError(undefined); await createNewProfile(profileTarget); }
+    try { setCreating(true); setError(undefined); await createNewProfile(profileTarget); await client.cancelQueries(); client.clear(); window.location.reload(); }
     catch (value) { setCreating(false); setError(value); }
   };
   const openChangePassword = () => { setError(undefined); setPasswordDraft({ currentPassword: "", password: "", confirmation: "" }); setPasswordModal(true); };
@@ -506,15 +507,15 @@ export function Backup() {
             <span><b>{preview.counts.templates}</b><small>templates</small></span>
             <span><b>{preview.counts.plans}</b><small>plans</small></span>
           </div>
-          <p>Athria will open this file as its active database. The current database file is left untouched. Athria will restart to complete the switch.</p>
+          <p>Athria will open this file as its active database. The current database file is left untouched.</p>
           {preview.includesCredentials && <p>This database includes encrypted connections. Athria will ask for its password when it is opened on another computer.</p>}
           <div className="restore-actions">
             <button type="button" className="secondary compact" disabled={restoring} onClick={() => setPreview(undefined)}>Cancel</button>
-            <button type="button" className="compact" disabled={restoring} onClick={() => void confirmRestore()}>{restoring ? "Switching Database…" : "Switch and Restart"}</button>
+            <button type="button" className="compact" disabled={restoring} onClick={() => void confirmRestore()}>{restoring ? "Switching Database…" : "Switch Database"}</button>
           </div>
         </div>}
     {vault.data?.initialized && !vault.data.locked && <div className="section"><div className="section-heading"><div className="section-copy"><h3>Edit Password Settings</h3><p>Change the database password or require it whenever Athria starts.</p></div><div className="section-actions"><button type="button" className="secondary compact" onClick={openChangePassword}>Change Password</button><button type="button" className="secondary compact" disabled={!vault.data.remembered} onClick={() => { setError(undefined); setCurrentPassword(""); setRequireModal(true); }}>{vault.data.remembered ? "Always Require Password" : "Password Required on Startup"}</button></div></div></div>}
-    <div className="section"><div className="section-heading"><div className="section-copy"><h3>Create a New Profile</h3><p>Start fresh from a new empty profile. Athria will switch to it and restart; the current database file is left untouched.</p></div><div className="section-actions"><button type="button" className="secondary compact" disabled={creating} onClick={() => void chooseProfileDestination()}><AppIcon name="plus"/>Create Profile</button></div></div></div>
+    <div className="section"><div className="section-heading"><div className="section-copy"><h3>Create a New Profile</h3><p>Start fresh from a new empty profile. Athria will switch to it without restarting; the current database file is left untouched.</p></div><div className="section-actions"><button type="button" className="secondary compact" disabled={creating} onClick={() => void chooseProfileDestination()}><AppIcon name="plus"/>Create Profile</button></div></div></div>
     {profileTarget && <NewProfileModal target={profileTarget} error={error} busy={creating} onClose={() => setProfileTarget(undefined)} onSubmit={() => void createProfile()}/>}
     {passwordModal && <ChangePasswordModal value={passwordDraft} error={error} busy={changing} onChange={setPasswordDraft} onClose={closeChangePassword} onSubmit={() => void updateVaultPassword()}/>}
     {requireModal && <RequirePasswordModal value={currentPassword} error={error} busy={changing} onChange={setCurrentPassword} onClose={() => { setRequireModal(false); setCurrentPassword(""); setError(undefined); }} onSubmit={() => void requirePassword()}/>}
@@ -549,8 +550,8 @@ export function RequirePasswordModal({ value, error, busy, onChange, onClose, on
 export function NewProfileModal({ target, error, busy, onClose, onSubmit }: { target: string; error: unknown; busy: boolean; onClose: () => void; onSubmit: () => void; }) {
   useModalDismiss(onClose);
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="connection-modal" role="dialog" aria-modal="true" aria-labelledby="new-profile-title">
-    <header><div><h2 id="new-profile-title">Create a New Profile</h2><p>Athria will create an empty database at this location, switch to it, and restart. You will set its database password when it first opens.</p></div><button type="button" className="modal-close" aria-label="Close dialog" onClick={onClose}><AppIcon name="close"/></button></header>
-    <div className="modal-body"><p className="restore-path">{target}</p><ErrorBanner error={error}/><div className="modal-actions"><button type="button" className="secondary" disabled={busy} onClick={onClose}>Cancel</button><button type="button" disabled={busy} onClick={onSubmit}>{busy ? "Creating Profile…" : "Create and Restart"}</button></div></div>
+    <header><div><h2 id="new-profile-title">Create a New Profile</h2><p>Athria will create an empty database at this location and switch to it. You will set its database password when it opens.</p></div><button type="button" className="modal-close" aria-label="Close dialog" onClick={onClose}><AppIcon name="close"/></button></header>
+    <div className="modal-body"><p className="restore-path">{target}</p><ErrorBanner error={error}/><div className="modal-actions"><button type="button" className="secondary" disabled={busy} onClick={onClose}>Cancel</button><button type="button" disabled={busy} onClick={onSubmit}>{busy ? "Creating Profile…" : "Create Profile"}</button></div></div>
   </section></div>;
 }
 
@@ -956,7 +957,10 @@ export function AgentIntegrations() {
 }
 
 export function Settings() {
-  return <div className="settings-page"><PersonalInformationCard/><Card title="System Status" className="system-card" action={<ServiceStatus/>}><p>Athria runs locally and keeps your training data on this device.</p></Card><AgentIntegrations/><Backup/></div>;
+  const [templateLibrary, setTemplateLibrary] = useState(false);
+  const profile = useQuery({ queryKey: ["profile"], queryFn: () => api<AthleteProfile>("/api/profile") });
+  if (templateLibrary) return <TemplateLibrary onBack={() => setTemplateLibrary(false)} preferredName={profile.data?.preferredName}/>;
+  return <div className="settings-page"><PersonalInformationCard/><Card title="Session Templates" className="session-templates-settings" action={<button type="button" className="secondary compact" onClick={() => setTemplateLibrary(true)}>View all templates</button>}><p>Manage reusable workout patterns for your training sessions.</p></Card><Card title="System Status" className="system-card" action={<ServiceStatus/>}><p>Athria runs locally and keeps your training data on this device.</p></Card><AgentIntegrations/><Backup/></div>;
 }
 
 function CopyButton({ label, value }: { label: string; value: string }) {
@@ -1053,10 +1057,10 @@ export function DatabaseSwitchModal({ preview, error, busy, onClose, onSubmit }:
       <div className="restore-confirm">
         <span className="restore-path">{preview.path}</span>
         <div className="restore-summary"><span><b>{preview.counts.workouts}</b><small>workouts</small></span><span><b>{preview.counts.templates}</b><small>templates</small></span><span><b>{preview.counts.plans}</b><small>plans</small></span></div>
-        <p>Athria will switch to this database and restart. The current database file is left untouched.</p>
+        <p>Athria will switch to this database. The current database file is left untouched.</p>
         <ErrorBanner error={error}/>
       </div>
-      <div className="modal-actions"><button type="button" className="secondary" disabled={busy} onClick={onClose}>Cancel</button><button type="button" disabled={busy} onClick={onSubmit}>{busy ? "Switching database…" : "Switch and restart"}</button></div>
+      <div className="modal-actions"><button type="button" className="secondary" disabled={busy} onClick={onClose}>Cancel</button><button type="button" disabled={busy} onClick={onSubmit}>{busy ? "Switching database…" : "Switch database"}</button></div>
     </div>
   </section></div>;
 }
@@ -1094,7 +1098,7 @@ export function DatabaseGate() {
   };
   const switchDatabase = async () => {
     if (!preview) return;
-    try { setBusy(true); setError(undefined); await restoreBackup(preview.path); }
+    try { setBusy(true); setError(undefined); await restoreBackup(preview.path); await client.cancelQueries(); client.clear(); window.location.reload(); }
     catch (value) { setBusy(false); setError(value); }
   };
   if (preview) return <DatabaseSwitchModal preview={preview} error={error} busy={busy} onClose={() => { setPreview(undefined); setError(undefined); }} onSubmit={() => void switchDatabase()}/>;

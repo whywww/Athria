@@ -63,7 +63,7 @@ textarea { resize: vertical; line-height: 1.45; }
 .primary-page-header h1 span { font-size: 22px; }
 .primary-page-header p { margin: 5px 0 0; color: #7e8796; font-size: 13px; overflow-wrap: anywhere; }
 .overview-dashboard { display: grid; gap: 12px; }
-.adjustment-notice { margin: 0; padding: 11px 14px; border-radius: 12px; background: #f5f5f7; color: #545b66; font-size: 13px; line-height: 1.45; }
+.adjustment-notice { margin: 0; padding: 11px 14px; border-radius: 12px; background: #edf3fa; color: #425f80; font-size: 13px; line-height: 1.45; }
 .adjustment-notice-review_recommended { background: #fff2cf; color: #7a5c16; }
 .adjustment-notice-review_required { background: #fbe7e2; color: #913728; }
 .overview-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }

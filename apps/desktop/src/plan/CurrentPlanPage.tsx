@@ -55,7 +55,7 @@ function TemplateCard({ item, onEdit, onRemove }: {
   </article>;
 }
 
-function TemplateLibrary({ onBack, preferredName }: { onBack: () => void; preferredName?: string | null | undefined }) {
+export function TemplateLibrary({ onBack, preferredName }: { onBack: () => void; preferredName?: string | null | undefined }) {
   const client = useQueryClient();
   const query = useQuery({ queryKey: ["templates"], queryFn: () => api<StoredSessionTemplate[]>("/api/templates") });
   const taxonomy = useQuery({ queryKey: ["training-taxonomy"], queryFn: () => api<TrainingTaxonomy>("/api/training-taxonomy") });
@@ -181,14 +181,12 @@ export function PlanEmptyState() {
 }
 
 export function CurrentPlanPage() {
-  const [library, setLibrary] = useState(false);
   const planQuery = useQuery({ queryKey: ["current-plan"], queryFn: () => api<CurrentPlan | null>("/api/plans/current") });
   const templatesQuery = useQuery({ queryKey: ["templates"], queryFn: () => api<StoredSessionTemplate[]>("/api/templates") });
   const profileQuery = useQuery({ queryKey: ["profile"], queryFn: () => api<AthleteProfile>("/api/profile") });
   const today = profileQuery.data ? localDateForTimezone(profileQuery.data.timezone) : null;
   const nextDay = useQuery({ queryKey: ["next-training-day", today], queryFn: () => api<NextTrainingDay>(`/api/plans/next-training-day?onOrAfterDate=${today}`), enabled: today !== null });
-  if (library) return <TemplateLibrary onBack={() => setLibrary(false)} preferredName={profileQuery.data?.preferredName}/>;
   const templates = templatesQuery.data ?? [];
   const loading = planQuery.isPending || templatesQuery.isPending || profileQuery.isPending;
-  return <div className="plan-page"><PrimaryPageHeader preferredName={profileQuery.data?.preferredName} subtitle="Your AI-guided training plan — tailored to you, covering every domain." actions={<div className="actions"><button className="secondary plan-templates-button" onClick={() => setLibrary(true)}>View all templates<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div>}/><ErrorBanner error={planQuery.error ?? templatesQuery.error ?? profileQuery.error ?? nextDay.error}/>{loading ? <Loading/> : !planQuery.data ? <PlanEmptyState/> : <CurrentPlanView plan={planQuery.data} templates={templates} profile={profileQuery.data!}/>}</div>;
+  return <div className="plan-page"><PrimaryPageHeader preferredName={profileQuery.data?.preferredName} subtitle="Your AI-guided training plan — tailored to you, covering every domain."/><ErrorBanner error={planQuery.error ?? templatesQuery.error ?? profileQuery.error ?? nextDay.error}/>{loading ? <Loading/> : !planQuery.data ? <PlanEmptyState/> : <CurrentPlanView plan={planQuery.data} templates={templates} profile={profileQuery.data!}/>}</div>;
 }

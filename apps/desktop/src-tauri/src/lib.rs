@@ -4,10 +4,7 @@ use std::{
     fs,
     net::TcpListener,
     path::{Path, PathBuf},
-    sync::{
-        Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, Mutex, atomic::{AtomicBool, AtomicU64, Ordering}},
 };
 use tauri::{
     AppHandle, Manager, State, WindowEvent,
@@ -26,7 +23,7 @@ use athria_application::AthriaApplication;
 use athria_integrations::{
     XUNJI_SYNC_DAYS, fetch_intervals, fetch_xunji_training, sync_date_window,
 };
-use athria_mcp::{McpService, serve_http, serve_stdio};
+use athria_mcp::{McpService, serve_http_with_refresh, serve_stdio_with_refresh};
 use athria_runtime::{ReqwestHttpClient, create_local_workspace, preview_backup};
 use athria_store::SqliteStore;
 use athria_vault::{self as vault, EncryptedSecret, VaultBundle};
@@ -34,7 +31,9 @@ use athria_vault::{self as vault, EncryptedSecret, VaultBundle};
 struct RuntimeState {
     vault_key: Mutex<Option<Zeroizing<Vec<u8>>>>,
     application: Mutex<DesktopApplication>,
-    database_path: PathBuf,
+    database_path: Mutex<PathBuf>,
+    generation: AtomicU64,
+    switch_lock: Mutex<()>,
 }
 
 fn credential(name: &str) -> Result<keyring::Entry, String> {
@@ -132,21 +131,37 @@ fn write_config_to(root: &Path, database_path: &Path) -> Result<(), String> {
         data_dir: None,
     };
     let content = serde_json::to_string_pretty(&config).map_err(|error| error.to_string())?;
-    fs::write(root.join("athria.config.json"), content).map_err(|error| error.to_string())
+    let target = root.join("athria.config.json");
+    let temporary = root.join(format!("athria.config.{}.tmp", Uuid::new_v4().simple()));
+    fs::write(&temporary, content).map_err(|error| error.to_string())?;
+    #[cfg(windows)]
+    let committed = {
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::Storage::FileSystem::{MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW};
+        let from: Vec<u16> = temporary.as_os_str().encode_wide().chain(Some(0)).collect();
+        let to: Vec<u16> = target.as_os_str().encode_wide().chain(Some(0)).collect();
+        unsafe { MoveFileExW(from.as_ptr(), to.as_ptr(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0 }
+    };
+    #[cfg(not(windows))]
+    let committed = fs::rename(&temporary, &target).is_ok();
+    if !committed {
+        let error = std::io::Error::last_os_error();
+        let _ = fs::remove_file(&temporary);
+        return Err(format!("Athria could not save the active database: {error}"));
+    }
+    Ok(())
 }
 
-fn read_configured_database_path() -> Option<PathBuf> {
-    platform_config_root()
-        .ok()
-        .and_then(|root| read_config_from(&root))
+fn checked_database_path() -> Result<PathBuf, String> {
+    checked_database_path_at(&platform_config_root()?)
 }
 
-fn current_database_path() -> PathBuf {
-    read_configured_database_path().unwrap_or_else(|| {
-        platform_config_root()
-            .map(|root| root.join("data").join("athria.sqlite3"))
-            .unwrap_or_else(|_| PathBuf::from("athria.sqlite3"))
-    })
+fn checked_database_path_at(root: &Path) -> Result<PathBuf, String> {
+    if root.join("athria.config.json").exists() {
+        read_config_from(&root).ok_or_else(|| "Athria database configuration is invalid.".to_string())
+    } else {
+        Ok(root.join("data").join("athria.sqlite3"))
+    }
 }
 
 fn extract_xunji_api_key(skill_text: &str) -> Result<String, String> {
@@ -182,14 +197,18 @@ fn extract_xunji_api_key(skill_text: &str) -> Result<String, String> {
 }
 
 fn run_mcp_stdio() -> i32 {
-    let store = match SqliteStore::open(current_database_path()) {
+    let database_path = match checked_database_path() {
+        Ok(path) => path,
+        Err(error) => { eprintln!("{error}"); return 1; }
+    };
+    let store = match SqliteStore::open(&database_path) {
         Ok(store) => store,
         Err(error) => {
             eprintln!("Athria could not open the MCP database: {error}");
             return 1;
         }
     };
-    match serve_stdio(mcp_service(AthriaApplication::new(store))) {
+    match serve_stdio_with_refresh(mcp_service(AthriaApplication::new(store)), Some(mcp_refresh(database_path))) {
         Ok(()) => 0,
         Err(error) => {
             eprintln!("Athria MCP stdio failed: {error}");
@@ -211,6 +230,30 @@ fn mcp_service(application: AthriaApplication<SqliteStore>) -> McpService<Sqlite
     }
 }
 
+fn mcp_refresh(initial_path: PathBuf) -> Arc<dyn Fn(&mut McpService<SqliteStore>) -> Result<(), String> + Send + Sync> {
+    let active_path = Mutex::new(initial_path);
+    Arc::new(move |service| {
+        let configured = checked_database_path()?;
+        let mut active = active_path.lock().map_err(|_| "MCP database state is unavailable.".to_string())?;
+        if *active != configured {
+            let store = SqliteStore::open(&configured).map_err(|error| error.message().to_owned())?;
+            service.replace_application(AthriaApplication::new(store));
+            *active = configured;
+        }
+        Ok(())
+    })
+}
+
+fn database_generation(state: &RuntimeState) -> u64 {
+    state.generation.load(Ordering::SeqCst)
+}
+
+fn ensure_generation(state: &RuntimeState, expected: u64) -> Result<(), String> {
+    if database_generation(state) == expected { Ok(()) } else {
+        Err("The database changed while this operation was running. Try again.".to_string())
+    }
+}
+
 #[tauri::command]
 async fn athria_request(
     state: State<'_, RuntimeState>,
@@ -222,10 +265,11 @@ async fn athria_request(
         let selected = body
             .and_then(|value| value.get("path").and_then(Value::as_str).map(PathBuf::from))
             .ok_or_else(|| "A backup path is required.".to_string())?;
+        let database_path = state.database_path.lock().map_err(|_| "Athria runtime state is unavailable.".to_string())?.clone();
         return serde_json::to_value(
             preview_backup(
                 &selected,
-                state.database_path.parent().unwrap_or(Path::new(".")),
+                database_path.parent().unwrap_or(Path::new(".")),
             )
             .map_err(|error| error.message().to_owned())?,
         )
@@ -235,7 +279,8 @@ async fn athria_request(
         .application
         .lock()
         .map_err(|_| "Athria runtime state is unavailable.".to_string())?;
-    dispatch_application(&application, &state.database_path, &method, &path, body)
+    let database_path = state.database_path.lock().map_err(|_| "Athria runtime state is unavailable.".to_string())?;
+    dispatch_application(&application, &database_path, &method, &path, body)
 }
 
 async fn vault_bundle(state: &RuntimeState) -> Result<VaultBundle, String> {
@@ -329,11 +374,13 @@ async fn decrypted_connection_key(
 
 async fn save_connection_key(
     state: &RuntimeState,
+    expected_generation: u64,
     source: &str,
     config: Value,
     plaintext: &str,
     password: Option<&str>,
 ) -> Result<(), String> {
+    ensure_generation(state, expected_generation)?;
     let bundle = vault_bundle(state).await?;
     if let Some(envelope) = bundle.envelope.as_ref() {
         let master = if let Some(key) = cached_master_key(state, &bundle) {
@@ -347,10 +394,12 @@ async fn save_connection_key(
         };
         let secret =
             vault::encrypt_secret(&bundle.database_uuid, source, config, plaintext, &master)?;
-        state
+        let application = state
             .application
             .lock()
-            .map_err(|_| "Athria runtime state is unavailable.".to_string())?
+            .map_err(|_| "Athria runtime state is unavailable.".to_string())?;
+        ensure_generation(state, expected_generation)?;
+        application
             .store()
             .upsert_connection_secret(&secret)
             .map_err(|error| error.message().to_owned())?;
@@ -362,10 +411,12 @@ async fn save_connection_key(
     let master = vault::new_master_key();
     let envelope = vault::create_envelope(&bundle.database_uuid, password, &master)?;
     let secret = vault::encrypt_secret(&bundle.database_uuid, source, config, plaintext, &master)?;
-    state
+    let application = state
         .application
         .lock()
-        .map_err(|_| "Athria runtime state is unavailable.".to_string())?
+        .map_err(|_| "Athria runtime state is unavailable.".to_string())?;
+    ensure_generation(state, expected_generation)?;
+    application
         .store()
         .initialize_vault(&envelope, &[secret])
         .map_err(|error| error.message().to_owned())?;
@@ -374,7 +425,11 @@ async fn save_connection_key(
 
 #[tauri::command]
 async fn vault_status(state: State<'_, RuntimeState>) -> Result<Value, String> {
-    let bundle = vault_bundle(&state).await?;
+    let (bundle, database_path) = {
+        let application = state.application.lock().map_err(|_| "Athria runtime state is unavailable.".to_string())?;
+        let path = state.database_path.lock().map_err(|_| "Athria runtime state is unavailable.".to_string())?.clone();
+        (application.store().get_vault().map_err(|error| error.message().to_owned())?, path)
+    };
     let initialized = bundle.envelope.is_some();
     let remembered = initialized && remembered_master_key(&bundle).is_some();
     let locked = initialized && cached_master_key(&state, &bundle).is_none();
@@ -392,9 +447,7 @@ async fn vault_status(state: State<'_, RuntimeState>) -> Result<Value, String> {
             .map(|_| source)
     })
     .collect();
-    Ok(
-        json!({ "databaseUuid": bundle.database_uuid, "databasePath": state.database_path, "initialized": initialized, "locked": locked, "remembered": remembered, "legacySources": legacy_sources }),
-    )
+    Ok(json!({ "databaseUuid": bundle.database_uuid, "databasePath": database_path, "initialized": initialized, "locked": locked, "remembered": remembered, "legacySources": legacy_sources }))
 }
 
 #[tauri::command]
@@ -403,6 +456,7 @@ async fn setup_vault(
     password: String,
     remember: bool,
 ) -> Result<Value, String> {
+    let generation = database_generation(&state);
     let bundle = vault_bundle(&state).await?;
     if bundle.envelope.is_some() {
         return Err("This database already has a password.".to_string());
@@ -440,14 +494,17 @@ async fn setup_vault(
             )?);
         }
     }
-    state
+    let application = state
         .application
         .lock()
-        .map_err(|_| "Athria runtime state is unavailable.".to_string())?
+        .map_err(|_| "Athria runtime state is unavailable.".to_string())?;
+    ensure_generation(&state, generation)?;
+    application
         .store()
         .initialize_vault(&envelope, &secrets)
         .map_err(|error| error.message().to_owned())?;
     cache_master_key(&state, &bundle.database_uuid, &master, Some(remember))?;
+    drop(application);
     for name in ["intervals-api-key", "intervals-athlete-id", "xunji-api-key"] {
         if let Ok(entry) = credential(name) {
             let _ = entry.delete_credential();
@@ -462,12 +519,14 @@ async fn unlock_vault(
     password: String,
     remember: bool,
 ) -> Result<Value, String> {
+    let generation = database_generation(&state);
     let bundle = vault_bundle(&state).await?;
     let envelope = bundle
         .envelope
         .as_ref()
         .ok_or_else(|| "This database has no password set yet.".to_string())?;
     let master = vault::unlock(&bundle.database_uuid, &password, envelope)?;
+    ensure_generation(&state, generation)?;
     cache_master_key(&state, &bundle.database_uuid, &master, Some(remember))?;
     Ok(json!({ "status": "unlocked" }))
 }
@@ -478,6 +537,7 @@ async fn change_vault_password(
     current_password: String,
     new_password: String,
 ) -> Result<Value, String> {
+    let generation = database_generation(&state);
     let bundle = vault_bundle(&state).await?;
     let old_envelope = bundle
         .envelope
@@ -485,10 +545,12 @@ async fn change_vault_password(
         .ok_or_else(|| "This database has no password set yet.".to_string())?;
     let master = vault::unlock(&bundle.database_uuid, &current_password, old_envelope)?;
     let envelope = vault::create_envelope(&bundle.database_uuid, &new_password, &master)?;
-    state
+    let application = state
         .application
         .lock()
-        .map_err(|_| "Athria runtime state is unavailable.".to_string())?
+        .map_err(|_| "Athria runtime state is unavailable.".to_string())?;
+    ensure_generation(&state, generation)?;
+    application
         .store()
         .update_vault_envelope(&envelope)
         .map_err(|error| error.message().to_owned())?;
@@ -501,12 +563,14 @@ async fn require_vault_password(
     state: State<'_, RuntimeState>,
     current_password: String,
 ) -> Result<Value, String> {
+    let generation = database_generation(&state);
     let bundle = vault_bundle(&state).await?;
     let envelope = bundle
         .envelope
         .as_ref()
         .ok_or_else(|| "This database has no password set yet.".to_string())?;
     let master = vault::unlock(&bundle.database_uuid, &current_password, envelope)?;
+    ensure_generation(&state, generation)?;
     let entry = vault_credential(&bundle.database_uuid)?;
     if let Err(error) = entry.delete_credential() {
         if !matches!(error, keyring::Error::NoEntry) {
@@ -524,16 +588,19 @@ async fn reset_vault_password(
     state: State<'_, RuntimeState>,
     password: String,
 ) -> Result<Value, String> {
+    let generation = database_generation(&state);
     let bundle = vault_bundle(&state).await?;
     if bundle.envelope.is_none() {
         return Err("This database has no password set yet.".to_string());
     }
     let master = vault::new_master_key();
     let envelope = vault::create_envelope(&bundle.database_uuid, &password, &master)?;
-    state
+    let application = state
         .application
         .lock()
-        .map_err(|_| "Athria runtime state is unavailable.".to_string())?
+        .map_err(|_| "Athria runtime state is unavailable.".to_string())?;
+    ensure_generation(&state, generation)?;
+    application
         .store()
         .reset_vault(&envelope)
         .map_err(|error| error.message().to_owned())?;
@@ -566,6 +633,7 @@ async fn test_intervals_credentials(
     athlete_id: String,
     vault_password: Option<String>,
 ) -> Result<Value, String> {
+    let generation = database_generation(&state);
     let today = state
         .application
         .lock()
@@ -587,6 +655,7 @@ async fn test_intervals_credentials(
     let result = json!({ "status": "connected", "athleteId": athlete_id });
     let saved = save_connection_key(
         &state,
+        generation,
         "intervals",
         json!({ "athleteId": athlete_id }),
         &api_key,
@@ -603,6 +672,7 @@ async fn sync_intervals(
     state: State<'_, RuntimeState>,
     range: Option<Value>,
 ) -> Result<Value, String> {
+    let generation = database_generation(&state);
     let bundle = vault_bundle(&state).await?;
     let secret = secret_for(&bundle, "intervals")
         .ok_or_else(|| "Intervals.icu is not configured".to_string())?;
@@ -642,11 +712,14 @@ async fn sync_intervals(
         Some(&window.range_start),
         Some(&window.range_start),
     );
-    state.application.lock().map_err(|_| "Athria runtime state is unavailable.".to_string())?.commit_intervals(&payload, &json!({ "attemptedAt": attempted_at, "rangeStart": window.range_start, "rangeEnd": window.range_end })).map_err(|error| error.message().to_owned())
+    let application = state.application.lock().map_err(|_| "Athria runtime state is unavailable.".to_string())?;
+    ensure_generation(&state, generation)?;
+    application.commit_intervals(&payload, &json!({ "attemptedAt": attempted_at, "rangeStart": window.range_start, "rangeEnd": window.range_end })).map_err(|error| error.message().to_owned())
 }
 
 #[tauri::command]
 async fn intervals_status(state: State<'_, RuntimeState>) -> Result<Value, String> {
+    let generation = database_generation(&state);
     let bundle = vault_bundle(&state).await?;
     let secret = secret_for(&bundle, "intervals");
     let configured = secret.is_some();
@@ -656,10 +729,12 @@ async fn intervals_status(state: State<'_, RuntimeState>) -> Result<Value, Strin
         .unwrap_or("0")
         .to_string();
     let locked = bundle.envelope.is_some() && cached_master_key(&state, &bundle).is_none();
-    let sync = state
+    let application = state
         .application
         .lock()
-        .map_err(|_| "Athria runtime state is unavailable.".to_string())?
+        .map_err(|_| "Athria runtime state is unavailable.".to_string())?;
+    ensure_generation(&state, generation)?;
+    let sync = application
         .get_intervals_sync_status()
         .map_err(|error| error.message().to_owned())?;
     Ok(json!({ "configured": configured, "athleteId": athlete_id, "locked": locked, "sync": sync }))
@@ -671,6 +746,7 @@ async fn import_xunji_skill(
     skill_text: String,
     vault_password: Option<String>,
 ) -> Result<Value, String> {
+    let generation = database_generation(&state);
     let mut api_key = extract_xunji_api_key(&skill_text)?;
     let attempted_at = state
         .application
@@ -687,14 +763,18 @@ async fn import_xunji_skill(
     .map_err(|_| {
         "Xunji rejected this API key. Export a new Skill from Xunji and try again.".to_string()
     })?;
-    let result = state
-        .application
-        .lock()
-        .map_err(|_| "Athria runtime state is unavailable.".to_string())?
-        .commit_xunji(&fetched, &attempted_at)
-        .map_err(|error| error.message().to_owned())?;
+    let result = {
+        let application = state
+            .application
+            .lock()
+            .map_err(|_| "Athria runtime state is unavailable.".to_string())?;
+        ensure_generation(&state, generation)?;
+        application.commit_xunji(&fetched, &attempted_at)
+            .map_err(|error| error.message().to_owned())?
+    };
     let saved = save_connection_key(
         &state,
+        generation,
         "xunji",
         json!({}),
         &api_key,
@@ -708,6 +788,7 @@ async fn import_xunji_skill(
 
 #[tauri::command]
 async fn sync_xunji(state: State<'_, RuntimeState>, range: Option<Value>) -> Result<Value, String> {
+    let generation = database_generation(&state);
     let api_key = decrypted_connection_key(&state, "xunji")
         .await
         .map_err(|_| "Xunji is not configured or its saved key is locked.".to_string())?;
@@ -753,17 +834,17 @@ async fn sync_xunji(state: State<'_, RuntimeState>, range: Option<Value>) -> Res
         window.days,
         &attempted_at,
     ) {
-        Ok(fetched) => state
-            .application
-            .lock()
-            .map_err(|_| "Athria runtime state is unavailable.".to_string())?
-            .commit_xunji(&fetched, &attempted_at)
-            .map_err(|error| error.message().to_owned()),
+        Ok(fetched) => {
+            let application = state.application.lock().map_err(|_| "Athria runtime state is unavailable.".to_string())?;
+            ensure_generation(&state, generation)?;
+            application.commit_xunji(&fetched, &attempted_at).map_err(|error| error.message().to_owned())
+        }
         Err(_) => {
             let app = state
                 .application
                 .lock()
                 .map_err(|_| "Athria runtime state is unavailable.".to_string())?;
+            ensure_generation(&state, generation)?;
             app.record_xunji_failure(&json!({ "attemptedAt": attempted_at, "rangeStart": window.range_start, "rangeEnd": window.range_end, "code": "XUNJI_AUTHENTICATION_FAILED", "message": "Xunji rejected this API key. Export a new Skill from Xunji and try again." })).map_err(|error| error.message().to_owned())?;
             Err(
                 "Xunji rejected this API key. Export a new Skill from Xunji and try again."
@@ -775,13 +856,16 @@ async fn sync_xunji(state: State<'_, RuntimeState>, range: Option<Value>) -> Res
 
 #[tauri::command]
 async fn xunji_status(state: State<'_, RuntimeState>) -> Result<Value, String> {
+    let generation = database_generation(&state);
     let bundle = vault_bundle(&state).await?;
     let configured = secret_for(&bundle, "xunji").is_some();
     let locked = bundle.envelope.is_some() && cached_master_key(&state, &bundle).is_none();
-    let sync = state
+    let application = state
         .application
         .lock()
-        .map_err(|_| "Athria runtime state is unavailable.".to_string())?
+        .map_err(|_| "Athria runtime state is unavailable.".to_string())?;
+    ensure_generation(&state, generation)?;
+    let sync = application
         .get_xunji_sync_status()
         .map_err(|error| error.message().to_owned())?;
     Ok(json!({ "configured": configured, "locked": locked, "sync": sync }))
@@ -879,6 +963,193 @@ const TRAY_OPEN_ID: &str = "open";
 const TRAY_QUIT_ID: &str = "quit";
 static EXIT_REQUESTED: AtomicBool = AtomicBool::new(false);
 
+fn log_lifecycle(message: &str) {
+    use std::io::Write;
+    eprintln!("{message}");
+    if let Ok(root) = platform_config_root() {
+        let _ = fs::create_dir_all(&root);
+        if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(root.join("athria-lifecycle.log")) {
+            let time = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |value| value.as_secs());
+            let _ = writeln!(file, "{time} pid={} {message}", std::process::id());
+        }
+    }
+}
+
+#[cfg(windows)]
+struct StartupGuard(Mutex<Option<isize>>);
+
+#[cfg(windows)]
+unsafe impl Send for StartupGuard {}
+
+#[cfg(windows)]
+impl StartupGuard {
+    fn release(&self) {
+        if let Some(handle) = self.0.lock().expect("startup guard poisoned").take() {
+            unsafe {
+                windows_sys::Win32::System::Threading::ReleaseMutex(handle as _);
+                windows_sys::Win32::Foundation::CloseHandle(handle as _);
+            }
+        }
+    }
+}
+
+#[cfg(windows)]
+impl Drop for StartupGuard {
+    fn drop(&mut self) {
+        self.release();
+    }
+}
+
+#[cfg(windows)]
+fn acquire_startup_guard() -> Option<StartupGuard> {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{FindWindowW, SW_SHOW, SetForegroundWindow, ShowWindow};
+    const STARTUP_MUTEX: &str = "Local\\com.athria.desktop-single-v2";
+    let guard = acquire_named_guard(STARTUP_MUTEX, 2_000);
+    if guard.is_none() {
+        let title: Vec<u16> = "Athria".encode_utf16().chain(Some(0)).collect();
+        let window = unsafe { FindWindowW(std::ptr::null(), title.as_ptr()) };
+        if !window.is_null() {
+            unsafe {
+                ShowWindow(window, SW_SHOW);
+                SetForegroundWindow(window);
+            }
+        }
+        log_lifecycle("duplicate desktop launch exited");
+    } else {
+        log_lifecycle("desktop acquired startup guard");
+        clean_legacy_desktops();
+    }
+    guard
+}
+
+#[cfg(windows)]
+fn acquire_named_guard(name: &str, timeout_ms: u32) -> Option<StartupGuard> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::{
+        Foundation::{ERROR_ALREADY_EXISTS, GetLastError, WAIT_ABANDONED, WAIT_OBJECT_0},
+        System::Threading::{CreateMutexW, WaitForSingleObject},
+    };
+
+    let mutex_name: Vec<u16> = std::ffi::OsStr::new(name)
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+    let handle = unsafe { CreateMutexW(std::ptr::null(), 1, mutex_name.as_ptr()) };
+    if handle.is_null() {
+        log_lifecycle("could not create desktop startup guard");
+        return None;
+    }
+
+    if unsafe { GetLastError() } == ERROR_ALREADY_EXISTS {
+        let wait_result = unsafe { WaitForSingleObject(handle, timeout_ms) };
+        if wait_result != WAIT_OBJECT_0 && wait_result != WAIT_ABANDONED {
+            unsafe { windows_sys::Win32::Foundation::CloseHandle(handle); }
+            return None;
+        }
+    }
+
+    Some(StartupGuard(Mutex::new(Some(handle as isize))))
+}
+
+#[cfg(not(windows))]
+struct StartupGuard(());
+
+#[cfg(not(windows))]
+impl StartupGuard {
+    fn release(&self) {}
+}
+
+#[cfg(not(windows))]
+fn acquire_startup_guard() -> Option<()> {
+    Some(())
+}
+
+#[cfg(windows)]
+static QUIT_EVENT: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+
+#[cfg(windows)]
+fn init_quit_event(app: &AppHandle) -> Result<(), String> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::System::Threading::{CreateEventW, INFINITE, WaitForSingleObject};
+    let name: Vec<u16> = std::ffi::OsStr::new("Local\\com.athria.desktop-quit-v2")
+        .encode_wide().chain(Some(0)).collect();
+    let handle = unsafe { CreateEventW(std::ptr::null(), 1, 0, name.as_ptr()) };
+    if handle.is_null() {
+        return Err(format!("Athria could not register desktop Quit: {}", std::io::Error::last_os_error()));
+    }
+    QUIT_EVENT.store(handle as isize, Ordering::SeqCst);
+    let app = app.clone();
+    let handle_value = handle as isize;
+    std::thread::spawn(move || {
+        unsafe { WaitForSingleObject(handle_value as _, INFINITE); }
+        exit_desktop(&app);
+    });
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn init_quit_event(_: &AppHandle) -> Result<(), String> { Ok(()) }
+
+fn exit_desktop(app: &AppHandle) {
+    if EXIT_REQUESTED.swap(true, Ordering::SeqCst) { return; }
+    log_lifecycle("desktop received Quit");
+    std::thread::spawn(|| {
+        std::thread::sleep(std::time::Duration::from_secs(4));
+        std::process::exit(0);
+    });
+    app.exit(0);
+}
+
+#[cfg(windows)]
+fn quit_all_desktops(app: &AppHandle) {
+    use windows_sys::Win32::System::Threading::SetEvent;
+    clean_legacy_desktops();
+    let handle = QUIT_EVENT.load(Ordering::SeqCst);
+    if handle != 0 {
+        if unsafe { SetEvent(handle as _) } == 0 {
+            log_lifecycle("could not broadcast desktop Quit");
+        }
+    }
+    exit_desktop(app);
+}
+
+#[cfg(not(windows))]
+fn quit_all_desktops(app: &AppHandle) { exit_desktop(app); }
+
+#[cfg(windows)]
+fn clean_legacy_desktops() {
+    use std::os::windows::process::CommandExt;
+    let current = std::process::id();
+    let script = format!(r#"
+Start-Sleep -Milliseconds 700
+$session = [Diagnostics.Process]::GetCurrentProcess().SessionId
+try {{
+Get-CimInstance Win32_Process -Filter "Name='athria.exe'" -ErrorAction Stop | Where-Object {{ $_.ProcessId -ne {current} -and $_.SessionId -eq $session -and $_.CommandLine -and $_.ExecutablePath }} | ForEach-Object {{
+  try {{
+    $quoted = '"' + $_.ExecutablePath + '"'
+    $arguments = $null
+    if ($_.CommandLine.StartsWith($quoted, [StringComparison]::OrdinalIgnoreCase)) {{ $arguments = $_.CommandLine.Substring($quoted.Length).TrimStart() }}
+    elseif ($_.CommandLine.StartsWith($_.ExecutablePath, [StringComparison]::OrdinalIgnoreCase)) {{ $arguments = $_.CommandLine.Substring($_.ExecutablePath.Length).TrimStart() }}
+    if ($null -ne $arguments -and $arguments -notmatch '^mcp(?:\s|$)') {{
+      $info = [Diagnostics.FileVersionInfo]::GetVersionInfo($_.ExecutablePath)
+      if ($info.ProductName -eq 'Athria') {{
+        Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop
+        Add-Content -Path (Join-Path $env:LOCALAPPDATA 'Athria\athria-lifecycle.log') -Value "legacy desktop pid=$($_.ProcessId) terminated" -ErrorAction SilentlyContinue
+      }}
+    }}
+  }} catch {{ Add-Content -Path (Join-Path $env:LOCALAPPDATA 'Athria\athria-lifecycle.log') -Value "legacy desktop pid=$($_.ProcessId) cleanup failed: $($_.Exception.Message)" -ErrorAction SilentlyContinue }}
+}}
+}} catch {{ Add-Content -Path (Join-Path $env:LOCALAPPDATA 'Athria\athria-lifecycle.log') -Value "legacy cleanup failed: $($_.Exception.Message)" -ErrorAction SilentlyContinue }}
+"#);
+    if let Err(error) = std::process::Command::new("powershell.exe")
+        .args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", &script])
+        .creation_flags(0x08000000)
+        .spawn()
+    {
+        log_lifecycle(&format!("could not start legacy desktop cleanup: {error}"));
+    }
+}
+
 fn should_hide_main_window_on_close(window_label: &str, exit_requested: bool) -> bool {
     window_label == "main" && !exit_requested
 }
@@ -904,10 +1175,7 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
             TRAY_OPEN_ID => show_main_window(app),
-            TRAY_QUIT_ID => {
-                EXIT_REQUESTED.store(true, Ordering::SeqCst);
-                app.exit(0);
-            }
+            TRAY_QUIT_ID => quit_all_desktops(app),
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
@@ -976,7 +1244,6 @@ async fn pick_new_profile_destination(app: AppHandle) -> Option<String> {
 
 #[tauri::command]
 async fn restore_backup(
-    app: AppHandle,
     state: State<'_, RuntimeState>,
     path: String,
 ) -> Result<Value, String> {
@@ -996,9 +1263,10 @@ async fn restore_backup(
     {
         return Err("Select an existing .sqlite3 file.".to_string());
     }
+    let current = state.database_path.lock().map_err(|_| "Athria runtime state is unavailable.".to_string())?.clone();
     if selected
         == simplify_path(
-            &fs::canonicalize(current_database_path())
+            &fs::canonicalize(&current)
                 .map_err(|error| format!("Athria could not open the current database: {error}"))?,
         )
     {
@@ -1011,11 +1279,31 @@ async fn restore_backup(
         .map_err(|error| format!("Athria needs write access to use this database: {error}"))?;
     preview_backup(
         &selected,
-        state.database_path.parent().unwrap_or(Path::new(".")),
+        current.parent().unwrap_or(Path::new(".")),
     )
     .map_err(|error| error.message().to_owned())?;
-    write_config_to(&platform_config_root()?, &selected)?;
-    app.restart()
+    switch_database(&state, &selected)
+}
+
+fn switch_database(state: &RuntimeState, target: &Path) -> Result<Value, String> {
+    switch_database_at(state, target, &platform_config_root()?)
+}
+
+fn switch_database_at(state: &RuntimeState, target: &Path, config_root: &Path) -> Result<Value, String> {
+    let _switch = state.switch_lock.lock().map_err(|_| "Athria runtime state is unavailable.".to_string())?;
+    if !target.is_file() {
+        return Err("The selected database no longer exists.".to_string());
+    }
+    let store = SqliteStore::open(target).map_err(|error| error.message().to_owned())?;
+    let mut application = state.application.lock().map_err(|_| "Athria runtime state is unavailable.".to_string())?;
+    let mut path = state.database_path.lock().map_err(|_| "Athria runtime state is unavailable.".to_string())?;
+    write_config_to(config_root, target)?;
+    *application = AthriaApplication::new(store);
+    *path = target.to_path_buf();
+    *state.vault_key.lock().map_err(|_| "Athria runtime state is unavailable.".to_string())? = None;
+    state.generation.fetch_add(1, Ordering::SeqCst);
+    log_lifecycle(&format!("switched database to {}", target.display()));
+    Ok(json!({ "databasePath": target }))
 }
 
 // The save dialog may return a path whose file does not exist yet, so the
@@ -1058,19 +1346,23 @@ fn validate_new_profile_target(path: &str, current: &Path) -> Result<PathBuf, St
 }
 
 #[tauri::command]
-async fn create_new_profile(app: AppHandle, path: String) -> Result<Value, String> {
-    let target = validate_new_profile_target(&path, &current_database_path())?;
+async fn create_new_profile(state: State<'_, RuntimeState>, path: String) -> Result<Value, String> {
+    let current = state.database_path.lock().map_err(|_| "Athria runtime state is unavailable.".to_string())?.clone();
+    let target = validate_new_profile_target(&path, &current)?;
     let database_uuid = Uuid::new_v4().to_string();
     create_local_workspace(&target, &database_uuid, None)
         .map_err(|error| error.message().to_owned())?;
-    write_config_to(&platform_config_root()?, &target)?;
-    app.restart()
+    switch_database(&state, &target)
 }
 
 pub fn run() -> i32 {
     if std::env::args().nth(1).as_deref() == Some("mcp") {
         return run_mcp_stdio();
     }
+
+    let Some(startup_guard) = acquire_startup_guard() else {
+        return 0;
+    };
 
     let mcp_listener = match TcpListener::bind("127.0.0.1:0") {
         Ok(value) => value,
@@ -1087,7 +1379,10 @@ pub fn run() -> i32 {
         }
     };
     let mcp_token = new_runtime_token();
-    let database_path = current_database_path();
+    let database_path = match checked_database_path() {
+        Ok(path) => path,
+        Err(error) => { log_lifecycle(&error); return 1; }
+    };
     let application = match SqliteStore::open(&database_path) {
         Ok(store) => AthriaApplication::new(store),
         Err(error) => {
@@ -1105,14 +1400,23 @@ pub fn run() -> i32 {
     let rust_mcp_token = mcp_token.clone();
 
     let result = tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _, _| {
-            show_main_window(app);
-        }))
+        .plugin(
+            tauri::plugin::Builder::<tauri::Wry>::new("athria-startup-guard")
+                .on_event(move |_, event| {
+                    if matches!(event, tauri::RunEvent::Exit) {
+                        log_lifecycle("desktop event loop exited");
+                        startup_guard.release();
+                    }
+                })
+                .build(),
+        )
         .plugin(tauri_plugin_dialog::init())
         .manage(RuntimeState {
             vault_key: Mutex::new(None),
             application: Mutex::new(application),
-            database_path: database_path.clone(),
+            database_path: Mutex::new(database_path.clone()),
+            generation: AtomicU64::new(0),
+            switch_lock: Mutex::new(()),
         })
         .invoke_handler(tauri::generate_handler![
             athria_request,
@@ -1143,12 +1447,14 @@ pub fn run() -> i32 {
             create_new_profile
         ])
         .setup(move |app| {
+            init_quit_event(app.handle()).map_err(std::io::Error::other)?;
             setup_tray(app.handle())?;
             std::thread::spawn(move || {
-                if let Err(error) = serve_http(
+                if let Err(error) = serve_http_with_refresh(
                     mcp_listener,
                     mcp_service(mcp_application),
                     &rust_mcp_token,
+                    Some(mcp_refresh(database_path)),
                 ) {
                     eprintln!("Athria MCP HTTP stopped: {error}");
                 }
@@ -1179,18 +1485,68 @@ pub fn run() -> i32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        command_json, extract_xunji_api_key, mcp_stdio_payload, new_runtime_token,
-        read_config_from, should_hide_main_window_on_close, simplify_path,
+        RuntimeState, command_json, database_generation, ensure_generation, extract_xunji_api_key,
+        checked_database_path_at, mcp_stdio_payload, new_runtime_token, read_config_from,
+        should_hide_main_window_on_close, simplify_path, switch_database_at,
         validate_new_profile_target, write_config_to,
     };
+    use athria_application::AthriaApplication;
+    use athria_store::SqliteStore;
     use serde_json::{Value, json};
     use std::path::Path;
+    use std::sync::{Mutex, atomic::AtomicU64};
     use uuid::Uuid;
 
     fn temp_root(prefix: &str) -> std::path::PathBuf {
         let root = std::env::temp_dir().join(format!("{prefix}-{}", Uuid::new_v4().simple()));
         std::fs::create_dir_all(&root).unwrap();
         root
+    }
+
+    #[test]
+    fn database_switch_commits_only_after_target_and_config_are_ready() {
+        let root = temp_root("athria-live-switch");
+        let old = root.join("old.sqlite3");
+        let next = root.join("next.sqlite3");
+        drop(SqliteStore::open(&next).unwrap());
+        let state = RuntimeState {
+            vault_key: Mutex::new(None),
+            application: Mutex::new(AthriaApplication::new(SqliteStore::open(&old).unwrap())),
+            database_path: Mutex::new(old.clone()),
+            generation: AtomicU64::new(0),
+            switch_lock: Mutex::new(()),
+        };
+        let missing = root.join("missing.sqlite3");
+        assert!(switch_database_at(&state, &missing, &root).is_err());
+        assert!(!missing.exists());
+        let invalid_root = root.join("not-a-directory");
+        std::fs::write(&invalid_root, "occupied").unwrap();
+        assert!(switch_database_at(&state, &next, &invalid_root).is_err());
+        assert_eq!(*state.database_path.lock().unwrap(), old);
+        assert_eq!(database_generation(&state), 0);
+        assert_eq!(switch_database_at(&state, &next, &root).unwrap()["databasePath"], next.to_string_lossy().as_ref());
+        assert_eq!(read_config_from(&root), Some(next.clone()));
+        assert_eq!(database_generation(&state), 1);
+        assert!(ensure_generation(&state, 0).is_err());
+    }
+
+    #[test]
+    fn invalid_database_config_never_falls_back_to_another_database() {
+        let root = temp_root("athria-bad-config");
+        assert_eq!(checked_database_path_at(&root).unwrap(), root.join("data").join("athria.sqlite3"));
+        std::fs::write(root.join("athria.config.json"), "not json").unwrap();
+        assert!(checked_database_path_at(&root).is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn startup_guard_allows_only_one_owner_and_can_be_reacquired() {
+        let name = format!("Local\\athria-test-{}", Uuid::new_v4().simple());
+        let first = super::acquire_named_guard(&name, 0).unwrap();
+        let duplicate_name = name.clone();
+        assert!(std::thread::spawn(move || super::acquire_named_guard(&duplicate_name, 0).is_none()).join().unwrap());
+        drop(first);
+        assert!(super::acquire_named_guard(&name, 0).is_some());
     }
 
     #[test]

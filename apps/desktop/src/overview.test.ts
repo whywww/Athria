@@ -42,7 +42,7 @@ describe("Overview", () => {
 
   it("escalates the required tier and keeps the neutral copy for watch", () => {
     const required = renderToStaticMarkup(createElement(AdjustmentReviewNotice, { value: reviewOf("review_required", [{ reasonCode: "PROFILE_TRAINING_RHYTHM_CONFLICT", severity: "hard", evidenceRefs: [], affectedScope: "plan" }]) }));
-    expect(required).toContain("Plan review required — ask your agent: Your weekly training rhythm no longer matches the plan.");
+    expect(required).toContain("Plan review required — ask your agent: Your preferred weekly training rhythm differs from this plan.");
     expect(required).toContain("adjustment-notice-review_required");
 
     const watch = renderToStaticMarkup(createElement(AdjustmentReviewNotice, { value: reviewOf("watch", [{ reasonCode: "ADHERENCE_MINOR_DEVIATION", severity: "soft", evidenceRefs: [], affectedScope: "none" }]) }));

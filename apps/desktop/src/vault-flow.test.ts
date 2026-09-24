@@ -63,7 +63,8 @@ describe("database password flow", () => {
   it("does not request a password in the new-profile confirmation", () => {
     const html = renderToStaticMarkup(createElement(NewProfileModal, { target: "C:\\profiles\\fresh.sqlite3", error: undefined, busy: false, onClose: () => undefined, onSubmit: () => undefined }));
     expect(html).not.toContain('type="password"');
-    expect(html).toContain("You will set its database password when it first opens.");
+    expect(html).toContain("You will set its database password when it opens.");
+    expect(html).toContain("Create Profile");
     expect(html).toContain('class="modal-close"');
     expect(html).toContain('aria-label="Close dialog"');
   });
@@ -82,7 +83,7 @@ describe("database password flow", () => {
     expect(html).toContain("12</b><small>workouts");
     expect(html).toContain("3</b><small>templates");
     expect(html).toContain("2</b><small>plans");
-    expect(html).toContain("Switch and restart");
+    expect(html).toContain("Switch database");
     expect(html).toContain('class="modal-close"');
     expect(html).toContain('aria-label="Close dialog"');
     expect(html).not.toContain("Database password");
