@@ -1,10 +1,13 @@
+import { T } from "../i18n";
 import type { ReactNode } from "react";
 import { friendlyLabel, type EnduranceStep, type PlanComponent } from "../view-models";
 import { formatRest } from "../components";
 import { domainIconPath } from "../domain-icons";
+import { currentLanguage, exerciseName, useLanguage } from "../i18n";
 
 function duration(seconds?: number) {
   if (!seconds) return null;
+  if (currentLanguage() === "zh-CN") return seconds % 60 === 0 ? `${seconds / 60} 分钟` : `${seconds} 秒`;
   return seconds % 60 === 0 ? `${seconds / 60} min` : `${seconds} sec`;
 }
 
@@ -28,7 +31,7 @@ function PrescriptionPanel({ component, summary, meta, chip, children }: { compo
   const domain = component.domain.value;
   return <article className={`rx-panel${domain ? ` rx-panel-${domain}` : ""}`}>
     <header className="rx-panel-header">
-      <span className="rx-eyebrow">Prescription</span>
+      <span className="rx-eyebrow"><T>{"Prescription"}</T></span>
       <div className="rx-panel-title-row">
         <div className="rx-panel-copy"><h4>{component.name}</h4>{summary && <span className="rx-panel-summary">{summary}</span>}</div>
         {(domain || meta || chip) && <span className="rx-panel-aside">{chip && <span className="rx-panel-chip">{chip}</span>}{domain && <span className="rx-domain" title={friendlyLabel(domain)}><svg className="rx-domain-glyph" data-domain-icon={domain} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{domainIconPath(domain)}</svg><span>{friendlyLabel(domain)}</span></span>}{meta && <span className="rx-panel-meta">{meta}</span>}</span>}
@@ -39,11 +42,12 @@ function PrescriptionPanel({ component, summary, meta, chip, children }: { compo
 }
 
 function StrengthPrescription({ component, summary, meta }: { component: PlanComponent & { prescription: Extract<PlanComponent["prescription"], { kind: "strength" }> }; summary?: string | undefined; meta?: string | undefined }) {
+  const { language } = useLanguage();
   const exerciseCount = component.prescription.exercises.length;
-  return <PrescriptionPanel component={component} summary={summary ?? `${exerciseCount} ${exerciseCount === 1 ? "exercise" : "exercises"}`} meta={meta}>
+  return <PrescriptionPanel component={component} summary={summary ?? (currentLanguage() === "zh-CN" ? `${exerciseCount} 个动作` : `${exerciseCount} ${exerciseCount === 1 ? "exercise" : "exercises"}`)} meta={meta}>
     <div className="rx-table rx-strength-table" role="table" aria-label={`${component.name} exercises`}>
       <div className="rx-table-row rx-table-header" role="row">
-        <span role="columnheader">#</span><span role="columnheader">Exercise</span><span role="columnheader">Sets × Reps</span><span role="columnheader">Effort</span><span role="columnheader">Rest</span><span role="columnheader">Notes</span>
+        <span role="columnheader">#</span><span role="columnheader"><T>{"Exercise"}</T></span><span role="columnheader"><T>{"Sets × Reps"}</T></span><span role="columnheader"><T>{"Effort"}</T></span><span role="columnheader"><T>{"Rest"}</T></span><span role="columnheader"><T>{"Notes"}</T></span>
       </div>
       <div role="rowgroup">
         {component.prescription.exercises.map((exercise, index) => {
@@ -54,7 +58,7 @@ function StrengthPrescription({ component, summary, meta }: { component: PlanCom
           const details = [exercise.notes || null, exercise.tempo ? `Tempo ${exercise.tempo}` : null, exercise.alternatives?.length ? `Alternatives: ${exercise.alternatives.join(", ")}` : null].filter((value): value is string => Boolean(value));
           return <div className="rx-table-row rx-strength-row" role="row" key={exercise.id}>
             <span className="rx-index" data-label="#" role="cell">{index + 1}</span>
-            <span className="rx-primary-cell" data-label="Exercise" role="cell"><strong>{exercise.displayName}</strong>{movement != null && <small>{friendlyLabel(String(movement))}</small>}</span>
+            <span className="rx-primary-cell" data-label="Exercise" role="cell"><strong>{exerciseName(exercise.canonicalKey, exercise.displayName, language)}</strong>{movement != null && <small>{friendlyLabel(String(movement))}</small>}</span>
             <span data-label="Sets × Reps" role="cell">{exercise.sets} × {reps}{load && <small>{load}</small>}</span>
             <span data-label="Effort" role="cell"><Values values={[effort]} empty="Controlled" /></span>
             <span data-label="Rest" role="cell">{formatRest(exercise.restSeconds)}</span>
@@ -81,10 +85,10 @@ function EnduranceStepCells({ step, includePhase = false }: { step: EnduranceSte
 
 function EndurancePrescription({ component, summary, meta }: { component: PlanComponent & { prescription: Extract<PlanComponent["prescription"], { kind: "endurance" }> }; summary?: string | undefined; meta?: string | undefined }) {
   const moduleCount = component.prescription.segments.length;
-  return <PrescriptionPanel component={component} summary={summary ?? `${moduleCount} ${moduleCount === 1 ? "module" : "modules"}`} meta={meta}>
+  return <PrescriptionPanel component={component} summary={summary ?? (currentLanguage() === "zh-CN" ? `${moduleCount} 个模块` : `${moduleCount} ${moduleCount === 1 ? "module" : "modules"}`)} meta={meta}>
     <div className="rx-table rx-endurance-table" role="table" aria-label={`${component.name} modules`}>
       <div className="rx-table-row rx-table-header" role="row">
-        <span role="columnheader">Module</span><span role="columnheader">Prescription</span><span role="columnheader">Duration</span><span role="columnheader">Effort</span><span role="columnheader">Notes</span>
+        <span role="columnheader"><T>{"Module"}</T></span><span role="columnheader"><T>{"Prescription"}</T></span><span role="columnheader"><T>{"Duration"}</T></span><span role="columnheader"><T>{"Effort"}</T></span><span role="columnheader"><T>{"Notes"}</T></span>
       </div>
       <div role="rowgroup">
         {component.prescription.segments.map((segment, index) => segment.type === "repeat"
@@ -125,7 +129,7 @@ function BlocksPrescription({ component, summary, meta }: { component: PlanCompo
   return <PrescriptionPanel component={component} summary={summary ?? `${count} ${count === 1 ? noun : `${noun}s`}`} meta={meta} chip={isSport ? friendlyLabel(prescription.sessionType) : undefined}>
     <div className={`rx-table rx-blocks-table${isSport ? "" : " rx-blocks-table-plain"}`} role="table" aria-label={`${component.name} blocks`}>
       <div className="rx-table-row rx-table-header" role="row">
-        <span role="columnheader">#</span><span role="columnheader">{column}</span><span role="columnheader">Duration</span>{isSport && <span role="columnheader">Intensity</span>}<span role="columnheader">Notes</span>
+        <span role="columnheader">#</span><span role="columnheader">{column}</span><span role="columnheader"><T>{"Duration"}</T></span>{isSport && <span role="columnheader"><T>{"Intensity"}</T></span>}<span role="columnheader"><T>{"Notes"}</T></span>
       </div>
       <div role="rowgroup">
         {blocks.map((block, index) => <div className="rx-table-row rx-blocks-row" role="row" key={`${block.name}-${index}`}>
@@ -143,7 +147,7 @@ function BlocksPrescription({ component, summary, meta }: { component: PlanCompo
 export function Prescription({ component, variant = "detailed", fallbackNotes, summary, meta }: { component: PlanComponent; variant?: "detailed" | "compact"; fallbackNotes?: string | undefined; summary?: string | undefined; meta?: string | undefined }) {
   const prescription = component.prescription;
   if (prescription.kind === "strength") {
-    if (variant === "compact") return <><strong>{component.name}</strong><ul>{prescription.exercises.map((exercise) => <li key={exercise.id}>{exercise.displayName}<span>{exercise.sets} × {exercise.repsMin === exercise.repsMax ? exercise.repsMin : `${exercise.repsMin}–${exercise.repsMax}`}</span></li>)}</ul></>;
+    if (variant === "compact") return <><strong>{component.name}</strong><ul>{prescription.exercises.map((exercise) => <li key={exercise.id}>{exerciseName(exercise.canonicalKey, exercise.displayName, currentLanguage())}<span>{exercise.sets} × {exercise.repsMin === exercise.repsMax ? exercise.repsMin : `${exercise.repsMin}–${exercise.repsMax}`}</span></li>)}</ul></>;
     return <StrengthPrescription component={component as PlanComponent & { prescription: typeof prescription }} summary={summary} meta={meta}/>;
   }
   if (prescription.kind === "endurance") {

@@ -1,5 +1,6 @@
 import { friendlyLabel, type CalendarSession, type Mesocycle, type PlanComponent } from "../view-models";
 import { formatShortDate, weekdayIndex } from "./view";
+import { currentLanguage, translate, weekdayName } from "../i18n";
 
 /**
  * Calendar-specific presentation helpers shared by `WeeklyCalendar` and
@@ -12,6 +13,7 @@ export type DomainValue = NonNullable<PlanComponent["domain"]["value"]>;
 
 /** Monday-based short weekday labels, indexed by `weekdayIndex()` (0 = Mon). */
 export const weekdayShort: string[] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+export function localizedWeekdayShort(index: number): string { return weekdayName(index, currentLanguage(), "short"); }
 
 /** Resolve domain-aware phase labels carried by a materialized session. */
 export function phaseLabelsForSession(progressions: Mesocycle["domainProgressions"], session: Pick<CalendarSession, "phaseRefs">): string[] {
@@ -66,18 +68,18 @@ export function sessionTone(session: CalendarSession, today: string): SessionTon
 export function sessionStatusLabel(tone: SessionTone): string {
   switch (tone) {
     case "completed":
-      return "Completed";
+      return translate("Completed", currentLanguage());
     case "skipped":
-      return "Skipped";
+      return translate("Skipped", currentLanguage());
     case "unrecorded":
-      return "Unrecorded";
+      return translate("Unrecorded", currentLanguage());
     default:
-      return "Planned";
+      return translate("Planned", currentLanguage());
   }
 }
 
 /** Format a date as a weekday + short date label, e.g. `Thu, Sep 24` (§8.2). */
 export function formatDayLabel(date: string): string {
-  const label = weekdayShort[weekdayIndex(date)] ?? "";
+  const label = localizedWeekdayShort(weekdayIndex(date));
   return `${label}, ${formatShortDate(date)}`;
 }

@@ -1,3 +1,5 @@
+import { currentLanguage, translate, weekdayName } from "./i18n";
+
 export const PREFERENCE_MAX_LENGTH = 80;
 
 export interface Metric<T> {
@@ -123,7 +125,7 @@ export interface Mesocycle {
 
 export interface TrainingHistorySession { id: string; name: string; startAt: string; timezone: string | null; domains: string[]; sport: string | null; durationMinutes: number; source: string; timePrecision: "exact" | "date_only"; sources: Array<{ source: string; externalId: string }>; plannedSessionId: string | null; planMatch: { plannedSessionId: string; method: "auto" | "manual" } | null; isPlanMatchExcluded: boolean }
 export function formatTrainingSource(source: string): string {
-  return ({ xunji: "训记", intervals: "Intervals.icu", hevy: "Hevy", manual: "手动记录" } as Record<string, string>)[source] ?? source;
+  return ({ xunji: "训记", intervals: "Intervals.icu", hevy: "Hevy", manual: currentLanguage() === "zh-CN" ? "手动记录" : "Manual" } as Record<string, string>)[source] ?? source;
 }
 export type TrainingHistorySort = "newest" | "oldest";
 export const TRAINING_HISTORY_PAGE_SIZE = 20;
@@ -305,12 +307,13 @@ const friendlyWords: Record<string, string> = {
 };
 
 export function friendlyLabel(value: string): string {
-  return friendlyWords[value] ?? value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+  return translate(friendlyWords[value] ?? value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase()), currentLanguage());
 }
 
 export function formatDuration(minutes: number): string {
-  if (minutes < 60) return `${minutes} min`;
+  if (minutes < 60) return currentLanguage() === "zh-CN" ? `${minutes} 分钟` : `${minutes} min`;
   const hours = Math.floor(minutes / 60); const remainder = minutes % 60;
+  if (currentLanguage() === "zh-CN") return remainder ? `${hours} 小时 ${remainder} 分钟` : `${hours} 小时`;
   return remainder ? `${hours} hr ${remainder} min` : `${hours} hr`;
 }
 
@@ -361,7 +364,7 @@ export function formatPersonalWeight(kg: number, unitSystem: UnitSystem): string
 }
 
 export function formatDateTime(value: string, timezone?: string): string {
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short", timeZone: timezone }).format(new Date(value));
+  return new Intl.DateTimeFormat(currentLanguage(), { dateStyle: "medium", timeStyle: "short", timeZone: timezone }).format(new Date(value));
 }
 
 export function formatProposalValue(value: unknown): string {
@@ -387,9 +390,10 @@ export function toggleEquipmentGroup(selected: string[], itemIds: string[]): str
 }
 
 export function formatTrainingRhythm(rhythm: AthleteProfile["trainingRhythm"]): string {
-  if (rhythm.kind === "fixed_week") return `Fixed · ${rhythm.days.map((day) => ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][day]).join(" / ")}`;
-  if (rhythm.kind === "flexible_week") return `Flexible · Target ${rhythm.targetDaysPerWeek} days (${rhythm.minDaysPerWeek}–${rhythm.maxDaysPerWeek})`;
-  return `Every ${rhythm.intervalDays} ${rhythm.intervalDays === 1 ? "day" : "days"}`;
+  const language = currentLanguage();
+  if (rhythm.kind === "fixed_week") return `${translate("Fixed", language)} · ${rhythm.days.map((day) => weekdayName(day, language, "short")).join(" / ")}`;
+  if (rhythm.kind === "flexible_week") return language === "zh-CN" ? `弹性 · 目标每周 ${rhythm.targetDaysPerWeek} 天（${rhythm.minDaysPerWeek}–${rhythm.maxDaysPerWeek} 天）` : `Flexible · Target ${rhythm.targetDaysPerWeek} days (${rhythm.minDaysPerWeek}–${rhythm.maxDaysPerWeek})`;
+  return language === "zh-CN" ? `每 ${rhythm.intervalDays} 天` : `Every ${rhythm.intervalDays} ${rhythm.intervalDays === 1 ? "day" : "days"}`;
 }
 
 // Keep in sync with the Rust race-sport presets exposed by the application API.
@@ -406,14 +410,15 @@ export function nextRaceDay(raceDays: RaceDay[], today: string): RaceDay | null 
 
 export function formatRaceCountdown(date: string, today: string): string {
   const days = Math.round((raceDateInstant(date).getTime() - raceDateInstant(today).getTime()) / 86_400_000);
-  if (days <= 0) return "Today";
-  if (days === 1) return "Tomorrow";
-  if (days < 14) return `In ${days} days`;
-  return `In ${Math.round(days / 7)} weeks`;
+  const language = currentLanguage();
+  if (days <= 0) return translate("Today", language);
+  if (days === 1) return translate("Tomorrow", language);
+  if (days < 14) return language === "zh-CN" ? `${days} 天后` : `In ${days} days`;
+  return language === "zh-CN" ? `${Math.round(days / 7)} 周后` : `In ${Math.round(days / 7)} weeks`;
 }
 
 export function formatRaceDateShort(date: string): string {
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(raceDateInstant(date));
+  return new Intl.DateTimeFormat(currentLanguage() === "en" ? "en-US" : "zh-CN", { month: "short", day: "numeric", year: "numeric" }).format(raceDateInstant(date));
 }
 
 export function validationMessage(result: ValidationResult): string {
@@ -448,8 +453,9 @@ const adjustmentReasonMessages: Record<string, string> = {
 export function adjustmentReasonMessage(reason: AdjustmentAssessment["reasons"][number]): string {
   const message = adjustmentReasonMessages[reason.reasonCode];
   if (!message) return friendlyLabel(reason.reasonCode.toLowerCase());
-  const domain = reason.affectedDomain ? `${friendlyLabel(reason.affectedDomain)} ` : "";
-  return message.replace("{domain}", domain);
+  const language = currentLanguage();
+  const domain = reason.affectedDomain ? `${friendlyLabel(reason.affectedDomain)}${language === "en" ? " " : ""}` : "";
+  return translate(message, language).replace("{domain}", domain);
 }
 
 export function deviceTimezone(): string {

@@ -1,3 +1,4 @@
+import { T, tr } from "../i18n";
 import { useState, type ReactNode } from "react";
 import type { CurrentPlan } from "../view-models";
 import { domainIconPath, type DomainIconId } from "../domain-icons";
@@ -89,18 +90,18 @@ export function MesocycleTarget({ plan, today, currentWeek, currentPhaseNames, s
     </div>
 
     <section className="mt-primary-section">
-      <h3>Primary Goal</h3>
+      <h3><T>{"Primary Goal"}</T></h3>
       {primary ? <div className="mt-primary"><p>{primary.label}</p>{(primary.baseline || primary.testDate) && <div className="mt-primary-meta">{primary.baseline && <span>当前基线：{primary.baseline}</span>}{primary.testDate && <span>目标测试 {primary.testDate}</span>}</div>}</div> : <p className="mt-fallback">{plan.summary || "本周期尚未提供结构化目标说明。"}</p>}
     </section>
 
     {hasDetails && <section className="mt-details-shell">
       <button type="button" className="mt-details-toggle" aria-expanded={detailsOpen} aria-controls="mt-details-panel" onClick={() => setDetailsOpen((value) => !value)}>
-        <DetailIcon kind="details"/><span>Plan Details</span><Chevron open={detailsOpen}/>
+        <DetailIcon kind="details"/><span><T>{"Plan Details"}</T></span><Chevron open={detailsOpen}/>
       </button>
       {detailsOpen && <div className="mt-details-panel" id="mt-details-panel">
-        {supporting.length > 0 && <DetailSection kind="supporting" title="Supporting"><ul className="mt-list">{supporting.map((item, index) => <li key={`supporting-${index}`}><span>{item.label}</span>{item.detail && <small>{item.detail}</small>}</li>)}</ul></DetailSection>}
-        {maintenance.length > 0 && <DetailSection kind="maintenance" title="Maintenance"><ul className="mt-list">{maintenance.map((item, index) => <li key={`maintenance-${index}`}><span>{item.label}</span>{item.detail && <small>{item.detail}</small>}</li>)}</ul></DetailSection>}
-        {coordination && <DetailSection kind="coordination" title="Coordination Strategy"><p className="mt-coordination">{coordination}</p></DetailSection>}
+        {supporting.length > 0 && <DetailSection kind="supporting" title={tr("Supporting")}><ul className="mt-list">{supporting.map((item, index) => <li key={`supporting-${index}`}><span>{item.label}</span>{item.detail && <small>{item.detail}</small>}</li>)}</ul></DetailSection>}
+        {maintenance.length > 0 && <DetailSection kind="maintenance" title={tr("Maintenance")}><ul className="mt-list">{maintenance.map((item, index) => <li key={`maintenance-${index}`}><span>{item.label}</span>{item.detail && <small>{item.detail}</small>}</li>)}</ul></DetailSection>}
+        {coordination && <DetailSection kind="coordination" title={tr("Coordination Strategy")}><p className="mt-coordination">{coordination}</p></DetailSection>}
       </div>}
     </section>}
   </section>;

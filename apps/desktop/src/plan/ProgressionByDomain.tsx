@@ -1,3 +1,4 @@
+import { T, tr } from "../i18n";
 import { useEffect, useState, type ReactNode } from "react";
 import { friendlyLabel, type Mesocycle } from "../view-models";
 import { domainIconPath } from "../domain-icons";
@@ -54,7 +55,7 @@ function DomainTrack({ domain, phases, currentWeek, onSelectPhase }: {
       </div>
       <div className="pdb-track">
         {canBack
-          ? <button type="button" className="pdb-nav-back" aria-label="Show earlier phases" onClick={() => setStart(start - 1)}><ArrowIcon className="pdb-arrow-back"/></button>
+          ? <button type="button" className="pdb-nav-back" aria-label={tr("Show earlier phases")} onClick={() => setStart(start - 1)}><ArrowIcon className="pdb-arrow-back"/></button>
           : <span className="pdb-nav-spacer" aria-hidden="true"/>}
         <div className="pdb-track-list" role="list">
           {visiblePhases.map((phase, offset) => {
@@ -82,7 +83,7 @@ function DomainTrack({ domain, phases, currentWeek, onSelectPhase }: {
                   {phase.progression[0] && <span className="pdb-phase-progression">{phase.progression[0]}</span>}
                 </button>
                 {!isTail && (canForward
-                  ? <button type="button" className="pdb-phase-arrow" aria-label="Show later phases" onClick={() => setStart(start + 1)}><ArrowIcon/></button>
+                  ? <button type="button" className="pdb-phase-arrow" aria-label={tr("Show later phases")} onClick={() => setStart(start + 1)}><ArrowIcon/></button>
                   : <span className="pdb-phase-arrow" aria-hidden="true"><ArrowIcon/></span>)}
               </div>
             );
@@ -96,8 +97,8 @@ function DomainTrack({ domain, phases, currentWeek, onSelectPhase }: {
 export function ProgressionByDomain({ progressions, currentWeek, onSelectPhase }: ProgressionByDomainProps) {
   return (
     <section className="pdb-section">
-      <h3 className="pdb-heading">Progression by Domain</h3>
-      <p className="pdb-subheading">Training phases and focus for each domain</p>
+      <h3 className="pdb-heading"><T>{"Progression by Domain"}</T></h3>
+      <p className="pdb-subheading"><T>{"Training phases and focus for each domain"}</T></p>
       <div className="pdb-domains">
         {progressions.map((progression) => {
           const phases = [...progression.phases].sort((left, right) => left.startWeek - right.startWeek);

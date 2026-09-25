@@ -1,3 +1,4 @@
+import { T, tr, currentLanguage } from "../i18n";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { formatDuration, type CalendarSession, type CurrentPlan, type StoredSessionTemplate } from "../view-models";
 import { api } from "../api";
@@ -142,7 +143,7 @@ function DrawerPanel({ session, templates, plan, today, onClose, onMutated, retu
             <h2 className="sd-title">{session.name}</h2>
             <p className="sd-date">{formatDayLabel(session.scheduledDate)}</p>
           </div>
-          <button type="button" className="sd-close" aria-label="Close session details" onClick={onClose}>×</button>
+          <button type="button" className="sd-close" aria-label={tr("Close session details")} onClick={onClose}>×</button>
         </header>
 
         <div className="sd-meta">
@@ -153,7 +154,7 @@ function DrawerPanel({ session, templates, plan, today, onClose, onMutated, retu
         <div className="sd-body">
           <ErrorBanner error={error} />
 
-          {session.legacySnapshot && <section className="sd-section sd-legacy"><h3 className="sd-eyebrow">Needs structured review</h3><p>This legacy prescription is preserved as written and can be converted by a connected Agent.</p></section>}
+          {session.legacySnapshot && <section className="sd-section sd-legacy"><h3 className="sd-eyebrow"><T>{"Needs structured review"}</T></h3><p><T>{"This legacy prescription is preserved as written and can be converted by a connected Agent."}</T></p></section>}
 
           <section className="sd-section sd-prescription-section">
             {session.components.length > 0 ? (
@@ -163,30 +164,30 @@ function DrawerPanel({ session, templates, plan, today, onClose, onMutated, retu
                 ))}
               </div>
             ) : (
-              <p className="sd-empty">No structured prescription is available for this session.</p>
+              <p className="sd-empty"><T>{"No structured prescription is available for this session."}</T></p>
             )}
           </section>
 
           {/* Base template renders only when it resolves (§8.3) — never an empty block. */}
           {template && (
             <section className="sd-section">
-              <h3 className="sd-eyebrow">Base template</h3>
+              <h3 className="sd-eyebrow"><T>{"Base template"}</T></h3>
               <div className="sd-template">
                 <span className="sd-template-name">{template.name}</span>
                 <span className="sd-template-meta">{template.origin === "builtin" ? "Built-in" : `Revision ${template.revision}`}</span>
               </div>
-              <p className="sd-hint">The template records provenance only; the executable prescription belongs to this session.</p>
+              <p className="sd-hint"><T>{"The template records provenance only; the executable prescription belongs to this session."}</T></p>
             </section>
           )}
 
-          {session.displayState === "completed" && <section className="sd-section"><h3 className="sd-eyebrow">Completed workout</h3><div className="sd-completed"><p>{session.match?.method === "manual" ? "Linked by you" : "Matched automatically"}{session.completedAt ? ` · ${new Date(session.completedAt).toLocaleDateString()}` : ""}</p>{session.completedTrainingSessionId && <button type="button" className="secondary compact" onClick={() => window.dispatchEvent(new CustomEvent("athria-open-training", { detail: session.completedTrainingSessionId! }))}>View in Training</button>}</div></section>}
+          {session.displayState === "completed" && <section className="sd-section"><h3 className="sd-eyebrow"><T>{"Completed workout"}</T></h3><div className="sd-completed"><p>{tr(session.match?.method === "manual" ? "Linked by you" : "Matched automatically")}{session.completedAt ? ` · ${new Date(session.completedAt).toLocaleDateString(currentLanguage())}` : ""}</p>{session.completedTrainingSessionId && <button type="button" className="secondary compact" onClick={() => window.dispatchEvent(new CustomEvent("athria-open-training", { detail: session.completedTrainingSessionId! }))}><T>{"View in Training"}</T></button>}</div></section>}
         </div>
 
         {session.status === "planned" && (
           <footer className="sd-actions">
             <div className="sd-actions-row">
               <button type="button" className="sd-action" disabled={busy || session.scheduledDate > today} title={session.scheduledDate > today ? "Move this session to the date you completed it first." : undefined} onClick={() => void act({ action: "complete" })}>✓ Add as completed workout</button>
-              <button type="button" className="sd-action secondary" disabled={busy} onClick={() => void act({ action: "skip", ...(reason ? { reason } : {}) })}>Skip</button>
+              <button type="button" className="sd-action secondary" disabled={busy} onClick={() => void act({ action: "skip", ...(reason ? { reason } : {}) })}><T>{"Skip"}</T></button>
               <button
                 type="button"
                 className="sd-action secondary"
@@ -197,8 +198,8 @@ function DrawerPanel({ session, templates, plan, today, onClose, onMutated, retu
               >
                 Move
               </button>
-              <label className="sd-reason">Optional reason<select value={reasonCode} onChange={(event) => setReasonCode(event.target.value)}><option value="">None</option><option value="schedule">Schedule</option><option value="recovery">Recovery</option><option value="health">Health</option><option value="travel">Travel</option><option value="equipment_weather">Equipment or weather</option><option value="preference">Preference</option><option value="other">Other</option></select></label>
-              {reasonCode && <label className="sd-reason sd-reason-note">Optional note<input value={reasonNote} maxLength={500} onChange={(event) => setReasonNote(event.target.value)} /></label>}
+              <label className="sd-reason"><T>{"Optional reason"}</T><select value={reasonCode} onChange={(event) => setReasonCode(event.target.value)}><option value=""><T>{"None"}</T></option><option value="schedule"><T>{"Schedule"}</T></option><option value="recovery"><T>{"Recovery"}</T></option><option value="health"><T>{"Health"}</T></option><option value="travel"><T>{"Travel"}</T></option><option value="equipment_weather"><T>{"Equipment or weather"}</T></option><option value="preference"><T>{"Preference"}</T></option><option value="other"><T>{"Other"}</T></option></select></label>
+              {reasonCode && <label className="sd-reason sd-reason-note"><T>{"Optional note"}</T><input value={reasonNote} maxLength={500} onChange={(event) => setReasonNote(event.target.value)} /></label>}
             </div>
             {moveOpen && (
               <div className="sd-move" id="sd-move-panel">
@@ -218,7 +219,7 @@ function DrawerPanel({ session, templates, plan, today, onClose, onMutated, retu
             )}
           </footer>
         )}
-        {session.status === "skipped" && <footer className="sd-actions"><button type="button" className="sd-action secondary" disabled={busy} onClick={() => void act({ action: "restore" })}>Undo skip</button></footer>}
+        {session.status === "skipped" && <footer className="sd-actions"><button type="button" className="sd-action secondary" disabled={busy} onClick={() => void act({ action: "restore" })}><T>{"Undo skip"}</T></button></footer>}
       </div>
     </div>
   );

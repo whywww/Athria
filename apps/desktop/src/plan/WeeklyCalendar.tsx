@@ -1,8 +1,9 @@
+import { T, tr } from "../i18n";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatDuration, friendlyLabel, type CalendarSession, type CurrentPlan, type StoredSessionTemplate } from "../view-models";
 import { domainIconPath } from "../domain-icons";
 import { currentWeekNumber, formatShortDate, groupSessionsByWeek, type CalendarDay, type CalendarWeek } from "./view";
-import { sessionDomains, sessionStatusLabel, sessionTone, weekdayShort, type DomainValue } from "./calendar-utils";
+import { localizedWeekdayShort, sessionDomains, sessionStatusLabel, sessionTone, type DomainValue } from "./calendar-utils";
 import "./calendar.css";
 
 /**
@@ -101,15 +102,15 @@ const DayCell = memo(function DayCell({ day, today, selectedSessionId, onSelect 
     <div className={`wc-day${isToday ? " is-today" : ""}${isPast ? " is-past" : ""}`}>
       <div className="wc-day-head">
         <span className="wc-day-label">
-          <span className="wc-day-weekday">{weekdayShort[day.weekday]}</span>
+          <span className="wc-day-weekday">{localizedWeekdayShort(day.weekday)}</span>
           <span className="wc-day-date">{formatShortDate(day.date)}</span>
         </span>
-        {isToday && <span className="wc-today-tag">Today</span>}
+        {isToday && <span className="wc-today-tag"><T>{"Today"}</T></span>}
       </div>
       {sessions.length === 0 ? (
         // LLM-scheduled empty day → Rest (§7.6). A skipped session still renders
         // as a chip with a "Skipped" badge, never rewritten into a rest day.
-        <span className="wc-rest"><RestIcon/><span>Rest</span></span>
+        <span className="wc-rest"><RestIcon/><span><T>{"Rest"}</T></span></span>
       ) : (
         <div className="wc-day-sessions">
           {visible.map((session) => (
@@ -248,15 +249,15 @@ export function WeeklyCalendar({ plan, sessions, today, onSelectSession, selecte
   const durationLabel = `${durationWeeks} week${durationWeeks === 1 ? "" : "s"}`;
 
   return (
-    <section className="wc-calendar" ref={rootRef} aria-label="Weekly training calendar">
+    <section className="wc-calendar" ref={rootRef} aria-label={tr("Weekly training calendar")}>
       <div className="wc-toolbar">
         <div className="wc-toolbar-text">
-          <h3 className="wc-heading">Weekly Calendar</h3>
+          <h3 className="wc-heading"><T>{"Weekly Calendar"}</T></h3>
           <span className="wc-subheading">{overallRange}{overallRange ? ` (${durationLabel})` : durationLabel}</span>
         </div>
-        <div className="wc-status-legend" aria-label="Session status legend">
-          <span><i className="wc-status-light status-completed" aria-hidden="true"/>Completed</span>
-          <span><i className="wc-status-light status-unrecorded" aria-hidden="true"/>Unrecorded</span>
+        <div className="wc-status-legend" aria-label={tr("Session status legend")}>
+          <span><i className="wc-status-light status-completed" aria-hidden="true"/><T>{"Completed"}</T></span>
+          <span><i className="wc-status-light status-unrecorded" aria-hidden="true"/><T>{"Unrecorded"}</T></span>
         </div>
       </div>
       <div className="wc-weeks">

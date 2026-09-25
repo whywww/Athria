@@ -1,4 +1,5 @@
 import type { CalendarSession } from "../view-models";
+import { currentLanguage } from "../i18n";
 
 /**
  * Pure, side-effect-free helpers for the Plan calendar view.
@@ -108,7 +109,7 @@ export function groupSessionsByWeek(sessions: CalendarSession[], effectiveStartD
 
 /** Format a `YYYY-MM-DD` date as a compact UTC label, e.g. `Sep 21`. */
 export function formatShortDate(date: string): string {
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(toUtcNoon(date));
+  return new Intl.DateTimeFormat(currentLanguage() === "en" ? "en-US" : "zh-CN", { month: "short", day: "numeric", timeZone: "UTC" }).format(toUtcNoon(date));
 }
 
 /** Format an inclusive date range as a compact label, e.g. `Sep 21 – Sep 27`. */

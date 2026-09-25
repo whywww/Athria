@@ -1,7 +1,10 @@
+import { T } from "./i18n";
 import { useEffect } from "react";
 import { friendlyLabel, validationMessage, type PlanValidation } from "./view-models";
+import { currentLanguage, errorText, tr, weekdayName, useLanguage } from "./i18n";
 
 export const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+export function localizedWeekdays() { return Array.from({ length: 7 }, (_, index) => weekdayName(index, currentLanguage())); }
 
 /** Closes a dialog on Escape. `enabled` lets always-mounted gates opt out until they are visible. */
 export function useModalDismiss(onClose: () => void, enabled = true) {
@@ -14,12 +17,13 @@ export function useModalDismiss(onClose: () => void, enabled = true) {
 }
 
 export const Card = ({ title, children, className = "", action }: { title: React.ReactNode; children: React.ReactNode; className?: string; action?: React.ReactNode }) => <section className={`card ${className}`}><div className="card-heading"><h2>{title}</h2>{action}</div>{children}</section>;
-export const ErrorBanner = ({ error }: { error: unknown }) => error ? <div className="error" role="alert">{error instanceof Error ? error.message : String(error)}</div> : null;
-export const Loading = () => <p className="muted">Loading…</p>;
-export const EmptyState = ({ title, description }: { title: string; description?: string }) => <div className="empty-state"><strong>{title}</strong>{description && <p>{description}</p>}</div>;
+export const ErrorBanner = ({ error }: { error: unknown }) => error ? <div className="error" role="alert">{errorText(error, currentLanguage())}</div> : null;
+export const Loading = () => <p className="muted"><T>{"Loading…"}</T></p>;
+export const EmptyState = ({ title, description }: { title: string; description?: string }) => <div className="empty-state"><strong>{tr(title)}</strong>{description && <p>{tr(description)}</p>}</div>;
 
 export function PrimaryPageHeader({ preferredName, subtitle, actions }: { preferredName?: string | null | undefined; subtitle: string; actions?: React.ReactNode }) {
-  return <header className="primary-page-header"><div><h1>Hi, {preferredName || "Athlete"}! <span aria-hidden="true">👋</span></h1><p>{subtitle}</p></div>{actions}</header>;
+  const { language } = useLanguage();
+  return <header className="primary-page-header"><div><h1>{language === "zh-CN" ? `你好，${preferredName || "运动员"}！` : `Hi, ${preferredName || "Athlete"}!`} <span aria-hidden="true">👋</span></h1><p>{tr(subtitle)}</p></div>{actions}</header>;
 }
 
 export function ChoiceChip({ selected, onClick, children }: { selected: boolean; onClick: () => void; children: React.ReactNode }) {
@@ -36,6 +40,7 @@ export function ValidationSummary({ validation }: { validation: PlanValidation }
 }
 
 export function formatRest(seconds: number): string {
+  if (currentLanguage() === "zh-CN") return seconds % 60 === 0 ? `${seconds / 60} 分钟` : `${seconds} 秒`;
   if (seconds < 60) return `${seconds} sec`;
   const minutes = seconds / 60;
   return Number.isInteger(minutes) ? `${minutes} min` : `${seconds} sec`;

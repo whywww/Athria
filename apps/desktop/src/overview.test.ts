@@ -36,7 +36,7 @@ describe("Overview", () => {
     expect(html).toContain("adjustment-notice-review_recommended");
     expect(html).not.toContain("You missed 1 of the 4 sessions");
     expect(html).not.toContain("Plan Review");
-    expect(html).not.toContain("Dismiss");
+    expect(html).toContain('aria-label="Dismiss message"');
     expect(html).not.toContain("Missing evidence");
   });
 

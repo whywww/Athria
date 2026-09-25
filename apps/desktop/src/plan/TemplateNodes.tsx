@@ -1,3 +1,4 @@
+import { T } from "../i18n";
 import { friendlyLabel, templateNodeName, type SessionTemplate, type StrengthTemplateSlot } from "../view-models";
 
 function Chips({ values, muted = false }: { values: string[]; muted?: boolean }) {
@@ -13,12 +14,12 @@ export function TemplateNodes({ template }: { template: SessionTemplate }) {
         <div className="template-node-heading">
           <span className="template-node-index" aria-hidden="true">{index + 1}</span>
           <strong>{templateNodeName(node)}</strong>
-          {node.optional && <small className="template-node-flag">Optional</small>}
+          {node.optional && <small className="template-node-flag"><T>{"Optional"}</T></small>}
         </div>
         {variables.length > 0 && <div className="template-node-chips">{variables.map(({ value, optional }) => <span key={value} className={optional ? "optional" : undefined} title={optional ? "Optional" : undefined}>{friendlyLabel(value)}</span>)}</div>}
-        {strength?.movementPatternIds?.length ? <div className="template-node-meta"><small>Patterns</small><Chips values={strength.movementPatternIds} muted/></div> : null}
-        {strength?.targetMuscleIds?.length ? <div className="template-node-meta"><small>Muscles</small><Chips values={strength.targetMuscleIds} muted/></div> : null}
-        {strength?.matchPolicy === "all" && <div className="template-node-match">Match all</div>}
+        {strength?.movementPatternIds?.length ? <div className="template-node-meta"><small><T>{"Patterns"}</T></small><Chips values={strength.movementPatternIds} muted/></div> : null}
+        {strength?.targetMuscleIds?.length ? <div className="template-node-meta"><small><T>{"Muscles"}</T></small><Chips values={strength.targetMuscleIds} muted/></div> : null}
+        {strength?.matchPolicy === "all" && <div className="template-node-match"><T>{"Match all"}</T></div>}
       </li>;
     })}
   </ol>;
