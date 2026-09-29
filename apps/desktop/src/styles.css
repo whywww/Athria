@@ -337,7 +337,12 @@ button.equipment-item.available:hover { color: #111827; border-color: #c4cad3; b
 .database-gate { width: min(570px, calc(100vw - 56px)); }
 .database-gate header p { max-width: 480px; }
 .gate-database-location { min-width: 0; display: grid; gap: 7px; margin-bottom: 18px; color: #59616c; font-size: 12px; font-weight: 700; }
-.gate-database-location code { min-width: 0; display: block; overflow: hidden; padding: 11px 13px; border: 1px solid rgba(255,255,255,.66); border-radius: 10px; color: #2f3a4e; background: rgba(100,112,160,.14); font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 12px; font-weight: 500; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.gate-database-location code { min-width: 0; display: block; overflow-x: auto; overflow-y: hidden; padding: 11px 13px; border: 1px solid rgba(255,255,255,.66); border-radius: 10px; color: #2f3a4e; background: rgba(100,112,160,.14); font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 12px; font-weight: 500; line-height: 1.35; white-space: nowrap; cursor: grab; user-select: none; scrollbar-width: thin; scrollbar-color: rgba(118,132,152,.45) transparent; }
+.gate-database-location code.is-dragging { cursor: grabbing; }
+.gate-database-location code::-webkit-scrollbar { height: 5px; }
+.gate-database-location code::-webkit-scrollbar-button { display: none; }
+.gate-database-location code::-webkit-scrollbar-thumb { border-radius: 999px; background: rgba(118,132,152,.45); }
+.gate-database-location code::-webkit-scrollbar-track { background: transparent; }
 .gate-fields { display: grid; gap: 13px; }
 .database-gate .gate-fields label { gap: 7px; margin: 0; font-size: 12px; }
 .database-gate .gate-fields input { height: 44px; padding: 10px 13px; border-radius: 10px; }

@@ -1084,8 +1084,8 @@ impl StartupGuard {
 }
 
 #[cfg(not(windows))]
-fn acquire_startup_guard() -> Option<()> {
-    Some(())
+fn acquire_startup_guard() -> Option<StartupGuard> {
+    Some(StartupGuard(()))
 }
 
 #[cfg(windows)]
@@ -1431,7 +1431,13 @@ pub fn run() -> i32 {
     let result = tauri::Builder::default()
         .plugin(
             tauri::plugin::Builder::<tauri::Wry>::new("athria-startup-guard")
-                .on_event(move |_, event| {
+                .on_event(move |app, event| {
+                    #[cfg(target_os = "macos")]
+                    if matches!(event, tauri::RunEvent::Reopen { .. }) {
+                        show_main_window(app);
+                    }
+                    #[cfg(not(target_os = "macos"))]
+                    let _ = app;
                     if matches!(event, tauri::RunEvent::Exit) {
                         log_lifecycle("desktop event loop exited");
                         startup_guard.release();

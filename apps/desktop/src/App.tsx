@@ -27,6 +27,30 @@ const commonGoals = ["general_fitness", "build_strength", "build_muscle", "impro
 const RACE_SPORT_OTHER = "__other__";
 const emptyRaceDraft: { date: string; sport: string; custom: string } = { date: "", sport: RACE_SPORT_PRESETS[0] ?? "Marathon", custom: "" };
 
+function DraggableDatabasePath({ path }: { path: string }) {
+  const drag = useRef<{ x: number; scrollLeft: number } | undefined>(undefined);
+  return <code
+    title={path}
+    onMouseDown={(event) => {
+      if (event.button !== 0) return;
+      drag.current = { x: event.clientX, scrollLeft: event.currentTarget.scrollLeft };
+      event.currentTarget.classList.add("is-dragging");
+      event.preventDefault();
+    }}
+    onMouseMove={(event) => {
+      if (drag.current) event.currentTarget.scrollLeft = drag.current.scrollLeft - (event.clientX - drag.current.x);
+    }}
+    onMouseUp={(event) => {
+      drag.current = undefined;
+      event.currentTarget.classList.remove("is-dragging");
+    }}
+    onMouseLeave={(event) => {
+      drag.current = undefined;
+      event.currentTarget.classList.remove("is-dragging");
+    }}
+  >{path}</code>;
+}
+
 type IconName = "overview" | "training" | "profile" | "plan" | "devices" | "settings" | "help" | "globe" | "edit" | "target" | "preferences" | "rhythm" | "clock" | "equipment" | "sparkles" | "warning" | "notes" | "recovery" | "info" | "plus" | "refresh" | "database" | "upload" | "close" | "trophy" | "ellipsis" | "grid" | "chevron" | "copy" | "trash" | "check";
 
 function AppIcon({ name, className = "" }: { name: IconName; className?: string }) {
@@ -1126,7 +1150,7 @@ export function DatabaseGate() {
   return <div className="modal-backdrop"><section className="connection-modal database-gate" role="dialog" aria-modal="true" aria-labelledby="database-gate-title">
     <header><div><h2 id="database-gate-title">{tr(setup ? "Set Database Password" : resetting ? "Reset the database password" : "Unlock this database")}</h2><p>{tr(setup ? "Set the password that protects your data in Athria and encrypts your saved connection keys." : resetting ? "Set a new database password. Your training data stays intact." : "This database has not been unlocked on this computer. Enter its database password to continue.")}</p></div></header>
     <div className="modal-body">
-      <div className="gate-database-location"><span><T>{"Database"}</T></span><code title={vault.data.databasePath}>{vault.data.databasePath}</code></div>
+      <div className="gate-database-location"><span><T>{"Database"}</T></span><DraggableDatabasePath path={vault.data.databasePath}/></div>
       {resetting && <div className="database-reset-warning" role="alert"><strong><T>{"Connections are removed"}</T></strong><span><T>{"Saved connection keys are protected by the old password and will be permanently removed. Reconnect them in Connections afterwards."}</T></span></div>}
       <div className="gate-fields">
         <label>{tr(resetting ? "New password" : "Database password")}<input type="password" autoFocus autoComplete={setup || resetting ? "new-password" : "current-password"} value={password} onChange={(event) => setPassword(event.target.value)}/></label>
@@ -1172,7 +1196,7 @@ export function DatabaseRecovery({ status }: { status: StartupStatus }) {
   return <><div className="modal-backdrop"><section className="connection-modal database-gate" role="alertdialog" aria-modal="true" aria-labelledby="database-recovery-title">
     <header><div><h2 id="database-recovery-title"><T>{"Choose a database to continue"}</T></h2><p><T>{"Athria could not open the configured database. Your original file has not been replaced."}</T></p></div></header>
     <div className="modal-body">
-      <div className="gate-database-location"><span>{status.databasePath.endsWith(".json") ? tr("Configuration") : tr("Database")}</span><code title={status.databasePath}>{status.databasePath}</code></div>
+      <div className="gate-database-location"><span>{status.databasePath.endsWith(".json") ? tr("Configuration") : tr("Database")}</span><DraggableDatabasePath path={status.databasePath}/></div>
       <div role="alert" className="database-reset-warning">{status.error}</div>
       <ErrorBanner error={error}/>
       <div className="modal-actions"><button type="button" className="secondary" disabled={busy} onClick={() => void chooseExisting()}><T>{"Choose existing database"}</T></button><button type="button" disabled={busy} onClick={() => void chooseNew()}><T>{"Create new database"}</T></button></div>
