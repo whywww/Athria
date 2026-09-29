@@ -293,9 +293,9 @@ function Change({ value, suffix = " from last week", stacked = false }: { value:
   const arrow = value > 0 ? "↑" : value < 0 ? "↓" : "→";
   if (stacked) {
     const [head = "", ...words] = suffix.trim().split(" ");
-    return <small className={`metric-change stacked ${direction}`}><span>{arrow} {Math.abs(value)}{head}</span>{words.length > 0 && <span>{words.join(" ")}</span>}</small>;
+    return <small className={`metric-change stacked ${direction}`}><span>{arrow} {Math.abs(value)}{head}</span>{words.length > 0 && <span>{tr(words.join(" "))}</span>}</small>;
   }
-  return <small className={`metric-change ${direction}`}>{arrow} {Math.abs(value)}{suffix}</small>;
+  return <small className={`metric-change ${direction}`}>{arrow} {Math.abs(value)}{tr(suffix)}</small>;
 }
 
 function SummaryCard({ icon, title, value, children, className = "" }: { icon: "workout" | "target" | "recovery"; title: string; value: ReactNode; children: ReactNode; className?: string }) {
@@ -374,7 +374,7 @@ export function OverviewDashboard({ summary, wellness, history, planned, today, 
     {adjustment && <AdjustmentReviewNotice value={adjustment}/>}
     <section className="overview-summary-grid" aria-label={tr("This week so far")}>
       <SummaryCard icon="workout" title={tr("Completed Workouts")} value={summary.sessionCount} className="bars-summary"><Change value={week.sessionDelta}/><MiniBars values={completedSeries} tone="green"/></SummaryCard>
-      <SummaryCard icon="target" title={tr("Plan Progress")} value={`${meso.completed} / ${meso.total}`} className="plan-summary"><small>this mesocycle</small><span className="progress-ring" style={{ "--progress": `${meso.percent * 3.6}deg` } as React.CSSProperties}><b>{meso.percent}%</b></span></SummaryCard>
+      <SummaryCard icon="target" title={tr("Plan Progress")} value={`${meso.completed} / ${meso.total}`} className="plan-summary"><small>{tr("this mesocycle")}</small><span className="progress-ring" style={{ "--progress": `${meso.percent * 3.6}deg` } as React.CSSProperties}><b>{meso.percent}%</b></span></SummaryCard>
       <SummaryCard icon="recovery" title={tr("Overall Readiness")} value={tr(recovery.label)} className="recovery-summary"><small>{tr(recovery.detail)}</small><button type="button" className="recovery-help" aria-haspopup="dialog" onClick={() => setHelpOpen(true)}><T>{"How do we calculate?"}</T><span aria-hidden="true">→</span></button><span className={`progress-ring ${recoveryRingTone(recovery.label)}`} style={{ "--progress": `${(recovery.value ?? 0) * 3.6}deg` } as React.CSSProperties}><b>{recovery.value ?? "—"}</b></span></SummaryCard>
     </section>
 

@@ -451,9 +451,26 @@ impl<S: AthriaStore> AthriaApplication<S> {
         self.store.get_profile(&self.owner_id)
     }
 
+    pub fn get_profile_snapshot(&self) -> Result<Value> {
+        let mut profile = self.get_profile()?;
+        let hash = stable_hash(&profile);
+        profile["profileHash"] = json!(hash);
+        Ok(profile)
+    }
+
     pub fn save_profile(&self, value: &Value) -> Result<Value> {
         let profile = parse_profile(value)?;
         self.store.save_profile(&profile)
+    }
+
+    pub fn save_profile_checked(&self, value: &Value) -> Result<Value> {
+        let expected = value.get("expectedProfileHash").and_then(Value::as_str).unwrap_or_default();
+        self.store.transaction(&mut || {
+            if expected != self.profile_hash()? {
+                return Err(failure(AthriaErrorCode::InputSnapshotChanged, "The athlete profile changed. Refresh before saving.", 409));
+            }
+            self.save_profile(value)
+        })
     }
 
     pub fn profile_hash(&self) -> Result<String> {
@@ -462,6 +479,7 @@ impl<S: AthriaStore> AthriaApplication<S> {
 
     pub fn update_profile(&self, value: &Value) -> Result<Value> {
         let update = parse_profile_update(value)?;
+        self.store.transaction(&mut || {
         if update.expected_profile_hash != self.profile_hash()? {
             return Err(failure(
                 AthriaErrorCode::InputSnapshotChanged,
@@ -471,6 +489,7 @@ impl<S: AthriaStore> AthriaApplication<S> {
         }
         let merged = merge_profile(&self.get_profile()?, &update.patch, &self.owner_id)?;
         self.store.save_profile(&merged)
+        })
     }
 
     pub fn get_personal_information(&self) -> Result<Value> {
@@ -695,6 +714,34 @@ impl<S: AthriaStore> AthriaApplication<S> {
             .collect())
     }
 
+    pub fn list_sessions_with_snapshots(&self, days: i64) -> Result<Vec<Value>> {
+        self.list_sessions(days).map(|sessions| sessions.into_iter().map(|mut session| {
+            let hash = stable_hash(&session);
+            session["snapshotHash"] = json!(hash);
+            session
+        }).collect())
+    }
+
+    fn require_session_snapshot(&self, id: &str, input: &Value) -> Result<()> {
+        let Some(expected) = input.get("expectedSnapshotHash").and_then(Value::as_str) else {
+            return Ok(());
+        };
+        let session = self.store.list_sessions(&self.owner_id, None)?.into_iter()
+            .map(|session| with_session_domains(&session))
+            .find(|session| session["id"].as_str() == Some(id));
+        if session.as_ref().is_none_or(|session| stable_hash(session) != expected) {
+            return Err(failure(AthriaErrorCode::InputSnapshotChanged, "The workout changed. Refresh and try again.", 409));
+        }
+        Ok(())
+    }
+
+    fn checked_session_write<T>(&self, id: &str, input: &Value, work: &mut dyn FnMut() -> Result<T>) -> Result<T> {
+        self.store.transaction(&mut || {
+            self.require_session_snapshot(id, input)?;
+            work()
+        })
+    }
+
     /// `snapshotHash()`: the hash the plan/personal-information writes compare against.
     pub fn snapshot_hash(&self) -> Result<String> {
         Ok(stable_hash(&json!({
@@ -855,14 +902,25 @@ impl<S: AthriaStore> AthriaApplication<S> {
             None => id.clone(),
         };
         let mut candidate = value.as_object().cloned().unwrap_or_default();
-        candidate.insert("id".into(), Value::String(id));
+        candidate.insert("id".into(), Value::String(id.clone()));
         candidate.insert("externalId".into(), Value::String(external_id));
         candidate.insert("ownerId".into(), Value::String(self.owner_id.clone()));
         candidate.insert("source".into(), Value::String("manual".into()));
         candidate.insert("status".into(), Value::String("completed".into()));
         candidate.entry("plannedSessionId").or_insert(Value::Null);
         let session = parse_training_session(&Value::Object(candidate))?;
-        self.store.upsert_sessions(std::slice::from_ref(&session))?;
+        self.store.transaction(&mut || {
+            let existing = self.store.list_sessions(&self.owner_id, None)?.iter()
+                .any(|current| current["id"].as_str() == Some(id.as_str()));
+            if existing {
+                if value.get("expectedSnapshotHash").and_then(Value::as_str).is_none() {
+                    return Err(failure(AthriaErrorCode::InputSnapshotChanged, "The workout snapshot is required. Refresh and try again.", 409));
+                }
+                self.require_session_snapshot(&id, value)?;
+            }
+            self.store.upsert_sessions(std::slice::from_ref(&session))?;
+            Ok(())
+        })?;
         Ok(session)
     }
 
@@ -871,13 +929,13 @@ impl<S: AthriaStore> AthriaApplication<S> {
         require_confirmed(value, "match")?;
         let planned_session_id = nullable_text(value, "plannedSessionId", "match")?;
         let expected_revision = input_int(value, "expectedRevision", "match", 0..=i64::MAX)?;
-        self.store
+        self.checked_session_write(id, value, &mut || self.store
             .set_training_session_plan_match(
                 &self.owner_id,
                 id,
                 planned_session_id.as_deref(),
                 expected_revision,
-            )
+            ))
             .map_err(|error| {
                 let code = error.code();
                 let message = match code {
@@ -910,13 +968,13 @@ impl<S: AthriaStore> AthriaApplication<S> {
     pub fn clear_training_session_plan_exclusion(&self, id: &str, value: &Value) -> Result<Value> {
         object_input(value, "match")?;
         require_confirmed(value, "match")?;
-        self.store
-            .clear_training_session_plan_exclusion(&self.owner_id, id)
+        self.checked_session_write(id, value, &mut || self.store
+            .clear_training_session_plan_exclusion(&self.owner_id, id))
             .map_err(|error| {
                 failure(
                     error.code(),
                     "The workout could not be returned to automatic matching.",
-                    404,
+                    if error.code() == AthriaErrorCode::TrainingSessionNotFound { 404 } else { 409 },
                 )
             })
     }
@@ -929,8 +987,8 @@ impl<S: AthriaStore> AthriaApplication<S> {
             .and_then(Value::as_str)
             .filter(|domain| DOMAIN_IDS.contains(domain))
             .ok_or_else(|| invalid_input("type.domain: expected a training domain"))?;
-        self.store
-            .set_training_session_type_override(&self.owner_id, id, domain)
+        self.checked_session_write(id, value, &mut || self.store
+            .set_training_session_type_override(&self.owner_id, id, domain))
             .map_err(|error| {
                 let code = error.code();
                 failure(
@@ -960,13 +1018,13 @@ impl<S: AthriaStore> AthriaApplication<S> {
         if start_at.is_none() && duration_minutes.is_none() {
             return Err(invalid_input("session: provide a start time or duration"));
         }
-        self.store
+        self.checked_session_write(id, value, &mut || self.store
             .update_manual_training_session(
                 &self.owner_id,
                 id,
                 start_at.as_deref(),
                 duration_minutes,
-            )
+            ))
             .map_err(|error| {
                 let code = error.code();
                 let message = if code == AthriaErrorCode::ManualDateChangeRequiresPlanMove {
@@ -989,14 +1047,13 @@ impl<S: AthriaStore> AthriaApplication<S> {
     pub fn delete_manual_training_session(&self, id: &str, value: &Value) -> Result<Value> {
         object_input(value, "session")?;
         require_confirmed(value, "session")?;
-        let session = self
-            .store
-            .delete_manual_training_session(&self.owner_id, id)
+        let session = self.checked_session_write(id, value, &mut || self.store
+            .delete_manual_training_session(&self.owner_id, id))
             .map_err(|error| {
                 failure(
                     error.code(),
                     "The manual workout record could not be removed.",
-                    404,
+                    if error.code() == AthriaErrorCode::ManualSourceNotFound { 404 } else { 409 },
                 )
             })?;
         Ok(session.unwrap_or(Value::Null))
@@ -1005,8 +1062,8 @@ impl<S: AthriaStore> AthriaApplication<S> {
     pub fn delete_training_session(&self, id: &str, value: &Value) -> Result<Value> {
         object_input(value, "session")?;
         require_confirmed(value, "session")?;
-        self.store
-            .delete_training_session(&self.owner_id, id)
+        self.checked_session_write(id, value, &mut || self.store
+            .delete_training_session(&self.owner_id, id))
             .map_err(|error| {
                 let code = error.code();
                 failure(
@@ -1063,6 +1120,7 @@ impl<S: AthriaStore> AthriaApplication<S> {
     pub fn update_wellness(&self, day: &str, value: &Value) -> Result<Value> {
         let input = parse_wellness_patch(value)?;
         let day = parse_date_input(day, "day")?;
+        self.store.transaction(&mut || {
         let current = self.store.get_wellness(&self.owner_id, &day)?;
         let current_hash = match &current {
             Some(record) => stable_hash(record),
@@ -1093,6 +1151,7 @@ impl<S: AthriaStore> AthriaApplication<S> {
             &json!({ "ownerId": self.owner_id, "day": day, "fields": Value::Object(fields), "updatedAt": updated_at }),
         )?;
         self.store.save_wellness(&record)
+        })
     }
 
     pub fn preview_hevy(&self, content: &[u8], file_name: &str) -> Result<Value> {
@@ -1587,6 +1646,18 @@ impl<S: AthriaStore> AthriaApplication<S> {
         if !confirmed {
             return Err(invalid_input("commitPlanDraft.confirmed: expected true"));
         }
+        self.store.transaction(&mut || self.commit_plan_draft_inner(
+            draft_id, expected_draft_revision, expected_plan_revision, input_snapshot_hash,
+        ))
+    }
+
+    fn commit_plan_draft_inner(
+        &self,
+        draft_id: &str,
+        expected_draft_revision: i64,
+        expected_plan_revision: i64,
+        input_snapshot_hash: &str,
+    ) -> Result<Value> {
         let draft = self
             .store
             .get_plan_draft(draft_id, &self.owner_id)?

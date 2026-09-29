@@ -1,7 +1,8 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { AdjustmentReviewNotice, OverviewDashboard, RecoveryHelpModal, calendarDays, formatWellnessDate, formatWellnessRange, loadAxisLabel, mesocycleProgress, overviewDateRange, recoveryRingTone, recoveryStatus, sparklineGeometry, twelveWeekConsistency, weeklyLoad, weeklyOverview, wellnessHighlights } from "./overview";
+import { LanguageProvider } from "./i18n";
 import type { AdjustmentAssessment, CalendarSession, TrainingHistorySession, TrainingSummary, WellnessRecord } from "./view-models";
 import { adjustmentReasonMessage } from "./view-models";
 
@@ -200,6 +201,22 @@ describe("Overview", () => {
     const html = renderToStaticMarkup(createElement(OverviewDashboard, { summary, wellness: [], history: [], planned, today: "2026-09-11", timezone: "Asia/Hong_Kong" }));
     expect(html).toContain("1 / 3");
     expect(html).toContain("this mesocycle");
+  });
+
+  it("renders localized mesocycle and weekly-change labels", () => {
+    const history = [
+      { id: "previous", startAt: "2026-09-01T04:00:00Z", durationMinutes: 30 },
+      { id: "current", startAt: "2026-09-08T04:00:00Z", durationMinutes: 60 },
+    ] as TrainingHistorySession[];
+    vi.stubGlobal("localStorage", { getItem: () => "zh-CN", setItem: () => {} });
+    const html = renderToStaticMarkup(createElement(LanguageProvider, null,
+      createElement(OverviewDashboard, { summary, wellness: [], history, planned: [], today: "2026-09-11", timezone: "Asia/Hong_Kong" })));
+    expect(html).toContain("本训练周期");
+    expect(html).toContain("较上周");
+    vi.unstubAllGlobals();
+    vi.stubGlobal("localStorage", { getItem: () => "en", setItem: () => {} });
+    renderToStaticMarkup(createElement(LanguageProvider, null, createElement("span", null, "reset")));
+    vi.unstubAllGlobals();
   });
 
   it("builds a timezone-aware twelve-week consistency window", () => {

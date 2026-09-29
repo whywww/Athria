@@ -257,7 +257,7 @@ impl<S: AthriaStore> McpService<S> {
             }
             ToolKind::GetTrainingState => application(app.get_training_state()),
             ToolKind::ListTrainingSessions => serialize(
-                app.list_sessions(days(input, 30)?)
+                app.list_sessions_with_snapshots(days(input, 30)?)
                     .map_err(ToolError::application)?,
             ),
             ToolKind::ListWellness => serialize(
