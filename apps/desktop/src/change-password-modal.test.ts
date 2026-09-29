@@ -1,6 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { LanguageProvider } from "./i18n";
 import { ChangePasswordModal, RequirePasswordModal } from "./App";
 
 type Overrides = { value?: { currentPassword: string; password: string; confirmation: string }; error?: unknown; busy?: boolean };
@@ -14,6 +15,22 @@ function render(overrides: Overrides = {}): string {
     onClose: () => {},
     onSubmit: () => {},
   }));
+}
+
+function renderChinese(overrides: Overrides = {}): string {
+  vi.stubGlobal("localStorage", { getItem: () => "zh-CN", setItem: () => {} });
+  const html = renderToStaticMarkup(createElement(LanguageProvider, null, createElement(ChangePasswordModal, {
+    value: overrides.value ?? { currentPassword: "old", password: "new", confirmation: "new" },
+    error: overrides.error,
+    busy: overrides.busy ?? false,
+    onChange: () => {},
+    onClose: () => {},
+    onSubmit: () => {},
+  })));
+  vi.stubGlobal("localStorage", { getItem: () => "en", setItem: () => {} });
+  renderToStaticMarkup(createElement(LanguageProvider, null, createElement("div")));
+  vi.unstubAllGlobals();
+  return html;
 }
 
 describe("ChangePasswordModal", () => {
@@ -52,6 +69,11 @@ describe("ChangePasswordModal", () => {
     expect(html).toContain("Changing Password…");
     expect(html).toMatch(/<button type="button" class="secondary" disabled="">Cancel<\/button>/);
     expect(html).toMatch(/<button type="button" disabled="">Changing Password…<\/button>/);
+  });
+
+  it("localizes the password-change confirmation action", () => {
+    expect(renderChinese()).toMatch(/<button type="button">修改密码<\/button>/);
+    expect(renderChinese({ busy: true })).toContain("正在修改密码…");
   });
 
   it("renders failures through the banner", () => {

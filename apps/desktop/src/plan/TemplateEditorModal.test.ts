@@ -1,6 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { LanguageProvider } from "../i18n";
 import type { SessionTemplate, TrainingTaxonomy } from "../view-models";
 import { TemplateEditorModal, type TemplateEditorModalProps } from "./TemplateEditorModal";
 
@@ -21,6 +22,16 @@ const strengthTemplate: SessionTemplate = { id: "lower", name: "Lower Strength A
 function render(overrides: Partial<TemplateEditorModalProps> = {}): string {
   const props: TemplateEditorModalProps = { value: { template: strengthTemplate, mode: "edit" }, taxonomy, error: undefined, busy: false, onChange: () => {}, onClose: () => {}, onSave: () => {}, ...overrides };
   return renderToStaticMarkup(createElement(TemplateEditorModal, props));
+}
+
+function renderChinese(overrides: Partial<TemplateEditorModalProps> = {}): string {
+  const props: TemplateEditorModalProps = { value: { template: strengthTemplate, mode: "edit" }, taxonomy, error: undefined, busy: false, onChange: () => {}, onClose: () => {}, onSave: () => {}, ...overrides };
+  vi.stubGlobal("localStorage", { getItem: () => "zh-CN", setItem: () => {} });
+  const html = renderToStaticMarkup(createElement(LanguageProvider, null, createElement(TemplateEditorModal, props)));
+  vi.stubGlobal("localStorage", { getItem: () => "en", setItem: () => {} });
+  renderToStaticMarkup(createElement(LanguageProvider, null, createElement("div")));
+  vi.unstubAllGlobals();
+  return html;
 }
 
 describe("TemplateEditorModal", () => {
@@ -71,6 +82,20 @@ describe("TemplateEditorModal", () => {
   it("shows the busy label and keeps saving disabled", () => {
     const html = render({ busy: true });
     expect(html).toMatch(/<button type="button" disabled=""[^>]*>Saving…<\/button>/);
+  });
+
+  it("localizes the template editor controls, taxonomy labels, and details warning", () => {
+    const draft: SessionTemplate = { id: "draft", name: "", intent: "", domain: "strength", nodes: [{ role: "primary", variables: [] }] };
+    const html = renderChinese({ value: { template: draft, mode: "create" } });
+    expect(html).toContain('<h2 id="template-modal-title">创建模板</h2>');
+    expect(html).toContain("动作模式");
+    expect(html).toContain("肌群");
+    expect(html).toContain(">深蹲</button>");
+    expect(html).toContain(">股四头肌</button>");
+    expect(html).toContain("+ 添加环节");
+    expect(html).toContain("填写模板详情");
+    expect(html).toMatch(/<button type="button" disabled=""[^>]*>保存模板<\/button>/);
+    expect(renderChinese({ value: { template: strengthTemplate, mode: "edit" } })).toContain("<h2 id=\"template-modal-title\">编辑模板</h2>");
   });
 
   it("falls back to the loading state without taxonomy", () => {

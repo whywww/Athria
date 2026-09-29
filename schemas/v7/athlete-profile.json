@@ -7,9 +7,8 @@
       "type": "string"
     },
     "preferredName": {
-      "default": "Athlete",
+      "default": "",
       "type": "string",
-      "minLength": 1,
       "maxLength": 100
     },
     "gender": {

@@ -1,7 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { cmToImperialHeight, connectionSources, dashboardPages, editableTemplate, equipmentGroupState, filterAndSortTrainingHistory, formatDistance, formatDuration, formatPersonalHeight, formatPersonalWeight, formatRaceCountdown, formatRaceDateShort, formatTimezoneLabel, formatTrainingSource, imperialHeightToCm, kgToPounds, nextRaceDay, paginateTrainingHistory, parseSyncRange, poundsToKg, profilePayload, referencedTemplates, syncRangeOptions, templateEditorErrors, templateNodeName, toggleEquipmentGroup, PREFERENCE_MAX_LENGTH, type AthleteProfile, type Mesocycle, type SessionTemplate, type StoredSessionTemplate, type TrainingHistorySession } from "./view-models";
+import { cmToImperialHeight, connectionSources, dashboardPages, displayPreferredName, editableTemplate, equipmentGroupState, filterAndSortTrainingHistory, formatDistance, formatDuration, formatPersonalHeight, formatPersonalWeight, formatRaceCountdown, formatRaceDateShort, formatTimezoneLabel, formatTrainingSource, imperialHeightToCm, isUntouchedDefaultProfile, kgToPounds, nextRaceDay, paginateTrainingHistory, parseSyncRange, poundsToKg, profilePayload, referencedTemplates, syncRangeOptions, templateEditorErrors, templateNodeName, toggleEquipmentGroup, PREFERENCE_MAX_LENGTH, type AthleteProfile, type Mesocycle, type SessionTemplate, type StoredSessionTemplate, type TrainingHistorySession } from "./view-models";
 
 const profile: AthleteProfile = { ownerId: "local-user", preferredName: "Athlete", gender: null, heightCm: null, birthDate: null, timezone: "Asia/Hong_Kong", goals: ["general_fitness"], preference: "", maxSessionMinutes: 60, trainingRhythm: { kind: "flexible_week", targetDaysPerWeek: 4, minDaysPerWeek: 3, maxDaysPerWeek: 5 }, equipment: ["dumbbell"], injuries: [], constraintNotes: [], explicitRecoveryDays: null, mesocycleDurationWeeks: 8, unitSystem: "metric", raceDays: [] };
+
+describe("preferred name display", () => {
+  it("uses a dash when the preferred name is empty or whitespace", () => {
+    expect(displayPreferredName("")).toBe("-");
+    expect(displayPreferredName("  \t ")).toBe("-");
+    expect(displayPreferredName("Hailey")).toBe("Hailey");
+  });
+});
+
+describe("untouched default profile detection", () => {
+  it("recognizes new blank profiles and existing Athlete defaults", () => {
+    const defaults = { ...profile, equipment: Array.from({ length: 30 }, (_, index) => `equipment-${index}`) };
+    expect(isUntouchedDefaultProfile({ ...defaults, preferredName: "" })).toBe(true);
+    expect(isUntouchedDefaultProfile(defaults)).toBe(true);
+  });
+});
 
 const template: SessionTemplate = { id: "lower", name: "Lower", intent: "Lower-body pattern", domain: "strength", nodes: [{ name: "Squat pattern", role: "primary", movementPatternIds: ["squat"], targetMuscleIds: ["quadriceps"], matchPolicy: "all", variables: ["exercise_selection"] }] };
 const history = [
@@ -11,10 +27,10 @@ const history = [
 
 describe("dashboard v7 view models", () => {
   it("separates added sources from sources available to add", () => {
-    expect(connectionSources(false, false, false)).toEqual({ added: [], available: ["intervals", "xunji", "hevy"] });
-    expect(connectionSources(true, false, false)).toEqual({ added: ["intervals"], available: ["xunji", "hevy"] });
-    expect(connectionSources(false, true, true)).toEqual({ added: ["xunji", "hevy"], available: ["intervals"] });
-    expect(connectionSources(true, true, true)).toEqual({ added: ["intervals", "xunji", "hevy"], available: [] });
+    expect(connectionSources(false, false)).toEqual({ added: [], available: ["intervals", "xunji"] });
+    expect(connectionSources(true, false)).toEqual({ added: ["intervals"], available: ["xunji"] });
+    expect(connectionSources(false, true)).toEqual({ added: ["xunji"], available: ["intervals"] });
+    expect(connectionSources(true, true)).toEqual({ added: ["intervals", "xunji"], available: [] });
     expect(dashboardPages.some((page) => page.id === "Connections" && page.label === "Connections")).toBe(true);
   });
 

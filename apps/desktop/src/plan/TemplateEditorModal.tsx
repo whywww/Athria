@@ -100,7 +100,7 @@ export function TemplateEditorModal({ value, taxonomy, error, busy, onChange, on
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <section className="connection-modal template-modal" role="dialog" aria-modal="true" aria-labelledby="template-modal-title" ref={panelRef} tabIndex={-1}>
       <header className="template-modal-header">
-        <div><h2 id="template-modal-title">{modeTitles[mode]}</h2><p><T>{"Define a stable single-domain pattern. Weekly Sessions own every executable dose."}</T></p></div>
+        <div><h2 id="template-modal-title"><T>{modeTitles[mode]}</T></h2><p><T>{"Define a stable single-domain pattern. Weekly Sessions own every executable dose."}</T></p></div>
         <button type="button" className="modal-close" aria-label={tr("Close dialog")} onClick={onClose}><ModalCloseIcon/></button>
       </header>
       <div className="template-modal-body">
@@ -111,7 +111,7 @@ export function TemplateEditorModal({ value, taxonomy, error, busy, onChange, on
             <label><T>{"Purpose"}</T><textarea rows={2} value={template.intent} onChange={(event) => onChange({ ...template, intent: event.target.value })}/></label>
             <div className="template-field"><span className="template-field-label"><T>{"Single training domain"}</T></span><div className="template-domain-options">{componentDomains.map((domain) => <button type="button" key={domain} className="template-domain-option" data-domain={domain} aria-pressed={domain === template.domain} onClick={() => { if (domain !== template.domain) onChange(emptyTemplate(domain)); }}>{friendlyLabel(domain)}</button>)}</div></div>
           </div>
-          <div className="template-structure-heading"><div><h3><T>{"Stable structure"}</T></h3><p><T>{"Describe ordered roles and variables, never a concrete workout."}</T></p></div><button type="button" className="secondary compact" onClick={() => updateNodes([...nodes, { role: roles[template.domain][0]!, variables: [variableOptions[0]!] }])}>+ Add node</button></div>
+          <div className="template-structure-heading"><div><h3><T>{"Stable structure"}</T></h3><p><T>{"Describe ordered roles and variables, never a concrete workout."}</T></p></div><button type="button" className="secondary compact" onClick={() => updateNodes([...nodes, { role: roles[template.domain][0]!, variables: [variableOptions[0]!] }])}>+ <T>{"Add node"}</T></button></div>
           <div className="template-node-editors">{nodes.map((node, index) => {
             const strength = template.domain === "strength" ? node as StrengthTemplateSlot : null;
             return <article className="template-node-editor" key={`${template.id}:${index}`}>
@@ -123,8 +123,8 @@ export function TemplateEditorModal({ value, taxonomy, error, busy, onChange, on
                 <button type="button" className="icon-button remove-button" aria-label={`Remove node ${index + 1}`} disabled={nodes.length === 1} onClick={() => updateNodes(nodes.filter((_item, itemIndex) => itemIndex !== index))}>×</button>
               </div>
               {strength && <div className="template-node-editor-attributes">
-                <div className="template-attr-row"><small><T>{"Patterns"}</T></small><div className="template-chip-group">{taxonomy.strength.movementPatterns.map((item) => <button type="button" key={item.id} className={`template-chip muted${strength.movementPatternIds?.includes(item.id) ? " on" : ""}`} aria-pressed={strength.movementPatternIds?.includes(item.id) ?? false} onClick={() => toggleAttribute(index, "movementPatternIds", item.id)}>{item.label}</button>)}</div></div>
-                <div className="template-attr-row"><small><T>{"Muscles"}</T></small><div className="template-chip-group">{taxonomy.strength.muscleGroups.map((item) => <button type="button" key={item.id} className={`template-chip muted${strength.targetMuscleIds?.includes(item.id) ? " on" : ""}`} aria-pressed={strength.targetMuscleIds?.includes(item.id) ?? false} onClick={() => toggleAttribute(index, "targetMuscleIds", item.id)}>{item.label}</button>)}</div></div>
+                <div className="template-attr-row"><small><T>{"Patterns"}</T></small><div className="template-chip-group">{taxonomy.strength.movementPatterns.map((item) => <button type="button" key={item.id} className={`template-chip muted${strength.movementPatternIds?.includes(item.id) ? " on" : ""}`} aria-pressed={strength.movementPatternIds?.includes(item.id) ?? false} onClick={() => toggleAttribute(index, "movementPatternIds", item.id)}>{tr(item.label)}</button>)}</div></div>
+                <div className="template-attr-row"><small><T>{"Muscles"}</T></small><div className="template-chip-group">{taxonomy.strength.muscleGroups.map((item) => <button type="button" key={item.id} className={`template-chip muted${strength.targetMuscleIds?.includes(item.id) ? " on" : ""}`} aria-pressed={strength.targetMuscleIds?.includes(item.id) ?? false} onClick={() => toggleAttribute(index, "targetMuscleIds", item.id)}>{tr(item.label)}</button>)}</div></div>
                 <div className="template-attr-row"><small><T>{"Match"}</T></small><div className="template-chip-group"><button type="button" className={`template-chip muted${strength.matchPolicy === "all" ? " on" : ""}`} aria-pressed={strength.matchPolicy === "all"} onClick={() => updateNode(index, { matchPolicy: strength.matchPolicy === "all" ? undefined : "all" })}><T>{"Match all"}</T></button></div></div>
               </div>}
               <div className="template-node-editor-variables">
@@ -139,7 +139,7 @@ export function TemplateEditorModal({ value, taxonomy, error, busy, onChange, on
         {errors.length > 0 && <div className="editor-errors" role="alert"><strong><T>{"Complete these template details"}</T></strong><ul>{errors.map((message) => <li key={message}>{message}</li>)}</ul></div>}
         <div className="template-modal-actions">
           <button type="button" className="secondary" onClick={onClose}><T>{"Cancel"}</T></button>
-          <button type="button" disabled={errors.length > 0 || !taxonomy || busy} onClick={onSave}>{busy ? "Saving…" : "Save template"}</button>
+          <button type="button" disabled={errors.length > 0 || !taxonomy || busy} onClick={onSave}><T>{busy ? "Saving…" : "Save template"}</T></button>
         </div>
       </footer>
     </section>

@@ -47,6 +47,19 @@ describe("desktop language", () => {
     renderToStaticMarkup(createElement(LanguageProvider, null, createElement(T, null, "Save")));
   });
 
+  it("greets without an athlete name in simplified Chinese", () => {
+    vi.stubGlobal("localStorage", { getItem: () => "zh-CN", setItem: () => {} });
+    const html = renderToStaticMarkup(createElement(LanguageProvider, null,
+      createElement("div", null,
+        createElement(PrimaryPageHeader, { preferredName: "", subtitle: "训练说明" }),
+        createElement(PrimaryPageHeader, { preferredName: "  ", subtitle: "训练说明" }),
+      )));
+    expect(html.match(/你好！/g)).toHaveLength(2);
+    expect(html).not.toContain("运动员");
+    vi.unstubAllGlobals();
+    renderToStaticMarkup(createElement(LanguageProvider, null, createElement(T, null, "Save")));
+  });
+
   it("falls back to English and formats localized weekdays", () => {
     expect(translate("Save", "zh-CN")).toBe("保存");
     expect(translate("Untranslated label", "zh-CN")).toBe("Untranslated label");
@@ -56,6 +69,11 @@ describe("desktop language", () => {
   });
 
   it("translates the remaining dashboard, profile, settings, and template labels", () => {
+    expect(translate("Connected", "zh-CN")).toBe("已连接");
+    expect(translate("Save template", "zh-CN")).toBe("保存模板");
+    expect(translate("Edit template", "zh-CN")).toBe("编辑模板");
+    expect(translate("Add node", "zh-CN")).toBe("添加环节");
+    expect(translate("Complete these template details", "zh-CN")).toBe("填写模板详情");
     expect(translate("this mesocycle", "zh-CN")).toBe("本训练周期");
     expect(translate("from last week", "zh-CN")).toBe("较上周");
     expect(translate("Marathon", "zh-CN")).toBe("马拉松");

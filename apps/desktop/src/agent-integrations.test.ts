@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient } from "@tanstack/query-core";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
+import { LanguageProvider } from "./i18n";
 import { AddAgentModal, AgentIntegrations, AgentTiles, ManualAgentSetup, MoreAgentsModal, SkillArchiveGuideModal, SkillUpdateConflictModal, agentTileColumns, shortenHomePath, sortAgentRoster, splitAgentTiles } from "./App";
 import type { AgentIntegrationStatus, McpStatus } from "./api";
 
@@ -21,6 +22,17 @@ const renderWithHome = (node: ReactElement, rows: AgentIntegrationStatus[]) => {
   client.setQueryData(["agent-integrations"], rows);
   client.setQueryData(["mcp-status"], mcpStatus);
   return renderToStaticMarkup(createElement(QueryClientProvider, { client }, node));
+};
+
+const renderChinese = (node: ReactElement, rows: AgentIntegrationStatus[]) => {
+  const client = new QueryClient();
+  client.setQueryData(["agent-integrations"], rows);
+  vi.stubGlobal("localStorage", { getItem: () => "zh-CN", setItem: () => {} });
+  const html = renderToStaticMarkup(createElement(LanguageProvider, null, createElement(QueryClientProvider, { client }, node)));
+  vi.stubGlobal("localStorage", { getItem: () => "en", setItem: () => {} });
+  renderToStaticMarkup(createElement(LanguageProvider, null, createElement("div")));
+  vi.unstubAllGlobals();
+  return html;
 };
 
 const withClient = (node: ReactElement) => renderToStaticMarkup(createElement(QueryClientProvider, { client: new QueryClient() }, node));
@@ -143,6 +155,12 @@ describe("AgentIntegrations", () => {
     expect(html.match(/class="agent-modal-connected"/g)).toHaveLength(1);
     expect(html.match(/class="agent-modal-pending"/g)).toHaveLength(1);
     expect(html).toContain("Skills setup required");
+  });
+
+  it("localizes the Add Agent title and Connect action", () => {
+    const html = renderChinese(createElement(AddAgentModal, { onClose: () => {} }), integrations);
+    expect(html).toContain('<h2 id="agent-modal-title">添加助手</h2>');
+    expect(html).toContain(">连接</button>");
   });
 
   it("shows agent paths relative to the home folder", () => {

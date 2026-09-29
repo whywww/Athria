@@ -305,7 +305,7 @@ pub fn equipment_categories() -> Value {
 pub fn default_profile() -> Value {
     json!({
         "ownerId": DEFAULT_OWNER_ID,
-        "preferredName": "Athlete",
+        "preferredName": "",
         "gender": null,
         "heightCm": null,
         "birthDate": null,
@@ -338,7 +338,7 @@ mod tests {
     #[test]
     fn default_profile_uses_the_schema_defaults() {
         let profile = default_profile();
-        assert_eq!(profile["preferredName"], json!("Athlete"));
+        assert_eq!(profile["preferredName"], json!(""));
         assert_eq!(profile["timezone"], json!("Asia/Hong_Kong"));
         assert_eq!(
             profile["equipment"].as_array().unwrap().len(),

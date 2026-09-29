@@ -47,7 +47,7 @@ fn profile_keys(profile: &Value) -> Vec<&str> {
 fn fresh_database_returns_the_default_profile() {
     let app = test_app();
     let profile = app.get_profile().unwrap();
-    assert_eq!(profile["preferredName"], json!("Athlete"));
+    assert_eq!(profile["preferredName"], json!(""));
     assert_eq!(profile["timezone"], json!("Asia/Hong_Kong"));
     assert_eq!(
         app.profile_hash().unwrap(),
@@ -179,6 +179,21 @@ fn personal_information_tracks_the_latest_weight_and_todays_wellness() {
         .unwrap_err();
     assert_eq!(stale.code(), AthriaErrorCode::InputSnapshotChanged);
     assert_eq!(stale.status(), 409);
+}
+
+#[test]
+fn personal_information_can_save_and_read_an_empty_preferred_name() {
+    let app = test_app();
+    let initial = app.get_personal_information().unwrap();
+    let saved = app.save_personal_information(&json!({
+        "preferredName": "",
+        "gender": null,
+        "heightCm": null,
+        "birthDate": null,
+        "expectedSnapshotHash": initial["snapshotHash"],
+    })).unwrap();
+    assert_eq!(saved["preferredName"], json!(""));
+    assert_eq!(app.get_profile().unwrap()["preferredName"], json!(""));
 }
 
 #[test]

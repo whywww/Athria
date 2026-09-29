@@ -73,6 +73,10 @@ export interface AthleteProfile {
   raceDays: RaceDay[];
 }
 
+export function displayPreferredName(name: string | null | undefined): string {
+  return name?.trim() || "-";
+}
+
 export interface PlanExercise {
   id: string;
   displayName: string;
@@ -277,10 +281,10 @@ export interface XunjiConnectionStatus {
     data: { successfulDays?: number; failedDays?: number; records?: number; errors?: Array<{ code: string; message: string }> };
   };
 }
-export type ConnectionSource = "intervals" | "xunji" | "hevy";
-export function connectionSources(intervalsConfigured: boolean, xunjiConfigured: boolean, hevyImported: boolean): { added: ConnectionSource[]; available: ConnectionSource[] } {
-  const added = [intervalsConfigured ? "intervals" as const : null, xunjiConfigured ? "xunji" as const : null, hevyImported ? "hevy" as const : null].filter((source): source is ConnectionSource => source !== null);
-  const available = (["intervals", "xunji", "hevy"] as const).filter((source) => !added.includes(source));
+export type ConnectionSource = "intervals" | "xunji";
+export function connectionSources(intervalsConfigured: boolean, xunjiConfigured: boolean): { added: ConnectionSource[]; available: ConnectionSource[] } {
+  const added = [intervalsConfigured ? "intervals" as const : null, xunjiConfigured ? "xunji" as const : null].filter((source): source is ConnectionSource => source !== null);
+  const available = (["intervals", "xunji"] as const).filter((source) => !added.includes(source));
   return { added, available };
 }
 export interface DoctorResult { databasePath: string }
@@ -487,7 +491,7 @@ export function timezoneOptions(current: string): string[] {
 }
 
 export function isUntouchedDefaultProfile(profile: AthleteProfile): boolean {
-  return profile.preferredName === "Athlete" && profile.timezone === "Asia/Hong_Kong" && profile.goals.length === 1 && profile.goals[0] === "general_fitness"
+  return (profile.preferredName === "" || profile.preferredName === "Athlete") && profile.timezone === "Asia/Hong_Kong" && profile.goals.length === 1 && profile.goals[0] === "general_fitness"
     && profile.trainingRhythm.kind === "flexible_week" && profile.trainingRhythm.targetDaysPerWeek === 4 && profile.trainingRhythm.minDaysPerWeek === 3 && profile.trainingRhythm.maxDaysPerWeek === 5
     && profile.equipment.length === 30 && profile.injuries.length === 0 && profile.constraintNotes.length === 0 && profile.explicitRecoveryDays === null && profile.mesocycleDurationWeeks === 8 && profile.raceDays.length === 0;
 }

@@ -6,7 +6,7 @@
       "operation": "get_profile",
       "expected": {
         "ownerId": "local-user",
-        "preferredName": "Athlete",
+        "preferredName": "",
         "gender": null,
         "heightCm": null,
         "birthDate": null,
@@ -75,7 +75,7 @@
             ]
           }
         },
-        "expectedProfileHash": "fnv1a-e8a6b10c",
+        "expectedProfileHash": "fnv1a-1afd758f",
         "confirmed": true
       },
       "expected": {

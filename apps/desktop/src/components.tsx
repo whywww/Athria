@@ -23,7 +23,9 @@ export const EmptyState = ({ title, description }: { title: string; description?
 
 export function PrimaryPageHeader({ preferredName, subtitle, actions }: { preferredName?: string | null | undefined; subtitle: string; actions?: React.ReactNode }) {
   const { language } = useLanguage();
-  return <header className="primary-page-header"><div><h1>{language === "zh-CN" ? `你好，${preferredName || "运动员"}！` : `Hi, ${preferredName || "Athlete"}!`} <span aria-hidden="true">👋</span></h1><p>{tr(subtitle)}</p></div>{actions}</header>;
+  const name = preferredName?.trim();
+  const greeting = name ? language === "zh-CN" ? `你好，${name}！` : `Hi, ${name}!` : language === "zh-CN" ? "你好！" : "Hi!";
+  return <header className="primary-page-header"><div><h1>{greeting} <span aria-hidden="true">👋</span></h1><p>{tr(subtitle)}</p></div>{actions}</header>;
 }
 
 export function ChoiceChip({ selected, onClick, children }: { selected: boolean; onClick: () => void; children: React.ReactNode }) {

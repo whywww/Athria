@@ -24,8 +24,10 @@ describe("PrimaryPageHeader", () => {
     expect(markup).toContain("Edit");
   });
 
-  it("falls back to Athlete when no preferred name is available", () => {
+  it("greets without a name when the preferred name is missing or blank", () => {
     const markup = renderToStaticMarkup(createElement(PrimaryPageHeader, { subtitle: "Page subtitle" }));
-    expect(markup).toContain("Hi, Athlete!");
+    const blankMarkup = renderToStaticMarkup(createElement(PrimaryPageHeader, { preferredName: "  ", subtitle: "Page subtitle" }));
+    expect(markup).toContain("Hi!");
+    expect(blankMarkup).toContain("Hi!");
   });
 });
