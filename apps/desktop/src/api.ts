@@ -61,8 +61,6 @@ export async function importXunjiSkill(skillText: string, vaultPassword?: string
 export async function syncXunji(range: SyncRange): Promise<unknown> { return invoke("sync_xunji", { range }); }
 export async function getXunjiStatus<T>(): Promise<T> { return invoke("xunji_status"); }
 export async function getMcpStatus(): Promise<McpStatus> { return invoke("mcp_status"); }
-export interface DatabaseReplicaStatus { databasePath: string; workingPath: string; lastPublishedAt: number | null; status: string; conflictPath: string | null }
-export async function getDatabaseReplicaStatus(): Promise<DatabaseReplicaStatus> { return invoke("database_replica_status"); }
 export async function getAgentIntegrationsStatus(): Promise<AgentIntegrationStatus[]> { return invoke("agent_integrations_status"); }
 export async function installAgentIntegration(agent: AgentKind): Promise<AgentIntegrationResult> { return invoke("install_agent_integration", { agent }); }
 export async function addCustomAgent(name: string, configPath: string, skillsPath: string): Promise<AgentIntegrationResult> { return invoke("add_custom_agent", { name, configPath, skillsPath }); }

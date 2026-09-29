@@ -454,9 +454,8 @@ impl SqliteStore {
             .map_err(database_error)?
             > 0)
     }
-    /// Opens an Athria database, creating and bootstrapping it when the file
-    /// has no tables yet. Databases from any other schema version fail with
-    /// `SCHEMA_VERSION_UNSUPPORTED` instead of being migrated or modified.
+    /// Opens an Athria database, creating it when empty and migrating v24/v25
+    /// databases to v26. Other schema versions are rejected.
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         Self::open_with_clock(path, Arc::new(SystemClock))
     }
@@ -476,7 +475,7 @@ impl SqliteStore {
         Ok(store)
     }
 
-    /// In-memory store used by unit tests; bootstraps a fresh v25 database.
+    /// In-memory store used by unit tests; bootstraps a fresh v26 database.
     pub fn open_in_memory() -> Result<Self> {
         Self::open_in_memory_with_clock(Arc::new(SystemClock))
     }
@@ -513,12 +512,12 @@ impl SqliteStore {
             .map_err(database_error)?;
         if writable {
             let mode: String = connection
-                .query_row("PRAGMA journal_mode=DELETE", [], |row| row.get(0))
+                .query_row("PRAGMA journal_mode=WAL", [], |row| row.get(0))
                 .map_err(database_error)?;
-            if mode != "delete" && mode != "memory" {
+            if mode != "wal" && mode != "memory" {
                 return Err(AthriaError::new(
                     AthriaErrorCode::InvalidData,
-                    format!("Athria requires SQLite DELETE journal mode, got {mode}."),
+                    format!("Athria requires SQLite WAL journal mode, got {mode}."),
                 ));
             }
         }
@@ -1554,7 +1553,7 @@ mod tests {
     }
 
     #[test]
-    fn opening_a_closed_legacy_wal_database_converts_it_to_one_file() {
+    fn opening_a_closed_wal_database_preserves_wal_mode() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("legacy.sqlite3");
         SqliteStore::open(&path).unwrap().close();
@@ -1567,6 +1566,7 @@ mod tests {
         drop(legacy);
         let converted = SqliteStore::open(&path).unwrap();
         assert_eq!(converted.get_profile(DEFAULT_OWNER_ID).unwrap().unwrap()["displayName"], "Preserved");
+        assert_eq!(converted.connection.query_row("PRAGMA journal_mode", [], |row| row.get::<_, String>(0)).unwrap(), "wal");
         converted.close();
         assert!(!path.with_extension("sqlite3-wal").exists());
         assert!(!path.with_extension("sqlite3-shm").exists());

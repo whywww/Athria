@@ -91,7 +91,7 @@ A few things are worth knowing:
 - The database password controls access inside Athria and protects saved connection keys.
 - **The database file itself is not currently encrypted at rest.** Someone with direct access to that file may still be able to read it with SQLite tools.
 - Your database can be backed up locally.
-- Athria opens a verified local working copy of a selected database. After changes, it saves a verified single-file snapshot to the selected path within five minutes and again on desktop quit. A standalone MCP process continues periodic saves after the desktop closes. Copy the selected file only after the last save shown in Settings; that time means the local sync folder was updated, not that a cloud provider has uploaded it. If another process changes the selected file, Athria keeps a separate conflict copy and stops replacing it until you resolve the conflict.
+- Athria and its MCP tools open the same selected SQLite file directly. A successful save is committed to that database; an open database may also have SQLite `-wal` and `-shm` files beside it. Quit Athria and connected AI clients before copying the single database file for a backup. You may choose a cloud-synced folder, but Athria does not merge edits made on different devices or cloud copies.
 - When you allow a third-party AI client to use Athria data, that client may send the data it reads to its own model provider. Its privacy policy, configuration, and pricing still apply.
 - Athria itself is free; AI services you choose to connect may have their own charges.
 
@@ -192,7 +192,7 @@ Athria 的核心训练数据保存在你的电脑上，不需要注册 Athria �
 - 数据库密码用于控制 Athria 内部访问，并保护保存的连接密钥。
 - **当前数据库文件本身尚未加密。** 如果其他人可以直接访问该文件，仍可能读取其中的数据。
 - 数据库可以进行本地备份。
-- Athria 打开所选数据库时会创建经过验证的本机运行副本。数据变化后最多五分钟回写一次完整的单文件快照，桌面正常退出时也会立即回写；独立 MCP 在桌面退出后仍会定期回写。设置页的保存时间表示已写入本机同步文件夹，不代表云盘上传完成。若所选文件被其他进程修改，Athria 会保留冲突副本并暂停覆盖，等待手动处理。
+- Athria 和连接的 AI 工具直接打开同一个所选数据库文件。保存成功表示修改已经提交到该数据库；数据库打开时，旁边可能出现 SQLite 的 `-wal`、`-shm` 文件。复制单文件备份前，请退出 Athria 和连接的 AI 客户端。可以选择云盘同步目录，但 Athria 不会合并不同设备或云盘副本上的修改。
 - 当你选择让第三方 AI 使用 Athria 中的数据时，相应数据可能会发送给该 AI 的服务商。具体处理方式取决于你使用的 AI 服务及其隐私政策。
 - Athria 本身免费；你选择连接的 AI 服务可能有自己的收费方式。
 

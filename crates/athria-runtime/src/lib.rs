@@ -318,7 +318,7 @@ mod tests {
         store
             .save_profile(&serde_json::json!({"displayName":"Portable record"}))
             .unwrap();
-        assert!(!path.with_extension("sqlite3-wal").exists());
+        assert!(path.with_extension("sqlite3-wal").exists());
 
         let preview = preview_backup(&path).unwrap();
 

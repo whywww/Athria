@@ -1,9 +1,8 @@
 import { T, tr } from "./i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { listen } from "@tauri-apps/api/event";
 import { applyDatabaseVersion, type DatabaseVersion } from "./database-version";
-import { addCustomAgent, api, changeVaultPassword, createNewProfile, disconnectConnection, getAgentIntegrationsStatus, getDatabaseReplicaStatus, getIntervalsStatus, getMcpStatus, getStartupStatus, getVaultStatus, getXunjiStatus, importXunjiSkill, installAgentIntegration, openSkillArchiveFolder, pickNewProfileDestination, pickRestoreFile, reconcileAgentSkills, removeAgentIntegration, requireVaultPassword, resetVaultPassword, resolveAgentSkillUpdate, restoreBackup, setupVault, syncIntervals, syncXunji, testIntervals, unlockVault, type AgentIntegrationResult, type AgentIntegrationStatus, type AgentKind, type AgentSkillUpdate, type AgentSkillUpdateFailure, type OfficialAgentKind, type SkillArchiveView, type SkillUpdateResult, type StartupStatus } from "./api";
+import { addCustomAgent, api, changeVaultPassword, createNewProfile, disconnectConnection, getAgentIntegrationsStatus, getIntervalsStatus, getMcpStatus, getStartupStatus, getVaultStatus, getXunjiStatus, importXunjiSkill, installAgentIntegration, openSkillArchiveFolder, pickNewProfileDestination, pickRestoreFile, reconcileAgentSkills, removeAgentIntegration, requireVaultPassword, resetVaultPassword, resolveAgentSkillUpdate, restoreBackup, setupVault, syncIntervals, syncXunji, testIntervals, unlockVault, type AgentIntegrationResult, type AgentIntegrationStatus, type AgentKind, type AgentSkillUpdate, type AgentSkillUpdateFailure, type OfficialAgentKind, type SkillArchiveView, type SkillUpdateResult, type StartupStatus } from "./api";
 import {
   cmToImperialHeight, connectionSources, dashboardPages, deviceTimezone, displayPreferredName, equipmentGroupState, filterAndSortTrainingHistory, formatDateTime, formatDuration, formatPersonalHeight, formatPersonalWeight, formatRaceCountdown, formatRaceDateShort, formatTimezoneLabel, formatTrainingRhythm, formatTrainingSource, friendlyLabel, imperialHeightToCm, isUntouchedDefaultProfile, kgToPounds, nextRaceDay, poundsToKg,
   paginateTrainingHistory, parseSyncRange, profilePayload, syncRangeOptions, timezoneOptions, PREFERENCE_MAX_LENGTH, RACE_SPORT_PRESETS,
@@ -102,14 +101,9 @@ function goalTone(goal: string) {
 }
 
 function ServiceStatus() {
-  const queryClient = useQueryClient();
   const health = useQuery({ queryKey: ["doctor"], queryFn: () => api<DoctorResult>("/api/system/doctor"), retry: 3, retryDelay: 500 });
-  const replica = useQuery({ queryKey: ["database-replica-status"], queryFn: getDatabaseReplicaStatus, refetchInterval: 30_000 });
-  useEffect(() => { let stop: (() => void) | undefined; let disposed = false; void listen("database-published", () => { void queryClient.invalidateQueries({ queryKey: ["database-replica-status"] }); }).then((unlisten) => { if (disposed) unlisten(); else stop = unlisten; }); return () => { disposed = true; stop?.(); }; }, [queryClient]);
   const label = tr(health.isPending ? "Starting…" : health.isError ? "Service Unavailable" : "Local Service");
-  const savedAt = replica.data?.lastPublishedAt;
-  const savedLabel = savedAt ? new Date(savedAt).toLocaleString() : tr("Not saved yet");
-  return <div className="service-status"><span className={`status ${health.isError ? "offline" : ""}`}><i/>{label}</span><span className="database-save-time">{tr("Last database save")}: {savedLabel}</span>{replica.data?.status === "conflict" && <span className="database-save-conflict" title={replica.data.conflictPath ?? undefined}>{tr("Database conflict needs attention")}{replica.data.conflictPath && `: ${replica.data.conflictPath.split(/[\\/]/).pop()}`}</span>}</div>;
+  return <div className="service-status"><span className={`status ${health.isError ? "offline" : ""}`}><i/>{label}</span></div>;
 }
 
 function SettingsCardTitle({ icon, title, description }: { icon: IconName; title: string; description: string }) {
