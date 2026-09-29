@@ -38,6 +38,9 @@ main { min-width: 0; width: 100%; height: 100%; padding: 18px 28px 54px 0; overf
 .status { display: inline-flex; align-items: center; width: fit-content; color: #356e49; font-size: 12px; font-weight: 600; }
 .status i { width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; background: #4f9d69; }
 .status.offline { color: #9d3a2a; }.status.offline i { background: #c14a38; }
+.service-status { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; max-width: 100%; text-align: right; }
+.database-save-time { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.database-save-conflict { color: #9d3a2a; font-size: 11px; overflow-wrap: anywhere; }
 .card { margin-bottom: 8px; padding: 16px 18px 13px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: 0 1px 2px rgba(25,27,29,.015); }
 .card h2 { margin: 0; font-size: 20px; letter-spacing: -.025em; }
 .card p { color: #777c81; line-height: 1.5; }

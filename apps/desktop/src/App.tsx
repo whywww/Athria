@@ -1,7 +1,8 @@
 import { T, tr } from "./i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { addCustomAgent, api, changeVaultPassword, createNewProfile, disconnectConnection, getAgentIntegrationsStatus, getIntervalsStatus, getMcpStatus, getVaultStatus, getXunjiStatus, importXunjiSkill, installAgentIntegration, openSkillArchiveFolder, pickNewProfileDestination, pickRestoreFile, reconcileAgentSkills, removeAgentIntegration, requireVaultPassword, resetVaultPassword, resolveAgentSkillUpdate, restoreBackup, setupVault, syncIntervals, syncXunji, testIntervals, unlockVault, type AgentIntegrationResult, type AgentIntegrationStatus, type AgentKind, type AgentSkillUpdate, type AgentSkillUpdateFailure, type OfficialAgentKind, type SkillArchiveView, type SkillUpdateResult } from "./api";
+import { listen } from "@tauri-apps/api/event";
+import { addCustomAgent, api, changeVaultPassword, createNewProfile, disconnectConnection, getAgentIntegrationsStatus, getDatabaseReplicaStatus, getIntervalsStatus, getMcpStatus, getVaultStatus, getXunjiStatus, importXunjiSkill, installAgentIntegration, openSkillArchiveFolder, pickNewProfileDestination, pickRestoreFile, reconcileAgentSkills, removeAgentIntegration, requireVaultPassword, resetVaultPassword, resolveAgentSkillUpdate, restoreBackup, setupVault, syncIntervals, syncXunji, testIntervals, unlockVault, type AgentIntegrationResult, type AgentIntegrationStatus, type AgentKind, type AgentSkillUpdate, type AgentSkillUpdateFailure, type OfficialAgentKind, type SkillArchiveView, type SkillUpdateResult } from "./api";
 import {
   cmToImperialHeight, connectionSources, dashboardPages, deviceTimezone, equipmentGroupState, filterAndSortTrainingHistory, formatDateTime, formatDuration, formatPersonalHeight, formatPersonalWeight, formatRaceCountdown, formatRaceDateShort, formatTimezoneLabel, formatTrainingRhythm, formatTrainingSource, friendlyLabel, imperialHeightToCm, isUntouchedDefaultProfile, kgToPounds, nextRaceDay, poundsToKg,
   paginateTrainingHistory, parseSyncRange, profilePayload, syncRangeOptions, timezoneOptions, PREFERENCE_MAX_LENGTH, RACE_SPORT_PRESETS,
@@ -76,9 +77,14 @@ function goalTone(goal: string) {
 }
 
 function ServiceStatus() {
+  const queryClient = useQueryClient();
   const health = useQuery({ queryKey: ["doctor"], queryFn: () => api<DoctorResult>("/api/system/doctor"), retry: 3, retryDelay: 500 });
+  const replica = useQuery({ queryKey: ["database-replica-status"], queryFn: getDatabaseReplicaStatus, refetchInterval: 30_000 });
+  useEffect(() => { let stop: (() => void) | undefined; let disposed = false; void listen("database-published", () => { void queryClient.invalidateQueries({ queryKey: ["database-replica-status"] }); }).then((unlisten) => { if (disposed) unlisten(); else stop = unlisten; }); return () => { disposed = true; stop?.(); }; }, [queryClient]);
   const label = tr(health.isPending ? "Starting…" : health.isError ? "Service Unavailable" : "Local Service");
-  return <span className={`status ${health.isError ? "offline" : ""}`}><i/>{label}</span>;
+  const savedAt = replica.data?.lastPublishedAt;
+  const savedLabel = savedAt ? new Date(savedAt).toLocaleString() : tr("Not saved yet");
+  return <div className="service-status"><span className={`status ${health.isError ? "offline" : ""}`}><i/>{label}</span><span className="database-save-time">{tr("Last database save")}: {savedLabel}</span>{replica.data?.status === "conflict" && <span className="database-save-conflict" title={replica.data.conflictPath ?? undefined}>{tr("Database conflict needs attention")}{replica.data.conflictPath && `: ${replica.data.conflictPath.split(/[\\/]/).pop()}`}</span>}</div>;
 }
 
 function Overview() {
@@ -1029,7 +1035,7 @@ export function Help() {
       <div className="help-faq">
         <details className="faq-item"><summary><span><T>{"How do I create a new plan?"}</T></span></summary><div className="faq-answer"><p><T>{"Plans are created by your connected AI agent. Connect an agent in Settings under AI Agents, then ask it to build your plan — it uses your Profile, training history and synced workouts. Open Plan to review the Weekly Sessions it saves. Reusable Session Templates can be built in the Plan page's Template Library."}</T></p></div></details>
         <details className="faq-item"><summary><span><T>{"How do I import my training data?"}</T></span></summary><div className="faq-answer"><p><T>{"Open Connections and pick a source: Hevy (import a CSV export), Intervals.icu (sync endurance activities) or Xunji (sync strength and training records). Then use Sync now whenever you want to pull in new workouts."}</T></p></div></details>
-        <details className="faq-item"><summary><span><T>{"How do I back up my data and sync it with my own cloud?"}</T></span></summary><div className="faq-answer"><p><T>{"Athria has no cloud of its own — every workout, plan, profile and encrypted connection key lives in one local database file, whose path is shown in Settings. Copy the file anywhere, including a folder synced by your own cloud drive. On another computer, restore the file; Athria asks for that database's password before it shows your data and uses it to unlock saved connections."}</T></p></div></details>
+        <details className="faq-item"><summary><span><T>{"How do I back up my data and sync it with my own cloud?"}</T></span></summary><div className="faq-answer"><p><T>{"Athria has no cloud of its own — every workout, plan, profile and encrypted connection key lives in one local database file, whose path is shown in Settings. Fully quit Athria and AI clients connected to it before copying the database file. You can then copy that single file to a cloud-synced folder. On another computer, restore the file; Athria asks for that database's password before it shows your data and uses it to unlock saved connections."}</T></p></div></details>
       </div>
     </Card>
     <Card title={tr("Glossary")}>

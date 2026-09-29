@@ -116,7 +116,7 @@ pub struct BackupPreview {
     pub includes_credentials: bool,
 }
 
-pub fn preview_backup(source: &Path, staging_directory: &Path) -> Result<BackupPreview> {
+pub fn preview_backup(source: &Path) -> Result<BackupPreview> {
     if !source.is_absolute()
         || !source.is_file()
         || source
@@ -129,35 +129,18 @@ pub fn preview_backup(source: &Path, staging_directory: &Path) -> Result<BackupP
             "Select an existing .sqlite3 file.",
         ));
     }
-    fs::create_dir_all(staging_directory)
-        .map_err(|error| AthriaError::new(AthriaErrorCode::InvalidData, error.to_string()))?;
-    let stage = staging_directory.join(format!(".athria-preview-{}.sqlite3", Uuid::new_v4()));
-    fs::copy(source, &stage).map_err(|error| {
-        AthriaError::new(
-            AthriaErrorCode::InvalidData,
-            format!("The selected database could not be staged: {error}"),
-        )
-    })?;
-    let result = (|| {
-        let store = SqliteStore::open(&stage)?;
-        let counts = store.counts()?;
-        let vault = store.get_vault()?;
-        let preview = BackupPreview {
-            path: source.to_string_lossy().into_owned(),
-            counts: BackupCounts {
-                workouts: counts["training_sessions"].as_i64().unwrap_or(0),
-                templates: counts["session_templates"].as_i64().unwrap_or(0),
-                plans: counts["current_mesocycles"].as_i64().unwrap_or(0),
-            },
-            includes_credentials: !vault.secrets.is_empty(),
-        };
-        store.close();
-        Ok(preview)
-    })();
-    let _ = fs::remove_file(&stage);
-    let _ = fs::remove_file(stage.with_extension("sqlite3-wal"));
-    let _ = fs::remove_file(stage.with_extension("sqlite3-shm"));
-    result
+    let store = SqliteStore::open_read_only(source)?;
+    let counts = store.counts()?;
+    let vault = store.get_vault()?;
+    Ok(BackupPreview {
+        path: source.to_string_lossy().into_owned(),
+        counts: BackupCounts {
+            workouts: counts["training_sessions"].as_i64().unwrap_or(0),
+            templates: counts["session_templates"].as_i64().unwrap_or(0),
+            plans: counts["current_mesocycles"].as_i64().unwrap_or(0),
+        },
+        includes_credentials: !vault.secrets.is_empty(),
+    })
 }
 
 pub fn create_local_workspace(
@@ -305,7 +288,7 @@ mod tests {
         create_local_workspace(&path, &id, Some(&envelope)).unwrap();
         assert!(create_local_workspace(&path, &id, Some(&envelope)).is_err());
         let before = std::fs::read(&path).unwrap();
-        let preview = preview_backup(&path, &root).unwrap();
+        let preview = preview_backup(&path).unwrap();
         let after = std::fs::read(&path).unwrap();
         assert_eq!(
             preview.counts,
@@ -324,6 +307,25 @@ mod tests {
                 .to_string_lossy()
                 .starts_with(".athria-preview-")
         }));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn backup_preview_reads_the_source_database_directly() {
+        let root = std::env::temp_dir().join(format!("athria-wal-preview-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("workspace.sqlite3");
+        let store = SqliteStore::open(&path).unwrap();
+        store
+            .save_profile(&serde_json::json!({"displayName":"Portable record"}))
+            .unwrap();
+        assert!(!path.with_extension("sqlite3-wal").exists());
+
+        let preview = preview_backup(&path).unwrap();
+
+        assert_eq!(preview.path, path.to_string_lossy());
+        // Closing after preview must still leave the source connection usable.
+        assert_eq!(store.counts().unwrap()["profiles"], 1);
+        store.close();
         std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
@@ -347,7 +349,7 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         let path = root.join("not-athria.sqlite3");
         std::fs::write(&path, b"not sqlite").unwrap();
-        assert!(preview_backup(&path, &root).is_err());
+        assert!(preview_backup(&path).is_err());
         std::fs::remove_dir_all(root).unwrap();
     }
 }

@@ -13,7 +13,7 @@ use std::borrow::Cow;
 use std::collections::HashSet;
 use std::net::TcpListener;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt};
 
 use axum::{
@@ -694,6 +694,18 @@ pub fn serve_http_with_refresh<S: AthriaStore + Send + 'static>(
     bearer_token: &str,
     refresh: Option<Arc<dyn Fn(&mut McpService<S>) -> Result<(), String> + Send + Sync>>,
 ) -> std::io::Result<()> {
+    serve_http_with_refresh_shutdown(listener, service, bearer_token, refresh, None)
+}
+
+/// Stops accepting HTTP requests and waits for in-flight requests when the
+/// desktop exits, allowing the SQLite connection to close cleanly.
+pub fn serve_http_with_refresh_shutdown<S: AthriaStore + Send + 'static>(
+    listener: TcpListener,
+    service: McpService<S>,
+    bearer_token: &str,
+    refresh: Option<Arc<dyn Fn(&mut McpService<S>) -> Result<(), String> + Send + Sync>>,
+    shutdown: Option<Arc<AtomicBool>>,
+) -> std::io::Result<()> {
     let token = Arc::new(bearer_token.to_owned());
     listener.set_nonblocking(true)?;
     tokio::runtime::Runtime::new()?.block_on(async move {
@@ -709,9 +721,20 @@ pub fn serve_http_with_refresh<S: AthriaStore + Send + 'static>(
             .nest_service("/mcp", mcp)
             .layer(middleware::from_fn_with_state(token, authorize_request));
         let listener = tokio::net::TcpListener::from_std(listener)?;
-        axum::serve(listener, router)
-            .await
-            .map_err(std::io::Error::other)
+        if let Some(shutdown) = shutdown {
+            axum::serve(listener, router)
+                .with_graceful_shutdown(async move {
+                    while !shutdown.load(Ordering::SeqCst) {
+                        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                    }
+                })
+                .await
+                .map_err(std::io::Error::other)
+        } else {
+            axum::serve(listener, router)
+                .await
+                .map_err(std::io::Error::other)
+        }
     })
 }
 
@@ -1111,6 +1134,20 @@ mod tests {
         assert!(forbidden_origin.starts_with("HTTP/1.1 403 Forbidden"));
 
         assert!(!server.is_finished(), "HTTP server should remain available");
+    }
+
+    #[test]
+    fn desktop_http_server_releases_its_database_on_shutdown() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let signal = Arc::clone(&shutdown);
+        let server = std::thread::spawn(move || {
+            serve_http_with_refresh_shutdown(listener, service(), "secret", None, Some(signal))
+                .unwrap();
+        });
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        shutdown.store(true, Ordering::SeqCst);
+        server.join().unwrap();
     }
 
     #[test]

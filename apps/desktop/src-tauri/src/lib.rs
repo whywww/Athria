@@ -7,7 +7,7 @@ use std::{
     sync::{Arc, Mutex, atomic::{AtomicBool, AtomicU64, Ordering}},
 };
 use tauri::{
-    AppHandle, Manager, State, WindowEvent,
+    AppHandle, Emitter, Manager, State, WindowEvent,
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
@@ -17,13 +17,15 @@ use zeroize::Zeroizing;
 
 mod application_ipc;
 mod agent_integrations;
+mod database_replica;
+use database_replica::{Lease, Replica};
 use application_ipc::{DesktopApplication, dispatch as dispatch_application};
 use agent_integrations::{AgentKind, SkillUpdateAction, home_dir, resource_skills};
 use athria_application::AthriaApplication;
 use athria_integrations::{
     XUNJI_SYNC_DAYS, fetch_intervals, fetch_xunji_training, sync_date_window,
 };
-use athria_mcp::{McpService, serve_http_with_refresh, serve_stdio_with_refresh};
+use athria_mcp::{McpService, serve_http_with_refresh_shutdown, serve_stdio_with_refresh};
 use athria_runtime::{ReqwestHttpClient, create_local_workspace, preview_backup};
 use athria_store::SqliteStore;
 use athria_vault::{self as vault, EncryptedSecret, VaultBundle};
@@ -32,6 +34,7 @@ struct RuntimeState {
     vault_key: Mutex<Option<Zeroizing<Vec<u8>>>>,
     application: Mutex<DesktopApplication>,
     database_path: Mutex<PathBuf>,
+    replica_lease: Mutex<Option<Lease>>,
     generation: AtomicU64,
     switch_lock: Mutex<()>,
 }
@@ -164,6 +167,14 @@ fn checked_database_path_at(root: &Path) -> Result<PathBuf, String> {
     }
 }
 
+fn ensure_default_database(root: &Path, path: &Path) -> Result<(), String> {
+    if !root.join("athria.config.json").exists() && !path.exists() {
+        create_local_workspace(path, &Uuid::new_v4().to_string(), None)
+            .map_err(|error| error.message().to_owned())?;
+    }
+    Ok(())
+}
+
 fn extract_xunji_api_key(skill_text: &str) -> Result<String, String> {
     if skill_text.len() > 65_536 {
         return Err("The Xunji Skill text is too large.".to_string());
@@ -201,14 +212,21 @@ fn run_mcp_stdio() -> i32 {
         Ok(path) => path,
         Err(error) => { eprintln!("{error}"); return 1; }
     };
-    let store = match SqliteStore::open(&database_path) {
+    let root = match platform_config_root() { Ok(root) => root, Err(error) => { eprintln!("{error}"); return 1; } };
+    if let Err(error) = ensure_default_database(&root, &database_path) { eprintln!("{error}"); return 1; }
+    let replica = match Replica::new(&root, &database_path) { Ok(value) => value, Err(error) => { eprintln!("{error}"); return 1; } };
+    let (working, lease) = match replica.open() { Ok(value) => value, Err(error) => { eprintln!("{error}"); return 1; } };
+    let store = match SqliteStore::open(&working) {
         Ok(store) => store,
         Err(error) => {
             eprintln!("Athria could not open the MCP database: {error}");
             return 1;
         }
     };
-    match serve_stdio_with_refresh(mcp_service(AthriaApplication::new(store)), Some(mcp_refresh(database_path))) {
+    start_replica_publisher(root, None);
+    let result = serve_stdio_with_refresh(mcp_service(AthriaApplication::new(store)), Some(mcp_refresh(database_path, lease)));
+    if let Err(error) = publish_configured_replica() { eprintln!("Athria MCP could not save the database: {error}"); }
+    match result {
         Ok(()) => 0,
         Err(error) => {
             eprintln!("Athria MCP stdio failed: {error}");
@@ -230,18 +248,39 @@ fn mcp_service(application: AthriaApplication<SqliteStore>) -> McpService<Sqlite
     }
 }
 
-fn mcp_refresh(initial_path: PathBuf) -> Arc<dyn Fn(&mut McpService<SqliteStore>) -> Result<(), String> + Send + Sync> {
-    let active_path = Mutex::new(initial_path);
+fn mcp_refresh(initial_path: PathBuf, initial_lease: Lease) -> Arc<dyn Fn(&mut McpService<SqliteStore>) -> Result<(), String> + Send + Sync> {
+    let active_path = Mutex::new((initial_path, initial_lease));
     Arc::new(move |service| {
         let configured = checked_database_path()?;
         let mut active = active_path.lock().map_err(|_| "MCP database state is unavailable.".to_string())?;
-        if *active != configured {
-            let store = SqliteStore::open(&configured).map_err(|error| error.message().to_owned())?;
+        if active.0 != configured {
+            let root = platform_config_root()?;
+            Replica::new(&root, &active.0)?.publish_if_changed()?;
+            let (working, lease) = Replica::new(&root, &configured)?.open()?;
+            let store = SqliteStore::open(&working).map_err(|error| error.message().to_owned())?;
             service.replace_application(AthriaApplication::new(store));
-            *active = configured;
+            *active = (configured, lease);
         }
         Ok(())
     })
+}
+
+fn publish_configured_replica() -> Result<(), String> {
+    let root = platform_config_root()?;
+    let external = checked_database_path_at(&root)?;
+    Replica::new(&root, &external)?.publish_if_changed().map(|_| ())
+}
+
+fn start_replica_publisher(root: PathBuf, app: Option<AppHandle>) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_secs(300));
+        let result = checked_database_path_at(&root).and_then(|external| Replica::new(&root, &external)?.publish_if_changed());
+        match result {
+            Ok(true) => { if let Some(app) = &app { let _ = app.emit("database-published", ()); } }
+            Ok(false) => {}
+            Err(error) => eprintln!("Athria periodic database save failed: {error}"),
+        }
+    });
 }
 
 fn database_generation(state: &RuntimeState) -> u64 {
@@ -265,12 +304,8 @@ async fn athria_request(
         let selected = body
             .and_then(|value| value.get("path").and_then(Value::as_str).map(PathBuf::from))
             .ok_or_else(|| "A backup path is required.".to_string())?;
-        let database_path = state.database_path.lock().map_err(|_| "Athria runtime state is unavailable.".to_string())?.clone();
         return serde_json::to_value(
-            preview_backup(
-                &selected,
-                database_path.parent().unwrap_or(Path::new(".")),
-            )
+            preview_backup(&selected)
             .map_err(|error| error.message().to_owned())?,
         )
         .map_err(|error| error.to_string());
@@ -1093,10 +1128,6 @@ fn init_quit_event(_: &AppHandle) -> Result<(), String> { Ok(()) }
 fn exit_desktop(app: &AppHandle) {
     if EXIT_REQUESTED.swap(true, Ordering::SeqCst) { return; }
     log_lifecycle("desktop received Quit");
-    std::thread::spawn(|| {
-        std::thread::sleep(std::time::Duration::from_secs(4));
-        std::process::exit(0);
-    });
     app.exit(0);
 }
 
@@ -1277,10 +1308,7 @@ async fn restore_backup(
         .write(true)
         .open(&selected)
         .map_err(|error| format!("Athria needs write access to use this database: {error}"))?;
-    preview_backup(
-        &selected,
-        current.parent().unwrap_or(Path::new(".")),
-    )
+    preview_backup(&selected)
     .map_err(|error| error.message().to_owned())?;
     switch_database(&state, &selected)
 }
@@ -1294,16 +1322,27 @@ fn switch_database_at(state: &RuntimeState, target: &Path, config_root: &Path) -
     if !target.is_file() {
         return Err("The selected database no longer exists.".to_string());
     }
-    let store = SqliteStore::open(target).map_err(|error| error.message().to_owned())?;
+    let replica = Replica::new(config_root, target)?;
+    let (working, lease) = replica.open()?;
+    let store = SqliteStore::open(&working).map_err(|error| error.message().to_owned())?;
     let mut application = state.application.lock().map_err(|_| "Athria runtime state is unavailable.".to_string())?;
     let mut path = state.database_path.lock().map_err(|_| "Athria runtime state is unavailable.".to_string())?;
+    let mut previous_lease = state.replica_lease.lock().map_err(|_| "Athria runtime state is unavailable.".to_string())?;
+    if previous_lease.is_some() { Replica::new(config_root, &path)?.publish_if_changed()?; }
     write_config_to(config_root, target)?;
     *application = AthriaApplication::new(store);
     *path = target.to_path_buf();
+    *previous_lease = Some(lease);
     *state.vault_key.lock().map_err(|_| "Athria runtime state is unavailable.".to_string())? = None;
     state.generation.fetch_add(1, Ordering::SeqCst);
     log_lifecycle(&format!("switched database to {}", target.display()));
     Ok(json!({ "databasePath": target }))
+}
+
+#[tauri::command]
+fn database_replica_status(state: State<'_, RuntimeState>) -> Result<Value, String> {
+    let external = state.database_path.lock().map_err(|_| "Athria runtime state is unavailable.".to_string())?.clone();
+    Replica::new(&platform_config_root()?, &external)?.status()
 }
 
 // The save dialog may return a path whose file does not exist yet, so the
@@ -1371,26 +1410,24 @@ pub fn run() -> i32 {
             return 1;
         }
     };
-    let mcp_port = match mcp_listener.local_addr() {
-        Ok(value) => value.port(),
-        Err(error) => {
-            eprintln!("Athria could not read the MCP HTTP address: {error}");
-            return 1;
-        }
-    };
     let mcp_token = new_runtime_token();
     let database_path = match checked_database_path() {
         Ok(path) => path,
         Err(error) => { log_lifecycle(&error); return 1; }
     };
-    let application = match SqliteStore::open(&database_path) {
+    let root = match platform_config_root() { Ok(root) => root, Err(error) => { eprintln!("{error}"); return 1; } };
+    if let Err(error) = ensure_default_database(&root, &database_path) { eprintln!("{error}"); return 1; }
+    let replica = match Replica::new(&root, &database_path) { Ok(value) => value, Err(error) => { eprintln!("{error}"); return 1; } };
+    let (working, lease) = match replica.open() { Ok(value) => value, Err(error) => { eprintln!("{error}"); return 1; } };
+    let (_, mcp_lease) = match replica.open() { Ok(value) => value, Err(error) => { eprintln!("{error}"); return 1; } };
+    let application = match SqliteStore::open(&working) {
         Ok(store) => AthriaApplication::new(store),
         Err(error) => {
             eprintln!("Athria could not open the database: {error}");
             return 1;
         }
     };
-    let mcp_application = match SqliteStore::open(&database_path) {
+    let mcp_application = match SqliteStore::open(&working) {
         Ok(store) => AthriaApplication::new(store),
         Err(error) => {
             eprintln!("Athria could not open the MCP database: {error}");
@@ -1398,6 +1435,10 @@ pub fn run() -> i32 {
         }
     };
     let rust_mcp_token = mcp_token.clone();
+    let mcp_shutdown = Arc::new(AtomicBool::new(false));
+    let mcp_shutdown_for_server = Arc::clone(&mcp_shutdown);
+    let mcp_thread = Arc::new(Mutex::new(None::<std::thread::JoinHandle<()>>));
+    let mcp_thread_for_setup = Arc::clone(&mcp_thread);
 
     let result = tauri::Builder::default()
         .plugin(
@@ -1415,6 +1456,7 @@ pub fn run() -> i32 {
             vault_key: Mutex::new(None),
             application: Mutex::new(application),
             database_path: Mutex::new(database_path.clone()),
+            replica_lease: Mutex::new(Some(lease)),
             generation: AtomicU64::new(0),
             switch_lock: Mutex::new(()),
         })
@@ -1445,20 +1487,24 @@ pub fn run() -> i32 {
             pick_new_profile_destination,
             restore_backup,
             create_new_profile
+            ,database_replica_status
         ])
         .setup(move |app| {
             init_quit_event(app.handle()).map_err(std::io::Error::other)?;
             setup_tray(app.handle())?;
-            std::thread::spawn(move || {
-                if let Err(error) = serve_http_with_refresh(
+            start_replica_publisher(root, Some(app.handle().clone()));
+            let thread = std::thread::spawn(move || {
+                if let Err(error) = serve_http_with_refresh_shutdown(
                     mcp_listener,
                     mcp_service(mcp_application),
                     &rust_mcp_token,
-                    Some(mcp_refresh(database_path)),
+                    Some(mcp_refresh(database_path, mcp_lease)),
+                    Some(mcp_shutdown_for_server),
                 ) {
                     eprintln!("Athria MCP HTTP stopped: {error}");
                 }
             });
+            *mcp_thread_for_setup.lock().expect("MCP thread state poisoned") = Some(thread);
             let _ = app;
             Ok(())
         })
@@ -1473,6 +1519,13 @@ pub fn run() -> i32 {
             }
         })
         .run(tauri::generate_context!());
+    mcp_shutdown.store(true, Ordering::SeqCst);
+    if let Some(thread) = mcp_thread.lock().expect("MCP thread state poisoned").take() {
+        if thread.join().is_err() {
+            log_lifecycle("MCP HTTP thread exited unexpectedly");
+        }
+    }
+    if let Err(error) = publish_configured_replica() { eprintln!("Athria could not save the database on exit: {error}"); }
     match result {
         Ok(()) => 0,
         Err(error) => {
@@ -1513,6 +1566,7 @@ mod tests {
             vault_key: Mutex::new(None),
             application: Mutex::new(AthriaApplication::new(SqliteStore::open(&old).unwrap())),
             database_path: Mutex::new(old.clone()),
+            replica_lease: Mutex::new(None),
             generation: AtomicU64::new(0),
             switch_lock: Mutex::new(()),
         };

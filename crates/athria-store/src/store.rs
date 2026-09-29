@@ -12,7 +12,7 @@ use std::sync::Arc;
 use athria_application::RecordImportBatchInput;
 use athria_core::{AthriaError, AthriaErrorCode, Result};
 use athria_vault::{EncryptedSecret, VaultBundle, VaultEnvelope};
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 use serde_json::{Map, Value, json};
 use uuid::Uuid;
 
@@ -432,6 +432,21 @@ impl SqliteStore {
         Self::open_with_clock(path, Arc::new(SystemClock))
     }
 
+    /// Opens an existing database for inspection without changing its journal
+    /// mode, schema, or contents. SQLite reads an adjacent WAL if one exists.
+    pub fn open_read_only(path: impl AsRef<Path>) -> Result<Self> {
+        let connection = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(database_error)?;
+        let store = Self::from_connection(connection, Arc::new(SystemClock), false)?;
+        if store.schema_version()? != SUPPORTED_SCHEMA_VERSION {
+            return Err(AthriaError::new(
+                AthriaErrorCode::SchemaVersionUnsupported,
+                "The selected database does not have the supported Athria schema.",
+            ));
+        }
+        Ok(store)
+    }
+
     /// In-memory store used by unit tests; bootstraps a fresh v25 database.
     pub fn open_in_memory() -> Result<Self> {
         Self::open_in_memory_with_clock(Arc::new(SystemClock))
@@ -439,29 +454,53 @@ impl SqliteStore {
 
     /// Opens a database with an injected clock, for fixtures and tests.
     pub fn open_with_clock(path: impl AsRef<Path>, clock: Arc<dyn Clock>) -> Result<Self> {
+        let path = path.as_ref();
+        if path.exists() {
+            let inspection = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .map_err(database_error)?;
+            let integrity: String = inspection
+                .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+                .map_err(database_error)?;
+            if integrity != "ok" {
+                return Err(AthriaError::new(
+                    AthriaErrorCode::InvalidData,
+                    "The database failed SQLite integrity_check; its WAL was preserved. Restore a verified backup before opening it for writes.",
+                ));
+            }
+        }
         let connection = Connection::open(path).map_err(database_error)?;
-        Self::from_connection(connection, clock)
+        Self::from_connection(connection, clock, true)
     }
 
     /// In-memory store with an injected clock, for fixtures and tests.
     pub fn open_in_memory_with_clock(clock: Arc<dyn Clock>) -> Result<Self> {
         let connection = Connection::open_in_memory().map_err(database_error)?;
-        Self::from_connection(connection, clock)
+        Self::from_connection(connection, clock, true)
     }
 
-    fn from_connection(connection: Connection, clock: Arc<dyn Clock>) -> Result<Self> {
+    fn from_connection(connection: Connection, clock: Arc<dyn Clock>, writable: bool) -> Result<Self> {
         connection
             .execute_batch("PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;")
             .map_err(database_error)?;
-        connection
-            .query_row("PRAGMA journal_mode=WAL", [], |row| row.get::<_, String>(0))
-            .map_err(database_error)?;
+        if writable {
+            let mode: String = connection
+                .query_row("PRAGMA journal_mode=DELETE", [], |row| row.get(0))
+                .map_err(database_error)?;
+            if mode != "delete" && mode != "memory" {
+                return Err(AthriaError::new(
+                    AthriaErrorCode::InvalidData,
+                    format!("Athria requires SQLite DELETE journal mode, got {mode}."),
+                ));
+            }
+        }
         let store = Self {
             connection,
             clock,
             depth: Cell::new(0),
         };
-        store.require_supported_schema()?;
+        if writable {
+            store.require_supported_schema()?;
+        }
         Ok(store)
     }
 
@@ -608,6 +647,31 @@ impl SqliteStore {
         self.connection
             .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))
             .map_err(database_error)
+    }
+
+    /// Creates a consistent single-file SQLite snapshot at `target`, even if
+    /// recent committed pages are still in this connection's WAL.
+    pub fn backup_to(&self, target: impl AsRef<Path>) -> Result<()> {
+        let mut destination = Connection::open(target).map_err(database_error)?;
+        {
+            let backup = rusqlite::backup::Backup::new(&self.connection, &mut destination)
+                .map_err(database_error)?;
+            backup
+                .run_to_completion(128, std::time::Duration::from_millis(10), None)
+                .map_err(database_error)?;
+        }
+        destination
+            .execute_batch("PRAGMA journal_mode=DELETE;")
+            .map_err(database_error)
+    }
+
+    pub fn verify_integrity(&self) -> Result<()> {
+        let result: String = self.connection
+            .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+            .map_err(database_error)?;
+        if result == "ok" { Ok(()) } else {
+            Err(AthriaError::new(AthriaErrorCode::InvalidData, "SQLite integrity_check failed."))
+        }
     }
 
     pub fn get_profile(&self, owner_id: &str) -> Result<Option<Value>> {
@@ -1406,6 +1470,59 @@ mod tests {
             })
             .unwrap();
         assert_eq!(migrations, SUPPORTED_SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn committed_data_survives_copying_only_the_closed_main_file() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("source.sqlite3");
+        let copy = directory.path().join("copy.sqlite3");
+        let store = SqliteStore::open(&source).unwrap();
+        store.save_profile(&json!({"displayName":"Portable"})).unwrap();
+        store.close();
+        assert!(!source.with_extension("sqlite3-wal").exists());
+        assert!(!source.with_extension("sqlite3-shm").exists());
+        std::fs::copy(&source, &copy).unwrap();
+        let copied = SqliteStore::open_read_only(&copy).unwrap();
+        assert_eq!(copied.get_profile(DEFAULT_OWNER_ID).unwrap().unwrap()["displayName"], "Portable");
+    }
+
+    #[test]
+    fn read_only_preview_sees_existing_wal_without_converting_it() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("legacy.sqlite3");
+        {
+            let store = SqliteStore::open(&path).unwrap();
+            store.close();
+        }
+        let legacy = Connection::open(&path).unwrap();
+        legacy.execute_batch("PRAGMA journal_mode=WAL").unwrap();
+        legacy.execute(
+            "INSERT INTO profiles(owner_id, data, updated_at) VALUES (?1, ?2, 'now')",
+            params![DEFAULT_OWNER_ID, json!({"displayName":"Legacy WAL"}).to_string()],
+        ).unwrap();
+        let preview = SqliteStore::open_read_only(&path).unwrap();
+        assert_eq!(preview.get_profile(DEFAULT_OWNER_ID).unwrap().unwrap()["displayName"], "Legacy WAL");
+        assert_eq!(legacy.query_row("PRAGMA journal_mode", [], |row| row.get::<_, String>(0)).unwrap(), "wal");
+    }
+
+    #[test]
+    fn opening_a_closed_legacy_wal_database_converts_it_to_one_file() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("legacy.sqlite3");
+        SqliteStore::open(&path).unwrap().close();
+        let legacy = Connection::open(&path).unwrap();
+        legacy.execute_batch("PRAGMA journal_mode=WAL").unwrap();
+        legacy.execute(
+            "INSERT INTO profiles(owner_id, data, updated_at) VALUES (?1, ?2, 'now')",
+            params![DEFAULT_OWNER_ID, json!({"displayName":"Preserved"}).to_string()],
+        ).unwrap();
+        drop(legacy);
+        let converted = SqliteStore::open(&path).unwrap();
+        assert_eq!(converted.get_profile(DEFAULT_OWNER_ID).unwrap().unwrap()["displayName"], "Preserved");
+        converted.close();
+        assert!(!path.with_extension("sqlite3-wal").exists());
+        assert!(!path.with_extension("sqlite3-shm").exists());
     }
 
     #[test]
