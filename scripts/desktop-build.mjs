@@ -12,6 +12,7 @@ const buildRoot = resolve(projectRoot, "..", "Athria");
 const frontendDist = join(buildRoot, "frontend");
 const cargoTargetRoot = resolve(process.env.ATHRIA_CARGO_TARGET_DIR ?? join(buildRoot, "target"));
 const temporaryRoot = join(buildRoot, "tmp");
+const localMacSigningIdentity = "Athria Local Development";
 
 function hostBuild() {
   if (process.platform === "win32" && process.arch === "x64") {
@@ -59,12 +60,29 @@ function environment(host) {
   };
 }
 
+function macosSigningIdentity() {
+  const identity = process.env.ATHRIA_MACOS_SIGNING_IDENTITY?.trim() || localMacSigningIdentity;
+  const result = spawnSync("security", ["find-identity", "-v", "-p", "codesigning"], { encoding: "utf8" });
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(`Could not list macOS code signing identities: ${result.stderr.trim()}`);
+  const available = result.stdout.split("\n").some((line) => {
+    const match = line.match(/^\s*\d+\)\s+([a-f\d]{40})\s+"(.*)"\s*$/i);
+    return match && (match[1].toLowerCase() === identity.toLowerCase() || match[2] === identity);
+  });
+  if (!available) {
+    throw new Error(`macOS code signing identity "${identity}" is unavailable. Set up the local certificate described in README.md, or set ATHRIA_MACOS_SIGNING_IDENTITY to an installed code signing identity.`);
+  }
+  return identity;
+}
+
 function tauri(host, args) {
+  const signingIdentity = host.platform === "macos" && args[0] === "build" ? macosSigningIdentity() : undefined;
   mkdirSync(frontendDist, { recursive: true });
   mkdirSync(cargoTargetRoot, { recursive: true });
   mkdirSync(temporaryRoot, { recursive: true });
   const configOverride = JSON.stringify({
     build: { frontendDist: relative(tauriRoot, frontendDist).replaceAll("\\", "/") },
+    ...(signingIdentity ? { bundle: { macOS: { signingIdentity } } } : {}),
   });
   const buildEnvironment = environment(host);
   if (host.platform === "macos" && args.some((argument) => argument.includes("dmg"))) buildEnvironment.CI ??= "true";

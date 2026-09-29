@@ -1,6 +1,6 @@
 # MVP limitations
 
-- Native development targets Windows x64 and Apple Silicon macOS. Windows ARM, Intel macOS, Linux, and cross-compilation are unsupported. The MSI is unsigned and may trigger SmartScreen; macOS debug builds use ad-hoc signing and a rebuilt binary may prompt again for Keychain access.
+- Native development targets Windows x64 and Apple Silicon macOS. Windows ARM, Intel macOS, Linux, and cross-compilation are unsupported. The MSI is unsigned and may trigger SmartScreen. macOS app builds require a stable local code signing identity; switching from older ad-hoc builds may require one Keychain authorization.
 - The UI is English-only.
 - The MVP has no built-in LLM, cloud service, mobile client, or third-party write-back.
 - Plan Schema v2–v6 files are retained as historical format documentation. Runtime writes accept v7 only; this development cutover backs up and clears incompatible planning data so saved plans use authoritative Weekly Sessions and domain progression timelines.

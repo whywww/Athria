@@ -383,7 +383,11 @@ fn cache_master_key(
     Ok(())
 }
 
-fn cached_master_key(state: &RuntimeState, bundle: &VaultBundle) -> Option<Zeroizing<Vec<u8>>> {
+fn cached_master_key_with(
+    state: &RuntimeState,
+    bundle: &VaultBundle,
+    remembered: impl FnOnce() -> Option<Zeroizing<Vec<u8>>>,
+) -> Option<Zeroizing<Vec<u8>>> {
     if let Some(key) = state
         .vault_key
         .lock()
@@ -396,9 +400,13 @@ fn cached_master_key(state: &RuntimeState, bundle: &VaultBundle) -> Option<Zeroi
             return Some(Zeroizing::new(key.to_vec()));
         }
     }
-    let key = remembered_master_key(bundle)?;
+    let key = remembered()?;
     *state.vault_key.lock().expect("runtime state poisoned") = Some(Zeroizing::new(key.to_vec()));
     Some(key)
+}
+
+fn cached_master_key(state: &RuntimeState, bundle: &VaultBundle) -> Option<Zeroizing<Vec<u8>>> {
+    cached_master_key_with(state, bundle, || remembered_master_key(bundle))
 }
 
 fn remembered_master_key(bundle: &VaultBundle) -> Option<Zeroizing<Vec<u8>>> {
@@ -491,22 +499,27 @@ async fn vault_status(state: State<'_, RuntimeState>) -> Result<Value, String> {
         (application.store().get_vault().map_err(|error| error.message().to_owned())?, path)
     };
     let initialized = bundle.envelope.is_some();
-    let remembered = initialized && remembered_master_key(&bundle).is_some();
-    let locked = initialized && cached_master_key(&state, &bundle).is_none();
-    let legacy_sources: Vec<&str> = [
-        ("intervals", "intervals-api-key"),
-        ("xunji", "xunji-api-key"),
-    ]
-    .into_iter()
-    .filter_map(|(source, name)| {
-        credential(name)
-            .ok()?
-            .get_password()
-            .ok()
-            .filter(|value| !value.is_empty())
-            .map(|_| source)
-    })
-    .collect();
+    let remembered_key = initialized.then(|| remembered_master_key(&bundle)).flatten();
+    let remembered = remembered_key.is_some();
+    let locked = initialized && cached_master_key_with(&state, &bundle, || remembered_key).is_none();
+    let legacy_sources: Vec<&str> = if initialized {
+        Vec::new()
+    } else {
+        [
+            ("intervals", "intervals-api-key"),
+            ("xunji", "xunji-api-key"),
+        ]
+        .into_iter()
+        .filter_map(|(source, name)| {
+            credential(name)
+                .ok()?
+                .get_password()
+                .ok()
+                .filter(|value| !value.is_empty())
+                .map(|_| source)
+        })
+        .collect()
+    };
     Ok(json!({ "databaseUuid": bundle.database_uuid, "databasePath": database_path, "initialized": initialized, "locked": locked, "remembered": remembered, "legacySources": legacy_sources }))
 }
 
