@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { builtinTemplateText, displayBuiltinTemplate, errorText, exerciseName, LANGUAGE_STORAGE_KEY, LanguageProvider, readLanguage, saveLanguage, systemLanguage, T, translate, weekdayName } from "./i18n";
 import { PrimaryPageHeader } from "./components";
-import { formatDuration, formatRaceDateShort } from "./view-models";
+import { formatDuration, formatRaceDateShort, formatTimezoneLabel } from "./view-models";
 import { formatShortDate } from "./plan/view";
 
 describe("desktop language", () => {
@@ -53,6 +53,31 @@ describe("desktop language", () => {
     expect(weekdayName(0, "zh-CN", "short")).toContain("周");
     expect(errorText(new Error("NO_CURRENT_PLAN: There is no current plan."), "zh-CN")).toContain("没有当前计划");
     expect(errorText(new Error("Opaque service error"), "zh-CN")).toBe("Opaque service error");
+  });
+
+  it("translates the remaining dashboard, profile, settings, and template labels", () => {
+    expect(translate("this mesocycle", "zh-CN")).toBe("本训练周期");
+    expect(translate("from last week", "zh-CN")).toBe("较上周");
+    expect(translate("Marathon", "zh-CN")).toBe("马拉松");
+    expect(translate("Strength & Resistance", "zh-CN")).toBe("力量与阻力训练");
+    expect(translate("Treadmill", "zh-CN")).toBe("跑步机");
+    expect(translate("Shoulder External Rotation", "zh-CN")).toBe("肩外旋");
+    expect(translate("Always Require Password", "zh-CN")).toBe("始终要求输入密码");
+    expect(translate("Weight", "zh-CN")).toBe("体重");
+    expect(translate("I prefer a varied mix of training styles.", "zh-CN")).toBe("我喜欢多种训练方式的组合。");
+    expect(translate("A reusable single-domain pattern, such as \"Lower Strength A\". Templates carry structure only — no exercises or sets.", "zh-CN")).toContain("可重复使用的单领域模式");
+    expect(translate("Marathon", "en")).toBe("Marathon");
+  });
+
+  it("localizes the display name for a timezone while retaining its offset", () => {
+    vi.stubGlobal("localStorage", { getItem: () => "zh-CN", setItem: () => {} });
+    function ZoneLabel() { return createElement("span", null, formatTimezoneLabel("Asia/Hong_Kong")); }
+    const html = renderToStaticMarkup(createElement(LanguageProvider, null, createElement(ZoneLabel)));
+    expect(html).toContain("香港标准时间 (GMT+08:00)");
+    vi.unstubAllGlobals();
+    vi.stubGlobal("localStorage", { getItem: () => "en", setItem: () => {} });
+    renderToStaticMarkup(createElement(LanguageProvider, null, createElement(T, null, "Save")));
+    vi.unstubAllGlobals();
   });
 
   it("localizes built-ins but keeps user templates and unknown exercises unchanged", () => {

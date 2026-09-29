@@ -480,6 +480,29 @@ fn recorded_sessions_are_stored_as_completed_manual_observations() {
 }
 
 #[test]
+fn stale_session_edit_is_rejected_after_another_connection_updates_the_workout() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("shared.sqlite3");
+    let first = AthriaApplication::new(SqliteStore::open(&path).unwrap());
+    let second = AthriaApplication::new(SqliteStore::open(&path).unwrap());
+    second.record_training_session(&json!({
+        "id": "manual-shared", "name": "Easy Run", "modality": "endurance", "domains": ["endurance"],
+        "sport": "Run", "startAt": "2026-09-16T09:00:00.000Z", "endAt": "2026-09-16T10:00:00.000Z",
+        "durationMinutes": 60, "timezone": "Asia/Hong_Kong", "timePrecision": "exact",
+    })).unwrap();
+    let snapshot = first.list_sessions_with_snapshots(365).unwrap().remove(0);
+    second.update_manual_training_session("manual-shared", &json!({
+        "confirmed": true, "durationMinutes": 45, "expectedSnapshotHash": snapshot["snapshotHash"],
+    })).unwrap();
+
+    let error = first.update_manual_training_session("manual-shared", &json!({
+        "confirmed": true, "durationMinutes": 30, "expectedSnapshotHash": snapshot["snapshotHash"],
+    })).unwrap_err();
+    assert_eq!(error.code(), AthriaErrorCode::InputSnapshotChanged);
+    assert_eq!(first.list_sessions(365).unwrap()[0]["durationMinutes"], 45);
+}
+
+#[test]
 fn list_sessions_derives_endurance_domains_and_reports_missing_ones() {
     let app = test_app();
     // Nothing to derive from: `domains` is recorded as a missing field.

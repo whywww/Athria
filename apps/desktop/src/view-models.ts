@@ -123,7 +123,7 @@ export interface Mesocycle {
   adjustmentRules: Array<{ trigger: string; action: string; rationale: string }>;
 }
 
-export interface TrainingHistorySession { id: string; name: string; startAt: string; timezone: string | null; domains: string[]; sport: string | null; durationMinutes: number; source: string; timePrecision: "exact" | "date_only"; sources: Array<{ source: string; externalId: string }>; plannedSessionId: string | null; planMatch: { plannedSessionId: string; method: "auto" | "manual" } | null; isPlanMatchExcluded: boolean }
+export interface TrainingHistorySession { id: string; name: string; startAt: string; timezone: string | null; domains: string[]; sport: string | null; durationMinutes: number; source: string; timePrecision: "exact" | "date_only"; sources: Array<{ source: string; externalId: string }>; plannedSessionId: string | null; planMatch: { plannedSessionId: string; method: "auto" | "manual" } | null; isPlanMatchExcluded: boolean; snapshotHash?: string }
 export function formatTrainingSource(source: string): string {
   return ({ xunji: "训记", intervals: "Intervals.icu", hevy: "Hevy", manual: currentLanguage() === "zh-CN" ? "手动记录" : "Manual" } as Record<string, string>)[source] ?? source;
 }
@@ -466,11 +466,15 @@ export function deviceTimezone(): string {
 export function formatTimezoneLabel(zone: string): string {
   try {
     const city = (zone.split("/").pop() || zone).replaceAll("_", " ");
-    const parts = new Intl.DateTimeFormat("en", { timeZone: zone, timeZoneName: "longOffset" }).formatToParts();
+    const language = currentLanguage();
+    const parts = new Intl.DateTimeFormat(language, { timeZone: zone, timeZoneName: "longOffset" }).formatToParts();
     const name = parts.find((part) => part.type === "timeZoneName")?.value ?? "";
     const match = name.match(/GMT([+-])(\d{1,2})(?::(\d{2}))?/);
     const offset = match ? `GMT${match[1]}${match[2]!.padStart(2, "0")}:${match[3] ?? "00"}` : name;
-    return `${city} (${offset})`;
+    const localizedName = language === "zh-CN"
+      ? new Intl.DateTimeFormat(language, { timeZone: zone, timeZoneName: "long" }).formatToParts().find((part) => part.type === "timeZoneName")?.value
+      : undefined;
+    return `${localizedName ?? city} (${offset})`;
   } catch {
     return zone;
   }

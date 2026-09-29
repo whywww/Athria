@@ -52,8 +52,12 @@ pub fn dispatch(
     let input = body(request_body);
 
     match (method.as_str(), route) {
-        ("GET", "/api/profile") => result(app.get_profile()),
-        ("PUT", "/api/profile") => result(app.save_profile(&input)),
+        ("GET", "/api/system/database-version") => Ok(json!({
+            "databaseUuid": app.store().database_uuid().map_err(|error| error.message().to_owned())?,
+            "dbVersion": app.store().data_version().map_err(|error| error.message().to_owned())?,
+        })),
+        ("GET", "/api/profile") => result(app.get_profile_snapshot()),
+        ("PUT", "/api/profile") => result(app.save_profile_checked(&input)),
         ("GET", "/api/personal-information") => result(app.get_personal_information()),
         ("PUT", "/api/personal-information") => result(app.save_personal_information(&input)),
         ("GET", "/api/state") => result(app.get_training_state()),
@@ -62,7 +66,7 @@ pub fn dispatch(
             query(&url, "from").as_deref(),
             query(&url, "to").as_deref(),
         )),
-        ("GET", "/api/sessions") => result(app.list_sessions(query_i64(&url, "days", 90)?)),
+        ("GET", "/api/sessions") => result(app.list_sessions_with_snapshots(query_i64(&url, "days", 90)?)),
         ("POST", "/api/training-sessions") => result(app.record_training_session(&input)),
         ("GET", "/api/wellness") => result(app.list_wellness(query_i64(&url, "days", 42)?)),
         ("GET", "/api/training-taxonomy") => Ok(app.get_training_taxonomy()),
@@ -129,6 +133,17 @@ fn dispatch_resource(
     segments: &[&str],
     input: &Value,
 ) -> Result<Value, String> {
+    if matches!(segments,
+        ["api", "training-sessions", _, "plan-match"]
+        | ["api", "training-sessions", _, "automatic-match"]
+        | ["api", "training-sessions", _, "type"]
+        | ["api", "training-sessions", _, "manual"]
+        | ["api", "training-sessions", _]
+    ) && method != "GET" && method != "PUT"
+        && input.get("expectedSnapshotHash").and_then(Value::as_str).is_none()
+    {
+        return Err("The workout snapshot is required. Refresh and try again.".to_string());
+    }
     match segments {
         ["api", "training-sessions", id, "plan-match"] if method == "PATCH" => {
             result(app.set_training_session_plan_match(id, input))

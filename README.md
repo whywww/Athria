@@ -215,6 +215,7 @@ Athria 目前处于 **Alpha 开发阶段，尚未正式发布**。
 
 ### 帮助与反馈
 
+- [Athria 的数据如何保持更新](docs/DATA_SYNC.md)
 - [使用 AI 连接 Athria](docs/MCP.md)
 - [已知限制](docs/KNOWN_LIMITATIONS.md)
 - [GitHub Issues](https://github.com/whywww/Athria/issues) 用于 Bug 和功能建议

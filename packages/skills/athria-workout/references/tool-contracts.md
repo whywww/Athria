@@ -29,4 +29,6 @@ Call `override_training_session_plan_match` only after the user explicitly ident
 
 Immediately before any write, re-read the record or plan state that supplies its revision or hash. A stale proposal must be rebased and shown again; do not retry a changed write under the earlier approval.
 
+For `override_training_session_plan_match`, `allow_automatic_plan_match`, `update_manual_training_session`, and `remove_manual_training_source`, copy `snapshotHash` from the selected workout in `list_training_sessions` into `expectedSnapshotHash`. If Athria reports a conflict, list the workouts again before proposing another write.
+
 Every write is bounded to the exact workout action the user approved. If fulfilling the request needs changes to the complete cycle structure or progression, stop and hand off to the training planner.

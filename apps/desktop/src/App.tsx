@@ -2,7 +2,8 @@ import { T, tr } from "./i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
-import { addCustomAgent, api, changeVaultPassword, createNewProfile, disconnectConnection, getAgentIntegrationsStatus, getDatabaseReplicaStatus, getIntervalsStatus, getMcpStatus, getVaultStatus, getXunjiStatus, importXunjiSkill, installAgentIntegration, openSkillArchiveFolder, pickNewProfileDestination, pickRestoreFile, reconcileAgentSkills, removeAgentIntegration, requireVaultPassword, resetVaultPassword, resolveAgentSkillUpdate, restoreBackup, setupVault, syncIntervals, syncXunji, testIntervals, unlockVault, type AgentIntegrationResult, type AgentIntegrationStatus, type AgentKind, type AgentSkillUpdate, type AgentSkillUpdateFailure, type OfficialAgentKind, type SkillArchiveView, type SkillUpdateResult } from "./api";
+import { applyDatabaseVersion, type DatabaseVersion } from "./database-version";
+import { addCustomAgent, api, changeVaultPassword, createNewProfile, disconnectConnection, getAgentIntegrationsStatus, getDatabaseReplicaStatus, getIntervalsStatus, getMcpStatus, getStartupStatus, getVaultStatus, getXunjiStatus, importXunjiSkill, installAgentIntegration, openSkillArchiveFolder, pickNewProfileDestination, pickRestoreFile, reconcileAgentSkills, removeAgentIntegration, requireVaultPassword, resetVaultPassword, resolveAgentSkillUpdate, restoreBackup, setupVault, syncIntervals, syncXunji, testIntervals, unlockVault, type AgentIntegrationResult, type AgentIntegrationStatus, type AgentKind, type AgentSkillUpdate, type AgentSkillUpdateFailure, type OfficialAgentKind, type SkillArchiveView, type SkillUpdateResult, type StartupStatus } from "./api";
 import {
   cmToImperialHeight, connectionSources, dashboardPages, deviceTimezone, equipmentGroupState, filterAndSortTrainingHistory, formatDateTime, formatDuration, formatPersonalHeight, formatPersonalWeight, formatRaceCountdown, formatRaceDateShort, formatTimezoneLabel, formatTrainingRhythm, formatTrainingSource, friendlyLabel, imperialHeightToCm, isUntouchedDefaultProfile, kgToPounds, nextRaceDay, poundsToKg,
   paginateTrainingHistory, parseSyncRange, profilePayload, syncRangeOptions, timezoneOptions, PREFERENCE_MAX_LENGTH, RACE_SPORT_PRESETS,
@@ -124,9 +125,10 @@ function GoalTag({ goal, selected = true, onClick, onDelete }: { goal: string; s
 
 function Profile() {
   const client = useQueryClient();
-  const profileQuery = useQuery({ queryKey: ["profile"], queryFn: () => api<AthleteProfile>("/api/profile") });
+  const profileQuery = useQuery({ queryKey: ["profile"], queryFn: () => api<AthleteProfile & { profileHash: string }>("/api/profile") });
   const taxonomy = useQuery({ queryKey: ["training-taxonomy"], queryFn: () => api<TrainingTaxonomy>("/api/training-taxonomy") });
   const [editing, setEditing] = useState(false);
+  const [editingProfileHash, setEditingProfileHash] = useState<string | null>(null);
   const [form, setForm] = useState<AthleteProfile | null>(null);
   const [customGoal, setCustomGoal] = useState("");
   const [availableGoals, setAvailableGoals] = useState<string[]>(commonGoals);
@@ -134,9 +136,13 @@ function Profile() {
   const [saved, setSaved] = useState(false);
   const profile = profileQuery.data;
   const save = useMutation({
-    mutationFn: (value: AthleteProfile) => api<AthleteProfile>("/api/profile", { method: "PUT", body: JSON.stringify(value) }),
+    mutationFn: (value: AthleteProfile) => api<AthleteProfile>("/api/profile", { method: "PUT", body: JSON.stringify({ ...value, expectedProfileHash: editingProfileHash }) }),
     onSuccess: () => { setForm(null); setAvailableGoals(commonGoals); setRaceDraft(emptyRaceDraft); setEditing(false); setSaved(true); void client.invalidateQueries({ queryKey: ["profile"] }); },
+    onError: () => { void client.invalidateQueries({ queryKey: ["profile"] }); },
   });
+  useEffect(() => {
+    if (editing && save.isError && profile?.profileHash && profile.profileHash !== editingProfileHash) setEditingProfileHash(profile.profileHash);
+  }, [editing, editingProfileHash, profile?.profileHash, save.isError]);
   useEffect(() => {
     if (!saved) return;
     const timeout = window.setTimeout(() => setSaved(false), 5000);
@@ -155,7 +161,7 @@ function Profile() {
     setRaceDraft(emptyRaceDraft);
   };
   const removeRaceDay = (index: number) => setForm((current) => current ? { ...current, raceDays: current.raceDays.filter((_, itemIndex) => itemIndex !== index) } : current);
-  const beginEdit = () => { setSaved(false); setCustomGoal(""); setRaceDraft(emptyRaceDraft); setAvailableGoals([...new Set([...commonGoals, ...profile.goals])]); setForm({ ...profile, timezone: isUntouchedDefaultProfile(profile) ? deviceTimezone() : profile.timezone, goals: [...profile.goals], trainingRhythm: profile.trainingRhythm.kind === "fixed_week" ? { ...profile.trainingRhythm, days: [...profile.trainingRhythm.days] } : { ...profile.trainingRhythm }, equipment: [...profile.equipment], raceDays: profile.raceDays.map((race: RaceDay) => ({ ...race })).sort((left: RaceDay, right: RaceDay) => left.date.localeCompare(right.date)) }); setEditing(true); };
+  const beginEdit = () => { save.reset(); setSaved(false); setEditingProfileHash(profile.profileHash); setCustomGoal(""); setRaceDraft(emptyRaceDraft); setAvailableGoals([...new Set([...commonGoals, ...profile.goals])]); setForm({ ...profile, timezone: isUntouchedDefaultProfile(profile) ? deviceTimezone() : profile.timezone, goals: [...profile.goals], trainingRhythm: profile.trainingRhythm.kind === "fixed_week" ? { ...profile.trainingRhythm, days: [...profile.trainingRhythm.days] } : { ...profile.trainingRhythm }, equipment: [...profile.equipment], raceDays: profile.raceDays.map((race: RaceDay) => ({ ...race })).sort((left: RaceDay, right: RaceDay) => left.date.localeCompare(right.date)) }); setEditing(true); };
   const cancelEdit = () => { setForm(null); setCustomGoal(""); setRaceDraft(emptyRaceDraft); setAvailableGoals(commonGoals); setEditing(false); save.reset(); };
 
   const rhythmValid = !form || (form.trainingRhythm.kind === "fixed_week" ? form.trainingRhythm.days.length > 0 : form.trainingRhythm.kind === "flexible_week" ? form.trainingRhythm.minDaysPerWeek >= 1 && form.trainingRhythm.minDaysPerWeek <= form.trainingRhythm.targetDaysPerWeek && form.trainingRhythm.targetDaysPerWeek <= form.trainingRhythm.maxDaysPerWeek && form.trainingRhythm.maxDaysPerWeek <= 7 : form.trainingRhythm.intervalDays >= 1 && form.trainingRhythm.intervalDays <= 30);
@@ -187,16 +193,16 @@ function GroupCheckbox({ state, label, onChange }: { state: "none" | "some" | "a
 export function EquipmentSelector({ categories, selected, onToggleItem, onToggleGroup }: { categories: EquipmentCategory[]; selected: string[]; onToggleItem?: (id: string) => void; onToggleGroup?: (ids: string[]) => void }) {
   const editable = Boolean(onToggleItem && onToggleGroup);
   const selectedItems = categories.flatMap((category) => category.groups.flatMap((group) => group.items)).filter((item) => selected.includes(item.id));
-  if (!editable) return <section className="profile-section equipment-section"><div className="profile-section-heading"><AppIcon name="equipment"/><span><strong><T>{"Available Equipment"}</T></strong><small><T>{"Select equipment available to you"}</T></small></span></div>{selectedItems.length ? <div className="equipment-items readonly-equipment">{selectedItems.map((item) => <span className="equipment-item selected" key={item.id}>{item.label}</span>)}</div> : <span className="muted-tag"><T>{"None"}</T></span>}</section>;
+  if (!editable) return <section className="profile-section equipment-section"><div className="profile-section-heading"><AppIcon name="equipment"/><span><strong><T>{"Available Equipment"}</T></strong><small><T>{"Select equipment available to you"}</T></small></span></div>{selectedItems.length ? <div className="equipment-items readonly-equipment">{selectedItems.map((item) => <span className="equipment-item selected" key={item.id}>{tr(item.label)}</span>)}</div> : <span className="muted-tag"><T>{"None"}</T></span>}</section>;
   const visibleCategories = editable ? categories : categories.map((category) => ({ ...category, groups: category.groups.map((group) => ({ ...group, items: group.items.filter((item) => selected.includes(item.id)) })).filter((group) => group.items.length) })).filter((category) => category.groups.length);
-  return <section className="profile-section equipment-section"><div className="profile-section-heading"><AppIcon name="equipment"/><span><strong><T>{"Available Equipment"}</T></strong><small><T>{"Select equipment available to you"}</T></small></span></div>{visibleCategories.length ? <div className="equipment-categories">{visibleCategories.map((category) => <section className="equipment-category" key={category.id}><h3>{category.label}</h3><div className="equipment-groups">{category.groups.map((group) => {
+  return <section className="profile-section equipment-section"><div className="profile-section-heading"><AppIcon name="equipment"/><span><strong><T>{"Available Equipment"}</T></strong><small><T>{"Select equipment available to you"}</T></small></span></div>{visibleCategories.length ? <div className="equipment-categories">{visibleCategories.map((category) => <section className="equipment-category" key={category.id}><h3>{tr(category.label)}</h3><div className="equipment-groups">{category.groups.map((group) => {
     const ids = group.items.map((item) => item.id);
-    return <div className="equipment-group" key={group.id}>{editable && onToggleGroup ? <GroupCheckbox state={equipmentGroupState(selected, ids)} label={group.label === category.label ? "Select all" : group.label} onChange={() => onToggleGroup(ids)}/> : <h4>{group.label === category.label ? "Equipment" : group.label}</h4>}<div className="equipment-items">{group.items.map((item) => {
+    return <div className="equipment-group" key={group.id}>{editable && onToggleGroup ? <GroupCheckbox state={equipmentGroupState(selected, ids)} label={tr(group.label === category.label ? "Select all" : group.label)} onChange={() => onToggleGroup(ids)}/> : <h4>{tr(group.label === category.label ? "Equipment" : group.label)}</h4>}<div className="equipment-items">{group.items.map((item) => {
       const isSelected = selected.includes(item.id);
-      if (!editable) return <span className="equipment-item selected" key={item.id}>{item.label}</span>;
+      if (!editable) return <span className="equipment-item selected" key={item.id}>{tr(item.label)}</span>;
       return isSelected
-        ? <span className="equipment-item selected" key={item.id}><span>{item.label}</span><button type="button" aria-label={`Remove ${item.label}`} onClick={() => onToggleItem?.(item.id)}>×</button></span>
-        : <button type="button" className="equipment-item available" key={item.id} onClick={() => onToggleItem?.(item.id)}>+ {item.label}</button>;
+        ? <span className="equipment-item selected" key={item.id}><span>{tr(item.label)}</span><button type="button" aria-label={`${tr("Remove")} ${tr(item.label)}`} onClick={() => onToggleItem?.(item.id)}>×</button></span>
+        : <button type="button" className="equipment-item available" key={item.id} onClick={() => onToggleItem?.(item.id)}>+ {tr(item.label)}</button>;
     })}</div></div>;
   })}</div></section>)}</div> : <span className="muted-tag"><T>{"None"}</T></span>}</section>;
 }
@@ -227,17 +233,17 @@ export function EditableProfileBoard({ profile, form, setForm, customGoal, setCu
       </div>
       <div className="race-days-editor">
         <div className="profile-editor-heading"><span><strong className="profile-editor-title"><T>{"Race Days"}</T></strong><small className="profile-editor-subtitle"><T>{"Target races and events"}</T></small></span></div>
-        {form.raceDays.length > 0 && <div className="race-list">{form.raceDays.map((race, index) => <div className="race-row" key={`${race.date}-${index}`}><span title={`${formatRaceDateShort(race.date)} · ${race.sport}`}>{formatRaceDateShort(race.date)} · {race.sport}</span><button type="button" aria-label={`Remove ${race.sport} on ${formatRaceDateShort(race.date)}`} onClick={() => removeRaceDay(index)}>×</button></div>)}</div>}
+        {form.raceDays.length > 0 && <div className="race-list">{form.raceDays.map((race, index) => <div className="race-row" key={`${race.date}-${index}`}><span title={`${formatRaceDateShort(race.date)} · ${RACE_SPORT_PRESETS.includes(race.sport) ? tr(race.sport) : race.sport}`}>{formatRaceDateShort(race.date)} · {RACE_SPORT_PRESETS.includes(race.sport) ? tr(race.sport) : race.sport}</span><button type="button" aria-label={`Remove ${race.sport} on ${formatRaceDateShort(race.date)}`} onClick={() => removeRaceDay(index)}>×</button></div>)}</div>}
         <div className="race-inline-input">
           <input type="date" aria-label={tr("Race date")} value={raceDraft.date} onChange={(event) => setRaceDraft((draft) => ({ ...draft, date: event.target.value }))}/>
-          <select aria-label={tr("Race sport")} value={raceDraft.sport} onChange={(event) => setRaceDraft((draft) => ({ ...draft, sport: event.target.value }))}>{RACE_SPORT_PRESETS.map((sport) => <option key={sport} value={sport}>{sport}</option>)}<option value={RACE_SPORT_OTHER}><T>{"Other…"}</T></option></select>
+          <select aria-label={tr("Race sport")} value={raceDraft.sport} onChange={(event) => setRaceDraft((draft) => ({ ...draft, sport: event.target.value }))}>{RACE_SPORT_PRESETS.map((sport) => <option key={sport} value={sport}>{tr(sport)}</option>)}<option value={RACE_SPORT_OTHER}><T>{"Other…"}</T></option></select>
           {raceDraft.sport === RACE_SPORT_OTHER && <input type="text" aria-label={tr("Race name")} maxLength={80} placeholder={tr("Race name")} value={raceDraft.custom} onChange={(event) => setRaceDraft((draft) => ({ ...draft, custom: event.target.value }))}/>}
-          <button type="button" className="secondary" disabled={!raceDraftValid} onClick={addRaceDay}>+ Add race</button>
+          <button type="button" className="secondary" disabled={!raceDraftValid} onClick={addRaceDay}>+ {tr("Add race")}</button>
         </div>
       </div></div>
       <div className="profile-column-stack">
         <div className="profile-summary-item profile-duration-editor"><div className="profile-editor-heading"><span><strong className="profile-editor-title"><T>{"Max Session Length"}</T></strong><small className="profile-editor-subtitle"><T>{"How much time per session?"}</T></small></span></div><label className="profile-editor-control"><span className="sr-only"><T>{"Max Session Length"}</T></span><select aria-label={tr("Max Session Length")} value={form.maxSessionMinutes} onChange={(event) => setForm({ ...form, maxSessionMinutes: Number(event.target.value) })}>{[15, 30, 45, 60, 75, 90, 120, 180, 240].map((value) => <option key={value} value={value}>{value} min</option>)}</select></label></div>
-        <div className="profile-summary-item profile-duration-editor"><div className="profile-editor-heading"><span><strong className="profile-editor-title"><T>{"Mesocycle Length"}</T></strong><small className="profile-editor-subtitle"><T>{"How long should a mesocycle be?"}</T></small></span></div><label className="profile-editor-control"><span className="sr-only"><T>{"Mesocycle Length"}</T></span><select aria-label={tr("Mesocycle Length")} value={form.mesocycleDurationWeeks} onChange={(event) => setForm({ ...form, mesocycleDurationWeeks: Number(event.target.value) })}>{[1, 2, 3, 4, 5, 6, 7, 8].map((value) => <option key={value} value={value}>{value} {value === 1 ? "week" : "weeks"}</option>)}</select></label></div>
+        <div className="profile-summary-item profile-duration-editor"><div className="profile-editor-heading"><span><strong className="profile-editor-title"><T>{"Mesocycle Length"}</T></strong><small className="profile-editor-subtitle"><T>{"How long should a mesocycle be?"}</T></small></span></div><label className="profile-editor-control"><span className="sr-only"><T>{"Mesocycle Length"}</T></span><select aria-label={tr("Mesocycle Length")} value={form.mesocycleDurationWeeks} onChange={(event) => setForm({ ...form, mesocycleDurationWeeks: Number(event.target.value) })}>{[1, 2, 3, 4, 5, 6, 7, 8].map((value) => <option key={value} value={value}>{value} {tr(value === 1 ? "week" : "weeks")}</option>)}</select></label></div>
       </div>
     </section>
   </div>;
@@ -265,11 +271,11 @@ export function ProfileBoard({ profile, equipmentCategories }: { profile: Athlet
   return <div className="profile-content">
     <section className="profile-top-summary profile-readonly-summary">
       <section className="profile-goals-panel"><span className="profile-feature-icon" aria-hidden="true"><AppIcon name="target"/></span><div><strong><T>{"Training Goals"}</T></strong><small><T>{"What do you want to focus on?"}</T></small>{profile.goals.length ? <div className="goal-tags">{profile.goals.map((goal) => <GoalTag key={goal} goal={goal}/>)}</div> : <p><T>{"No goals selected"}</T></p>}</div></section>
-      <div className="profile-summary-item"><div><span><T>{"Preferences"}</T></span><strong>{profile.preference || "Not set"}</strong></div></div>
-      <div className="profile-summary-item profile-rhythm-summary"><div><span><T>{"Training Rhythm"}</T></span><strong>{formatTrainingRhythm(profile.trainingRhythm)}</strong></div><div className="race-days-summary"><span><T>{"Race Days"}</T></span>{nextRace ? <><strong>{formatRaceDateShort(nextRace.date)} · {nextRace.sport}</strong><em className="race-countdown">{formatRaceCountdown(nextRace.date, today)}</em>{upcomingRaces > 1 && <small className="race-more">+{upcomingRaces - 1} more scheduled</small>}</> : <p className="race-empty"><T>{"No upcoming races"}</T></p>}</div></div>
+      <div className="profile-summary-item"><div><span><T>{"Preferences"}</T></span><strong>{profile.preference || tr("Not set")}</strong></div></div>
+      <div className="profile-summary-item profile-rhythm-summary"><div><span><T>{"Training Rhythm"}</T></span><strong>{formatTrainingRhythm(profile.trainingRhythm)}</strong></div><div className="race-days-summary"><span><T>{"Race Days"}</T></span>{nextRace ? <><strong>{formatRaceDateShort(nextRace.date)} · {RACE_SPORT_PRESETS.includes(nextRace.sport) ? tr(nextRace.sport) : nextRace.sport}</strong><em className="race-countdown">{formatRaceCountdown(nextRace.date, today)}</em>{upcomingRaces > 1 && <small className="race-more">+{upcomingRaces - 1} more scheduled</small>}</> : <p className="race-empty"><T>{"No upcoming races"}</T></p>}</div></div>
       <div className="profile-column-stack">
         <div className="profile-summary-item"><div><span><T>{"Max Session Length"}</T></span><strong>{profile.maxSessionMinutes} min</strong></div></div>
-        <div className="profile-summary-item"><div><span><T>{"Mesocycle Length"}</T></span><strong>{profile.mesocycleDurationWeeks} {profile.mesocycleDurationWeeks === 1 ? "week" : "weeks"}</strong></div></div>
+        <div className="profile-summary-item"><div><span><T>{"Mesocycle Length"}</T></span><strong>{profile.mesocycleDurationWeeks} {tr(profile.mesocycleDurationWeeks === 1 ? "week" : "weeks")}</strong></div></div>
       </div>
     </section>
     <EquipmentSelector categories={equipmentCategories} selected={profile.equipment}/>
@@ -391,30 +397,34 @@ function trainingHistorySourceLabel(source: string): string {
 
 function TimelineWorkout({ item, planned, revision, timezone, onMutated }: { item: TrainingHistorySession; planned: CalendarSession[]; revision: number; timezone: string; onMutated: () => Promise<void> }) {
   const [busy, setBusy] = useState(false); const [error, setError] = useState<unknown>(); const [editing, setEditing] = useState(false); const [typeOpen, setTypeOpen] = useState(false); const rowRef = useRef<HTMLElement>(null); const menuRef = useRef<HTMLDetailsElement>(null);
+  const editingSnapshotHash = useRef<string | undefined>(undefined);
   const [duration, setDuration] = useState(String(item.durationMinutes)); const [startAt, setStartAt] = useState("");
   const day = workoutLocalDate(item, timezone);
   const displayType = trainingDisplayType(item); const dateTime = workoutDateTime(item, timezone);
   const compatible = (session: CalendarSession) => session.components.some((component) => component.domain.value !== null && item.domains.includes(component.domain.value));
   const eligible = planned.filter((session) => session.scheduledDate === day && session.status !== "skipped").sort((left, right) => Number(compatible(right)) - Number(compatible(left)) || Number(Boolean(left.completedTrainingSessionId)) - Number(Boolean(right.completedTrainingSessionId)));
   useEffect(() => { if (!typeOpen) return; const close = (event: PointerEvent) => { if (!rowRef.current?.contains(event.target as Node)) setTypeOpen(false); }; document.addEventListener("pointerdown", close); return () => document.removeEventListener("pointerdown", close); }, [typeOpen]);
+  useEffect(() => {
+    if (editing && error && item.snapshotHash && item.snapshotHash !== editingSnapshotHash.current) editingSnapshotHash.current = item.snapshotHash;
+  }, [editing, error, item.snapshotHash]);
   const mutate = async (path: string, init: RequestInit): Promise<boolean> => { setBusy(true); setError(undefined); try { await api(path, init); await onMutated(); return true; } catch (value) { setError(value); return false; } finally { setBusy(false); } };
   const changeMatch = async (value: string) => {
-    if (value === "__automatic__") return mutate(`/api/training-sessions/${encodeURIComponent(item.id)}/automatic-match`, { method: "POST", body: JSON.stringify({ confirmed: true }) });
+    if (value === "__automatic__") return mutate(`/api/training-sessions/${encodeURIComponent(item.id)}/automatic-match`, { method: "POST", body: JSON.stringify({ confirmed: true, expectedSnapshotHash: item.snapshotHash }) });
     const target = eligible.find((session) => session.id === value);
     if (target?.completedTrainingSessionId && target.completedTrainingSessionId !== item.id && !window.confirm(`${target.name} is linked to another workout. Replace that link?`)) return;
-    return mutate(`/api/training-sessions/${encodeURIComponent(item.id)}/plan-match`, { method: "PATCH", body: JSON.stringify({ plannedSessionId: value, expectedRevision: revision, confirmed: true }) });
+    return mutate(`/api/training-sessions/${encodeURIComponent(item.id)}/plan-match`, { method: "PATCH", body: JSON.stringify({ plannedSessionId: value, expectedRevision: revision, confirmed: true, expectedSnapshotHash: item.snapshotHash }) });
   };
-  const changeType = async (domain: Exclude<TrainingDisplayType, "unclassified">) => { if (domain === displayType.id) { setTypeOpen(false); return; } if (await mutate(`/api/training-sessions/${encodeURIComponent(item.id)}/type`, { method: "PATCH", body: JSON.stringify({ domain, confirmed: true }) })) setTypeOpen(false); };
+  const changeType = async (domain: Exclude<TrainingDisplayType, "unclassified">) => { if (domain === displayType.id) { setTypeOpen(false); return; } if (await mutate(`/api/training-sessions/${encodeURIComponent(item.id)}/type`, { method: "PATCH", body: JSON.stringify({ domain, confirmed: true, expectedSnapshotHash: item.snapshotHash }) })) setTypeOpen(false); };
   const resetManualDraft = () => { setDuration(String(item.durationMinutes)); setStartAt(""); };
-  const beginManualEdit = () => { resetManualDraft(); setEditing(true); };
+  const beginManualEdit = () => { resetManualDraft(); editingSnapshotHash.current = item.snapshotHash; setEditing(true); };
   const cancelManualEdit = () => { resetManualDraft(); setEditing(false); };
   const saveManual = async () => {
-    const parsedDuration = Number(duration); const payload: Record<string, unknown> = { confirmed: true, durationMinutes: parsedDuration };
+    const parsedDuration = Number(duration); const payload: Record<string, unknown> = { confirmed: true, durationMinutes: parsedDuration, expectedSnapshotHash: editingSnapshotHash.current };
     if (startAt) payload.startAt = new Date(startAt).toISOString();
     if (await mutate(`/api/training-sessions/${encodeURIComponent(item.id)}/manual`, { method: "PATCH", body: JSON.stringify(payload) })) { setEditing(false); menuRef.current?.removeAttribute("open"); }
   };
-  const removeManual = () => { if (window.confirm("Remove the manual workout record? Synced sources will be kept.")) void mutate(`/api/training-sessions/${encodeURIComponent(item.id)}/manual`, { method: "DELETE", body: JSON.stringify({ confirmed: true }) }); };
-  const deleteRecord = () => { if (window.confirm("Delete this workout record and all of its source data? A synced workout may be imported again during a future sync.")) void mutate(`/api/training-sessions/${encodeURIComponent(item.id)}`, { method: "DELETE", body: JSON.stringify({ confirmed: true }) }); };
+  const removeManual = () => { if (window.confirm("Remove the manual workout record? Synced sources will be kept.")) void mutate(`/api/training-sessions/${encodeURIComponent(item.id)}/manual`, { method: "DELETE", body: JSON.stringify({ confirmed: true, expectedSnapshotHash: item.snapshotHash }) }); };
+  const deleteRecord = () => { if (window.confirm("Delete this workout record and all of its source data? A synced workout may be imported again during a future sync.")) void mutate(`/api/training-sessions/${encodeURIComponent(item.id)}`, { method: "DELETE", body: JSON.stringify({ confirmed: true, expectedSnapshotHash: item.snapshotHash }) }); };
   const hasManual = item.sources.some((source) => source.source === "manual");
   const hasSynced = item.sources.some((source) => source.source !== "manual");
   const subtitle = item.sport || (item.domains.length > 1 ? item.domains.map(friendlyLabel).join(" + ") : `${displayType.label} workout`);
@@ -523,7 +533,7 @@ export function Backup() {
             <button type="button" className="compact" disabled={restoring} onClick={() => void confirmRestore()}>{restoring ? "Switching Database…" : "Switch Database"}</button>
           </div>
         </div>}
-    {vault.data?.initialized && !vault.data.locked && <div className="section"><div className="section-heading"><div className="section-copy"><h3><T>{"Edit Password Settings"}</T></h3><p><T>{"Change the database password or require it whenever Athria starts."}</T></p></div><div className="section-actions"><button type="button" className="secondary compact" onClick={openChangePassword}><T>{"Change Password"}</T></button><button type="button" className="secondary compact" disabled={!vault.data.remembered} onClick={() => { setError(undefined); setCurrentPassword(""); setRequireModal(true); }}>{vault.data.remembered ? "Always Require Password" : "Password Required on Startup"}</button></div></div></div>}
+    {vault.data?.initialized && !vault.data.locked && <div className="section"><div className="section-heading"><div className="section-copy"><h3><T>{"Edit Password Settings"}</T></h3><p><T>{"Change the database password or require it whenever Athria starts."}</T></p></div><div className="section-actions"><button type="button" className="secondary compact" onClick={openChangePassword}><T>{"Change Password"}</T></button><button type="button" className="secondary compact" disabled={!vault.data.remembered} onClick={() => { setError(undefined); setCurrentPassword(""); setRequireModal(true); }}><T>{vault.data.remembered ? "Always Require Password" : "Password Required on Startup"}</T></button></div></div></div>}
     <div className="section"><div className="section-heading"><div className="section-copy"><h3><T>{"Create a New Profile"}</T></h3><p><T>{"Start fresh from a new empty profile. Athria will switch to it without restarting; the current database file is left untouched."}</T></p></div><div className="section-actions"><button type="button" className="secondary compact" disabled={creating} onClick={() => void chooseProfileDestination()}><AppIcon name="plus"/><T>{"Create Profile"}</T></button></div></div></div>
     {profileTarget && <NewProfileModal target={profileTarget} error={error} busy={creating} onClose={() => setProfileTarget(undefined)} onSubmit={() => void createProfile()}/>}
     {passwordModal && <ChangePasswordModal value={passwordDraft} error={error} busy={changing} onChange={setPasswordDraft} onClose={closeChangePassword} onSubmit={() => void updateVaultPassword()}/>}
@@ -625,12 +635,12 @@ function PersonalInformationCard() {
       <div className="unit-row"><span className="unit-label"><T>{"Units"}</T></span><span className="unit-switch" role="group" aria-label={tr("Measurement units")}><button type="button" className={unit === "metric" ? "active" : ""} aria-pressed={unit === "metric"} onClick={() => switchUnit("metric")}><T>{"Metric"}</T></button><button type="button" className={unit === "imperial" ? "active" : ""} aria-pressed={unit === "imperial"} onClick={() => switchUnit("imperial")}><T>{"Imperial"}</T></button></span></div>
       <label><span><T>{"Preferred name"}</T></span><input maxLength={100} value={form.preferredName} onChange={(event) => setForm({ ...form, preferredName: event.target.value })}/></label>
       <label><span><T>{"Gender"}</T></span><select value={form.gender ?? ""} onChange={(event) => setForm({ ...form, gender: (event.target.value || null) as PersonalInformation["gender"] })}><option value=""><T>{"Not specified"}</T></option><option value="female"><T>{"Female"}</T></option><option value="male"><T>{"Male"}</T></option><option value="non_binary"><T>{"Non-binary"}</T></option><option value="prefer_not_to_say"><T>{"Prefer not to say"}</T></option></select></label>
-      <label><span>Height <em>{unit === "metric" ? "cm" : "ft / in"}</em></span>{unit === "metric"
+      <label><span><T>{"Height"}</T> <em>{unit === "metric" ? "cm" : "ft / in"}</em></span>{unit === "metric"
         ? <input type="number" min="50" max="250" step="0.1" value={form.heightCm ?? ""} onChange={(event) => setForm({ ...form, heightCm: event.target.value ? Number(event.target.value) : null })}/>
         : <div className="imperial-height"><span className="imperial-field"><input type="number" min="0" max="8" step="1" aria-label={tr("Height feet")} value={feetText} onChange={(event) => { setFeetText(event.target.value); setHeightTouched(true); }}/><em>ft</em></span><span className="imperial-field"><input type="number" min="0" max="11.9" step="0.1" aria-label={tr("Height inches")} value={inchesText} onChange={(event) => { setInchesText(event.target.value); setHeightTouched(true); }}/><em>in</em></span></div>}</label>
-      <label><span>Weight <em>{unit === "metric" ? "kg" : "lb"}</em></span><input type="number" min={unit === "metric" ? "20" : "44"} max={unit === "metric" ? "500" : "1103"} step="0.1" value={weightText} onChange={(event) => { setWeightText(event.target.value); setWeightChanged(true); }}/></label>
+      <label><span><T>{"Weight"}</T> <em>{unit === "metric" ? "kg" : "lb"}</em></span><input type="number" min={unit === "metric" ? "20" : "44"} max={unit === "metric" ? "500" : "1103"} step="0.1" value={weightText} onChange={(event) => { setWeightText(event.target.value); setWeightChanged(true); }}/></label>
       <label><span><T>{"Birth date"}</T></span><input type="date" max={new Date().toISOString().slice(0, 10)} value={form.birthDate ?? ""} onChange={(event) => setForm({ ...form, birthDate: event.target.value || null })}/></label>
-    </div> : <dl className="personal-information-summary"><div><dt><T>{"Preferred name"}</T></dt><dd>{value.preferredName}</dd></div><div><dt><T>{"Gender"}</T></dt><dd>{genderLabel}</dd></div><div><dt><T>{"Height"}</T></dt><dd>{value.heightCm == null ? "-" : formatPersonalHeight(value.heightCm, value.unitSystem)}</dd></div><div><dt>Weight {value.weightDate && <small>{value.weightDate}</small>}</dt><dd>{value.weightKg == null ? "-" : formatPersonalWeight(value.weightKg, value.unitSystem)}</dd></div><div><dt><T>{"Birth date"}</T></dt><dd>{value.birthDate ?? "-"}</dd></div></dl>}
+    </div> : <dl className="personal-information-summary"><div><dt><T>{"Preferred name"}</T></dt><dd>{value.preferredName}</dd></div><div><dt><T>{"Gender"}</T></dt><dd>{genderLabel}</dd></div><div><dt><T>{"Height"}</T></dt><dd>{value.heightCm == null ? "-" : formatPersonalHeight(value.heightCm, value.unitSystem)}</dd></div><div><dt><T>{"Weight"}</T> {value.weightDate && <small>{value.weightDate}</small>}</dt><dd>{value.weightKg == null ? "-" : formatPersonalWeight(value.weightKg, value.unitSystem)}</dd></div><div><dt><T>{"Birth date"}</T></dt><dd>{value.birthDate ?? "-"}</dd></div></dl>}
     <ErrorBanner error={save.error}/>
   </Card>;
 }
@@ -1049,7 +1059,7 @@ export function Help() {
       <h3 className="glossary-heading"><T>{"Training"}</T></h3>
       <div className="help-grid glossary-grid">
         <section><strong><T>{"Mesocycle"}</T></strong><span><T>{"Your multi-week plan: start date, Weekly Sessions, phase progressions and adjustment rules."}</T></span></section>
-        <section><strong><T>{"Template"}</T></strong><span>A reusable single-domain pattern, such as "Lower Strength A". Templates carry structure only — no exercises or sets.</span></section>
+        <section><strong><T>{"Template"}</T></strong><span><T>{"A reusable single-domain pattern, such as \"Lower Strength A\". Templates carry structure only — no exercises or sets."}</T></span></section>
         <section><strong><T>{"Training domain"}</T></strong><span><T>{"The five training types Athria plans around: strength, endurance, sport skill, mind-body and recovery."}</T></span></section>
         <section><strong><T>{"RPE"}</T></strong><span><T>{"Rates how hard a set felt, usually 1–10. Drives load autoregulation."}</T></span></section>
         <section><strong><T>{"Heart rate zone"}</T></strong><span><T>{"A personal heart-rate range used to indicate effort level. Check your zone ranges in your watch or fitness app."}</T></span></section>
@@ -1130,9 +1140,66 @@ export function DatabaseGate() {
   </section></div>;
 }
 
+export async function previewRecoverySelection(
+  pick: () => Promise<string | null>,
+  preview: (path: string) => Promise<BackupPreview>,
+): Promise<BackupPreview | undefined> {
+  const path = await pick();
+  return path ? preview(path) : undefined;
+}
+
+export function DatabaseRecovery({ status }: { status: StartupStatus }) {
+  const client = useQueryClient();
+  const [error, setError] = useState<unknown>();
+  const [preview, setPreview] = useState<BackupPreview>();
+  const [target, setTarget] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  const recovered = async (action: () => Promise<unknown>) => {
+    try { setBusy(true); setError(undefined); await action(); await client.cancelQueries(); client.clear(); window.location.reload(); }
+    catch (value) { setError(value); setBusy(false); }
+  };
+  const chooseExisting = async () => {
+    try {
+      setError(undefined);
+      const selected = await previewRecoverySelection(pickRestoreFile, (path) => api<BackupPreview>("/api/system/backup/preview", { method: "POST", body: JSON.stringify({ path }) }));
+      if (selected) setPreview(selected);
+    } catch (value) { setError(value); }
+  };
+  const chooseNew = async () => {
+    try { setError(undefined); const path = await pickNewProfileDestination(); if (path) setTarget(path); }
+    catch (value) { setError(value); }
+  };
+  return <><div className="modal-backdrop"><section className="connection-modal database-gate" role="alertdialog" aria-modal="true" aria-labelledby="database-recovery-title">
+    <header><div><h2 id="database-recovery-title"><T>{"Choose a database to continue"}</T></h2><p><T>{"Athria could not open the configured database. Your original file has not been replaced."}</T></p></div></header>
+    <div className="modal-body">
+      <div className="gate-database-location"><span>{status.databasePath.endsWith(".json") ? tr("Configuration") : tr("Database")}</span><code title={status.databasePath}>{status.databasePath}</code></div>
+      <div role="alert" className="database-reset-warning">{status.error}</div>
+      <ErrorBanner error={error}/>
+      <div className="modal-actions"><button type="button" className="secondary" disabled={busy} onClick={() => void chooseExisting()}><T>{"Choose existing database"}</T></button><button type="button" disabled={busy} onClick={() => void chooseNew()}><T>{"Create new database"}</T></button></div>
+    </div>
+  </section></div>
+  {preview && <DatabaseSwitchModal preview={preview} error={error} busy={busy} onClose={() => { setPreview(undefined); setError(undefined); }} onSubmit={() => void recovered(() => restoreBackup(preview.path))}/>}
+  {target && <NewProfileModal target={target} error={error} busy={busy} onClose={() => { setTarget(undefined); setError(undefined); }} onSubmit={() => void recovered(() => createNewProfile(target))}/>}
+  </>;
+}
+
 export function App() {
+  const startup = useQuery({ queryKey: ["startup-status"], queryFn: getStartupStatus, retry: false });
+  if (startup.isPending) return <Loading/>;
+  if (startup.isError) return <div className="startup-error"><ErrorBanner error={startup.error}/></div>;
+  if (!startup.data.ready) return <DatabaseRecovery status={startup.data}/>;
+  return <ReadyApp/>;
+}
+
+function ReadyApp() {
   const t = useT();
   const [page, setPage] = useState<Page>("Overview"); const View = views[page];
+  const client = useQueryClient();
+  const seenDatabaseVersion = useRef<DatabaseVersion | null>(null);
+  const databaseVersion = useQuery({ queryKey: ["database-version"], queryFn: () => api<DatabaseVersion>("/api/system/database-version"), refetchInterval: 3000 });
+  useEffect(() => {
+    if (databaseVersion.data) seenDatabaseVersion.current = applyDatabaseVersion(client, seenDatabaseVersion.current, databaseVersion.data);
+  }, [client, databaseVersion.data]);
   const profile = useQuery({ queryKey: ["profile"], queryFn: () => api<AthleteProfile>("/api/profile") });
   const primaryPages = dashboardPages.filter((item) => item.group === "primary");
   const supportPages = dashboardPages.filter((item) => item.group === "support");

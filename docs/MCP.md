@@ -169,6 +169,8 @@ History  = 实际练了什么
 
 `record_training_session` 不接受 `plannedSessionId`。无论关系看起来多明确，正常 matching 都必须交给 Athria 的 deterministic reconciliation algorithm，LLM 不得自行选择计划项。
 
+修改已有训练记录或纠正匹配时，先从 `list_training_sessions` 读取目标记录的 `snapshotHash`，并在写入请求中传为 `expectedSnapshotHash`。若记录已变化，Athria 会拒绝旧请求；重新读取后再提出修改。
+
 ---
 
 ## 8. Plan ↔ History Reconciliation

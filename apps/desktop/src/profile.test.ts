@@ -1,13 +1,14 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
-import { ProfileBoard } from "./App";
-import type { AthleteProfile } from "./view-models";
+import { describe, expect, it, vi } from "vitest";
+import { EquipmentSelector, ProfileBoard } from "./App";
+import { LanguageProvider } from "./i18n";
+import type { AthleteProfile, EquipmentCategory } from "./view-models";
 
 const profile: AthleteProfile = { ownerId: "local-user", preferredName: "Hailey", gender: null, heightCm: null, birthDate: null, timezone: "UTC", goals: [], preference: "", maxSessionMinutes: 60, trainingRhythm: { kind: "flexible_week", targetDaysPerWeek: 4, minDaysPerWeek: 3, maxDaysPerWeek: 5 }, equipment: [], injuries: [], constraintNotes: [], explicitRecoveryDays: null, mesocycleDurationWeeks: 8, unitSystem: "metric", raceDays: [] };
 
-function renderProfileBoard(overrides: Partial<AthleteProfile> = {}) {
-  return renderToStaticMarkup(createElement(ProfileBoard, { profile: { ...profile, ...overrides }, equipmentCategories: [] }));
+function renderProfileBoard(overrides: Partial<AthleteProfile> = {}, equipmentCategories: EquipmentCategory[] = []) {
+  return renderToStaticMarkup(createElement(ProfileBoard, { profile: { ...profile, ...overrides }, equipmentCategories }));
 }
 
 describe("Profile board", () => {
@@ -35,5 +36,20 @@ describe("Profile board", () => {
   });
   it("shows an empty race state when no race is upcoming", () => {
     expect(renderProfileBoard({ raceDays: [{ date: "2020-01-01", sport: "10K" }] })).toContain("No upcoming races");
+  });
+
+  it("translates available equipment labels without changing equipment identifiers", () => {
+    const categories: EquipmentCategory[] = [{ id: "cardio_endurance", label: "Cardio & Endurance", groups: [{ id: "indoor_cardio", label: "Indoor Cardio Machines", items: [{ id: "treadmill", label: "Treadmill" }] }] }];
+    vi.stubGlobal("localStorage", { getItem: () => "zh-CN", setItem: () => {} });
+    const html = renderToStaticMarkup(createElement(LanguageProvider, null,
+      createElement(EquipmentSelector, { categories, selected: ["treadmill"], onToggleItem: () => {}, onToggleGroup: () => {} })));
+    expect(html).toContain("有氧与耐力训练");
+    expect(html).toContain("室内有氧器械");
+    expect(html).toContain("跑步机");
+    expect(categories[0]?.groups[0]?.items[0]?.id).toBe("treadmill");
+    vi.unstubAllGlobals();
+    vi.stubGlobal("localStorage", { getItem: () => "en", setItem: () => {} });
+    renderToStaticMarkup(createElement(LanguageProvider, null, createElement(EquipmentSelector, { categories: [], selected: [] })));
+    vi.unstubAllGlobals();
   });
 });

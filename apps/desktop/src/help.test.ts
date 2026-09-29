@@ -1,7 +1,8 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Help } from "./App";
+import { LanguageProvider } from "./i18n";
 
 function renderHelp(): string {
   return renderToStaticMarkup(createElement(Help));
@@ -35,5 +36,16 @@ describe("Help", () => {
     expect(html).toContain("Mesocycle");
     expect(html).toContain("Rates how hard a set felt");
     expect(html).toContain("Heart rate zone");
+  });
+
+  it("translates the template explanation in the glossary", () => {
+    vi.stubGlobal("localStorage", { getItem: () => "zh-CN", setItem: () => {} });
+    const html = renderToStaticMarkup(createElement(LanguageProvider, null, createElement(Help)));
+    expect(html).toContain("可重复使用的单领域模式");
+    expect(html).toContain("模板仅定义结构");
+    vi.unstubAllGlobals();
+    vi.stubGlobal("localStorage", { getItem: () => "en", setItem: () => {} });
+    renderToStaticMarkup(createElement(LanguageProvider, null, createElement(Help)));
+    vi.unstubAllGlobals();
   });
 });
