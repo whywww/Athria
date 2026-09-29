@@ -74,6 +74,7 @@ export const zh: Record<string, string> = {
   "lb": "磅",
   "Always Require Password": "始终要求输入密码",
   "Password Required on Startup": "启动时需要密码",
+  "Change the database password. Athria asks for it each time it starts.": "更改数据库密码。Athria 每次启动时都会要求输入。",
   "Strength & Resistance": "力量与阻力训练",
   "Free Weights": "自由重量器械",
   "Machines & Cable": "固定器械与拉力器",

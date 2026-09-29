@@ -557,11 +557,11 @@ export function Backup() {
             <button type="button" className="compact" disabled={restoring} onClick={() => void confirmRestore()}>{restoring ? "Switching Database…" : "Switch Database"}</button>
           </div>
         </div>}
-    {vault.data?.initialized && !vault.data.locked && <div className="section"><div className="section-heading"><div className="section-copy"><h3><T>{"Edit Password Settings"}</T></h3><p><T>{"Change the database password or require it whenever Athria starts."}</T></p></div><div className="section-actions"><button type="button" className="secondary compact" onClick={openChangePassword}><T>{"Change Password"}</T></button><button type="button" className="secondary compact" disabled={!vault.data.remembered} onClick={() => { setError(undefined); setCurrentPassword(""); setRequireModal(true); }}><T>{vault.data.remembered ? "Always Require Password" : "Password Required on Startup"}</T></button></div></div></div>}
+    {vault.data?.initialized && !vault.data.locked && <div className="section"><div className="section-heading"><div className="section-copy"><h3><T>{"Edit Password Settings"}</T></h3><p><T>{vault.data.canRemember ? "Change the database password or require it whenever Athria starts." : "Change the database password. Athria asks for it each time it starts."}</T></p></div><div className="section-actions"><button type="button" className="secondary compact" onClick={openChangePassword}><T>{"Change Password"}</T></button>{vault.data.canRemember && <button type="button" className="secondary compact" disabled={!vault.data.remembered} onClick={() => { setError(undefined); setCurrentPassword(""); setRequireModal(true); }}><T>{vault.data.remembered ? "Always Require Password" : "Password Required on Startup"}</T></button>}</div></div></div>}
     <div className="section"><div className="section-heading"><div className="section-copy"><h3><T>{"Create a New Profile"}</T></h3><p><T>{"Start fresh from a new empty profile. Athria will switch to it without restarting; the current database file is left untouched."}</T></p></div><div className="section-actions"><button type="button" className="secondary compact" disabled={creating} onClick={() => void chooseProfileDestination()}><AppIcon name="plus"/><T>{"Create Profile"}</T></button></div></div></div>
     {profileTarget && <NewProfileModal target={profileTarget} error={error} busy={creating} onClose={() => setProfileTarget(undefined)} onSubmit={() => void createProfile()}/>}
     {passwordModal && <ChangePasswordModal value={passwordDraft} error={error} busy={changing} onChange={setPasswordDraft} onClose={closeChangePassword} onSubmit={() => void updateVaultPassword()}/>}
-    {requireModal && <RequirePasswordModal value={currentPassword} error={error} busy={changing} onChange={setCurrentPassword} onClose={() => { setRequireModal(false); setCurrentPassword(""); setError(undefined); }} onSubmit={() => void requirePassword()}/>}
+    {vault.data?.canRemember && requireModal && <RequirePasswordModal value={currentPassword} error={error} busy={changing} onChange={setCurrentPassword} onClose={() => { setRequireModal(false); setCurrentPassword(""); setError(undefined); }} onSubmit={() => void requirePassword()}/>}
     {message && <div className="success">{message}</div>}
     <ErrorBanner error={doctor.error ?? error}/>
   </Card>;
@@ -1118,7 +1118,7 @@ export function DatabaseGate() {
   const [preview, setPreview] = useState<BackupPreview>();
   if (!vault.data || (vault.data.initialized && !vault.data.locked)) return null;
   const setup = !vault.data.initialized;
-  const rememberChoice = remember ?? setup;
+  const rememberChoice = vault.data?.canRemember === false ? false : remember ?? setup;
   const mismatch = (setup || resetting) && password !== confirmation;
   const submit = async () => {
     try {
@@ -1156,7 +1156,7 @@ export function DatabaseGate() {
         <label>{tr(resetting ? "New password" : "Database password")}<input type="password" autoFocus autoComplete={setup || resetting ? "new-password" : "current-password"} value={password} onChange={(event) => setPassword(event.target.value)}/></label>
         {(setup || resetting) && <label><T>{"Confirm password"}</T><input type="password" className={mismatch ? "invalid" : undefined} autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)}/>{mismatch && <span className="field-error"><T>{"Passwords do not match."}</T></span>}</label>}
       </div>
-      {!resetting && <label className="remember-field"><input type="checkbox" checked={rememberChoice} onChange={(event) => setRemember(event.target.checked)}/><T>{"Remember on this computer"}</T></label>}
+      {!resetting && vault.data.canRemember && <label className="remember-field"><input type="checkbox" checked={rememberChoice} onChange={(event) => setRemember(event.target.checked)}/><T>{"Remember on this computer"}</T></label>}
       {setup && vault.data.legacySources.length > 0 && <p className="helper"><T>{"Credentials saved on this computer by an earlier Athria version will be moved into this database securely."}</T></p>}
       <ErrorBanner error={error}/>
       <div className="modal-actions"><button type="button" className="secondary gate-switch" disabled={busy} onClick={() => void chooseDatabase()}><T>{"Switch database"}</T></button>{!setup && !resetting && <button type="button" className="text-button gate-forgot" onClick={() => { setResetting(true); setPassword(""); setConfirmation(""); setError(undefined); }}><T>{"Forgot password?"}</T></button>}{resetting && <button type="button" className="text-button gate-forgot" onClick={() => { setResetting(false); setPassword(""); setConfirmation(""); setError(undefined); }}><T>{"Back to unlock"}</T></button>}<button type="button" disabled={busy || ((setup || resetting) && (password.length === 0 || password !== confirmation))} onClick={() => void submit()}>{tr(busy ? "Working…" : setup ? "Set password" : resetting ? "Reset password" : "Unlock")}</button></div>

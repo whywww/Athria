@@ -280,17 +280,11 @@ The default development database is:
 
 Use **ATHRIA_DATABASE_PATH** for isolated development data. Do not run tests or experiments against personal training data.
 
-#### macOS local signing and Keychain access
+#### macOS database password
 
-macOS app builds need a stable code signing identity so Keychain recognizes Athria after it is rebuilt. Set this up once on each development Mac:
+On macOS, Athria asks for its database password each time it starts and keeps the unlocked key only in memory. The "Remember on this computer" option remains available on Windows and Linux. macOS development app builds use ad-hoc signing and do not need a local signing certificate.
 
-1. Open **Keychain Access** → **Certificate Assistant** → **Create a Certificate**.
-2. Name it **Athria Local Development**, choose **Self Signed Root** for Identity Type and **Code Signing** for Certificate Type, then create it in the login keychain. Keep its private key on this Mac; do not export or commit it.
-3. Confirm it appears in `security find-identity -v -p codesigning`. Then use `pnpm build:app` or `pnpm build:debug` as usual. If you already have a code signing identity, set `ATHRIA_MACOS_SIGNING_IDENTITY` to its exact name or SHA-1 identity hash instead.
-
-The build stops with an error if the selected identity is unavailable; it will not silently fall back to ad-hoc signing. After switching from an older ad-hoc build, macOS may ask you to authorize existing Athria Keychain items once. Choose **Always Allow** for Athria. Subsequent builds signed with the same certificate should retain access. Changing or deleting the certificate can require authorization again.
-
-To check that signing stays stable, run `codesign -dr - /path/to/Athria.app` after each of two builds and compare the designated requirement. The old ad-hoc form contains a changing `cdhash`; the new requirement should identify the same certificate and app identifier both times. Then reopen Athria and confirm it unlocks without another macOS login-password prompt.
+Athria does not read, write, or delete macOS Keychain items. Old Athria entries can remain in Keychain without affecting the app or causing a password prompt. To remove them, open Keychain Access, search for `Athria`, and delete them manually. Legacy API keys stored separately in Keychain are not migrated on macOS; re-enter those keys in Connections if needed. Public macOS distribution requires a separate Developer ID signing and notarization workflow.
 
 ### Repository structure
 
@@ -366,7 +360,7 @@ pnpm build:app
 - Windows：%LOCALAPPDATA%\Athria\data\athria.sqlite3
 - macOS：~/Library/Application Support/Athria/data/athria.sqlite3
 
-macOS 本机开发构建需要固定的代码签名身份，否则每次重建后钥匙串可能再次要求输入系统登录密码。首次设置时，在「钥匙串访问」→「证书助理」→「创建证书」中创建名为 **Athria Local Development** 的证书，身份类型选 **自签名根证书**、证书类型选 **代码签名**，存放在登录钥匙串。用 `security find-identity -v -p codesigning` 确认它可用，然后照常运行 `pnpm build:app`。也可通过 `ATHRIA_MACOS_SIGNING_IDENTITY` 指定已有的签名身份。不要导出或提交私钥。切换自旧版 ad-hoc 签名后，现有钥匙串项目可能还需授权一次；后续使用同一证书重建应保留授权。详细验证方法见上方英文说明。
+macOS 每次启动都要求输入 Athria 数据库密码，不提供“在此设备上记住密码”。开发构建恢复使用 ad hoc 签名，无须创建本机证书。Athria 不会读取、写入或删除 macOS 钥匙串项目；旧记录保留也不会影响应用或触发密码弹窗。如需清理，可打开「钥匙串访问」、搜索 `Athria` 后手动删除。旧版单独保存在钥匙串中的 API key 不会在 Mac 上自动迁移，需要时请在「连接」中重新输入。正式发布仍需单独处理 Developer ID 签名和公证。
 
 需要隔离开发数据时使用 **ATHRIA_DATABASE_PATH**。不要让测试或实验直接使用个人训练数据。
 

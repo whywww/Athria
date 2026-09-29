@@ -62,10 +62,12 @@ fn startup_status(state: State<'_, RuntimeState>) -> Result<Value, String> {
     Ok(json!({ "ready": error.is_none(), "databasePath": path, "error": error }))
 }
 
+#[cfg(not(target_os = "macos"))]
 fn credential(name: &str) -> Result<keyring::Entry, String> {
     keyring::Entry::new("Athria", &format!("local-user:{name}")).map_err(|error| error.to_string())
 }
 
+#[cfg(not(target_os = "macos"))]
 fn vault_credential(database_uuid: &str) -> Result<keyring::Entry, String> {
     keyring::Entry::new("Athria", &format!("vault:{database_uuid}:v1"))
         .map_err(|error| error.to_string())
@@ -365,19 +367,24 @@ fn cache_master_key(
     master_key: &[u8],
     persist: Option<bool>,
 ) -> Result<(), String> {
-    match persist {
-        Some(true) => {
-            vault_credential(database_uuid)?
-                .set_password(&vault::encode_master_key(master_key))
-                .map_err(|error| error.to_string())?;
-        }
-        Some(false) => {
-            if let Ok(entry) = vault_credential(database_uuid) {
-                let _ = entry.delete_credential();
+    #[cfg(not(target_os = "macos"))]
+    {
+        match persist {
+            Some(true) => {
+                vault_credential(database_uuid)?
+                    .set_password(&vault::encode_master_key(master_key))
+                    .map_err(|error| error.to_string())?;
             }
+            Some(false) => {
+                if let Ok(entry) = vault_credential(database_uuid) {
+                    let _ = entry.delete_credential();
+                }
+            }
+            None => {}
         }
-        None => {}
     }
+    #[cfg(target_os = "macos")]
+    let _ = (database_uuid, persist);
     *state.vault_key.lock().expect("runtime state poisoned") =
         Some(Zeroizing::new(master_key.to_vec()));
     Ok(())
@@ -410,17 +417,25 @@ fn cached_master_key(state: &RuntimeState, bundle: &VaultBundle) -> Option<Zeroi
 }
 
 fn remembered_master_key(bundle: &VaultBundle) -> Option<Zeroizing<Vec<u8>>> {
-    let encoded = vault_credential(&bundle.database_uuid)
-        .ok()?
-        .get_password()
-        .ok()?;
-    let key = vault::decode_master_key(&encoded).ok()?;
-    if bundle.envelope.as_ref().is_some_and(|envelope| {
-        vault::verify_master_key(&bundle.database_uuid, &key, envelope).is_ok()
-    }) {
-        Some(key)
-    } else {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = bundle;
         None
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let encoded = vault_credential(&bundle.database_uuid)
+            .ok()?
+            .get_password()
+            .ok()?;
+        let key = vault::decode_master_key(&encoded).ok()?;
+        if bundle.envelope.as_ref().is_some_and(|envelope| {
+            vault::verify_master_key(&bundle.database_uuid, &key, envelope).is_ok()
+        }) {
+            Some(key)
+        } else {
+            None
+        }
     }
 }
 
@@ -502,6 +517,9 @@ async fn vault_status(state: State<'_, RuntimeState>) -> Result<Value, String> {
     let remembered_key = initialized.then(|| remembered_master_key(&bundle)).flatten();
     let remembered = remembered_key.is_some();
     let locked = initialized && cached_master_key_with(&state, &bundle, || remembered_key).is_none();
+    #[cfg(target_os = "macos")]
+    let legacy_sources: Vec<&str> = Vec::new();
+    #[cfg(not(target_os = "macos"))]
     let legacy_sources: Vec<&str> = if initialized {
         Vec::new()
     } else {
@@ -520,7 +538,7 @@ async fn vault_status(state: State<'_, RuntimeState>) -> Result<Value, String> {
         })
         .collect()
     };
-    Ok(json!({ "databaseUuid": bundle.database_uuid, "databasePath": database_path, "initialized": initialized, "locked": locked, "remembered": remembered, "legacySources": legacy_sources }))
+    Ok(json!({ "databaseUuid": bundle.database_uuid, "databasePath": database_path, "initialized": initialized, "locked": locked, "remembered": remembered, "canRemember": !cfg!(target_os = "macos"), "legacySources": legacy_sources }))
 }
 
 #[tauri::command]
@@ -536,7 +554,11 @@ async fn setup_vault(
     }
     let master = vault::new_master_key();
     let envelope = vault::create_envelope(&bundle.database_uuid, &password, &master)?;
+    #[cfg(target_os = "macos")]
+    let secrets = Vec::new();
+    #[cfg(not(target_os = "macos"))]
     let mut secrets = Vec::new();
+    #[cfg(not(target_os = "macos"))]
     if let Ok(api_key) = credential("intervals-api-key")
         .and_then(|entry| entry.get_password().map_err(|error| error.to_string()))
     {
@@ -554,6 +576,7 @@ async fn setup_vault(
             )?);
         }
     }
+    #[cfg(not(target_os = "macos"))]
     if let Ok(api_key) = credential("xunji-api-key")
         .and_then(|entry| entry.get_password().map_err(|error| error.to_string()))
     {
@@ -575,6 +598,7 @@ async fn setup_vault(
         .map_err(|error| error.message().to_owned())?;
     cache_master_key(&state, &bundle.database_uuid, &master, Some(remember))?;
     drop(application);
+    #[cfg(not(target_os = "macos"))]
     for name in ["intervals-api-key", "intervals-athlete-id", "xunji-api-key"] {
         if let Ok(entry) = credential(name) {
             let _ = entry.delete_credential();
@@ -630,24 +654,33 @@ async fn require_vault_password(
     state: State<'_, RuntimeState>,
     current_password: String,
 ) -> Result<Value, String> {
-    let generation = database_generation(&state);
-    let bundle = vault_bundle(&state).await?;
-    let envelope = bundle
-        .envelope
-        .as_ref()
-        .ok_or_else(|| "This database has no password set yet.".to_string())?;
-    let master = vault::unlock(&bundle.database_uuid, &current_password, envelope)?;
-    ensure_generation(&state, generation)?;
-    let entry = vault_credential(&bundle.database_uuid)?;
-    if let Err(error) = entry.delete_credential() {
-        if !matches!(error, keyring::Error::NoEntry) {
-            return Err(format!(
-                "Athria could not stop remembering this database: {error}"
-            ));
-        }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = (state, current_password);
+        Err("The database password is already required on macOS.".to_string())
     }
-    cache_master_key(&state, &bundle.database_uuid, &master, None)?;
-    Ok(json!({ "status": "password-required" }))
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let generation = database_generation(&state);
+        let bundle = vault_bundle(&state).await?;
+        let envelope = bundle
+            .envelope
+            .as_ref()
+            .ok_or_else(|| "This database has no password set yet.".to_string())?;
+        let master = vault::unlock(&bundle.database_uuid, &current_password, envelope)?;
+        ensure_generation(&state, generation)?;
+        let entry = vault_credential(&bundle.database_uuid)?;
+        if let Err(error) = entry.delete_credential() {
+            if !matches!(error, keyring::Error::NoEntry) {
+                return Err(format!(
+                    "Athria could not stop remembering this database: {error}"
+                ));
+            }
+        }
+        cache_master_key(&state, &bundle.database_uuid, &master, None)?;
+        Ok(json!({ "status": "password-required" }))
+    }
 }
 
 #[tauri::command]

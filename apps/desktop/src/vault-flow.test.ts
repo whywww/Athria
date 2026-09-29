@@ -10,9 +10,9 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 import { changeVaultPassword, createNewProfile, requireVaultPassword, setupVault } from "./api";
 import { DatabaseGate, DatabaseSwitchModal, NewProfileModal } from "./App";
 
-function renderGate(initialized: boolean, locked: boolean) {
+function renderGate(initialized: boolean, locked: boolean, canRemember = true) {
   const client = new QueryClient();
-  client.setQueryData(["vault-status"], { databaseUuid: "database-id", databasePath: "C:\\profiles\\active.sqlite3", initialized, locked, remembered: false, legacySources: [] });
+  client.setQueryData(["vault-status"], { databaseUuid: "database-id", databasePath: "C:\\profiles\\active.sqlite3", initialized, locked, remembered: false, canRemember, legacySources: [] });
   return renderToStaticMarkup(createElement(QueryClientProvider, { client }, createElement(DatabaseGate)));
 }
 
@@ -22,6 +22,11 @@ describe("database password flow", () => {
   it("remembers by default during setup but not while unlocking a database", () => {
     expect(renderGate(false, false)).toMatch(/type="checkbox"[^>]*checked=""/);
     expect(renderGate(true, true)).toMatch(/type="checkbox"(?![^>]*checked)/);
+  });
+
+  it("hides the remember option on macOS during setup and unlock", () => {
+    expect(renderGate(false, false, false)).not.toContain('type="checkbox"');
+    expect(renderGate(true, true, false)).not.toContain('type="checkbox"');
   });
 
   it("identifies the database file whose password is being set", () => {
