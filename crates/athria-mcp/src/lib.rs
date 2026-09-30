@@ -56,6 +56,8 @@ struct RegisteredTool {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ToolKind {
+    GetDatabaseContext,
+    GetDataSourceStatus,
     GetAthleteProfile,
     GetTrainingState,
     ListTrainingSessions,
@@ -102,6 +104,8 @@ enum ToolKind {
 impl ToolKind {
     fn parse(value: &str) -> Option<Self> {
         Some(match value {
+            "get_database_context" => Self::GetDatabaseContext,
+            "get_data_source_status" => Self::GetDataSourceStatus,
             "get_athlete_profile" => Self::GetAthleteProfile,
             "get_training_state" => Self::GetTrainingState,
             "list_training_sessions" => Self::ListTrainingSessions,
@@ -150,6 +154,7 @@ impl ToolKind {
 
 pub struct McpService<S: AthriaStore> {
     application: AthriaApplication<S>,
+    database_path: PathBuf,
     contract: Contract,
     registry: Vec<RegisteredTool>,
     /// Where `report_skill_version` records the Skill versions an agent
@@ -159,7 +164,11 @@ pub struct McpService<S: AthriaStore> {
 }
 
 impl<S: AthriaStore> McpService<S> {
-    pub fn new(application: AthriaApplication<S>) -> Self {
+    pub fn new(application: AthriaApplication<S>, database_path: PathBuf) -> Self {
+        assert!(
+            database_path.is_absolute(),
+            "MCP database path must be absolute"
+        );
         let contract: Contract =
             serde_json::from_str(CONTRACT).expect("embedded MCP contract must be valid");
         let mut names = HashSet::new();
@@ -193,6 +202,7 @@ impl<S: AthriaStore> McpService<S> {
             .collect();
         Self {
             application,
+            database_path,
             contract,
             registry,
             skill_reports: None,
@@ -204,8 +214,17 @@ impl<S: AthriaStore> McpService<S> {
         self.skill_reports = Some(path);
         self
     }
-    pub fn replace_application(&mut self, application: AthriaApplication<S>) {
+    pub fn replace_workspace(
+        &mut self,
+        application: AthriaApplication<S>,
+        database_path: PathBuf,
+    ) {
+        assert!(
+            database_path.is_absolute(),
+            "MCP database path must be absolute"
+        );
         self.application = application;
+        self.database_path = database_path;
     }
     pub fn tools(&self) -> &[Value] {
         &self.contract.tools
@@ -250,6 +269,10 @@ impl<S: AthriaStore> McpService<S> {
         let application =
             |result: athria_application::Result<Value>| result.map_err(ToolError::application);
         match kind {
+            ToolKind::GetDatabaseContext => Ok(json!({
+                "databasePath": self.database_path.to_string_lossy(),
+            })),
+            ToolKind::GetDataSourceStatus => application(app.get_data_source_status()),
             ToolKind::GetAthleteProfile => {
                 let mut profile = app.get_profile().map_err(ToolError::application)?;
                 profile["profileHash"] = json!(app.profile_hash().map_err(ToolError::application)?);
@@ -270,10 +293,23 @@ impl<S: AthriaStore> McpService<S> {
             ToolKind::ListXunjiTrainingSessions => {
                 application(app.list_xunji_sessions(days(input, 30)?))
             }
-            ToolKind::GetXunjiSyncStatus => serialize(
-                app.get_xunji_sync_status()
-                    .map_err(ToolError::application)?,
-            ),
+            ToolKind::GetXunjiSyncStatus => {
+                let status = app.get_data_source_status().map_err(ToolError::application)?;
+                let source = status["sources"]
+                    .as_array()
+                    .and_then(|sources| sources.iter().find(|source| source["source"] == "xunji"))
+                    .ok_or_else(|| ToolError {
+                        code: "INTERNAL_ERROR".into(),
+                        message: "Xunji status is unavailable.".into(),
+                    })?;
+                let mut result = app
+                    .get_xunji_sync_status()
+                    .map_err(ToolError::application)?
+                    .unwrap_or_else(|| json!({}));
+                result["connected"] = source["connected"].clone();
+                result["lastSuccessAt"] = source["lastSuccessAt"].clone();
+                Ok(result)
+            }
             ToolKind::GetTrainingSummary => {
                 application(app.get_training_summary(days(input, 7)?, None, None))
             }
@@ -792,14 +828,18 @@ mod tests {
     use super::*;
     use athria_store::SqliteStore;
     fn service() -> McpService<SqliteStore> {
-        McpService::new(AthriaApplication::new(
-            SqliteStore::open_in_memory().unwrap(),
-        ))
+        service_at(std::env::temp_dir().join("athria-mcp-test.sqlite3"))
+    }
+    fn service_at(database_path: PathBuf) -> McpService<SqliteStore> {
+        McpService::new(
+            AthriaApplication::new(SqliteStore::open_in_memory().unwrap()),
+            database_path,
+        )
     }
     #[test]
     fn exposes_contract_and_calls_application() {
         let service = service();
-        assert_eq!(service.tools().len(), 41);
+        assert_eq!(service.tools().len(), 43);
         assert!(service.tools().iter().all(|tool| {
             tool.get("handlerKey").and_then(Value::as_str).is_some()
                 && tool.get("outputSchema").is_some()
@@ -823,15 +863,49 @@ mod tests {
     #[test]
     fn existing_mcp_service_uses_replaced_database_on_next_call() {
         let mut service = service();
+        let next_path = std::env::temp_dir().join("athria-mcp-next.sqlite3");
         let next = AthriaApplication::new(SqliteStore::open_in_memory().unwrap());
         next.update_profile(&json!({
             "patch": { "preferredName": "New database" },
             "expectedProfileHash": next.profile_hash().unwrap(),
             "confirmed": true
         })).unwrap();
-        service.replace_application(next);
+        service.replace_workspace(next, next_path.clone());
         let result = service.call_result("get_athlete_profile", &json!({}));
         assert_eq!(result["structuredContent"]["result"]["preferredName"], "New database");
+        let context = service.call_result("get_database_context", &json!({}));
+        assert_eq!(
+            context["structuredContent"]["result"]["databasePath"],
+            next_path.to_string_lossy().as_ref()
+        );
+    }
+    #[test]
+    fn xunji_status_keeps_legacy_sync_fields_and_reports_disconnection() {
+        let store = SqliteStore::open_in_memory().unwrap();
+        store.save_connection_sync_state(&json!({
+            "ownerId": "local-user",
+            "source": "xunji",
+            "lastAttemptAt": "2026-09-16T04:00:00.000Z",
+            "lastSuccessAt": "2026-09-16T04:00:00.000Z",
+            "rangeStart": "2026-09-01",
+            "rangeEnd": "2026-09-16",
+            "status": "success",
+            "data": { "records": 3 },
+        })).unwrap();
+        let service = McpService::new(
+            AthriaApplication::new(store),
+            std::env::temp_dir().join("athria-mcp-xunji.sqlite3"),
+        );
+        let result = service.call_result("get_xunji_sync_status", &json!({}));
+        let status = &result["structuredContent"]["result"];
+        assert_eq!(status["connected"], false);
+        assert_eq!(status["lastSuccessAt"], "2026-09-16T04:00:00.000Z");
+        assert_eq!(status["data"]["records"], 3);
+
+        let empty = service_at(std::env::temp_dir().join("athria-mcp-empty.sqlite3"))
+            .call_result("get_xunji_sync_status", &json!({}));
+        assert_eq!(empty["structuredContent"]["result"]["connected"], false);
+        assert!(empty["structuredContent"]["result"]["lastSuccessAt"].is_null());
     }
     #[test]
     fn active_mcp_session_refreshes_before_the_next_tool_call() {
@@ -845,7 +919,10 @@ mod tests {
                     "expectedProfileHash": next.profile_hash().unwrap(),
                     "confirmed": true
                 })).unwrap();
-                service.replace_application(next);
+                service.replace_workspace(
+                    next,
+                    std::env::temp_dir().join("athria-mcp-switched.sqlite3"),
+                );
             }
             Ok(())
         })));
@@ -854,13 +931,18 @@ mod tests {
         changed.store(true, std::sync::atomic::Ordering::SeqCst);
         let CallToolResponse::Complete(second) = server.call_named("get_athlete_profile", json!({})).unwrap() else { panic!("expected a completed tool call") };
         assert_eq!(second.structured_content.unwrap()["result"]["preferredName"], "Switched");
+        let CallToolResponse::Complete(context) = server.call_named("get_database_context", json!({})).unwrap() else { panic!("expected a completed tool call") };
+        assert_eq!(
+            context.structured_content.unwrap()["result"]["databasePath"],
+            std::env::temp_dir().join("athria-mcp-switched.sqlite3").to_string_lossy().as_ref()
+        );
     }
     #[test]
     fn every_tool_has_a_valid_contract_result_fixture() {
         let service = service();
         let fixtures: Value =
             serde_json::from_str(include_str!("../tests/fixtures/tool-results.json")).unwrap();
-        assert_eq!(fixtures.as_object().unwrap().len(), 41);
+        assert_eq!(fixtures.as_object().unwrap().len(), 43);
 
         for (tool, registered) in service.tools().iter().zip(&service.registry) {
             let name = tool["name"].as_str().unwrap();
@@ -1025,7 +1107,7 @@ mod tests {
     #[test]
     fn rmcp_server_advertises_only_the_wire_it_emits() {
         let server = RmcpServer::new(service());
-        assert_eq!(server.tools.len(), 41);
+        assert_eq!(server.tools.len(), 43);
         assert!(server.tools.iter().all(|tool| tool.output_schema.is_some()));
         assert_eq!(
             server.supported_protocol_versions().as_ref(),

@@ -1,4 +1,43 @@
 {
+  "get_database_context": {
+    "databasePath": "C:\\Athria\\athria.sqlite3"
+  },
+  "get_data_source_status": {
+    "asOf": "2026-09-17T04:00:00.000Z",
+    "timezone": "Asia/Hong_Kong",
+    "localDate": "2026-09-17",
+    "sources": [
+      {
+        "source": "intervals",
+        "kind": "api_sync",
+        "connected": false,
+        "lastAttemptAt": null,
+        "lastSuccessAt": null,
+        "rangeStart": null,
+        "rangeEnd": null,
+        "status": null,
+        "syncedToday": false
+      },
+      {
+        "source": "xunji",
+        "kind": "api_sync",
+        "connected": false,
+        "lastAttemptAt": null,
+        "lastSuccessAt": null,
+        "rangeStart": null,
+        "rangeEnd": null,
+        "status": null,
+        "syncedToday": false
+      },
+      {
+        "source": "hevy",
+        "kind": "file_import",
+        "lastImportAt": null,
+        "status": null,
+        "importedToday": false
+      }
+    ]
+  },
   "get_athlete_profile": {
     "ownerId": "local-user"
   },
@@ -9,7 +48,7 @@
   "list_wellness": [],
   "get_wellness_day": {},
   "list_xunji_training_sessions": [],
-  "get_xunji_sync_status": {},
+  "get_xunji_sync_status": { "connected": false, "lastSuccessAt": null },
   "get_training_summary": {},
   "get_current_plan": null,
   "list_session_templates": [],

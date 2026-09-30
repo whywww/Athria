@@ -62,6 +62,12 @@ fn string_field<'a>(value: &'a Value, key: &str) -> &'a str {
         .unwrap_or_else(|| panic!("expected `{key}` to be a string"))
 }
 
+fn timestamp_is_on_local_date(timestamp: Option<&str>, timezone: &str, local_date: &str) -> bool {
+    timestamp
+        .and_then(|value| tz::local_date(value, timezone).ok())
+        .is_some_and(|value| value == local_date)
+}
+
 /// `new AthriaError(code, message, status)`.
 fn failure(code: AthriaErrorCode, message: &str, status: u16) -> AthriaError {
     AthriaError::new(code, message).with_status(status)
@@ -1238,6 +1244,64 @@ impl<S: AthriaStore> AthriaApplication<S> {
     pub fn get_intervals_sync_status(&self) -> Result<Option<Value>> {
         self.store
             .get_connection_sync_state("intervals", &self.owner_id)
+    }
+
+    pub fn get_data_source_status(&self) -> Result<Value> {
+        let profile = self.get_profile()?;
+        let timezone = string_field(&profile, "timezone");
+        let as_of = self.now_iso();
+        let local_date = tz::local_date(&as_of, timezone)?;
+        let configured: HashSet<String> = self
+            .store
+            .list_configured_connection_sources()?
+            .into_iter()
+            .collect();
+        let intervals = self.get_intervals_sync_status()?;
+        let xunji = self.get_xunji_sync_status()?;
+        let hevy = self.get_hevy_import_status()?;
+
+        let api_status = |source: &str, sync: Option<&Value>| {
+            let field = |name: &str| {
+                sync.and_then(|value| value.get(name))
+                    .cloned()
+                    .unwrap_or(Value::Null)
+            };
+            json!({
+                "source": source,
+                "kind": "api_sync",
+                "connected": configured.contains(source),
+                "lastAttemptAt": field("lastAttemptAt"),
+                "lastSuccessAt": field("lastSuccessAt"),
+                "rangeStart": field("rangeStart"),
+                "rangeEnd": field("rangeEnd"),
+                "status": field("status"),
+                "syncedToday": timestamp_is_on_local_date(
+                    sync.and_then(|value| value.get("lastSuccessAt")).and_then(Value::as_str),
+                    timezone,
+                    &local_date,
+                ),
+            })
+        };
+        let imported_at = hevy
+            .as_ref()
+            .and_then(|value| value.get("importedAt"))
+            .and_then(Value::as_str);
+        Ok(json!({
+            "asOf": as_of,
+            "timezone": timezone,
+            "localDate": local_date,
+            "sources": [
+                api_status("intervals", intervals.as_ref()),
+                api_status("xunji", xunji.as_ref()),
+                {
+                    "source": "hevy",
+                    "kind": "file_import",
+                    "lastImportAt": imported_at,
+                    "status": hevy.as_ref().and_then(|value| value.get("status")).cloned().unwrap_or(Value::Null),
+                    "importedToday": timestamp_is_on_local_date(imported_at, timezone, &local_date),
+                },
+            ],
+        }))
     }
 
     pub fn commit_intervals(&self, payload: &Value, context: &Value) -> Result<Value> {

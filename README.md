@@ -46,7 +46,7 @@ Athria does not tie you to a specific AI. You choose the AI; Athria connects it 
 - **Get personalized training suggestions** — use your goals, recent training, schedule, equipment, and training feedback as context.
 - **Build and adjust training plans** — create training schedules around your situation and update them as training progresses.
 - **Keep recommendations consistent** — Athria provides shared calculations and plan checks instead of leaving every AI to calculate or guess independently.
-- **Bring in existing records** — import or synchronize supported training sources and organize them in one place. Currently supported apps include **SynFit (训记)** and **Intervals.icu**, with **Hevy** supported through file import.
+- **Bring in existing records** — import or synchronize supported training sources and organize them in one place. Currently supported apps include **SynFit** and **Intervals.icu**. For other apps, please submit an Issue.
 - **View training visually** — use Athria as a hub for your training data, recent status, plans, and connected sources.
 - **Keep core data local** — the main training database stays on your computer and does not require an Athria cloud account.
 
@@ -60,10 +60,10 @@ In short:
    Current development builds target Windows x64 and Apple Silicon macOS. If you want to build from source, see [Potential contributors](#potential-contributors).
 
 2. **Add your basic information**  
-   Enter your training goals, schedule, equipment, and other information you want an AI to consider.
+   In Profile page, enter your training goals, schedule, equipment, and other information you want an AI to consider.
 
 3. **Add training records**  
-   Import existing records or connect one of the currently supported training data sources.
+   In Connections page, connect one of the currently supported training data sources to import existing records, or ask your AI agents to import for you.
 
 4. **Connect your AI**  
    Athria can connect to ChatGPT, Claude, and other compatible AI clients. Follow the connection guidance in the app. Technical details are available in [docs/MCP.md](docs/MCP.md).
@@ -101,8 +101,8 @@ Athria is currently an **Alpha project under active development and has not had 
 
 Current limitations include:
 
-- Development and testing currently focus on **Windows x64** and **Apple Silicon macOS**.
-- The app interface is currently **English-only**.
+- Current native development and testing targets are **Windows x64** and **Apple Silicon macOS**. Linux and mobile clients are future work.
+- The app interface supports **English** and **Simplified Chinese**.
 - Athria does **not include its own AI model or chat interface**.
 - Hevy currently uses file import; Intervals.icu and SynFit synchronization are read-only.
 - Athria currently manages the latest reusable templates and one editable training cycle rather than full plan history and versioning.
@@ -147,7 +147,7 @@ Athria 不绑定特定的 AI。你可以继续使用自己选择的 AI，Athria 
 - **提供个性化训练建议** —— 根据你的目标、近期训练、时间安排、器材和训练反馈提供建议。
 - **制定和调整训练计划** —— 根据你的实际情况生成训练安排，并随着训练进展进行调整。
 - **规范训练建议** —— Athria 提供统一的训练计算和计划检查，减少不同 AI 自行猜测或使用不同计算方式带来的差异。
-- **整合已有记录** —— 可以导入或同步其他训练应用的数据，并统一整理。目前支持 **训记（SynFit）**、**Intervals.icu**，以及通过文件导入 **Hevy** 数据。
+- **整合已有记录** —— 可以导入或同步其他训练应用的数据，并统一整理。目前支持 **训记**、**Intervals.icu**。如果有其他需求，可以提交 Issues。
 - **可视化查看训练** —— 在 Athria 中查看和管理训练数据、近期状态和计划。
 - **数据保存在本地** —— 核心训练数据库保存在自己的电脑上，不需要 Athria 云账号。
 
@@ -161,10 +161,10 @@ Athria 不绑定特定的 AI。你可以继续使用自己选择的 AI，Athria 
    当前开发版本支持 Windows x64 和 Apple Silicon macOS。如果需要从源码运行，请查看下方的[潜在贡献者](#potential-contributors)部分。
 
 2. **填写基本信息**  
-   添加你的训练目标、时间安排、器材和其他希望 AI 在提供建议时考虑的信息。
+   在档案页中，添加你的训练目标、时间安排、器材和其他希望 AI 在提供建议时考虑的信息。
 
 3. **加入训练记录**  
-   你可以导入已有记录，也可以连接目前支持的训练数据来源。
+   在连接页中，你可以连接目前支持的训练数据来源，导入已有记录，或者通过 AI 助手写入。
 
 4. **连接你的 AI**  
    Athria 可以连接 ChatGPT、Claude 和其他兼容的 AI 客户端。按照应用内的连接说明完成设置即可。详细接口信息见 [docs/MCP.md](docs/MCP.md)。
@@ -202,8 +202,8 @@ Athria 目前处于 **Alpha 开发阶段，尚未正式发布**。
 
 当前主要限制包括：
 
-- 目前主要开发和测试 **Windows x64** 和 **Apple Silicon macOS** 版本。
-- 应用界面目前只有英文。
+- 当前原生开发和测试目标为 **Windows x64** 和 **Apple Silicon macOS**；Linux 和移动客户端属于未来事项。
+- 应用界面支持**英文**和**简体中文**。
 - Athria 本身不提供聊天功能，需要连接你选择的 AI。
 - 当前支持 Hevy 文件导入，以及 Intervals.icu 和训记的只读同步。
 - 目前主要管理最新的可复用模板和一个正在使用的训练周期，还没有完整的训练计划历史和版本管理。
@@ -282,7 +282,7 @@ Use **ATHRIA_DATABASE_PATH** for isolated development data. Do not run tests or 
 
 #### macOS database password
 
-On macOS, Athria asks for its database password each time it starts and keeps the unlocked key only in memory. The "Remember on this computer" option remains available on Windows and Linux. macOS development app builds use ad-hoc signing and do not need a local signing certificate.
+On macOS, Athria asks for its database password each time it starts and keeps the unlocked key only in memory. The "Remember on this computer" option remains available on Windows. macOS development app builds use ad-hoc signing and do not need a local signing certificate.
 
 Athria does not read, write, or delete macOS Keychain items. Old Athria entries can remain in Keychain without affecting the app or causing a password prompt. To remove them, open Keychain Access, search for `Athria`, and delete them manually. Legacy API keys stored separately in Keychain are not migrated on macOS; re-enter those keys in Connections if needed. Public macOS distribution requires a separate Developer ID signing and notarization workflow.
 
@@ -392,3 +392,11 @@ docs/            MCP、限制和 runtime 文档
 ---
 
 Athria is maintained by [Haoyu Wei](https://github.com/whywww) and contributors.
+
+## License / 许可证
+
+Copyright © 2026 Haoyu Wei.
+
+Athria is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE). You may use, modify, and distribute Athria for permitted noncommercial purposes subject to the license terms. Commercial use requires prior written authorization from the copyright holder. For commercial licensing inquiries, contact [Haoyu Wei](https://github.com/whywww). See the [`LICENSE`](LICENSE) file for the full terms.
+
+Athria 采用 [PolyForm Noncommercial License 1.0.0](LICENSE) 许可。在遵守许可证条款的前提下，你可以将 Athria 用于许可的非商业用途，也可以修改和分发本项目。任何商业用途均须事先获得版权所有者的书面授权。如需咨询商业许可，请联系 [Haoyu Wei](https://github.com/whywww)。完整条款请参阅 [`LICENSE`](LICENSE) 文件。

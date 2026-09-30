@@ -257,6 +257,10 @@ impl AthriaStore for SqliteStore {
         SqliteStore::latest_import_batch(self, owner_id, source)
     }
 
+    fn list_configured_connection_sources(&self) -> Result<Vec<String>> {
+        SqliteStore::list_configured_connection_sources(self)
+    }
+
     fn get_connection_sync_state(&self, source: &str, owner_id: &str) -> Result<Option<Value>> {
         SqliteStore::get_connection_sync_state(self, source, owner_id)
     }

@@ -13,7 +13,7 @@ Use Athria's local, normalized Xunji data. Never ask for, retrieve, display, or 
 2. Call `list_xunji_training_sessions` with the smallest date window that satisfies the request.
 3. Clearly distinguish fields returned from synchronized Xunji records from calculations or interpretations.
 4. Treat missing RPE, heart rate, duration, load, or distance as unavailable rather than zero.
-5. If there is no successful sync, or the requested dates fall outside the synchronized range, ask the user to open Athria → Devices → Import from Xunji and use **Sync now**.
+5. If there is no successful sync, or the requested dates fall outside the synchronized range, ask the user to open Athria → Connections → SynFit and use **Sync now**.
 
 ## Boundaries
 

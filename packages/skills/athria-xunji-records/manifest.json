@@ -1,6 +1,6 @@
 {
   "name": "athria-xunji-records",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "Read and explain Xunji records already synchronized into Athria.",
   "appliesWhen": ["The user asks for their Xunji or 训记 training records or sync freshness."],
   "doesNotApplyWhen": ["The user asks to write, edit, or delete Xunji data."],

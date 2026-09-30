@@ -258,7 +258,11 @@ fn run_mcp_stdio() -> i32 {
             return 1;
         }
     };
-    let result = serve_stdio_with_refresh(mcp_service(AthriaApplication::new(store)), Some(mcp_refresh(database_path)));
+    let database_path = match fs::canonicalize(&database_path) {
+        Ok(path) => simplify_path(&path),
+        Err(error) => { eprintln!("Athria could not resolve the MCP database path: {error}"); return 1; }
+    };
+    let result = serve_stdio_with_refresh(mcp_service(AthriaApplication::new(store), database_path.clone()), Some(mcp_refresh(database_path)));
     match result {
         Ok(()) => 0,
         Err(error) => {
@@ -270,8 +274,8 @@ fn run_mcp_stdio() -> i32 {
 
 /// Wires the Skill handshake report sink, which is how Athria verifies the
 /// Skills a GUI-managed agent (Claude Desktop) actually loaded.
-fn mcp_service(application: AthriaApplication<SqliteStore>) -> McpService<SqliteStore> {
-    let service = McpService::new(application);
+fn mcp_service(application: AthriaApplication<SqliteStore>, database_path: PathBuf) -> McpService<SqliteStore> {
+    let service = McpService::new(application, database_path);
     match platform_config_root() {
         Ok(root) => service.with_skill_reports(agent_integrations::gui_skill_reports_path(
             &root,
@@ -285,12 +289,13 @@ fn mcp_refresh(initial_path: PathBuf) -> Arc<dyn Fn(&mut McpService<SqliteStore>
     let active_path = Mutex::new(initial_path);
     Arc::new(move |service| {
         let configured = checked_database_path()?;
+        let configured = simplify_path(&fs::canonicalize(&configured).map_err(|error| error.to_string())?);
         let mut active = active_path.lock().map_err(|_| "MCP database state is unavailable.".to_string())?;
         if *active != configured {
             let root = platform_config_root()?;
             cleanup_legacy_replicas(&root)?;
             let store = SqliteStore::open(&configured).map_err(|error| error.message().to_owned())?;
-            service.replace_application(AthriaApplication::new(store));
+            service.replace_workspace(AthriaApplication::new(store), configured.clone());
             *active = configured;
         }
         Ok(())
@@ -1385,11 +1390,15 @@ fn start_mcp_if_possible(state: &RuntimeState) {
         Ok(value) => value,
         Err(error) => { eprintln!("Athria could not open the MCP database: {error}"); return; }
     };
+    let path = match fs::canonicalize(&path) {
+        Ok(value) => simplify_path(&value),
+        Err(error) => { eprintln!("Athria could not resolve the MCP database path: {error}"); return; }
+    };
     let listener = match state.mcp_listener.lock() { Ok(mut value) => value.take(), Err(_) => return };
     let Some(listener) = listener else { return; };
     let token = state.mcp_token.clone();
     std::thread::spawn(move || {
-        if let Err(error) = serve_http_with_refresh_shutdown(listener, mcp_service(AthriaApplication::new(store)), &token, Some(mcp_refresh(path)), None) {
+        if let Err(error) = serve_http_with_refresh_shutdown(listener, mcp_service(AthriaApplication::new(store), path.clone()), &token, Some(mcp_refresh(path)), None) {
             eprintln!("Athria MCP HTTP stopped: {error}");
         }
     });

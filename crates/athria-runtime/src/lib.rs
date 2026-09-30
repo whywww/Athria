@@ -54,9 +54,23 @@ pub struct OpenWorkspace {
     pub application: AthriaApplication<SqliteStore>,
 }
 
+fn user_facing_path(path: &Path) -> PathBuf {
+    let text = path.as_os_str().to_string_lossy();
+    if let Some(stripped) = text.strip_prefix(r"\\?\UNC\") {
+        PathBuf::from(format!(r"\\{stripped}"))
+    } else if let Some(stripped) = text.strip_prefix(r"\\?\") {
+        PathBuf::from(stripped)
+    } else {
+        path.to_path_buf()
+    }
+}
+
 pub fn open_local_workspace(path: impl Into<PathBuf>) -> Result<OpenWorkspace> {
     let path = path.into();
     let store = SqliteStore::open(&path)?;
+    let path = user_facing_path(&fs::canonicalize(&path).map_err(|error| {
+        AthriaError::new(AthriaErrorCode::InvalidData, error.to_string())
+    })?);
     let id = WorkspaceId(store.database_uuid()?);
     Ok(OpenWorkspace {
         handle: WorkspaceHandle {
@@ -230,6 +244,20 @@ mod tests {
             database_path(Some("chosen.sqlite3")),
             PathBuf::from("chosen.sqlite3")
         );
+    }
+    #[test]
+    fn local_workspace_reports_a_canonical_absolute_database_path() {
+        let root = std::env::temp_dir().join(format!("athria-path-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(root.join("nested")).unwrap();
+        let selected = root.join("nested").join("..").join("selected.sqlite3");
+        let workspace = open_local_workspace(&selected).unwrap();
+        let WorkspaceLocation::LocalDatabase(path) = workspace.handle.location() else {
+            panic!("expected a local database");
+        };
+        assert!(path.is_absolute());
+        assert_eq!(path, &user_facing_path(&std::fs::canonicalize(&selected).unwrap()));
+        drop(workspace);
+        std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn doctor_opens_a_compatible_database() {

@@ -7,12 +7,13 @@
 
 use std::sync::Arc;
 
-use athria_application::AthriaApplication;
+use athria_application::{AthriaApplication, RecordImportBatchInput};
 use athria_core::{
     AdjustmentScopePolicy, AdjustmentTrigger, AthriaErrorCode, EvidenceSeverity, FixedClock,
     ReasonCode, RecommendedScope, ReviewStatus, ScopeViolationCode,
 };
 use athria_store::SqliteStore;
+use athria_vault::{create_envelope, encrypt_secret, new_master_key};
 use serde_json::{Value, json};
 
 const NOW: &str = "2026-09-17T04:00:00.000Z";
@@ -22,6 +23,89 @@ fn test_app() -> AthriaApplication<SqliteStore> {
     let store =
         SqliteStore::open_in_memory_with_clock(clock.clone()).expect("in-memory store opens");
     AthriaApplication::with_clock(store, "local-user", clock)
+}
+
+#[test]
+fn data_source_status_reports_connection_and_local_day_freshness_without_secrets() {
+    let app = test_app();
+    let initial = app.get_data_source_status().unwrap();
+    assert_eq!(initial["sources"][0]["connected"], false);
+    assert_eq!(initial["sources"][0]["lastSuccessAt"], Value::Null);
+    assert_eq!(initial["sources"][2]["lastImportAt"], Value::Null);
+
+    let database_uuid = app.store().database_uuid().unwrap();
+    let master = new_master_key();
+    let envelope = create_envelope(&database_uuid, "password", &master).unwrap();
+    let intervals_secret = encrypt_secret(
+        &database_uuid,
+        "intervals",
+        json!({ "athleteId": "42" }),
+        "private-api-key",
+        &master,
+    )
+    .unwrap();
+    app.store()
+        .initialize_vault(&envelope, &[intervals_secret])
+        .unwrap();
+    let connected_without_sync = app.get_data_source_status().unwrap();
+    assert_eq!(connected_without_sync["sources"][0]["connected"], true);
+    assert_eq!(connected_without_sync["sources"][0]["syncedToday"], false);
+    app.store()
+        .save_connection_sync_state(&json!({
+            "ownerId": "local-user",
+            "source": "intervals",
+            "lastAttemptAt": NOW,
+            "lastSuccessAt": "2026-09-16T16:30:00.000Z",
+            "rangeStart": "2026-09-10",
+            "rangeEnd": "2026-09-17",
+            "status": "success",
+            "data": {},
+        }))
+        .unwrap();
+    app.store()
+        .save_connection_sync_state(&json!({
+            "ownerId": "local-user",
+            "source": "xunji",
+            "lastAttemptAt": "2026-09-16T04:00:00.000Z",
+            "lastSuccessAt": "2026-09-16T04:00:00.000Z",
+            "rangeStart": "2026-09-01",
+            "rangeEnd": "2026-09-16",
+            "status": "success",
+            "data": {},
+        }))
+        .unwrap();
+    let import_data = json!({ "counts": { "sessions": 1 } });
+    app.store()
+        .record_import_batch(&RecordImportBatchInput {
+            owner_id: "local-user",
+            source: "hevy",
+            content_hash: "hash",
+            file_name: "hevy.csv",
+            parser_version: "test",
+            status: "committed",
+            data: &import_data,
+        })
+        .unwrap();
+
+    let status = app.get_data_source_status().unwrap();
+    assert_eq!(status["localDate"], "2026-09-17");
+    assert_eq!(status["sources"][0]["source"], "intervals");
+    assert_eq!(status["sources"][0]["connected"], true);
+    assert_eq!(status["sources"][0]["syncedToday"], true);
+    assert_eq!(status["sources"][1]["source"], "xunji");
+    assert_eq!(status["sources"][1]["connected"], false);
+    assert_eq!(status["sources"][1]["syncedToday"], false);
+    assert_eq!(status["sources"][2]["source"], "hevy");
+    assert_eq!(status["sources"][2]["importedToday"], true);
+    let serialized = serde_json::to_string(&status).unwrap();
+    assert!(!serialized.contains("private-api-key"));
+    assert!(!serialized.contains("ciphertext"));
+
+    app.store().delete_connection_secret("intervals").unwrap();
+    let disconnected = app.get_data_source_status().unwrap();
+    assert_eq!(disconnected["sources"][0]["connected"], false);
+    assert_eq!(disconnected["sources"][0]["syncedToday"], true);
+    assert_eq!(disconnected["sources"][0]["rangeEnd"], "2026-09-17");
 }
 
 fn endurance_template(id: &str, name: &str) -> Value {

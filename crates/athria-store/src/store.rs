@@ -454,6 +454,17 @@ impl SqliteStore {
             .map_err(database_error)?
             > 0)
     }
+    pub fn list_configured_connection_sources(&self) -> Result<Vec<String>> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT source FROM connection_secrets ORDER BY source")
+            .map_err(database_error)?;
+        statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(database_error)?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(database_error)
+    }
     /// Opens an Athria database, creating it when empty and migrating v24/v25
     /// databases to v26. Other schema versions are rejected.
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {

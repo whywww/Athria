@@ -9,11 +9,28 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 
 import { changeVaultPassword, createNewProfile, requireVaultPassword, setupVault } from "./api";
 import { DatabaseGate, DatabaseSwitchModal, NewProfileModal } from "./App";
+import { LanguageProvider } from "./i18n";
 
 function renderGate(initialized: boolean, locked: boolean, canRemember = true) {
   const client = new QueryClient();
   client.setQueryData(["vault-status"], { databaseUuid: "database-id", databasePath: "C:\\profiles\\active.sqlite3", initialized, locked, remembered: false, canRemember, legacySources: [] });
   return renderToStaticMarkup(createElement(QueryClientProvider, { client }, createElement(DatabaseGate)));
+}
+
+function renderChinese(element: ReturnType<typeof createElement>): string {
+  vi.stubGlobal("localStorage", { getItem: () => "zh-CN", setItem: () => {} });
+  const html = renderToStaticMarkup(createElement(LanguageProvider, null, element));
+  vi.unstubAllGlobals();
+  renderToStaticMarkup(createElement(LanguageProvider, null, createElement("div")));
+  return html;
+}
+
+function renderEnglish(element: ReturnType<typeof createElement>): string {
+  vi.stubGlobal("localStorage", { getItem: () => "en", setItem: () => {} });
+  const html = renderToStaticMarkup(createElement(LanguageProvider, null, element));
+  vi.unstubAllGlobals();
+  renderToStaticMarkup(createElement(LanguageProvider, null, createElement("div")));
+  return html;
 }
 
 describe("database password flow", () => {
@@ -74,8 +91,16 @@ describe("database password flow", () => {
     expect(html).toContain('aria-label="Close dialog"');
   });
 
+  it("translates new-profile confirmation actions, including the busy state", () => {
+    const props = { target: "C:\\profiles\\fresh.sqlite3", error: undefined, onClose: () => undefined, onSubmit: () => undefined };
+    const idle = renderChinese(createElement(NewProfileModal, { ...props, busy: false }));
+    const busy = renderChinese(createElement(NewProfileModal, { ...props, busy: true }));
+    expect(idle).toContain("创建档案");
+    expect(busy).toContain("正在创建档案…");
+  });
+
   it("renders database switching as a dedicated confirmation dialog", () => {
-    const html = renderToStaticMarkup(createElement(DatabaseSwitchModal, {
+    const html = renderEnglish(createElement(DatabaseSwitchModal, {
       preview: { path: "C:\\profiles\\backup.sqlite3", counts: { workouts: 12, templates: 3, plans: 2 }, includesCredentials: false },
       error: undefined,
       busy: false,
@@ -93,5 +118,14 @@ describe("database password flow", () => {
     expect(html).toContain('aria-label="Close dialog"');
     expect(html).not.toContain("Database password");
     expect(html).not.toContain("Unlock this database");
+  });
+
+  it("translates the database-switch action, including the busy state", () => {
+    const preview = { path: "C:\\profiles\\backup.sqlite3", counts: { workouts: 12, templates: 3, plans: 2 }, includesCredentials: false };
+    const idle = renderChinese(createElement(DatabaseSwitchModal, { preview, error: undefined, busy: false, onClose: () => undefined, onSubmit: () => undefined }));
+    const busy = renderChinese(createElement(DatabaseSwitchModal, { preview, error: undefined, busy: true, onClose: () => undefined, onSubmit: () => undefined }));
+    expect(idle).toContain("切换数据库");
+    expect(idle).toContain("切换到此数据库？");
+    expect(busy).toContain("正在切换数据库…");
   });
 });

@@ -1,9 +1,9 @@
 # MVP limitations
 
-- Native development targets Windows x64 and Apple Silicon macOS. Windows ARM, Intel macOS, Linux, and cross-compilation are unsupported. The MSI is unsigned and may trigger SmartScreen. macOS development builds use ad-hoc signing and require the Athria database password on each launch; Athria does not access the macOS Keychain.
-- The UI is English-only.
+- Native development targets Windows x64 and Apple Silicon macOS. Windows ARM, Intel macOS, Linux, mobile clients, and cross-compilation are future work rather than supported targets. The MSI is unsigned and may trigger SmartScreen. macOS development builds use ad-hoc signing and require the Athria database password on each launch; Athria does not access the macOS Keychain.
+- The UI supports English and Simplified Chinese.
 - The MVP has no built-in LLM, cloud service, mobile client, or third-party write-back.
-- Plan Schema v2–v6 files are retained as historical format documentation. Runtime writes accept v7 only; this development cutover backs up and clears incompatible planning data so saved plans use authoritative Weekly Sessions and domain progression timelines.
+- Only the current Plan Schema v7 contracts are retained in the working tree; older contracts remain available through Git history. Runtime writes accept v7 only, and incompatible planning data is cleared during the development cutover so saved plans use authoritative Weekly Sessions and domain progression timelines.
 - Exercises are open-world and Athria has no exercise catalog. Every planned exercise carries its own classified facts; a blocker lacking a required trusted fact returns `UNKNOWN`.
 - Hevy supports the migrated CSV aliases and preview-before-commit behavior. A current real export remains a release gate.
 - Intervals.icu is read-only. Real-account fields, timezone behavior, overlapping sync, and partial failure remain a release gate until temporary credentials are supplied.

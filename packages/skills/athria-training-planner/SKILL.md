@@ -7,16 +7,25 @@ description: Create, review, revise, validate, and save Athria's current multi-d
 
 Own the lifecycle of the user's single Current Mesocycle. Do not update Profile, Wellness, individual workout execution, or Training History.
 
-## Plan workflow
+## Mandatory planning preflight
 
-1. Read `get_athlete_profile`, `get_training_state`, `list_wellness`, and `get_training_taxonomy`. Keep the profile hash, `inputSnapshotHash`, taxonomy version, and hard-confidence threshold.
-2. Read only the training history and summaries needed for the requested cycle. Use `get_current_plan` when revising or replacing an existing plan.
-3. Create or recover a persistent plan draft. For a new plan call `create_plan_draft` with Plan Schema v7 metadata but no `weeks`; when revising use `current_plan` and preserve unaffected weeks. Write one complete week at a time with `upsert_plan_draft_week`. Templates are optional provenance, never the executable plan.
-4. Call `validate_plan_draft`. Resolve blocker failures and blocker unknowns. Ask only for a fact needed to clear a remaining blocker; do not invent loads, effort, availability, equipment, recovery, or injury status.
-5. Show the plan's goal, domain phases, representative prescriptions, validation blockers/advisories/unknowns, material tradeoffs, and what will replace the current plan.
-6. Obtain explicit approval for the complete proposal. Editing, rejection, or “later” is not approval.
-7. After approval, re-read `get_current_plan`, `get_training_state`, and `get_athlete_profile`. Rebase, revalidate, and ask again if the revision, snapshot hash, or profile hash changed.
-8. Call `commit_plan_draft` once with the draft ID, latest `inputSnapshotHash`, expected plan and draft revisions, and `confirmed: true`. Never make a partial Current Plan write. Use `list_plan_drafts` to resume work in a later conversation and `discard_plan_draft` for abandoned work.
+Run this preflight for every new, revised, adjusted, or next-cycle plan. It has two user checkpoints before detailed drafting.
+
+1. Call only `get_database_context`. Show its absolute `databasePath` and ask the user to confirm that this is the database they intend to use. Do not read athlete data until they confirm it. If the path changes later, stop and repeat this checkpoint.
+2. After database confirmation, read `get_athlete_profile`, `get_training_state`, `get_current_plan`, `get_data_source_status`, `get_training_taxonomy`, and decision-relevant windows from `list_training_sessions`, `get_training_summary`, and `list_wellness`. Keep the profile hash, `inputSnapshotHash`, current-plan revision, taxonomy version, and hard-confidence threshold.
+3. Present one concise review containing every current Profile field, the history and Wellness coverage used, and each source's freshness cutoff. In the same question, ask what existing values need correction and ask for missing or unconfirmed facts that could change the plan: goal priority, availability and rhythm, session duration, equipment, injuries, movement constraints, recovery spacing, preferences, cycle length, and target events.
+4. Handle any Profile or Wellness correction through `$athria-athlete-profile`, including its exact diff, approval, update, and freshness rules. Do not add Profile or Wellness write tools to this Skill. After a correction, re-read the affected context before continuing.
+5. For each disconnected API source, ask whether the user wants to connect it in Athria → Connections. For a connected API source whose `syncedToday` is false, ask whether they want to use **Sync now**. If they choose to sync, pause planning and re-call `get_data_source_status` after they finish. Treat Hevy as an optional CSV import, not an API connection or daily-sync requirement. If the user declines connection, import, or sync, continue only after stating the resulting evidence cutoff and limitation.
+6. Propose a short outline containing the primary goal, cycle duration, each domain's phases and progression, and every training day's broad objective and rationale. Obtain explicit approval of this outline before creating or resuming a plan draft. Revisions require a new outline approval.
+
+## Detailed plan and commit
+
+1. Only after outline approval, create or recover a persistent plan draft. For a new plan call `create_plan_draft` with Plan Schema v7 metadata but no `weeks`; when revising use `current_plan` and preserve unaffected weeks. Write one complete week at a time with `upsert_plan_draft_week`. Templates are optional provenance, never the executable plan.
+2. Call `validate_plan_draft`. Resolve blocker failures and blocker unknowns. Ask only for a fact needed to clear a remaining blocker; do not invent loads, effort, availability, equipment, recovery, or injury status.
+3. Show the complete detailed plan: goal, every week's sessions and prescriptions, progression, validation blockers/advisories/unknowns, material tradeoffs, and exactly what will replace the Current Plan.
+4. Obtain explicit approval for this complete detailed proposal. Outline approval does not authorize `commit_plan_draft`; editing, rejection, or “later” is not approval.
+5. After detailed approval, re-read `get_database_context`, `get_current_plan`, `get_training_state`, and `get_athlete_profile`. If the database path changed, restart at database confirmation. If the plan revision, snapshot hash, or profile hash changed, rebase, revalidate, show the affected detailed changes, and obtain detailed approval again.
+6. Call `commit_plan_draft` once with the draft ID, latest `inputSnapshotHash`, expected plan and draft revisions, and `confirmed: true`. Never make a partial Current Plan write. Use `list_plan_drafts` to locate earlier drafts, but repeat database and outline confirmation before resuming one in a later conversation. Use `discard_plan_draft` for abandoned work.
 
 ## Adjustment workflow
 
@@ -25,7 +34,7 @@ Use this for a periodic review or a user-requested change to the current cycle.
 1. Call `get_plan_adjustment_review` with `weekly_review` or `user_request`.
 2. For `keep`, do not propose a rewrite. For `watch`, explain the signal and keep the plan unless the user explicitly requests a change. For `review_recommended` or `review_required`, read only the evidence identified by the assessment.
 3. Apply the minimum recommended scope while preserving unaffected future work and every completed or skipped historical occurrence. Do not automatically repay missed volume.
-4. Validate, explain, approve, freshness-check, and atomically save using the Plan workflow.
+4. Validate, explain, approve, freshness-check, and atomically save using the mandatory preflight and detailed-plan workflow above.
 
 Profile changes are handled by `$athria-athlete-profile`. When that workflow reports a plan review is recommended or required, continue here with a fresh `get_plan_adjustment_review` using `profile_change`; never treat the Profile update as approval to rewrite the plan.
 
@@ -34,7 +43,7 @@ Profile changes are handled by `$athria-athlete-profile`. When that workflow rep
 1. Compare the ending cycle with actual Training History: adherence, completed key sessions, domain-specific progression, interruptions, and unresolved data gaps.
 2. Separate evidence from interpretation. Do not collapse Strength, Endurance, sport skill, mind-body, and recovery into one synthetic readiness score.
 3. Confirm the next cycle's primary goal only when it cannot be derived confidently from the current Profile and the user's request.
-4. Draft the next complete cycle using the normal Plan workflow. Preserve the prior cycle only as review evidence; Athria stores one editable Current Mesocycle, not plan history.
+4. Draft the next complete cycle using the mandatory preflight and detailed-plan workflow above. Preserve the prior cycle only as review evidence; Athria stores one editable Current Mesocycle, not plan history.
 
 ## Plan target
 

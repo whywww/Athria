@@ -658,7 +658,7 @@ export function NewProfileModal({ target, error, busy, onClose, onSubmit }: { ta
   useModalDismiss(onClose);
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="connection-modal" role="dialog" aria-modal="true" aria-labelledby="new-profile-title">
     <header><div><h2 id="new-profile-title"><T>{"Create a New Profile"}</T></h2><p><T>{"Athria will create an empty database at this location and switch to it. You will set its database password when it opens."}</T></p></div><button type="button" className="modal-close" aria-label={tr("Close dialog")} onClick={onClose}><AppIcon name="close"/></button></header>
-    <div className="modal-body"><p className="restore-path">{target}</p><ErrorBanner error={error}/><div className="modal-actions"><button type="button" className="secondary" disabled={busy} onClick={onClose}><T>{"Cancel"}</T></button><button type="button" disabled={busy} onClick={onSubmit}>{busy ? "Creating Profile…" : "Create Profile"}</button></div></div>
+    <div className="modal-body"><p className="restore-path">{target}</p><ErrorBanner error={error}/><div className="modal-actions"><button type="button" className="secondary" disabled={busy} onClick={onClose}><T>{"Cancel"}</T></button><button type="button" disabled={busy} onClick={onSubmit}><T>{busy ? "Creating Profile…" : "Create Profile"}</T></button></div></div>
   </section></div>;
 }
 
@@ -1087,16 +1087,16 @@ const views: Record<Page, () => React.ReactElement> = { Overview, Training: Time
 
 export function DatabaseSwitchModal({ preview, error, busy, onClose, onSubmit }: { preview: BackupPreview; error: unknown; busy: boolean; onClose: () => void; onSubmit: () => void; }) {
   useModalDismiss(onClose);
-  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="connection-modal database-gate" role="dialog" aria-modal="true" aria-labelledby="database-switch-title">
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="connection-modal database-gate database-switch-modal" role="dialog" aria-modal="true" aria-labelledby="database-switch-title">
     <header><div><h2 id="database-switch-title"><T>{"Switch to this database?"}</T></h2><p><T>{"Review the selected database before Athria switches to it."}</T></p></div><button type="button" className="modal-close" aria-label={tr("Close dialog")} onClick={onClose}><AppIcon name="close"/></button></header>
     <div className="modal-body">
-      <div className="restore-confirm">
+      <div className="restore-confirm database-switch-confirm">
         <span className="restore-path">{preview.path}</span>
         <div className="restore-summary"><span><b>{preview.counts.workouts}</b><small>workouts</small></span><span><b>{preview.counts.templates}</b><small>templates</small></span><span><b>{preview.counts.plans}</b><small>plans</small></span></div>
         <p><T>{"Athria will switch to this database. The current database file is left untouched."}</T></p>
         <ErrorBanner error={error}/>
       </div>
-      <div className="modal-actions"><button type="button" className="secondary" disabled={busy} onClick={onClose}><T>{"Cancel"}</T></button><button type="button" disabled={busy} onClick={onSubmit}>{busy ? "Switching database…" : "Switch database"}</button></div>
+      <div className="modal-actions"><button type="button" className="secondary" disabled={busy} onClick={onClose}><T>{"Cancel"}</T></button><button type="button" disabled={busy} onClick={onSubmit}><T>{busy ? "Switching database…" : "Switch database"}</T></button></div>
     </div>
   </section></div>;
 }
@@ -1188,7 +1188,7 @@ export function DatabaseRecovery({ status }: { status: StartupStatus }) {
     <header><div><h2 id="database-recovery-title"><T>{"Choose a database to continue"}</T></h2><p><T>{"Athria could not open the configured database. Your original file has not been replaced."}</T></p></div></header>
     <div className="modal-body">
       <div className="gate-database-location"><span>{status.databasePath.endsWith(".json") ? tr("Configuration") : tr("Database")}</span><DraggableDatabasePath path={status.databasePath}/></div>
-      <div role="alert" className="database-reset-warning">{status.error}</div>
+      <div role="alert" className="database-reset-warning"><T>{status.error ?? ""}</T></div>
       <ErrorBanner error={error}/>
       <div className="modal-actions"><button type="button" className="secondary" disabled={busy} onClick={() => void chooseExisting()}><T>{"Choose existing database"}</T></button><button type="button" disabled={busy} onClick={() => void chooseNew()}><T>{"Create new database"}</T></button></div>
     </div>

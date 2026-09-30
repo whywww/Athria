@@ -22,6 +22,8 @@ Athria 的 MCP 可以简单理解为五层：
 
 | Tool | 功能 |
 | --- | --- |
+| `get_database_context` | 返回当前 MCP 会话正在使用的 Athria 数据库绝对路径。制定计划时应先展示并让用户确认。 |
+| `get_data_source_status` | 汇总 Intervals.icu、训记和 Hevy 的连接/导入状态与按 Profile 时区计算的数据新鲜度，不暴露凭据。 |
 | `get_athlete_profile` | 读取已确认的 Athlete Profile、训练约束，以及更新 Profile 时需要的 hash。 |
 | `get_training_state` | 获取当前训练状态快照、聚合指标和 `inputSnapshotHash`。保存或调整计划前通常需要读取。 |
 | `list_training_sessions` | 读取一段时间内标准化后的 Training History。 |
@@ -44,7 +46,9 @@ Weight 等按日期变化的数据属于 Wellness，不应写入 Profile。
 | `list_xunji_training_sessions` | 读取已经同步到 Athria 本地数据库的训记训练记录。不会直接访问训记实时 API。 |
 | `get_xunji_sync_status` | 查看训记最近同步时间、范围和状态，不暴露 API Key。 |
 
-SynFit MCP 接口是只读的。同步动作由 Athria Dashboard 的 Devices 页面负责。
+SynFit MCP 接口是只读的。同步动作由 Athria 的 **Connections** 页面负责。
+
+统一的数据源预检使用 `get_data_source_status`。Intervals.icu 和训记返回 API 连接及当天同步状态；Hevy 返回最近 CSV 导入状态，不被描述为 API 连接。同步和导入动作由 Athria 的 **Connections** 页面负责。
 
 ---
 
@@ -106,7 +110,11 @@ Current Plan 不接受 MCP inline 完整写入。草稿按周持久化到 Athria
 推荐流程：
 
 ```text
-读取当前 Profile / State / Plan
+get_database_context → 用户确认数据库绝对路径
+        ↓
+读取 Profile / State / Plan / 数据源状态 / 相关历史与 Wellness
+        ↓
+核对资料和同步状态 → 用户确认训练大纲
         ↓
 create_plan_draft / 恢复已有 draft
         ↓
@@ -114,11 +122,11 @@ create_plan_draft / 恢复已有 draft
         ↓
 validate_plan_draft
         ↓
-向用户展示变化
+向用户展示完整详细计划与验证结果
         ↓
-用户明确批准
+用户明确批准详细计划
         ↓
-重新检查 revision / snapshot / profile freshness
+重新检查数据库路径 / revision / snapshot / profile freshness
         ↓
 commit_plan_draft
 ```
@@ -229,12 +237,19 @@ Agent 不应根据推测直接修改 Profile 或 Wellness。
 ### 创建或修改训练计划
 
 ```text
+get_database_context
+        ↓
+用户确认数据库绝对路径
+        ↓
 get_athlete_profile
 get_training_state
 get_current_plan
 get_training_taxonomy
+get_data_source_status
         ↓
-读取必要的 History / Wellness
+核对全部 Profile 字段、必要的 History / Wellness 与数据新鲜度
+        ↓
+用户确认计划大纲
         ↓
 create_plan_draft（或恢复已有草稿）
         ↓
@@ -242,7 +257,7 @@ create_plan_draft（或恢复已有草稿）
         ↓
 validate_plan_draft
         ↓
-用户确认
+用户确认完整详细计划
         ↓
 commit_plan_draft
 ```

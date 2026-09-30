@@ -202,6 +202,7 @@ pub trait AthriaStore {
 
     fn record_import_batch(&self, input: &RecordImportBatchInput<'_>) -> Result<Value>;
     fn latest_import_batch(&self, owner_id: &str, source: &str) -> Result<Option<Value>>;
+    fn list_configured_connection_sources(&self) -> Result<Vec<String>>;
     fn get_connection_sync_state(&self, source: &str, owner_id: &str) -> Result<Option<Value>>;
     fn save_connection_sync_state(&self, state: &Value) -> Result<Value>;
 }

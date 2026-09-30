@@ -1,6 +1,6 @@
 {
   "name": "athria-training-planner",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "purpose": "Create, review, revise, validate, and save the single current Mesocycle and its reusable session templates.",
   "appliesWhen": [
     "The user asks to create their first training cycle, revise the current cycle, review an ending cycle, plan the next cycle, or manage session templates."
@@ -11,6 +11,8 @@
   ],
   "requiredContext": ["AthleteProfile", "TrainingStateSnapshot", "WellnessRecord"],
   "allowedTools": [
+    "get_database_context",
+    "get_data_source_status",
     "get_athlete_profile",
     "get_training_state",
     "list_training_sessions",
@@ -36,14 +38,18 @@
     "update_session_template",
     "delete_session_template"
   ],
-  "workflow": ["review", "read-targeted-evidence", "create-or-resume-draft", "upsert-weeks", "validate", "explain", "approve", "freshness-check", "commit-plan-draft"],
+  "workflow": ["confirm-database", "review-profile-and-evidence", "review-data-source-freshness", "confirm-outline", "create-or-resume-draft", "upsert-weeks", "validate", "confirm-detailed-plan", "freshness-check", "commit-plan-draft"],
   "outputSchema": "CurrentPlan",
   "approvalPoints": [
-    "Before creating, updating, or deleting a session template",
-    "Before commit_plan_draft"
+    "Before reading athlete data, confirm the absolute database path",
+    "Before creating or resuming a plan draft, confirm the plan outline",
+    "Before commit_plan_draft, confirm the complete detailed plan",
+    "Before creating, updating, or deleting a session template"
   ],
   "safetyRules": [
     "Do not infer missing health or recovery data.",
+    "Do not read athlete data until the user confirms get_database_context for this planning workflow.",
+    "Do not create or resume a plan draft before the user confirms the outline.",
     "Do not bypass blocker validation, revision checks, or explicit user approval.",
     "Do not update Profile, Wellness, individual workout execution, or Training History.",
     "Do not provide medical diagnosis or injury treatment."

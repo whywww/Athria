@@ -10,7 +10,16 @@ fn main() -> std::io::Result<()> {
         .unwrap_or_else(|| "127.0.0.1:37374".to_owned());
     let listener = TcpListener::bind(&address)?;
     eprintln!("Athria MCP conformance server listening on http://{address}/mcp");
-    let application =
-        AthriaApplication::new(SqliteStore::open_in_memory().map_err(std::io::Error::other)?);
-    serve_conformance_http(listener, McpService::new(application))
+    let database_path = std::env::temp_dir().join(format!(
+        "athria-conformance-{}.sqlite3",
+        std::process::id()
+    ));
+    let application = AthriaApplication::new(
+        SqliteStore::open(&database_path).map_err(std::io::Error::other)?,
+    );
+    let database_path = std::fs::canonicalize(database_path)?;
+    serve_conformance_http(
+        listener,
+        McpService::new(application, database_path),
+    )
 }

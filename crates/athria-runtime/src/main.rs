@@ -1,7 +1,7 @@
 use std::net::TcpListener;
 
 use athria_mcp::{McpService, serve_http, serve_stdio};
-use athria_runtime::{database_path, doctor, open_local_workspace};
+use athria_runtime::{WorkspaceLocation, database_path, doctor, open_local_workspace};
 
 fn usage() -> &'static str {
     "Usage: athria <doctor|mcp|serve> [--database <path>]"
@@ -46,7 +46,17 @@ fn run() -> Result<(), String> {
         }
         "mcp" => {
             let workspace = open_local_workspace(path).map_err(|error| error.to_string())?;
-            serve_stdio(McpService::new(workspace.application)).map_err(|error| error.to_string())
+            let database_path = match workspace.handle.location() {
+                WorkspaceLocation::LocalDatabase(path) => path.clone(),
+                WorkspaceLocation::PlatformDocument(_) => {
+                    return Err("The MCP runtime requires a local database path.".to_string());
+                }
+            };
+            serve_stdio(McpService::new(
+                workspace.application,
+                database_path,
+            ))
+            .map_err(|error| error.to_string())
         }
         "serve" => {
             let token = std::env::var("ATHRIA_MCP_TOKEN")
@@ -58,8 +68,18 @@ fn run() -> Result<(), String> {
             }
             let listener = TcpListener::bind(&address).map_err(|error| error.to_string())?;
             let workspace = open_local_workspace(path).map_err(|error| error.to_string())?;
+            let database_path = match workspace.handle.location() {
+                WorkspaceLocation::LocalDatabase(path) => path.clone(),
+                WorkspaceLocation::PlatformDocument(_) => {
+                    return Err("The MCP runtime requires a local database path.".to_string());
+                }
+            };
             eprintln!("Athria MCP HTTP listening at http://{address}/mcp");
-            serve_http(listener, McpService::new(workspace.application), &token)
+            serve_http(
+                listener,
+                McpService::new(workspace.application, database_path),
+                &token,
+            )
                 .map_err(|error| error.to_string())
         }
         _ => Err(usage().to_string()),
