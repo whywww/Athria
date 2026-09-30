@@ -7,7 +7,7 @@
 //! agree with each other without depending on the host zoneinfo.
 
 use jiff::Timestamp;
-use jiff::civil::{Date, Weekday};
+use jiff::civil::{Date, DateTime, Weekday};
 use jiff::tz::TimeZone;
 use time::OffsetDateTime;
 use time::macros::format_description;
@@ -37,6 +37,18 @@ pub fn millis(iso: &str) -> Result<i64> {
     Ok(iso
         .parse::<Timestamp>()
         .map_err(|_| invalid_instant(iso))?
+        .as_millisecond())
+}
+
+/// Resolve an offset-free local date-time in an IANA time zone.
+pub fn local_millis(local: &str, time_zone_name: &str) -> Result<i64> {
+    let civil = local
+        .parse::<DateTime>()
+        .map_err(|_| invalid_instant(local))?;
+    Ok(civil
+        .to_zoned(time_zone(time_zone_name)?)
+        .map_err(|_| invalid_instant(local))?
+        .timestamp()
         .as_millisecond())
 }
 
@@ -142,6 +154,15 @@ mod tests {
             local_noon("2026-09-07", "UTC").unwrap(),
             "2026-09-07T12:00:00.000Z"
         );
+    }
+
+    #[test]
+    fn offset_free_local_time_resolves_in_profile_zone() {
+        assert_eq!(
+            iso_from_millis(local_millis("2026-08-15T17:26:49", "Asia/Hong_Kong").unwrap()),
+            "2026-08-15T09:26:49.000Z"
+        );
+        assert!(local_millis("not-a-date", "Asia/Hong_Kong").is_err());
     }
 
     #[test]

@@ -57,7 +57,8 @@ export async function syncIntervals(range: SyncRange): Promise<unknown> { return
 
 export async function getIntervalsStatus(): Promise<IntervalsConnectionStatus> { return invoke("intervals_status"); }
 
-export async function importXunjiSkill(skillText: string, vaultPassword?: string): Promise<unknown> { return invoke("import_xunji_skill", { skillText, vaultPassword }); }
+export async function importXunjiSkill(skillText: string, range: SyncRange, vaultPassword?: string): Promise<unknown> { return invoke("import_xunji_skill", { skillText, range, vaultPassword }); }
+export async function testXunjiSkill(skillText: string, vaultPassword?: string): Promise<unknown> { return invoke("test_xunji_skill", { skillText, vaultPassword }); }
 export async function syncXunji(range: SyncRange): Promise<unknown> { return invoke("sync_xunji", { range }); }
 export async function getXunjiStatus<T>(): Promise<T> { return invoke("xunji_status"); }
 export async function getMcpStatus(): Promise<McpStatus> { return invoke("mcp_status"); }

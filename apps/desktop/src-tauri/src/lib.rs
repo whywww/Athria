@@ -806,9 +806,49 @@ async fn intervals_status(state: State<'_, RuntimeState>) -> Result<Value, Strin
 }
 
 #[tauri::command]
+async fn test_xunji_skill(
+    state: State<'_, RuntimeState>,
+    skill_text: String,
+    vault_password: Option<String>,
+) -> Result<Value, String> {
+    let generation = database_generation(&state);
+    let mut api_key = extract_xunji_api_key(&skill_text)?;
+    let attempted_at = active_application(&state)?.store().now();
+    let fetched = fetch_xunji_training(
+        &ReqwestHttpClient::default(),
+        &api_key,
+        1,
+        &attempted_at,
+    );
+    let valid = fetched
+        .as_ref()
+        .ok()
+        .and_then(|value| value.get("successfulDates"))
+        .and_then(Value::as_array)
+        .is_some_and(|dates| !dates.is_empty());
+    if !valid {
+        vault::clear_string(&mut api_key);
+        return Err("Xunji could not verify this API key. Export a new Skill from Xunji and try again.".to_string());
+    }
+    let saved = save_connection_key(
+        &state,
+        generation,
+        "xunji",
+        json!({}),
+        &api_key,
+        vault_password.as_deref(),
+    )
+    .await;
+    vault::clear_string(&mut api_key);
+    saved?;
+    Ok(json!({ "status": "connected" }))
+}
+
+#[tauri::command]
 async fn import_xunji_skill(
     state: State<'_, RuntimeState>,
     skill_text: String,
+    range: i64,
     vault_password: Option<String>,
 ) -> Result<Value, String> {
     let generation = database_generation(&state);
@@ -819,7 +859,7 @@ async fn import_xunji_skill(
     let fetched = fetch_xunji_training(
         &ReqwestHttpClient::default(),
         &api_key,
-        XUNJI_SYNC_DAYS,
+        range,
         &attempted_at,
     )
     .map_err(|_| {
@@ -1518,6 +1558,7 @@ pub fn run() -> i32 {
             sync_intervals,
             intervals_status,
             import_xunji_skill,
+            test_xunji_skill,
             sync_xunji,
             xunji_status,
             mcp_status,

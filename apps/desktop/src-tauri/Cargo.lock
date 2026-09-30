@@ -185,6 +185,7 @@ dependencies = [
  "athria-mcp",
  "athria-store",
  "athria-vault",
+ "flate2",
  "reqwest 0.12.28",
  "serde",
  "serde_json",

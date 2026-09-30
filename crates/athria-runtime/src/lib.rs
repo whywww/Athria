@@ -15,6 +15,7 @@ use athria_vault::VaultEnvelope;
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
+    io::Read,
     path::{Path, PathBuf},
 };
 use uuid::Uuid;
@@ -227,9 +228,47 @@ impl HttpClient for ReqwestHttpClient {
         }
         let response = builder.send().map_err(|error| error.to_string())?;
         let status = response.status().as_u16();
-        let body = response
-            .json()
-            .map_err(|error| format!("Invalid server response: {error}"))?;
+        let content_type = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("unknown")
+            .to_owned();
+        let gzip_header = response
+            .headers()
+            .get(reqwest::header::CONTENT_ENCODING)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.eq_ignore_ascii_case("gzip"));
+        let bytes = match response.bytes() {
+            Ok(bytes) => bytes,
+            Err(_) if !(200..300).contains(&status) => return Ok(HttpResponse { status, body: serde_json::Value::Null }),
+            Err(error) => return Err(format!("HTTP {status} response body could not be read: {error}")),
+        };
+        let decompressed = if gzip_header || bytes.starts_with(&[0x1f, 0x8b]) {
+            let mut decoded = Vec::new();
+            match flate2::read::GzDecoder::new(bytes.as_ref()).read_to_end(&mut decoded) {
+                Ok(_) => decoded,
+                Err(_) if !(200..300).contains(&status) => return Ok(HttpResponse { status, body: serde_json::Value::Null }),
+                Err(error) => return Err(format!("HTTP {status} gzip response could not be decoded: {error}")),
+            }
+        } else {
+            bytes.to_vec()
+        };
+        let json_bytes = decompressed.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(&decompressed);
+        let body = match serde_json::from_slice(json_bytes) {
+            Ok(body) => body,
+            Err(_) if !(200..300).contains(&status) => serde_json::Value::Null,
+            Err(error) => {
+                let kind = if json_bytes.is_empty() {
+                    "empty body"
+                } else if json_bytes.starts_with(b"<") {
+                    "HTML body"
+                } else {
+                    "non-JSON body"
+                };
+                return Err(format!("HTTP {status} returned invalid JSON ({kind}, {} bytes, Content-Type: {content_type}): {error}", json_bytes.len()));
+            }
+        };
         Ok(HttpResponse { status, body })
     }
 }
@@ -238,6 +277,74 @@ impl HttpClient for ReqwestHttpClient {
 mod tests {
     use super::*;
     use athria_vault::{create_envelope, new_master_key};
+    #[test]
+    fn non_json_http_error_preserves_status_for_integration_retry() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0; 1024];
+            stream.read(&mut request).unwrap();
+            stream.write_all(b"HTTP/1.1 429 Too Many Requests\r\nContent-Type: text/html\r\nContent-Length: 12\r\nConnection: close\r\n\r\nrate limited").unwrap();
+        });
+        let response = ReqwestHttpClient::default().send(&HttpRequest {
+            method: "GET",
+            url: format!("http://{address}/"),
+            headers: vec![],
+            body: None,
+            timeout_ms: 1_000,
+        }).unwrap();
+        server.join().unwrap();
+        assert_eq!(response.status, 429);
+        assert!(response.body.is_null());
+    }
+    #[test]
+    fn unreadable_http_error_body_preserves_status_for_integration_retry() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0; 1024];
+            stream.read(&mut request).unwrap();
+            stream.write_all(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 20\r\nConnection: close\r\n\r\nincomplete").unwrap();
+        });
+        let response = ReqwestHttpClient::default().send(&HttpRequest {
+            method: "GET",
+            url: format!("http://{address}/"),
+            headers: vec![],
+            body: None,
+            timeout_ms: 1_000,
+        }).unwrap();
+        server.join().unwrap();
+        assert_eq!(response.status, 503);
+        assert!(response.body.is_null());
+    }
+    #[test]
+    fn gzip_json_response_is_decoded() {
+        use std::io::{Read, Write};
+        const GZIP_EMPTY_ARRAY: [u8; 22] = [31, 139, 8, 0, 0, 0, 0, 0, 2, 10, 139, 142, 5, 0, 41, 187, 76, 13, 2, 0, 0, 0];
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0; 1024];
+            stream.read(&mut request).unwrap();
+            stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Encoding: gzip\r\nContent-Length: 22\r\nConnection: close\r\n\r\n").unwrap();
+            stream.write_all(&GZIP_EMPTY_ARRAY).unwrap();
+        });
+        let response = ReqwestHttpClient::default().send(&HttpRequest {
+            method: "GET",
+            url: format!("http://{address}/"),
+            headers: vec![],
+            body: None,
+            timeout_ms: 1_000,
+        }).unwrap();
+        server.join().unwrap();
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body, serde_json::json!([]));
+    }
     #[test]
     fn explicit_database_path_wins() {
         assert_eq!(

@@ -87,3 +87,14 @@ fn xunji_authentication_is_typed_and_redacted() {
     assert_eq!(error.0, "apikey invalid");
     assert!(!error.0.contains("should_not_leak"));
 }
+
+#[test]
+fn xunji_retries_non_json_rate_limit_response() {
+    let client = FakeClient::new(vec![
+        response(429, Value::Null),
+        response(200, json!({ "res": { "trains": [{ "localid": 1 }] } })),
+    ]);
+    let result = fetch_xunji_training(&client, "xjllm_secret", 1, "2026-09-03T00:00:00Z").unwrap();
+    assert_eq!(result["successfulDates"], json!(["2026-09-03"]));
+    assert_eq!(client.requests.borrow().len(), 2);
+}

@@ -70,6 +70,7 @@ pub fn fetch_xunji_training<C: HttpClient>(
             headers: vec![
                 ("Authorization".into(), format!("Bearer {api_key}")),
                 ("Content-Type".into(), "application/json".into()),
+                ("Accept".into(), "application/json".into()),
                 ("User-Agent".into(), "Athria/0.1".into()),
             ],
             body: Some(body),

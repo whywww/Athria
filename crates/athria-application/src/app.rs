@@ -18,7 +18,7 @@
 //! are ported here; a violation raises `INVALID_DATA`.
 
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::RangeInclusive;
 use std::sync::Arc;
 
@@ -1305,20 +1305,6 @@ impl<S: AthriaStore> AthriaApplication<S> {
     }
 
     pub fn commit_intervals(&self, payload: &Value, context: &Value) -> Result<Value> {
-        let activities = payload.get("activities").and_then(Value::as_array);
-        let mut sessions = Vec::new();
-        if let Some(items) = activities {
-            for item in items {
-                let Some(session) = normalize_intervals_activity(item, "activities")? else {
-                    return Err(failure(
-                        AthriaErrorCode::IntervalsNormalizationFailed,
-                        "Intervals returned an activity without a valid start time; existing training data was left unchanged.",
-                        502,
-                    ));
-                };
-                sessions.push(session);
-            }
-        }
         let attempted_at = context
             .get("attemptedAt")
             .and_then(Value::as_str)
@@ -1332,22 +1318,79 @@ impl<S: AthriaStore> AthriaApplication<S> {
             .get("rangeEnd")
             .and_then(Value::as_str)
             .unwrap_or(&attempted_at[..10]);
-        let counts = if activities.is_some() {
-            self.store
-                .replace_source_sessions(&ReplaceSourceSessionsInput {
-                    owner_id: &self.owner_id,
-                    source: "intervals",
-                    sessions: &sessions,
-                    dates: None,
-                    local_dates: None,
-                    range_start: Some(range_start),
-                    range_end: Some(range_end),
-                })?
-        } else {
-            crate::store::WriteCounts {
-                added: 0,
-                updated: 0,
+        let profile = self.get_profile()?;
+        let timezone = string_field(&profile, "timezone");
+        let activities = payload.get("activities").and_then(Value::as_array);
+        let mut sessions = Vec::new();
+        let mut failed_dates: BTreeMap<String, Vec<Value>> = BTreeMap::new();
+        let mut undated_failures = Vec::new();
+        if let Some(items) = activities {
+            for item in items {
+                match normalize_intervals_activity(item, "activities", timezone) {
+                    Ok(Some(session)) => {
+                        let date = tz::local_date(string_field(&session, "startAt"), timezone)?;
+                        sessions.push((date, session));
+                    }
+                    result => {
+                        let activity_id = item.get("id").or_else(|| item.get("external_id"))
+                            .map(|value| value.as_str().map(str::to_owned).unwrap_or_else(|| value.to_string()))
+                            .unwrap_or_else(|| "unknown".into());
+                        let reason = match result {
+                            Ok(None) => "No valid start time".to_string(),
+                            Err(error) => error.message().chars().take(300).collect(),
+                            Ok(Some(_)) => unreachable!(),
+                        };
+                        let failure = json!({ "activityId": activity_id, "reason": reason });
+                        let absolute_date = item.get("start_date").and_then(Value::as_str)
+                            .and_then(|start| tz::local_date(start, timezone).ok());
+                        let local_date = item.get("start_date_local").and_then(Value::as_str)
+                            .and_then(|start| start.get(..10))
+                            .filter(|date| athria_core::date::is_iso_date(date))
+                            .filter(|date| tz::local_millis(&format!("{date}T12:00:00"), timezone).is_ok())
+                            .map(str::to_owned);
+                        let date = absolute_date.or(local_date).or_else(|| item.get("start")
+                            .and_then(Value::as_str)
+                            .and_then(|start| tz::local_date(start, timezone).ok()));
+                        match date {
+                            Some(date) => failed_dates.entry(date).or_default().push(failure),
+                            None => undated_failures.push(failure),
+                        }
+                    }
+                }
             }
+        }
+        let replacement: Vec<Value> = sessions.into_iter()
+            .filter(|(date, _)| date.as_str() >= range_start && date.as_str() <= range_end && !failed_dates.contains_key(date))
+            .map(|(_, session)| session)
+            .collect();
+        let mut successful_dates = Vec::new();
+        if activities.is_some() && undated_failures.is_empty() {
+            for day in athria_core::date::epoch_day(range_start)..=athria_core::date::epoch_day(range_end) {
+                let date = athria_core::date::format_iso_date(day);
+                if !failed_dates.contains_key(&date) {
+                    successful_dates.push(date);
+                }
+            }
+        }
+        let counts = if activities.is_none() || (successful_dates.is_empty() && undated_failures.is_empty()) {
+            crate::store::WriteCounts { added: 0, updated: 0 }
+        } else if !undated_failures.is_empty() {
+            let owned: Vec<Value> = replacement.into_iter().map(|mut session| {
+                session["ownerId"] = json!(self.owner_id);
+                session
+            }).collect();
+            if owned.is_empty() { crate::store::WriteCounts { added: 0, updated: 0 } }
+            else { self.store.upsert_sessions(&owned)? }
+        } else {
+            self.store.replace_source_sessions(&ReplaceSourceSessionsInput {
+                owner_id: &self.owner_id,
+                source: "intervals",
+                sessions: &replacement,
+                dates: Some(&successful_dates),
+                local_dates: None,
+                range_start: None,
+                range_end: None,
+            })?
         };
         let wellness_count = match payload.get("wellness").and_then(Value::as_array) {
             Some(records) => self.store.upsert_wellness(&self.owner_id, records)?,
@@ -1359,17 +1402,18 @@ impl<S: AthriaStore> AthriaApplication<S> {
                 errors.insert(name.into(), json!(message));
             }
         }
-        let activities_ok = activities.is_some();
+        let activities_ok = activities.is_some() && failed_dates.is_empty() && undated_failures.is_empty();
+        let activities_progress = !successful_dates.is_empty() || (!undated_failures.is_empty() && counts.added + counts.updated > 0);
         let wellness_ok = payload.get("wellness").is_some_and(Value::is_array);
         let status = if activities_ok && wellness_ok {
             "success"
-        } else if activities_ok || wellness_ok {
+        } else if activities_progress || wellness_ok {
             "partial"
         } else {
             "failed"
         };
         let previous = self.get_intervals_sync_status()?;
-        let last_success = if status == "success" {
+        let last_success = if status != "failed" {
             json!(attempted_at)
         } else {
             previous
@@ -1380,9 +1424,14 @@ impl<S: AthriaStore> AthriaApplication<S> {
         let state = self.store.save_connection_sync_state(&json!({ "ownerId": self.owner_id, "source": "intervals", "lastAttemptAt": attempted_at,
             "lastSuccessAt": last_success, "rangeStart": range_start, "rangeEnd": range_end, "status": status,
             "data": { "activities": counts.to_json(), "wellnessCount": wellness_count, "errors": errors } }))?;
-        Ok(
-            json!({ "added": counts.added, "updated": counts.updated, "wellnessCount": wellness_count, "errors": errors, "sync": state }),
-        )
+        let mut result = json!({ "added": counts.added, "updated": counts.updated, "wellnessCount": wellness_count, "errors": errors, "sync": state });
+        if !failed_dates.is_empty() {
+            result["failedDates"] = json!(failed_dates.into_iter().map(|(date, failures)| json!({ "date": date, "failures": failures })).collect::<Vec<_>>());
+        }
+        if !undated_failures.is_empty() {
+            result["undatedFailures"] = json!(undated_failures);
+        }
+        Ok(result)
     }
 
     pub fn get_xunji_sync_status(&self) -> Result<Option<Value>> {

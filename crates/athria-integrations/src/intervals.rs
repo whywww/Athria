@@ -55,22 +55,21 @@ pub fn interval_modality(value: Option<&Value>) -> &'static str {
     }
 }
 
-pub fn normalize_intervals_activity(item: &Value, resource: &str) -> Result<Option<Value>> {
+pub fn normalize_intervals_activity(item: &Value, resource: &str, timezone: &str) -> Result<Option<Value>> {
     if resource == "events" {
         return Ok(None);
     }
     let Some(object) = item.as_object() else {
         return Ok(None);
     };
-    let Some(start) = object
-        .get("start_date")
-        .or_else(|| object.get("start_date_local"))
-        .or_else(|| object.get("start"))
-        .and_then(Value::as_str)
-    else {
-        return Ok(None);
-    };
-    let Ok(start_ms) = tz::millis(start) else {
+    let absolute = |name| object.get(name).and_then(Value::as_str).and_then(|start| tz::millis(start).ok());
+    let local = object.get("start_date_local").and_then(Value::as_str).and_then(|start| {
+        tz::millis(start).map(|ms| (ms, false)).or_else(|_| tz::local_millis(start, timezone).map(|ms| (ms, true))).ok()
+    });
+    let Some((start_ms, local_timezone)) = absolute("start_date")
+        .map(|ms| (ms, false))
+        .or(local)
+        .or_else(|| absolute("start").map(|ms| (ms, false))) else {
         return Ok(None);
     };
     let duration_value = object
@@ -122,6 +121,7 @@ pub fn normalize_intervals_activity(item: &Value, resource: &str) -> Result<Opti
         "id": format!("intervals:{resource}:{external}"), "source": "intervals", "externalId": format!("{resource}:{external}"),
         "modality": interval_modality(kind), "sport": sport, "name": name,
         "startAt": tz::iso_from_millis(start_ms), "endAt": tz::iso_from_millis(start_ms + minutes * 60_000), "durationMinutes": minutes,
+        "timezone": if local_timezone { json!(timezone) } else { Value::Null },
         "status": "completed", "missingFields": if duration_value.is_none() { json!(["duration"]) } else { json!([]) },
         "endurance": { "distanceMeters": metric("distance"), "averageHeartRate": metric("average_heartrate"), "maxHeartRate": metric("max_heartrate"),
           "averagePowerWatts": metric("average_watts"), "maxPowerWatts": metric("max_watts"),
