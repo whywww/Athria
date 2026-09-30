@@ -1,6 +1,6 @@
 [package]
 name = "athria"
-version = "0.2.0"
+version = "0.2.1-beta.1"
 description = "Athria local-first training infrastructure"
 authors = ["Athria contributors"]
 edition = "2024"

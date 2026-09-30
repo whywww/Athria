@@ -429,7 +429,7 @@ Object.assign(zh, {
   "Model Context Protocol — the open standard your AI agent uses to talk to Athria. The connection stays on this computer.": "Model Context Protocol 是 AI 助手与 Athria 通信的开放标准。连接只在本机运行。",
   "Move this plan to the date it was completed before adding a completed workout.": "添加已完成训练前，请先将计划移至实际完成日期。",
   "Not now": "暂不",
-  "Open Connections and pick a source: Hevy (import a CSV export), Intervals.icu (sync endurance activities) or SynFit (sync strength and training records). Then use Sync now whenever you want to pull in new workouts.": "在“连接”中选择数据源：Hevy（导入 CSV）、Intervals.icu（同步耐力活动）或训记（同步力量和训练记录）。之后随时使用“立即同步”获取新训练。",
+  "Open Connections and pick Intervals.icu (endurance activities) or SynFit (strength and training records). Then use Sync now whenever you want to pull in new workouts.": "在“连接”中选择 Intervals.icu（同步耐力活动）或训记（同步力量和训练记录）。之后随时使用“立即同步”获取新训练。",
   "Personalized guidance based on your profile": "根据你的档案提供个性化指导",
   "Plans are created by your connected AI agent. Connect an agent in Settings under AI Agents, then ask it to build your plan — it uses your Profile, training history and synced workouts. Open Plan to review the Weekly Sessions it saves. Reusable Session Templates can be built in the Plan page's Template Library.": "计划由已连接的 AI 助手创建。先在设置中连接助手，再请它依据档案、训练历史和同步记录制定计划。打开“计划”查看每周训练，并在模板库中创建可重复使用的训练模板。",
   "Primary Goal": "主要目标",

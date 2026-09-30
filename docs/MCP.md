@@ -23,7 +23,7 @@ Athria 的 MCP 可以简单理解为五层：
 | Tool | 功能 |
 | --- | --- |
 | `get_database_context` | 返回当前 MCP 会话正在使用的 Athria 数据库绝对路径。制定计划时应先展示并让用户确认。 |
-| `get_data_source_status` | 汇总 Intervals.icu、训记和 Hevy 的连接/导入状态与按 Profile 时区计算的数据新鲜度，不暴露凭据。 |
+| `get_data_source_status` | 汇总 Intervals.icu 和训记的连接状态与按 Profile 时区计算的数据新鲜度，不暴露凭据。内部还会返回尚未开放的 Hevy 导入状态。 |
 | `get_athlete_profile` | 读取已确认的 Athlete Profile、训练约束，以及更新 Profile 时需要的 hash。 |
 | `get_training_state` | 获取当前训练状态快照、聚合指标和 `inputSnapshotHash`。保存或调整计划前通常需要读取。 |
 | `list_training_sessions` | 读取一段时间内标准化后的 Training History。 |
@@ -48,7 +48,7 @@ Weight 等按日期变化的数据属于 Wellness，不应写入 Profile。
 
 SynFit MCP 接口是只读的。同步动作由 Athria 的 **Connections** 页面负责。
 
-统一的数据源预检使用 `get_data_source_status`。Intervals.icu 和训记返回 API 连接及当天同步状态；Hevy 返回最近 CSV 导入状态，不被描述为 API 连接。同步和导入动作由 Athria 的 **Connections** 页面负责。
+统一的数据源预检使用 `get_data_source_status`。Intervals.icu 和训记返回 API 连接及当天同步状态；同步动作由 Athria 的 **Connections** 页面负责。Hevy 导入功能在 0.2.1-beta.1 中尚未开放；接口可能返回其历史导入状态，但不代表此版本支持新导入。
 
 ---
 

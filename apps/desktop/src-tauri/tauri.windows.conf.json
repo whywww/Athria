@@ -2,10 +2,11 @@
   "$schema": "https://schema.tauri.app/config/2",
   "bundle": {
     "targets": ["msi"],
+    "useLocalToolsDir": true,
     "icon": ["icons/icon.ico"],
     "windows": {
       "webviewInstallMode": { "type": "embedBootstrapper" },
-      "wix": { "language": "en-US" }
+      "wix": { "language": "en-US", "version": "0.2.1" }
     }
   }
 }

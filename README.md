@@ -5,7 +5,7 @@
 
 **Connect your training data to the AI you already use.**
 
-[![Version](https://img.shields.io/badge/version-0.2.0-315c4c)](package.json)
+[![Version](https://img.shields.io/badge/version-0.2.1--beta.1-315c4c)](package.json)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20x64%20%7C%20macOS%20Apple%20Silicon-315c4c)
 ![Runtime](https://img.shields.io/badge/data-local--first-e9a23b)
 </div>
@@ -37,7 +37,7 @@ You can also use Athria itself to view your training history, recent status, and
 
 Athria does not tie you to a specific AI. You choose the AI; Athria connects it to your training data.
 
-> **Athria is currently an Alpha project under active development and has not had an official release.** Features and data formats may still change.
+> **Athria 0.2.1-beta.1 is a beta pre-release under active development.** Features and data formats may still change.
 
 ### What can I do with it?
 
@@ -97,14 +97,14 @@ A few things are worth knowing:
 
 ### Current limitations
 
-Athria is currently an **Alpha project under active development and has not had an official release**.
+Athria 0.2.1-beta.1 is a **beta pre-release under active development**.
 
 Current limitations include:
 
 - Current native development and testing targets are **Windows x64** and **Apple Silicon macOS**. Linux and mobile clients are future work.
 - The app interface supports **English** and **Simplified Chinese**.
 - Athria does **not include its own AI model or chat interface**.
-- Hevy currently uses file import; Intervals.icu and SynFit synchronization are read-only.
+- Intervals.icu and SynFit synchronization are read-only.
 - Athria currently manages the latest reusable templates and one editable training cycle rather than full plan history and versioning.
 - Missing load, RPE, heart-rate, power, recovery, or wellness data is not guessed or filled automatically.
 - Analysis and rules for some training domains are still under development.
@@ -138,7 +138,7 @@ Athria 是一个免费的训练数据和 AI 助手。
 
 Athria 不绑定特定的 AI。你可以继续使用自己选择的 AI，Athria 负责在它和你的训练数据之间建立连接。
 
-> **Athria 目前处于 Alpha 开发阶段，尚未正式发布。** 功能和数据格式仍可能发生变化。
+> **Athria 0.2.1-beta.1 是仍在开发中的 Beta 预发布版本。** 功能和数据格式仍可能发生变化。
 
 ### Athria 可以做什么？
 
@@ -198,14 +198,14 @@ Athria 的核心训练数据保存在你的电脑上，不需要注册 Athria �
 
 ### 当前限制
 
-Athria 目前处于 **Alpha 开发阶段，尚未正式发布**。
+Athria 0.2.1-beta.1 是**仍在开发中的 Beta 预发布版本**。
 
 当前主要限制包括：
 
 - 当前原生开发和测试目标为 **Windows x64** 和 **Apple Silicon macOS**；Linux 和移动客户端属于未来事项。
 - 应用界面支持**英文**和**简体中文**。
 - Athria 本身不提供聊天功能，需要连接你选择的 AI。
-- 当前支持 Hevy 文件导入，以及 Intervals.icu 和训记的只读同步。
+- Intervals.icu 和训记目前提供只读同步。
 - 目前主要管理最新的可复用模板和一个正在使用的训练周期，还没有完整的训练计划历史和版本管理。
 - 没有记录的负重、RPE、心率、功率、恢复或 Wellness 数据不会由 Athria 自动猜测或补全。
 - 部分训练领域的分析和规则仍在开发中。

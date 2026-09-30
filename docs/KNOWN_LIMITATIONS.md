@@ -5,8 +5,8 @@
 - The MVP has no built-in LLM, cloud service, mobile client, or third-party write-back.
 - Only the current Plan Schema v7 contracts are retained in the working tree; older contracts remain available through Git history. Runtime writes accept v7 only, and incompatible planning data is cleared during the development cutover so saved plans use authoritative Weekly Sessions and domain progression timelines.
 - Exercises are open-world and Athria has no exercise catalog. Every planned exercise carries its own classified facts; a blocker lacking a required trusted fact returns `UNKNOWN`.
-- Hevy supports the migrated CSV aliases and preview-before-commit behavior. A current real export remains a release gate.
-- Intervals.icu is read-only. Real-account fields, timezone behavior, overlapping sync, and partial failure remain a release gate until temporary credentials are supplied.
+- Hevy import is not available in the 0.2.1-beta.1 interface; real-export validation remains for a later release.
+- Intervals.icu synchronization is read-only.
 - Maximum heart rate must be explicitly entered. Athria does not infer it from age.
 - Missing load, RPE, heart-rate, power, recovery, or wellness data remains missing; it is never interpreted as normal.
 - Strength and endurance metrics are kept separate. There is no combined fatigue/readiness score, Critical Power, W', PMC, MEV/MAV/MRV, automated medical judgment, or complex periodization generator.
