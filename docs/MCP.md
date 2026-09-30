@@ -37,14 +37,14 @@ Weight 等按日期变化的数据属于 Wellness，不应写入 Profile。
 
 ---
 
-## 2. Xunji / 训记
+## 2. SynFit / 训记
 
 | Tool | 功能 |
 | --- | --- |
 | `list_xunji_training_sessions` | 读取已经同步到 Athria 本地数据库的训记训练记录。不会直接访问训记实时 API。 |
 | `get_xunji_sync_status` | 查看训记最近同步时间、范围和状态，不暴露 API Key。 |
 
-Xunji MCP 接口是只读的。同步动作由 Athria Dashboard 的 Devices 页面负责。
+SynFit MCP 接口是只读的。同步动作由 Athria Dashboard 的 Devices 页面负责。
 
 ---
 

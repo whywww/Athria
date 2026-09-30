@@ -973,6 +973,39 @@ fn open_skill_archive_folder() -> Result<(), String> {
     open_folder(&directory)
 }
 
+/// Opens the fixed Intervals.icu website in the system browser.
+#[tauri::command]
+fn open_intervals_website() -> Result<(), String> {
+    open_url("https://intervals.icu")
+}
+
+#[cfg(windows)]
+fn open_url(url: &str) -> Result<(), String> {
+    std::process::Command::new("cmd")
+        .args(["/C", "start", "", url])
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("Athria could not open the Intervals.icu website: {error}"))
+}
+
+#[cfg(target_os = "macos")]
+fn open_url(url: &str) -> Result<(), String> {
+    std::process::Command::new("open")
+        .arg(url)
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("Athria could not open the Intervals.icu website: {error}"))
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+fn open_url(url: &str) -> Result<(), String> {
+    std::process::Command::new("xdg-open")
+        .arg(url)
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("Athria could not open the Intervals.icu website: {error}"))
+}
+
 fn spawn_folder_opener(command: &mut std::process::Command, path: &Path) -> Result<(), String> {
     command
         .spawn()
@@ -1486,6 +1519,7 @@ pub fn run() -> i32 {
             resolve_agent_skill_update,
             remove_agent_integration,
             open_skill_archive_folder,
+            open_intervals_website,
             pick_restore_file,
             pick_new_profile_destination,
             restore_backup,

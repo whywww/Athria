@@ -512,12 +512,26 @@ impl SqliteStore {
             .map_err(database_error)?;
         if writable {
             let mode: String = connection
-                .query_row("PRAGMA journal_mode=WAL", [], |row| row.get(0))
-                .map_err(database_error)?;
-            if mode != "wal" && mode != "memory" {
+                .query_row("PRAGMA journal_mode=DELETE", [], |row| row.get(0))
+                .map_err(|error| {
+                    let mapped = database_error(error);
+                    if mapped.code() == AthriaErrorCode::WriteBusy {
+                        AthriaError::new(
+                            AthriaErrorCode::WriteBusy,
+                            "Close other Athria or MCP processes using this database, then try again.",
+                        )
+                    } else {
+                        mapped
+                    }
+                })?;
+            if mode != "delete" && mode != "memory" {
                 return Err(AthriaError::new(
-                    AthriaErrorCode::InvalidData,
-                    format!("Athria requires SQLite WAL journal mode, got {mode}."),
+                    if mode == "wal" { AthriaErrorCode::WriteBusy } else { AthriaErrorCode::InvalidData },
+                    if mode == "wal" {
+                        "Close other Athria or MCP processes using this database, then try again.".to_string()
+                    } else {
+                        format!("Athria requires SQLite DELETE journal mode, got {mode}.")
+                    },
                 ));
             }
         }
@@ -686,16 +700,7 @@ impl SqliteStore {
             .map_err(database_error)
     }
 
-    /// Flushes the WAL into the main database file (backup/restore parity with
-    /// `AthriaRepository.checkpoint`).
-    pub fn checkpoint(&self) -> Result<()> {
-        self.connection
-            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))
-            .map_err(database_error)
-    }
-
-    /// Creates a consistent single-file SQLite snapshot at `target`, even if
-    /// recent committed pages are still in this connection's WAL.
+    /// Creates a consistent single-file SQLite snapshot at `target`.
     pub fn backup_to(&self, target: impl AsRef<Path>) -> Result<()> {
         let mut destination = Connection::open(target).map_err(database_error)?;
         {
@@ -1525,6 +1530,9 @@ mod tests {
         let copy = directory.path().join("copy.sqlite3");
         let store = SqliteStore::open(&source).unwrap();
         store.save_profile(&json!({"displayName":"Portable"})).unwrap();
+        assert!(!source.with_extension("sqlite3-wal").exists());
+        assert!(!source.with_extension("sqlite3-shm").exists());
+        assert!(!source.with_extension("sqlite3-journal").exists());
         store.close();
         assert!(!source.with_extension("sqlite3-wal").exists());
         assert!(!source.with_extension("sqlite3-shm").exists());
@@ -1553,7 +1561,7 @@ mod tests {
     }
 
     #[test]
-    fn opening_a_closed_wal_database_preserves_wal_mode() {
+    fn opening_a_closed_wal_database_converts_it_to_delete_mode() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("legacy.sqlite3");
         SqliteStore::open(&path).unwrap().close();
@@ -1566,10 +1574,29 @@ mod tests {
         drop(legacy);
         let converted = SqliteStore::open(&path).unwrap();
         assert_eq!(converted.get_profile(DEFAULT_OWNER_ID).unwrap().unwrap()["displayName"], "Preserved");
-        assert_eq!(converted.connection.query_row("PRAGMA journal_mode", [], |row| row.get::<_, String>(0)).unwrap(), "wal");
+        assert_eq!(converted.connection.query_row("PRAGMA journal_mode", [], |row| row.get::<_, String>(0)).unwrap(), "delete");
+        converted.save_profile(&json!({"displayName":"After conversion"})).unwrap();
+        assert!(!path.with_extension("sqlite3-wal").exists());
+        assert!(!path.with_extension("sqlite3-shm").exists());
+        assert!(!path.with_extension("sqlite3-journal").exists());
         converted.close();
         assert!(!path.with_extension("sqlite3-wal").exists());
         assert!(!path.with_extension("sqlite3-shm").exists());
+    }
+
+    #[test]
+    fn opening_a_wal_database_held_by_another_connection_explains_the_lock() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("held.sqlite3");
+        SqliteStore::open(&path).unwrap().close();
+        let held = Connection::open(&path).unwrap();
+        held.execute_batch("PRAGMA journal_mode=WAL; BEGIN; SELECT * FROM profiles;").unwrap();
+        let error = SqliteStore::open(&path).unwrap_err();
+        assert_eq!(error.code(), AthriaErrorCode::WriteBusy);
+        assert!(error.message().contains("Close other Athria or MCP processes"));
+        held.execute_batch("ROLLBACK").unwrap();
+        drop(held);
+        assert!(SqliteStore::open(&path).is_ok());
     }
 
     #[test]

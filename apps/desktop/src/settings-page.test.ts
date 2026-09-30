@@ -24,7 +24,7 @@ const guiAgent: AgentIntegrationStatus = { agent: "claude_desktop", name: "Claud
 describe("settings page", () => {
   it("renders every card with the agents Athria knows", () => {
     const markup = renderSettings([filesystemAgent, guiAgent]);
-    expect(markup).toContain("Personal Information");
+    expect(markup).not.toContain("Personal Information");
     expect(markup).toContain("Connect to Your AI Agents");
     expect(markup).toContain("Claude Desktop");
     expect(markup).toContain("Codex");

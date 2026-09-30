@@ -67,6 +67,7 @@ export async function addCustomAgent(name: string, configPath: string, skillsPat
 export async function reconcileAgentSkills(): Promise<SkillReconciliationResult> { return invoke("reconcile_agent_skills"); }
 export async function resolveAgentSkillUpdate(agent: AgentKind, action: "replace" | "backup_replace"): Promise<SkillUpdateResult> { return invoke("resolve_agent_skill_update", { agent, action }); }
 export async function openSkillArchiveFolder(): Promise<void> { await invoke("open_skill_archive_folder"); }
+export async function openIntervalsWebsite(): Promise<void> { await invoke("open_intervals_website"); }
 export async function removeAgentIntegration(agent: AgentKind): Promise<AgentIntegrationResult> { return invoke("remove_agent_integration", { agent }); }
 
 export interface VaultStatus { databaseUuid: string; databasePath: string; initialized: boolean; locked: boolean; remembered: boolean; canRemember: boolean; legacySources: string[] }

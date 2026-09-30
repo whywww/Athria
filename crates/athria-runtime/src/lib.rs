@@ -169,7 +169,6 @@ pub fn create_local_workspace(
         if let Some(envelope) = envelope {
             store.initialize_vault(envelope, &[])?;
         }
-        store.checkpoint()?;
         store.close();
         let reopened = SqliteStore::open(&stage)?;
         if reopened.database_uuid()? != database_uuid {
@@ -189,8 +188,7 @@ pub fn create_local_workspace(
     })();
     if created.is_err() {
         let _ = fs::remove_file(&stage);
-        let _ = fs::remove_file(stage.with_extension("sqlite3-wal"));
-        let _ = fs::remove_file(stage.with_extension("sqlite3-shm"));
+        let _ = fs::remove_file(stage.with_extension("sqlite3-journal"));
     }
     created
 }
@@ -311,14 +309,15 @@ mod tests {
     }
     #[test]
     fn backup_preview_reads_the_source_database_directly() {
-        let root = std::env::temp_dir().join(format!("athria-wal-preview-{}", Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("athria-delete-preview-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
         let path = root.join("workspace.sqlite3");
         let store = SqliteStore::open(&path).unwrap();
         store
             .save_profile(&serde_json::json!({"displayName":"Portable record"}))
             .unwrap();
-        assert!(path.with_extension("sqlite3-wal").exists());
+        assert!(!path.with_extension("sqlite3-wal").exists());
+        assert!(!path.with_extension("sqlite3-shm").exists());
 
         let preview = preview_backup(&path).unwrap();
 

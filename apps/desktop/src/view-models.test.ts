@@ -45,7 +45,7 @@ describe("dashboard v7 view models", () => {
     expect(formatDistance(5250)).toBe("5.3 km");
   });
   it("formats known training sources and preserves unknown sources", () => {
-    expect(formatTrainingSource("xunji")).toBe("训记");
+    expect(formatTrainingSource("xunji")).toBe("SynFit");
     expect(formatTrainingSource("intervals")).toBe("Intervals.icu");
     expect(formatTrainingSource("custom-device")).toBe("custom-device");
   });
@@ -90,6 +90,10 @@ describe("dashboard v7 view models", () => {
   it("truncates an over-length preference when building the profile payload", () => {
     const long = "a".repeat(PREFERENCE_MAX_LENGTH + 30);
     expect(profilePayload(profile, { ...profile, preference: long }).preference).toHaveLength(PREFERENCE_MAX_LENGTH);
+  });
+  it("preserves the expanded training goals in the profile payload", () => {
+    const goals = ["general_fitness", "improve_competition_results", "body_recomposition", "improve_posture"];
+    expect(profilePayload(profile, { ...profile, goals }).goals).toEqual(goals);
   });
   it("passes the mesocycle length through the profile payload", () => {
     expect(profilePayload(profile, profile).mesocycleDurationWeeks).toBe(8);

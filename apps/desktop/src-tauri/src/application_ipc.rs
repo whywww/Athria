@@ -58,6 +58,7 @@ pub fn dispatch(
         })),
         ("GET", "/api/profile") => result(app.get_profile_snapshot()),
         ("PUT", "/api/profile") => result(app.save_profile_checked(&input)),
+        ("PUT", "/api/profile/complete") => result(app.save_profile_and_personal_information(&input)),
         ("GET", "/api/personal-information") => result(app.get_personal_information()),
         ("PUT", "/api/personal-information") => result(app.save_personal_information(&input)),
         ("GET", "/api/state") => result(app.get_training_state()),

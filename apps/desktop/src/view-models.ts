@@ -129,7 +129,7 @@ export interface Mesocycle {
 
 export interface TrainingHistorySession { id: string; name: string; startAt: string; timezone: string | null; domains: string[]; sport: string | null; durationMinutes: number; source: string; timePrecision: "exact" | "date_only"; sources: Array<{ source: string; externalId: string }>; plannedSessionId: string | null; planMatch: { plannedSessionId: string; method: "auto" | "manual" } | null; isPlanMatchExcluded: boolean; snapshotHash?: string }
 export function formatTrainingSource(source: string): string {
-  return ({ xunji: "训记", intervals: "Intervals.icu", hevy: "Hevy", manual: currentLanguage() === "zh-CN" ? "手动记录" : "Manual" } as Record<string, string>)[source] ?? source;
+  return ({ xunji: currentLanguage() === "zh-CN" ? "训记" : "SynFit", intervals: "Intervals.icu", hevy: "Hevy", manual: currentLanguage() === "zh-CN" ? "手动记录" : "Manual" } as Record<string, string>)[source] ?? source;
 }
 export type TrainingHistorySort = "newest" | "oldest";
 export const TRAINING_HISTORY_PAGE_SIZE = 20;
@@ -304,8 +304,9 @@ export const dashboardPages = [
 ] as const;
 
 const friendlyWords: Record<string, string> = {
-  general_fitness: "General fitness", build_strength: "Build strength", build_muscle: "Build muscle",
-  improve_endurance: "Improve endurance", fat_loss: "Fat loss", bodyweight: "Bodyweight",
+  general_fitness: "Physical & mental wellness", build_strength: "Build strength", build_muscle: "Build muscle",
+  improve_endurance: "Improve endurance", fat_loss: "Fat loss", improve_competition_results: "Improve competition results",
+  body_recomposition: "Body recomposition", improve_posture: "Improve posture", bodyweight: "Bodyweight",
   dumbbell: "Dumbbells", barbell: "Barbell", cable: "Cable Machine", machine: "Fixed Machines", trx: "TRX", ski_erg: "SkiErg", sled: "Sled / Prowler", mini_stability_ball: "Mini Stability Ball",
   strength: "Strength", endurance: "Endurance", sport_skill: "Sport skill", mind_body: "Mind-body", recovery: "Recovery",
 };

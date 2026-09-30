@@ -106,6 +106,52 @@ fn update_profile_requires_the_current_hash() {
 }
 
 #[test]
+fn complete_profile_save_is_atomic_and_checks_both_snapshots() {
+    let app = test_app();
+    let original_profile = app.get_profile().unwrap();
+    let original_personal = app.get_personal_information().unwrap();
+    let mut changed_profile = original_profile.clone();
+    changed_profile["preferredName"] = json!("Wei");
+    changed_profile["goals"] = json!(["build_strength"]);
+    let personal = json!({
+        "preferredName": "Wei", "gender": null, "heightCm": null,
+        "birthDate": null, "unitSystem": "metric", "weightKg": 72.5,
+        "expectedSnapshotHash": original_personal["snapshotHash"]
+    });
+    let input = json!({
+        "profile": changed_profile,
+        "personalInformation": personal,
+        "expectedProfileHash": app.profile_hash().unwrap()
+    });
+    let stale_personal = json!({
+        "profile": changed_profile,
+        "personalInformation": { "preferredName": "Wei", "gender": null, "heightCm": null,
+            "birthDate": null, "unitSystem": "metric", "weightKg": 72.5,
+            "expectedSnapshotHash": "stale" },
+        "expectedProfileHash": app.profile_hash().unwrap()
+    });
+    assert_eq!(app.save_profile_and_personal_information(&stale_personal).unwrap_err().code(), AthriaErrorCode::InputSnapshotChanged);
+    assert_eq!(app.get_profile().unwrap(), original_profile);
+    assert_eq!(app.get_personal_information().unwrap()["weightKg"], json!(null));
+
+    let invalid_weight = json!({
+        "profile": changed_profile,
+        "personalInformation": { "preferredName": "Wei", "gender": null, "heightCm": null,
+            "birthDate": null, "unitSystem": "metric", "weightKg": "invalid",
+            "expectedSnapshotHash": original_personal["snapshotHash"] },
+        "expectedProfileHash": app.profile_hash().unwrap()
+    });
+    assert!(app.save_profile_and_personal_information(&invalid_weight).is_err());
+    assert_eq!(app.get_profile().unwrap(), original_profile);
+
+    let saved = app.save_profile_and_personal_information(&input).unwrap();
+    assert_eq!(saved["preferredName"], json!("Wei"));
+    assert_eq!(saved["goals"], json!(["build_strength"]));
+    assert_eq!(app.get_personal_information().unwrap()["weightKg"], json!(72.5));
+    assert_eq!(app.save_profile_and_personal_information(&input).unwrap_err().code(), AthriaErrorCode::InputSnapshotChanged);
+}
+
+#[test]
 fn personal_information_tracks_the_latest_weight_and_todays_wellness() {
     let app = test_app();
     let initial = app.get_personal_information().unwrap();

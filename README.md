@@ -46,7 +46,7 @@ Athria does not tie you to a specific AI. You choose the AI; Athria connects it 
 - **Get personalized training suggestions** — use your goals, recent training, schedule, equipment, and training feedback as context.
 - **Build and adjust training plans** — create training schedules around your situation and update them as training progresses.
 - **Keep recommendations consistent** — Athria provides shared calculations and plan checks instead of leaving every AI to calculate or guess independently.
-- **Bring in existing records** — import or synchronize supported training sources and organize them in one place. Currently supported apps include **Xunji (训记)** and **Intervals.icu**, with **Hevy** supported through file import.
+- **Bring in existing records** — import or synchronize supported training sources and organize them in one place. Currently supported apps include **SynFit (训记)** and **Intervals.icu**, with **Hevy** supported through file import.
 - **View training visually** — use Athria as a hub for your training data, recent status, plans, and connected sources.
 - **Keep core data local** — the main training database stays on your computer and does not require an Athria cloud account.
 
@@ -91,7 +91,7 @@ A few things are worth knowing:
 - The database password controls access inside Athria and protects saved connection keys.
 - **The database file itself is not currently encrypted at rest.** Someone with direct access to that file may still be able to read it with SQLite tools.
 - Your database can be backed up locally.
-- Athria and its MCP tools open the same selected SQLite file directly. A successful save is committed to that database; an open database may also have SQLite `-wal` and `-shm` files beside it. Quit Athria and connected AI clients before copying the single database file for a backup. You may choose a cloud-synced folder, but Athria does not merge edits made on different devices or cloud copies.
+- Athria and its MCP tools open the same selected SQLite file directly. A successful save is committed to that database. SQLite may briefly create a `-journal` file during a write and removes it after the transaction. Quit Athria and connected AI clients before copying the single database file for a backup. You may choose a cloud-synced folder, but Athria does not merge edits made on different devices or cloud copies.
 - When you allow a third-party AI client to use Athria data, that client may send the data it reads to its own model provider. Its privacy policy, configuration, and pricing still apply.
 - Athria itself is free; AI services you choose to connect may have their own charges.
 
@@ -104,7 +104,7 @@ Current limitations include:
 - Development and testing currently focus on **Windows x64** and **Apple Silicon macOS**.
 - The app interface is currently **English-only**.
 - Athria does **not include its own AI model or chat interface**.
-- Hevy currently uses file import; Intervals.icu and Xunji synchronization are read-only.
+- Hevy currently uses file import; Intervals.icu and SynFit synchronization are read-only.
 - Athria currently manages the latest reusable templates and one editable training cycle rather than full plan history and versioning.
 - Missing load, RPE, heart-rate, power, recovery, or wellness data is not guessed or filled automatically.
 - Analysis and rules for some training domains are still under development.
@@ -147,7 +147,7 @@ Athria 不绑定特定的 AI。你可以继续使用自己选择的 AI，Athria 
 - **提供个性化训练建议** —— 根据你的目标、近期训练、时间安排、器材和训练反馈提供建议。
 - **制定和调整训练计划** —— 根据你的实际情况生成训练安排，并随着训练进展进行调整。
 - **规范训练建议** —— Athria 提供统一的训练计算和计划检查，减少不同 AI 自行猜测或使用不同计算方式带来的差异。
-- **整合已有记录** —— 可以导入或同步其他训练应用的数据，并统一整理。目前支持 **训记（Xunji）**、**Intervals.icu**，以及通过文件导入 **Hevy** 数据。
+- **整合已有记录** —— 可以导入或同步其他训练应用的数据，并统一整理。目前支持 **训记（SynFit）**、**Intervals.icu**，以及通过文件导入 **Hevy** 数据。
 - **可视化查看训练** —— 在 Athria 中查看和管理训练数据、近期状态和计划。
 - **数据保存在本地** —— 核心训练数据库保存在自己的电脑上，不需要 Athria 云账号。
 
@@ -192,7 +192,7 @@ Athria 的核心训练数据保存在你的电脑上，不需要注册 Athria �
 - 数据库密码用于控制 Athria 内部访问，并保护保存的连接密钥。
 - **当前数据库文件本身尚未加密。** 如果其他人可以直接访问该文件，仍可能读取其中的数据。
 - 数据库可以进行本地备份。
-- Athria 和连接的 AI 工具直接打开同一个所选数据库文件。保存成功表示修改已经提交到该数据库；数据库打开时，旁边可能出现 SQLite 的 `-wal`、`-shm` 文件。复制单文件备份前，请退出 Athria 和连接的 AI 客户端。可以选择云盘同步目录，但 Athria 不会合并不同设备或云盘副本上的修改。
+- Athria 和连接的 AI 工具直接打开同一个所选数据库文件。保存成功表示修改已经提交到该数据库。SQLite 写入期间可能短暂产生 `-journal` 文件，事务结束后会删除。复制单文件备份前，请退出 Athria 和连接的 AI 客户端。可以选择云盘同步目录，但 Athria 不会合并不同设备或云盘副本上的修改。
 - 当你选择让第三方 AI 使用 Athria 中的数据时，相应数据可能会发送给该 AI 的服务商。具体处理方式取决于你使用的 AI 服务及其隐私政策。
 - Athria 本身免费；你选择连接的 AI 服务可能有自己的收费方式。
 

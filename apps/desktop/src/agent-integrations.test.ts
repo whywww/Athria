@@ -265,6 +265,17 @@ describe("ManualAgentSetup", () => {
     const html = renderToStaticMarkup(createElement(ManualAgentSetup, { existing: [codex] }));
     expect(html).not.toContain("An agent with this name already exists.");
   });
+
+  it("translates the manual setup instructions and actions", () => {
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { language: "zh-CN" } });
+    const html = renderToStaticMarkup(createElement(LanguageProvider, null, createElement(ManualAgentSetup)));
+    expect(html).toContain("复制以下内容询问你的 AI 助手");
+    expect(html).toContain("请告诉我你的助手名称");
+    expect(html).toContain(">复制</button>");
+    expect(html).toContain(">测试连接</button>");
+    renderToStaticMarkup(createElement(LanguageProvider, null, createElement("div")));
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { language: "en" } });
+  });
 });
 
 describe("agent roster order", () => {

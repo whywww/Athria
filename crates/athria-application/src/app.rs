@@ -473,6 +473,32 @@ impl<S: AthriaStore> AthriaApplication<S> {
         })
     }
 
+    pub fn save_profile_and_personal_information(&self, value: &Value) -> Result<Value> {
+        let profile_value = value.get("profile").unwrap_or(&Value::Null);
+        let profile = parse_profile(profile_value)?;
+        let personal_value = value.get("personalInformation").unwrap_or(&Value::Null);
+        let personal = parse_personal_information(personal_value)?;
+        let expected_profile = value.get("expectedProfileHash").and_then(Value::as_str).unwrap_or_default();
+        self.store.transaction(&mut || {
+            if expected_profile != self.profile_hash()?
+                || personal.expected_snapshot_hash != self.get_personal_information()?["snapshotHash"]
+            {
+                return Err(failure(AthriaErrorCode::InputSnapshotChanged, "Profile or personal information changed. Refresh before saving.", 409));
+            }
+            if profile["preferredName"] != personal.preferred_name
+                || profile["gender"] != personal.gender
+                || profile["heightCm"] != personal.height_cm
+                || profile["birthDate"] != personal.birth_date
+                || personal.unit_system.as_deref() != profile["unitSystem"].as_str()
+            {
+                return Err(failure(AthriaErrorCode::InvalidData, "Personal information does not match the profile.", 400));
+            }
+            self.store.save_profile(&profile)?;
+            self.save_personal_weight(&personal, &profile)?;
+            self.get_profile_snapshot()
+        })
+    }
+
     pub fn profile_hash(&self) -> Result<String> {
         self.get_profile().map(|profile| stable_hash(&profile))
     }
@@ -535,7 +561,6 @@ impl<S: AthriaStore> AthriaApplication<S> {
             ));
         }
         let profile = self.get_profile()?;
-        let timezone = string_field(&profile, "timezone").to_owned();
         let mut patch = Map::new();
         patch.insert(
             "preferredName".into(),
@@ -549,8 +574,13 @@ impl<S: AthriaStore> AthriaApplication<S> {
         }
         let profile = merge_profile(&profile, &Value::Object(patch), &self.owner_id)?;
         self.store.save_profile(&profile)?;
+        self.save_personal_weight(input, &profile)?;
+        self.get_personal_information()
+    }
+
+    fn save_personal_weight(&self, input: &PersonalInformationWrite, profile: &Value) -> Result<()> {
         if let Some(weight_kg) = &input.weight_kg {
-            let day = tz::local_date(&self.now_iso(), &timezone)?;
+            let day = tz::local_date(&self.now_iso(), string_field(profile, "timezone"))?;
             let stored = self.store.get_wellness(&self.owner_id, &day)?;
             let mut fields = stored
                 .as_ref()
@@ -571,7 +601,7 @@ impl<S: AthriaStore> AthriaApplication<S> {
             )?;
             self.store.save_wellness(&record)?;
         }
-        self.get_personal_information()
+        Ok(())
     }
 
     pub fn get_training_taxonomy(&self) -> Value {

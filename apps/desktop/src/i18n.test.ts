@@ -68,6 +68,19 @@ describe("desktop language", () => {
     expect(errorText(new Error("Opaque service error"), "zh-CN")).toBe("Opaque service error");
   });
 
+  it("translates the Intervals.icu API key hint around its linked brand name", () => {
+    expect(translate("Find your API key and Athlete ID in", "en")).toBe("Find your API key and Athlete ID in");
+    expect(translate("→ Settings → Developer Settings.", "en")).toBe("→ Settings → Developer Settings.");
+    expect(translate("Find your API key and Athlete ID in", "zh-CN")).toBe("在");
+    expect(translate("→ Settings → Developer Settings.", "zh-CN")).toBe("的“设置 → 开发者设置”中找到 API 密钥和运动员 ID。");
+  });
+
+  it("translates the SynFit Skill connection instructions", () => {
+    const instruction = "In SynFit, go to Me → Data Export and Import → Training → Copy Training Skill, then paste it above.";
+    expect(translate(instruction, "en")).toBe(instruction);
+    expect(translate(instruction, "zh-CN")).toBe("在训记中，前往“我的 → 数据导出和导入 → 训练 → 复制训练数据 Skill”，然后粘贴到上方。");
+  });
+
   it("translates the remaining dashboard, profile, settings, and template labels", () => {
     expect(translate("Connected", "zh-CN")).toBe("已连接");
     expect(translate("Save template", "zh-CN")).toBe("保存模板");
@@ -81,6 +94,8 @@ describe("desktop language", () => {
     expect(translate("Treadmill", "zh-CN")).toBe("跑步机");
     expect(translate("Shoulder External Rotation", "zh-CN")).toBe("肩外旋");
     expect(translate("Always Require Password", "zh-CN")).toBe("始终要求输入密码");
+    expect(translate("Require Password", "zh-CN")).toBe("要求输入密码");
+    expect(translate("Updating…", "zh-CN")).toBe("正在更新…");
     expect(translate("Weight", "zh-CN")).toBe("体重");
     expect(translate("I prefer a varied mix of training styles.", "zh-CN")).toBe("我喜欢多种训练方式的组合。");
     expect(translate("A reusable single-domain pattern, such as \"Lower Strength A\". Templates carry structure only — no exercises or sets.", "zh-CN")).toContain("可重复使用的单领域模式");
