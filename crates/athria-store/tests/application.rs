@@ -26,6 +26,22 @@ fn test_app() -> AthriaApplication<SqliteStore> {
 }
 
 #[test]
+fn profile_writes_accept_legacy_session_minutes_and_persist_only_the_new_key() {
+    let app = test_app();
+    let saved = app.save_profile(&json!({"maxSessionMinutes": 90})).unwrap();
+    assert_eq!(saved["usualSessionMinutes"], 90);
+    for patch in [json!({"maxSessionMinutes": 75}), json!({"usualSessionMinutes": 75, "maxSessionMinutes": 120})] {
+        let hash = app.profile_hash().unwrap();
+        let updated = app.update_profile(&json!({"patch": patch, "expectedProfileHash": hash})).unwrap();
+        assert_eq!(updated["usualSessionMinutes"], 75);
+        assert!(updated.get("maxSessionMinutes").is_none());
+        let stored = app.store().get_profile("local-user").unwrap().unwrap();
+        assert_eq!(stored["usualSessionMinutes"], 75);
+        assert!(stored.get("maxSessionMinutes").is_none());
+    }
+}
+
+#[test]
 fn training_memory_is_bounded_and_invalidates_plan_inputs_only_when_changed() {
     let app = test_app();
     let initial = app.snapshot_hash().unwrap();
@@ -172,7 +188,7 @@ fn fresh_database_returns_the_default_profile() {
             "timezone",
             "goals",
             "preference",
-            "maxSessionMinutes",
+            "usualSessionMinutes",
             "trainingRhythm",
             "equipment",
             "injuries",
@@ -2362,16 +2378,6 @@ fn moving_an_occurrence_checks_the_rhythm_and_recomputes_the_week() {
     );
     assert_eq!(same_date.status(), 400);
 
-    let conflict = app
-        .update_planned_session("s1", &json!({ "action": "move_occurrence", "expectedRevision": 1, "scheduledDate": "2026-09-21" }))
-        .unwrap_err();
-    assert_eq!(conflict.code(), AthriaErrorCode::TrainingDayConflict);
-    assert_eq!(
-        conflict.message(),
-        "Another planned training day already uses that date."
-    );
-    assert_eq!(conflict.status(), 409);
-
     let outside = app
         .update_planned_session("s1", &json!({ "action": "move_occurrence", "expectedRevision": 1, "scheduledDate": "2026-10-05" }))
         .unwrap_err();
@@ -2384,13 +2390,19 @@ fn moving_an_occurrence_checks_the_rhythm_and_recomputes_the_week() {
 
     let off_rhythm = app
         .update_planned_session("s1", &json!({ "action": "move_occurrence", "expectedRevision": 1, "scheduledDate": "2026-09-22" }))
-        .unwrap_err();
-    assert_eq!(off_rhythm.code(), AthriaErrorCode::ProfileTrainingRhythm);
-    assert_eq!(
-        off_rhythm.message(),
-        "The moved training day would break your Profile training rhythm."
-    );
-    assert_eq!(off_rhythm.status(), 409);
+        .unwrap();
+    assert_eq!(off_rhythm["revision"], json!(2));
+    let review = app.review_current_plan_for_adjustment(AdjustmentTrigger::ProfileChange).unwrap();
+    assert!(review.reasons.iter().any(|reason| reason.reason_code == ReasonCode::ProfileTrainingRhythmConflict));
+
+    let moved_to_occupied = app
+        .update_planned_session("s1", &json!({ "action": "move_occurrence", "expectedRevision": 2, "scheduledDate": "2026-09-21" }))
+        .unwrap();
+    assert_eq!(moved_to_occupied["revision"], json!(3));
+    let occupied = app.get_calendar(Some("2026-09-21"), Some("2026-09-21")).unwrap();
+    assert_eq!(occupied.len(), 2);
+    assert!(occupied.iter().any(|session| session["id"] == "s1"));
+    assert!(occupied.iter().any(|session| session["id"] == "s2"));
 
     // A flexible rhythm accepts the same move and recomputes week and phases.
     let flex = test_app();
@@ -2452,7 +2464,27 @@ fn moving_an_occurrence_checks_the_rhythm_and_recomputes_the_week() {
 }
 
 #[test]
-fn moving_high_recovery_days_enforces_the_explicit_recovery_interval() {
+fn user_moves_override_all_training_rhythms() {
+    for (rhythm, schedule) in [
+        (json!({ "kind": "fixed_week", "days": [0] }), json!({ "kind": "fixed_week", "days": [0] })),
+        (json!({ "kind": "flexible_week", "targetDaysPerWeek": 1, "minDaysPerWeek": 1, "maxDaysPerWeek": 1 }), json!({ "kind": "flexible_week", "targetSessionsPerWeek": 1, "minSessionsPerWeek": 1, "maxSessionsPerWeek": 1 })),
+        (json!({ "kind": "interval", "intervalDays": 7 }), json!({ "kind": "interval", "intervalDays": 7 })),
+    ] {
+        let app = test_app();
+        patch_profile(&app, json!({ "trainingRhythm": rhythm }));
+        let mut plan = monday_plan_write(0);
+        plan["mesocycle"]["schedule"] = schedule;
+        app.save_current_plan(&plan).unwrap();
+        let moved = app.update_planned_session("s1", &json!({ "action": "move_occurrence", "expectedRevision": 1, "scheduledDate": "2026-09-22" })).unwrap();
+        assert_eq!(moved["revision"], json!(2));
+        let moved = app.update_planned_session("s1", &json!({ "action": "move_occurrence", "expectedRevision": 2, "scheduledDate": "2026-09-21" })).unwrap();
+        assert_eq!(moved["revision"], json!(3));
+        assert_eq!(app.get_calendar(Some("2026-09-21"), Some("2026-09-21")).unwrap().len(), 2);
+    }
+}
+
+#[test]
+fn moving_high_recovery_days_keeps_the_interval_advisory() {
     let app = test_app();
     patch_profile(
         &app,
@@ -2514,16 +2546,27 @@ fn moving_high_recovery_days_enforces_the_explicit_recovery_interval() {
 
     let tight = app
         .update_planned_session("s3", &json!({ "action": "move_occurrence", "expectedRevision": 1, "scheduledDate": "2026-09-16" }))
-        .unwrap_err();
-    assert_eq!(tight.code(), AthriaErrorCode::ExplicitRecoveryInterval);
-    assert_eq!(
-        tight.message(),
-        "The moved training day is too close to another high-recovery-demand session."
-    );
-    assert_eq!(tight.status(), 409);
+        .unwrap();
+    assert_eq!(tight["revision"], json!(2));
+    let review = app.review_current_plan_for_adjustment(AdjustmentTrigger::ProfileChange).unwrap();
+    let recovery = review.reasons.iter().find(|reason| reason.reason_code == ReasonCode::ProfileRecoveryConstraintConflict).unwrap();
+    assert_eq!(recovery.severity, EvidenceSeverity::Soft);
+    assert!(review.hard_overrides.is_empty());
 
-    let moved = app.update_planned_session("s1", &json!({ "action": "move_occurrence", "expectedRevision": 1, "scheduledDate": "2026-09-24" })).unwrap();
-    assert_eq!(moved["revision"], json!(2));
+    let next = app.get_next_training_day(None).unwrap();
+    let mut high = next_day_session("extra-high");
+    high["recoveryDemand"] = json!("high");
+    let mut write = next_day_write(
+        next["nextTrainingDay"]["scheduledDate"].as_str().unwrap(),
+        2,
+        vec![high],
+    );
+    write["mode"] = json!("append");
+    let saved = app.save_next_training_day_sessions(&write).unwrap();
+    assert_eq!(saved["revision"], json!(3));
+
+    let moved = app.update_planned_session("s1", &json!({ "action": "move_occurrence", "expectedRevision": 3, "scheduledDate": "2026-09-24" })).unwrap();
+    assert_eq!(moved["revision"], json!(4));
     assert_eq!(moved["sessions"][0]["id"], json!("s1"));
     assert_eq!(moved["sessions"][0]["weekNumber"], json!(2));
     assert_eq!(

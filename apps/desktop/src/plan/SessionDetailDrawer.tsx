@@ -1,8 +1,9 @@
+import { notify, useOperationError } from "../toasts";
+import { captureMainScroll } from "../scroll-position";
 import { T, tr, currentLanguage } from "../i18n";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { formatDuration, type CalendarSession, type CurrentPlan, type StoredSessionTemplate } from "../view-models";
 import { api } from "../api";
-import { ErrorBanner } from "../components";
 import { Prescription } from "./Prescription";
 import { addDays } from "./view";
 import { formatDayLabel, phaseLabelsForSession } from "./calendar-utils";
@@ -28,7 +29,7 @@ export interface SessionDetailDrawerProps {
   plan: CurrentPlan | null;
   today: string;
   onClose: () => void;
-  onMutated: () => void;
+  onMutated: () => void | Promise<void>;
   /** Optional element to refocus when the drawer closes (§7.8). */
   returnFocusRef?: RefObject<HTMLElement | null>;
 }
@@ -41,9 +42,9 @@ interface DrawerPanelProps extends Omit<SessionDetailDrawerProps, "session"> {
 
 function DrawerPanel({ session, templates, plan, today, onClose, onMutated, returnFocusRef }: DrawerPanelProps) {
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<unknown>();
+  const [, setError] = useOperationError();
   const [moveOpen, setMoveOpen] = useState(false);
-  const [moveDate, setMoveDate] = useState(() => addDays(session.scheduledDate, 1));
+  const [moveDate, setMoveDate] = useState(session.scheduledDate);
   const [reasonCode, setReasonCode] = useState("");
   const [reasonNote, setReasonNote] = useState("");
 
@@ -109,12 +110,13 @@ function DrawerPanel({ session, templates, plan, today, onClose, onMutated, retu
     setError(undefined);
     setBusy(false);
     setMoveOpen(false);
-    setMoveDate(addDays(session.scheduledDate, 1));
+    setMoveDate(session.scheduledDate);
     setReasonCode("");
     setReasonNote("");
   }, [session.id, session.scheduledDate]);
 
   const act = async (update: Record<string, unknown>) => {
+    const restoreScroll = captureMainScroll();
     setBusy(true);
     setError(undefined);
     try {
@@ -122,7 +124,12 @@ function DrawerPanel({ session, templates, plan, today, onClose, onMutated, retu
         method: "PATCH",
         body: JSON.stringify({ ...update, expectedRevision: session.revision }),
       });
-      onMutated();
+      if (update.action === "move_occurrence") {
+        notify(tr("Workout moved to {date}.").replace("{date}", String(update.scheduledDate)), "success");
+        setMoveOpen(false);
+      }
+      await onMutated();
+      restoreScroll();
     } catch (value) {
       setError(value);
     } finally {
@@ -134,6 +141,7 @@ function DrawerPanel({ session, templates, plan, today, onClose, onMutated, retu
   const template = session.templateRef ? templates.find((item) => item.id === session.templateRef?.id) : undefined;
   const reason = reasonCode ? { reasonCode, ...(reasonNote.trim() ? { note: reasonNote.trim() } : {}) } : undefined;
   const planEnd = plan ? addDays(plan.effectiveStartDate, plan.mesocycle.durationWeeks * 7 - 1) : undefined;
+  const moveOutsidePlan = Boolean(plan && moveDate && (moveDate < plan.effectiveStartDate || (planEnd && moveDate > planEnd)));
 
   return (
     <div className="sd-backdrop" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
@@ -143,7 +151,11 @@ function DrawerPanel({ session, templates, plan, today, onClose, onMutated, retu
             <h2 className="sd-title">{session.name}</h2>
             <p className="sd-date">{formatDayLabel(session.scheduledDate)}</p>
           </div>
-          <button type="button" className="sd-close" aria-label={tr("Close session details")} onClick={onClose}>×</button>
+          <button type="button" className="sd-close" aria-label={tr("Close session details")} onClick={onClose}>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true" focusable="false">
+              <path d="M4 4L10 10M10 4L4 10" />
+            </svg>
+          </button>
         </header>
 
         <div className="sd-meta">
@@ -152,7 +164,6 @@ function DrawerPanel({ session, templates, plan, today, onClose, onMutated, retu
         </div>
 
         <div className="sd-body">
-          <ErrorBanner error={error} />
 
           {session.legacySnapshot && <section className="sd-section sd-legacy"><h3 className="sd-eyebrow"><T>{"Needs structured review"}</T></h3><p><T>{"This legacy prescription is preserved as written and can be converted by a connected Agent."}</T></p></section>}
 
@@ -186,7 +197,7 @@ function DrawerPanel({ session, templates, plan, today, onClose, onMutated, retu
         {session.status === "planned" && (
           <footer className="sd-actions">
             <div className="sd-actions-row">
-              <button type="button" className="sd-action" disabled={busy || session.scheduledDate > today} title={session.scheduledDate > today ? "Move this session to the date you completed it first." : undefined} onClick={() => void act({ action: "complete" })}>✓ Add as completed workout</button>
+              <button type="button" className="sd-action" disabled={busy || session.scheduledDate > today} title={session.scheduledDate > today ? tr("This is a future workout. Move it to your planned date first.") : undefined} onClick={() => void act({ action: "complete" })}><T>{"Complete"}</T></button>
               <button type="button" className="sd-action secondary" disabled={busy} onClick={() => void act({ action: "skip", ...(reason ? { reason } : {}) })}><T>{"Skip"}</T></button>
               <button
                 type="button"
@@ -194,27 +205,30 @@ function DrawerPanel({ session, templates, plan, today, onClose, onMutated, retu
                 disabled={busy}
                 aria-expanded={moveOpen}
                 aria-controls="sd-move-panel"
-                onClick={() => setMoveOpen((open) => !open)}
+                onClick={() => { if (!moveOpen) setMoveDate(session.scheduledDate); setMoveOpen((open) => !open); }}
               >
-                Move
+                <T>{"Move"}</T>
               </button>
-              <label className="sd-reason"><T>{"Optional reason"}</T><select value={reasonCode} onChange={(event) => setReasonCode(event.target.value)}><option value=""><T>{"None"}</T></option><option value="schedule"><T>{"Schedule"}</T></option><option value="recovery"><T>{"Recovery"}</T></option><option value="health"><T>{"Health"}</T></option><option value="travel"><T>{"Travel"}</T></option><option value="equipment_weather"><T>{"Equipment or weather"}</T></option><option value="preference"><T>{"Preference"}</T></option><option value="other"><T>{"Other"}</T></option></select></label>
-              {reasonCode && <label className="sd-reason sd-reason-note"><T>{"Optional note"}</T><input value={reasonNote} maxLength={500} onChange={(event) => setReasonNote(event.target.value)} /></label>}
             </div>
             {moveOpen && (
               <div className="sd-move" id="sd-move-panel">
-                <label>
-                  Move to date
-                  <input type="date" min={plan?.effectiveStartDate} max={planEnd} value={moveDate} onChange={(event) => setMoveDate(event.target.value)} />
-                </label>
-                <button
-                  type="button"
-                  className="sd-action secondary"
-                  disabled={busy || !moveDate || moveDate === session.scheduledDate}
-                  onClick={() => void act({ action: "move_occurrence", scheduledDate: moveDate, ...(reason ? { reason } : {}) })}
-                >
-                  Confirm move
-                </button>
+                <div className="sd-move-fields">
+                  <label>
+                    <T>{"Move to date"}</T>
+                    <input type="date" min={plan?.effectiveStartDate} max={planEnd} value={moveDate} onChange={(event) => setMoveDate(event.target.value)} />
+                  </label>
+                  <label className="sd-reason"><T>{"Optional reason"}</T><select value={reasonCode} onChange={(event) => setReasonCode(event.target.value)}><option value=""><T>{"None"}</T></option><option value="schedule"><T>{"Schedule"}</T></option><option value="recovery"><T>{"Recovery"}</T></option><option value="health"><T>{"Health"}</T></option><option value="travel"><T>{"Travel"}</T></option><option value="equipment_weather"><T>{"Equipment or weather"}</T></option><option value="preference"><T>{"Preference"}</T></option><option value="other"><T>{"Other"}</T></option></select></label>
+                  <button
+                    type="button"
+                    className="sd-action secondary"
+                    disabled={busy || moveOutsidePlan || !moveDate || moveDate === session.scheduledDate}
+                    onClick={() => void act({ action: "move_occurrence", scheduledDate: moveDate, ...(reason ? { reason } : {}) })}
+                  >
+                    <T>{"Confirm"}</T>
+                  </button>
+                </div>
+                {moveOutsidePlan && <small role="alert"><T>{"The workout must stay within this mesocycle."}</T></small>}
+                {reasonCode && <label className="sd-reason sd-reason-note"><T>{"Optional note"}</T><input value={reasonNote} maxLength={500} onChange={(event) => setReasonNote(event.target.value)} /></label>}
               </div>
             )}
           </footer>

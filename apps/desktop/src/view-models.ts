@@ -59,7 +59,7 @@ export interface AthleteProfile {
   timezone: string;
   goals: string[];
   preference: string;
-  maxSessionMinutes: number;
+  usualSessionMinutes: number;
   mesocycleDurationWeeks: number;
   trainingRhythm:
     | { kind: "fixed_week"; days: number[] }
@@ -504,7 +504,7 @@ export function profilePayload(current: AthleteProfile, edits: AthleteProfile = 
     timezone: edits.timezone,
     goals: edits.goals,
     preference: edits.preference.trim().slice(0, PREFERENCE_MAX_LENGTH),
-    maxSessionMinutes: edits.maxSessionMinutes,
+    usualSessionMinutes: edits.usualSessionMinutes,
     mesocycleDurationWeeks: edits.mesocycleDurationWeeks,
     trainingRhythm: edits.trainingRhythm.kind === "fixed_week"
       ? { ...edits.trainingRhythm, days: [...new Set(edits.trainingRhythm.days)].sort((a, b) => a - b) }

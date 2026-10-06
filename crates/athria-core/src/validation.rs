@@ -370,22 +370,6 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
             let occurrences = 1.0 / duration_weeks as f64;
             let multiplier = 1.0f64.max(occurrences);
             let session_id = string_field(session, "id");
-            let session_duration = int_field(session, "durationMinutes");
-            let maximum_duration = int_field(profile, "maxSessionMinutes");
-            results.push(rule(
-                "advisory",
-                "MAX_SESSION_DURATION",
-                if session_duration <= maximum_duration {
-                    "pass"
-                } else {
-                    "fail"
-                },
-                &[session_id],
-                json!({ "durationMinutes": session_duration, "maximum": maximum_duration }),
-                &[],
-                Value::Null,
-                "structure",
-            ));
             for component in array_field(session, "components") {
                 let component_id = string_field(component, "id");
                 let domain_value = field(field(component, "domain"), "value");
@@ -669,7 +653,7 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
                     .as_i64()
                     .unwrap_or_else(|| panic!("expected `explicitRecoveryDays` to be an integer"));
                 results.push(rule(
-                    "blocker",
+                    "advisory",
                     "EXPLICIT_RECOVERY_INTERVAL",
                     if closest_days >= required_days {
                         "pass"
@@ -775,25 +759,25 @@ mod tests {
     fn profile(explicit_recovery_days: Value) -> Value {
         json!({
             "trainingRhythm": { "kind": "fixed_week", "days": [0, 2] },
-            "maxSessionMinutes": 60,
+            "usualSessionMinutes": 60,
             "equipment": ["barbell"],
             "explicitRecoveryDays": explicit_recovery_days,
         })
     }
 
     #[test]
-    fn explicit_recovery_days_block_a_tight_schedule() {
+    fn explicit_recovery_days_advise_on_a_tight_schedule() {
         let draft =
             json!({ "mesocycle": two_high_session_plan(), "effectiveStartDate": "2026-09-07" });
         let validation = validate_plan(&profile(json!(3)), &draft, "2026-09-17T00:00:00.000Z");
-        assert!(!validation.valid);
+        assert!(validation.valid);
         let recovery = validation
             .results
             .iter()
             .find(|item| item["reasonCode"] == "EXPLICIT_RECOVERY_INTERVAL")
             .expect("rule must run");
         assert_eq!(recovery["status"], "fail");
-        assert_eq!(recovery["enforcement"], "blocker");
+        assert_eq!(recovery["enforcement"], "advisory");
         assert_eq!(
             recovery["evidence"],
             json!({ "closestDays": 2, "requiredDays": 3 })
@@ -816,38 +800,14 @@ mod tests {
     }
 
     #[test]
-    fn session_duration_is_a_nonblocking_advisory() {
-        let mut draft =
-            json!({ "mesocycle": two_high_session_plan(), "effectiveStartDate": "2026-09-07" });
-        let normal = validate_plan(&profile(Value::Null), &draft, "2026-09-17T00:00:00.000Z");
-        let normal_duration = normal
-            .results
-            .iter()
-            .find(|item| {
-                item["reasonCode"] == "MAX_SESSION_DURATION"
-                    && item["subjectRefs"] == json!(["mon-1"])
-            })
-            .unwrap();
-        assert_eq!(normal_duration["status"], "pass");
-        assert_eq!(normal_duration["enforcement"], "advisory");
-
-        draft["mesocycle"]["weeks"][0]["sessions"][0]["durationMinutes"] = json!(120);
-        let long = validate_plan(&profile(Value::Null), &draft, "2026-09-17T00:00:00.000Z");
-        let long_duration = long
-            .results
-            .iter()
-            .find(|item| {
-                item["reasonCode"] == "MAX_SESSION_DURATION"
-                    && item["subjectRefs"] == json!(["mon-1"])
-            })
-            .unwrap();
-        assert_eq!(long_duration["status"], "fail");
-        assert_eq!(long_duration["enforcement"], "advisory");
-        assert_eq!(
-            long_duration["evidence"],
-            json!({ "durationMinutes": 120, "maximum": 60 })
-        );
-        assert!(long.valid);
+    fn session_duration_is_not_a_profile_constraint() {
+        for duration in [30, 60, 120] {
+            let mut draft = json!({ "mesocycle": two_high_session_plan(), "effectiveStartDate": "2026-09-07" });
+            draft["mesocycle"]["weeks"][0]["sessions"][0]["durationMinutes"] = json!(duration);
+            let validation = validate_plan(&profile(Value::Null), &draft, "2026-09-17T00:00:00.000Z");
+            assert!(validation.valid);
+            assert!(!validation.results.iter().any(|item| item["reasonCode"] == "MAX_SESSION_DURATION"));
+        }
     }
 
     #[test]

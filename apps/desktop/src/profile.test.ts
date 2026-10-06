@@ -6,7 +6,7 @@ import { EditableProfileBoard, EquipmentSelector, PersonalInformationSection, Pr
 import { LanguageProvider } from "./i18n";
 import type { AthleteProfile, EquipmentCategory, PersonalInformation } from "./view-models";
 
-const profile: AthleteProfile = { ownerId: "local-user", preferredName: "Hailey", gender: null, heightCm: null, birthDate: null, timezone: "UTC", goals: [], preference: "", maxSessionMinutes: 60, trainingRhythm: { kind: "flexible_week", targetDaysPerWeek: 4, minDaysPerWeek: 3, maxDaysPerWeek: 5 }, equipment: [], injuries: [], constraintNotes: [], explicitRecoveryDays: null, mesocycleDurationWeeks: 8, unitSystem: "metric", raceDays: [] };
+const profile: AthleteProfile = { ownerId: "local-user", preferredName: "Hailey", gender: null, heightCm: null, birthDate: null, timezone: "UTC", goals: [], preference: "", usualSessionMinutes: 60, trainingRhythm: { kind: "flexible_week", targetDaysPerWeek: 4, minDaysPerWeek: 3, maxDaysPerWeek: 5 }, equipment: [], injuries: [], constraintNotes: [], explicitRecoveryDays: null, mesocycleDurationWeeks: 8, unitSystem: "metric", raceDays: [] };
 const personal: PersonalInformation = { preferredName: "Hailey", gender: "female", heightCm: 170, birthDate: "1994-02-01", unitSystem: "metric", weightKg: 65, weightDate: "2026-09-17", snapshotHash: "snapshot" };
 
 function renderProfileBoard(overrides: Partial<AthleteProfile> = {}, equipmentCategories: EquipmentCategory[] = []) {
@@ -28,7 +28,7 @@ describe("Profile board", () => {
     expect(html).not.toContain("profile-column-stack");
     expect(html).toContain('class="profile-summary-item profile-max-session"');
     expect(html).toContain('class="profile-summary-item profile-mesocycle"');
-    expect(html.indexOf("Max Session Length")).toBeLessThan(html.indexOf("Mesocycle Length"));
+    expect(html.indexOf("Regular Session Duration")).toBeLessThan(html.indexOf("Mesocycle Length"));
     expect(html).toContain("8 weeks");
   });
   it("renders the readonly summary as a three-column card", () => {
@@ -86,10 +86,14 @@ describe("Profile board", () => {
   it("keeps the race date format fixed when the interface is Chinese", () => {
     vi.stubGlobal("localStorage", { getItem: () => "zh-CN", setItem: () => {} });
     const personalSection = createElement(PersonalInformationSection, { value: personal, form: { ...personal, birthDate: null }, setForm: () => {}, unit: "metric", switchUnit: () => {}, weightText: "65", setWeightText: () => {}, setWeightChanged: () => {}, feetText: "", setFeetText: () => {}, inchesText: "", setInchesText: () => {}, setHeightTouched: () => {} });
-    const intervalProfile: AthleteProfile = { ...profile, maxSessionMinutes: 45, trainingRhythm: { kind: "interval", intervalDays: 3 } };
+    const intervalProfile: AthleteProfile = { ...profile, usualSessionMinutes: 45, trainingRhythm: { kind: "interval", intervalDays: 3 } };
     const html = renderToStaticMarkup(createElement(LanguageProvider, null,
       createElement(EditableProfileBoard, { profile: intervalProfile, form: intervalProfile, setForm: () => {}, personalSection, customGoal: "", setCustomGoal: () => {}, availableGoals: [], setAvailableGoals: () => {}, toggleList: () => {}, toggleTrainingDay: () => {}, raceDraft: { date: "", sport: "10K", custom: "" }, setRaceDraft: () => {}, raceDraftValid: false, addRaceDay: () => {}, removeRaceDay: () => {} })));
     expect(html.match(/>yyyy\/mm\/dd<\/span>/g)).toHaveLength(2);
+    expect(html).toContain("常规训练时间");
+    expect(html).toContain('aria-label="常规训练时间"');
+    expect(html).toContain("常规训练以此时长为目标；经你同意，也可安排更长或更短的训练。");
+    expect(html).not.toContain("单次训练最长时间");
     expect(html).toContain("每隔");
     expect(html).toContain("天");
     expect(html).toContain("45 分钟");

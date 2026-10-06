@@ -72,7 +72,8 @@
       "type": "string",
       "maxLength": 80
     },
-    "maxSessionMinutes": {
+    "usualSessionMinutes": {
+      "description": "Target duration for regular training sessions, not a maximum session duration.",
       "default": 60,
       "type": "integer",
       "minimum": 15,
@@ -314,7 +315,7 @@
     "timezone",
     "goals",
     "preference",
-    "maxSessionMinutes",
+    "usualSessionMinutes",
     "trainingRhythm",
     "equipment",
     "injuries",

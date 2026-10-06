@@ -13,7 +13,7 @@
         "general_fitness"
       ],
       "preference": "",
-      "maxSessionMinutes": 60,
+      "usualSessionMinutes": 60,
       "trainingRhythm": {
         "kind": "fixed_week",
         "days": [
@@ -69,7 +69,7 @@
     "results": [],
     "dataGaps": [],
     "validatedAt": "2026-09-17T10:30:00.000Z",
-    "inputHash": "fnv1a-feba3768",
+    "inputHash": "fnv1a-f0ae6e9a",
     "coverage": {
       "hardChecksResolved": 0,
       "hardChecksTotal": 0,

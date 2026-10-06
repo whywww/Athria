@@ -1,3 +1,4 @@
+import { notify, notifyError, useOperationError, useOperationMessage } from "./toasts";
 import { T, tr } from "./i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -166,18 +167,12 @@ export function Profile() {
   const [customGoal, setCustomGoal] = useState("");
   const [availableGoals, setAvailableGoals] = useState<string[]>(commonGoals);
   const [raceDraft, setRaceDraft] = useState(emptyRaceDraft);
-  const [saved, setSaved] = useState(false);
   const profile = profileQuery.data;
   const save = useMutation({
     mutationFn: (value: { profile: AthleteProfile; personalInformation: Record<string, unknown>; expectedProfileHash: string | null }) => api<AthleteProfile>("/api/profile/complete", { method: "PUT", body: JSON.stringify(value) }),
-    onSuccess: () => { setForm(null); setPersonalForm(null); setAvailableGoals(commonGoals); setRaceDraft(emptyRaceDraft); setEditing(false); setSaved(true); void Promise.all(["profile", "personal-information", "state", "wellness"].map((key) => client.invalidateQueries({ queryKey: [key] }))); },
-    onError: () => { void Promise.all(["profile", "personal-information"].map((key) => client.invalidateQueries({ queryKey: [key] }))); },
+    onSuccess: () => { setForm(null); setPersonalForm(null); setAvailableGoals(commonGoals); setRaceDraft(emptyRaceDraft); setEditing(false); notify("Profile saved! Your current plan may be affected — ask your AI agent to review and update it to match your new profile.", "success"); void Promise.all(["profile", "personal-information", "state", "wellness"].map((key) => client.invalidateQueries({ queryKey: [key] }))); },
+    onError: (error) => { notifyError(error); void Promise.all(["profile", "personal-information"].map((key) => client.invalidateQueries({ queryKey: [key] }))); },
   });
-  useEffect(() => {
-    if (!saved) return;
-    const timeout = window.setTimeout(() => setSaved(false), 5000);
-    return () => window.clearTimeout(timeout);
-  }, [saved]);
   if (profileQuery.isPending || taxonomy.isPending || personalQuery.isPending) return <Loading/>;
   if (profileQuery.isError || taxonomy.isError || personalQuery.isError) return <ErrorBanner error={profileQuery.error ?? taxonomy.error ?? personalQuery.error}/>;
   if (!profile || !taxonomy.data || !personalQuery.data) return <Loading/>;
@@ -192,7 +187,7 @@ export function Profile() {
     setRaceDraft(emptyRaceDraft);
   };
   const removeRaceDay = (index: number) => setForm((current) => current ? { ...current, raceDays: current.raceDays.filter((_, itemIndex) => itemIndex !== index) } : current);
-  const beginEdit = () => { save.reset(); setSaved(false); setEditingProfileHash(profile.profileHash); setCustomGoal(""); setRaceDraft(emptyRaceDraft); setAvailableGoals([...new Set([...commonGoals, ...profile.goals])]); setForm({ ...profile, timezone: isUntouchedDefaultProfile(profile) ? deviceTimezone() : profile.timezone, goals: [...profile.goals], trainingRhythm: profile.trainingRhythm.kind === "fixed_week" ? { ...profile.trainingRhythm, days: [...profile.trainingRhythm.days] } : { ...profile.trainingRhythm }, equipment: [...profile.equipment], raceDays: profile.raceDays.map((race: RaceDay) => ({ ...race })).sort((left: RaceDay, right: RaceDay) => left.date.localeCompare(right.date)) }); setPersonalForm({ ...personal }); setUnit(personal.unitSystem); setWeightText(personal.weightKg == null ? "" : String(personal.unitSystem === "metric" ? personal.weightKg : kgToPounds(personal.weightKg))); setWeightChanged(false); const height = personal.heightCm == null ? null : cmToImperialHeight(personal.heightCm); setFeetText(height ? String(height.feet) : ""); setInchesText(height ? String(height.inches) : ""); setHeightTouched(false); setEditing(true); };
+  const beginEdit = () => { save.reset(); setEditingProfileHash(profile.profileHash); setCustomGoal(""); setRaceDraft(emptyRaceDraft); setAvailableGoals([...new Set([...commonGoals, ...profile.goals])]); setForm({ ...profile, timezone: isUntouchedDefaultProfile(profile) ? deviceTimezone() : profile.timezone, goals: [...profile.goals], trainingRhythm: profile.trainingRhythm.kind === "fixed_week" ? { ...profile.trainingRhythm, days: [...profile.trainingRhythm.days] } : { ...profile.trainingRhythm }, equipment: [...profile.equipment], raceDays: profile.raceDays.map((race: RaceDay) => ({ ...race })).sort((left: RaceDay, right: RaceDay) => left.date.localeCompare(right.date)) }); setPersonalForm({ ...personal }); setUnit(personal.unitSystem); setWeightText(personal.weightKg == null ? "" : String(personal.unitSystem === "metric" ? personal.weightKg : kgToPounds(personal.weightKg))); setWeightChanged(false); const height = personal.heightCm == null ? null : cmToImperialHeight(personal.heightCm); setFeetText(height ? String(height.feet) : ""); setInchesText(height ? String(height.inches) : ""); setHeightTouched(false); setEditing(true); };
   const cancelEdit = () => { setForm(null); setPersonalForm(null); setCustomGoal(""); setRaceDraft(emptyRaceDraft); setAvailableGoals(commonGoals); setEditing(false); save.reset(); };
   const switchUnit = (next: UnitSystem) => {
     if (!personalForm || next === unit) return;
@@ -215,7 +210,7 @@ export function Profile() {
     const profileValue = { ...profilePayload(profile, form), preferredName, gender: personalForm.gender, heightCm: heightCmDraft, birthDate: personalForm.birthDate, unitSystem: unit };
     const personalInformation: Record<string, unknown> = { preferredName, gender: personalForm.gender, heightCm: heightCmDraft, birthDate: personalForm.birthDate, unitSystem: unit, expectedSnapshotHash: personalForm.snapshotHash };
     if (weightChanged) personalInformation.weightKg = weightText.trim() ? weightKgDraft : null;
-    setSaved(false); save.mutate({ profile: profileValue, personalInformation, expectedProfileHash: editingProfileHash });
+    save.mutate({ profile: profileValue, personalInformation, expectedProfileHash: editingProfileHash });
   };
 
   const rhythmValid = !form || (form.trainingRhythm.kind === "fixed_week" ? form.trainingRhythm.days.length > 0 : form.trainingRhythm.kind === "flexible_week" ? form.trainingRhythm.minDaysPerWeek >= 1 && form.trainingRhythm.minDaysPerWeek <= form.trainingRhythm.targetDaysPerWeek && form.trainingRhythm.targetDaysPerWeek <= form.trainingRhythm.maxDaysPerWeek && form.trainingRhythm.maxDaysPerWeek <= 7 : form.trainingRhythm.intervalDays >= 1 && form.trainingRhythm.intervalDays <= 30);
@@ -228,8 +223,8 @@ export function Profile() {
     <PrimaryPageHeader preferredName={profile.preferredName} subtitle="Your training preferences — saved for the long term and built into every plan."/>
     <Card title={<span className="profile-card-title"><span><T>{"Training Profile"}</T><small><T>{"Your training setup and preferences"}</T></small></span></span>} className={`profile-board ${editing ? "is-editing" : ""}`} action={profileActions}>
       {editing && form ? <EditableProfileBoard profile={profile} form={form} setForm={setForm} personalSection={personalSection} customGoal={customGoal} setCustomGoal={setCustomGoal} availableGoals={availableGoals} setAvailableGoals={setAvailableGoals} toggleList={toggleList} toggleTrainingDay={toggleTrainingDay} raceDraft={raceDraft} setRaceDraft={setRaceDraft} raceDraftValid={raceDraftValid} addRaceDay={addRaceDay} removeRaceDay={removeRaceDay}/> : <ProfileBoard profile={profile} equipmentCategories={taxonomy.data.equipmentCategories} personalSection={personalSection}/>}
-      <ErrorBanner error={save.error}/>
-      {saved && <div className="success"><T>{"Profile saved! Your current plan may be affected — ask your AI agent to review and update it to match your new profile."}</T></div>}
+
+
     </Card>
     {editing && form && <Card title={null} className="profile-equipment-board"><EquipmentSelector categories={taxonomy.data.equipmentCategories} selected={form.equipment} onToggleItem={(id) => toggleList("equipment", id)} onToggleGroup={(ids) => setForm((current) => current ? { ...current, equipment: toggleEquipmentGroup(current.equipment, ids) } : current)}/></Card>}
     <Card title={<span className="profile-card-title"><span><T>{"Agent Suggestions"}</T><small><T>{"Personalized guidance based on your profile"}</T></small></span></span>} className="profile-suggestions">
@@ -334,7 +329,7 @@ export function EditableProfileBoard({ profile, form, setForm, personalSection, 
         <div className="profile-rhythm-option"><label><input type="radio" name="training-rhythm" checked={form.trainingRhythm.kind === "flexible_week"} onChange={() => changeRhythm("flexible_week")}/><span><T>{"Flexible week"}</T></span></label>{form.trainingRhythm.kind === "flexible_week" && <div className="rhythm-parameters"><label><T>{"Target days"}</T><input type="number" min="1" max="7" value={form.trainingRhythm.targetDaysPerWeek} onChange={(event) => updateFlexibleRhythm("targetDaysPerWeek", Number(event.target.value))}/></label><label><T>{"Min"}</T><input type="number" min="1" max="7" value={form.trainingRhythm.minDaysPerWeek} onChange={(event) => updateFlexibleRhythm("minDaysPerWeek", Number(event.target.value))}/></label><label><T>{"Max"}</T><input type="number" min="1" max="7" value={form.trainingRhythm.maxDaysPerWeek} onChange={(event) => updateFlexibleRhythm("maxDaysPerWeek", Number(event.target.value))}/></label></div>}</div>
         <div className="profile-rhythm-option"><label><input type="radio" name="training-rhythm" checked={form.trainingRhythm.kind === "interval"} onChange={() => changeRhythm("interval")}/><span><T>{"Intervals"}</T></span></label>{form.trainingRhythm.kind === "interval" && <span className="interval-parameter"><T>{"Every"}</T> <input aria-label={tr("Interval days")} type="number" min="1" max="30" value={form.trainingRhythm.intervalDays} onChange={(event) => updateIntervalRhythm(Number(event.target.value))}/> <T>{"days"}</T></span>}</div>
       </div></div>
-      <div className="profile-summary-item profile-duration-editor profile-max-session"><div className="profile-editor-heading"><span><strong className="profile-editor-title"><T>{"Max Session Length"}</T></strong><small className="profile-editor-subtitle"><T>{"Usual limit for ordinary sessions; longer sessions can be agreed separately."}</T></small></span></div><label className="profile-editor-control"><span className="sr-only"><T>{"Max Session Length"}</T></span><select aria-label={tr("Max Session Length")} value={form.maxSessionMinutes} onChange={(event) => setForm({ ...form, maxSessionMinutes: Number(event.target.value) })}>{[15, 30, 45, 60, 75, 90, 120, 180, 240].map((value) => <option key={value} value={value}>{value} {currentLanguage() === "zh-CN" ? "分钟" : "min"}</option>)}</select></label></div>
+      <div className="profile-summary-item profile-duration-editor profile-max-session"><div className="profile-editor-heading"><span><strong className="profile-editor-title"><T>{"Regular Session Duration"}</T></strong><small className="profile-editor-subtitle"><T>{"Aim for this duration in regular sessions; longer or shorter sessions can be agreed separately."}</T></small></span></div><label className="profile-editor-control"><span className="sr-only"><T>{"Regular Session Duration"}</T></span><select aria-label={tr("Regular Session Duration")} value={form.usualSessionMinutes} onChange={(event) => setForm({ ...form, usualSessionMinutes: Number(event.target.value) })}>{[15, 30, 45, 60, 75, 90, 120, 180, 240].map((value) => <option key={value} value={value}>{value} {currentLanguage() === "zh-CN" ? "分钟" : "min"}</option>)}</select></label></div>
       <div className="profile-summary-item profile-duration-editor profile-mesocycle"><div className="profile-editor-heading"><span><strong className="profile-editor-title"><T>{"Mesocycle Length"}</T></strong><small className="profile-editor-subtitle"><T>{"How long should a mesocycle be?"}</T></small></span></div><label className="profile-editor-control"><span className="sr-only"><T>{"Mesocycle Length"}</T></span><select aria-label={tr("Mesocycle Length")} value={form.mesocycleDurationWeeks} onChange={(event) => setForm({ ...form, mesocycleDurationWeeks: Number(event.target.value) })}>{[1, 2, 3, 4, 5, 6, 7, 8].map((value) => <option key={value} value={value}>{value} {tr(value === 1 ? "week" : "weeks")}</option>)}</select></label></div>
     </section>
   </div>;
@@ -366,7 +361,7 @@ export function ProfileBoard({ profile, equipmentCategories, personalSection }: 
       <div className="profile-summary-item profile-preferences-summary"><div><span><T>{"Preferences"}</T></span>{profile.preference ? <strong>{profile.preference}</strong> : <p className="race-empty">{tr("Not set")}</p>}</div></div>
       <div className="profile-summary-item profile-race-summary"><div><span><T>{"Race Days"}</T></span>{visibleRaces.length ? <><div className="race-summary-list">{visibleRaces.map((race, index) => <div className="race-summary-row" key={`${race.date}-${index}`}><strong>{formatRaceDateShort(race.date)} · {RACE_SPORT_PRESETS.includes(race.sport) ? tr(race.sport) : race.sport}</strong><em className="race-countdown">{formatRaceCountdown(race.date, today)}</em></div>)}</div>{upcomingRaces.length > visibleRaces.length && <small className="race-more">+{upcomingRaces.length - visibleRaces.length} more scheduled</small>}</> : <p className="race-empty"><T>{"No upcoming races"}</T></p>}</div></div>
       <div className="profile-summary-item profile-rhythm-summary"><div><span><T>{"Training Rhythm"}</T></span><strong>{formatTrainingRhythm(profile.trainingRhythm)}</strong></div></div>
-      <div className="profile-summary-item profile-max-session"><div><span><T>{"Max Session Length"}</T></span><strong>{profile.maxSessionMinutes} min</strong></div></div>
+      <div className="profile-summary-item profile-max-session"><div><span><T>{"Regular Session Duration"}</T></span><strong>{profile.usualSessionMinutes} min</strong></div></div>
       <div className="profile-summary-item profile-mesocycle"><div><span><T>{"Mesocycle Length"}</T></span><strong>{profile.mesocycleDurationWeeks} {tr(profile.mesocycleDurationWeeks === 1 ? "week" : "weeks")}</strong></div></div>
     </section>
     <EquipmentSelector categories={equipmentCategories} selected={profile.equipment}/>
@@ -432,10 +427,10 @@ function Connections() {
   const xunjiStatus = useQuery({ queryKey: ["xunji-status"], queryFn: () => getXunjiStatus<XunjiConnectionStatus>() });
   const [dialog, setDialog] = useState<ConnectionDialog>(null); const [xunjiSkill, setXunjiSkill] = useState("");
   const [preview, setPreview] = useState<ImportPreview>(); const [importResult, setImportResult] = useState<ImportResult>();
-  const [hevyError, setHevyError] = useState<unknown>(); const [intervalsError, setIntervalsError] = useState<unknown>();
-  const [intervalsMessage, setIntervalsMessage] = useState(""); const [intervalsBusy, setIntervalsBusy] = useState(false);
+  const [hevyError, setHevyError] = useOperationError(); const [intervalsError, setIntervalsError] = useOperationError();
+  const [intervalsMessage, setIntervalsMessage] = useOperationMessage(); const [intervalsBusy, setIntervalsBusy] = useState(false);
   const [intervalsReport, setIntervalsReport] = useState<IntervalsSyncResult>();
-  const [xunjiError, setXunjiError] = useState<unknown>(); const [xunjiMessage, setXunjiMessage] = useState(""); const [xunjiBusy, setXunjiBusy] = useState(false);
+  const [xunjiError, setXunjiError] = useOperationError(); const [xunjiMessage, setXunjiMessage] = useOperationMessage(); const [xunjiBusy, setXunjiBusy] = useState(false);
   const [intervalsRange, setIntervalsRange] = useState<SyncRange>("incremental"); const [xunjiRange, setXunjiRange] = useState<SyncRange>(90);
   const [key, setKey] = useState(""); const [athleteId, setAthleteId] = useState("0");
   const onFile = async (file: File) => { try { setHevyError(undefined); setImportResult(undefined); const bytes = new Uint8Array(await file.arrayBuffer()); let binary = ""; bytes.forEach((byte) => { binary += String.fromCharCode(byte); }); setPreview(await api<ImportPreview>("/api/imports/hevy/preview", { method: "POST", body: JSON.stringify({ fileName: file.name, contentBase64: btoa(binary) }) })); } catch (value) { setHevyError(value); } };
@@ -444,10 +439,10 @@ function Connections() {
   const openIntervals = () => { setAthleteId(intervalsStatus.data?.athleteId ?? "0"); setIntervalsMessage(""); setDialog("intervals"); };
   const commit = async () => { if (!preview?.previewToken) return; try { setHevyError(undefined); setImportResult(await api<ImportResult>("/api/imports/hevy/commit", { method: "POST", body: JSON.stringify({ previewToken: preview.previewToken }) })); setPreview(undefined); setDialog(null); await client.invalidateQueries({ queryKey: ["hevy-status"] }); } catch (value) { setHevyError(value); } };
   const saveIntervals = async () => { try { setIntervalsError(undefined); await testIntervals(key, athleteId); setIntervalsMessage("Connected. Your credentials were saved securely on this device."); setIntervalsReport(undefined); setKey(""); setDialog(null); await client.invalidateQueries({ queryKey: ["intervals-status"] }); } catch (value) { setIntervalsError(value); } };
-  const sync = async (range: SyncRange) => { try { setIntervalsBusy(true); setIntervalsError(undefined); setIntervalsMessage(""); setIntervalsReport(undefined); const result = await syncIntervals(range) as IntervalsSyncResult; setIntervalsMessage(`Sync ${result.sync?.status ?? "complete"}: ${result.added ?? 0} added, ${result.updated ?? 0} updated.`); setIntervalsReport(result); await Promise.all([client.invalidateQueries({ queryKey: ["intervals-status"] }), client.invalidateQueries({ queryKey: ["sessions"] }), client.invalidateQueries({ queryKey: ["summary"] }), client.invalidateQueries({ queryKey: ["state"] })]); } catch (value) { setIntervalsError(value); } finally { setIntervalsBusy(false); } };
+  const sync = async (range: SyncRange) => { try { setIntervalsBusy(true); setIntervalsError(undefined); setIntervalsMessage(""); setIntervalsReport(undefined); const result = await syncIntervals(range) as IntervalsSyncResult; notify(`Sync ${result.sync?.status ?? "complete"}: ${result.added ?? 0} added, ${result.updated ?? 0} updated.`, result.sync?.status === "partial" || result.sync?.status === "failed" ? "warning" : "success"); setIntervalsReport(result); await Promise.all([client.invalidateQueries({ queryKey: ["intervals-status"] }), client.invalidateQueries({ queryKey: ["sessions"] }), client.invalidateQueries({ queryKey: ["summary"] }), client.invalidateQueries({ queryKey: ["state"] })]); } catch (value) { setIntervalsError(value); } finally { setIntervalsBusy(false); } };
   const refreshXunjiViews = async () => { await Promise.all([client.invalidateQueries({ queryKey: ["xunji-status"] }), client.invalidateQueries({ queryKey: ["sessions"] }), client.invalidateQueries({ queryKey: ["summary"] }), client.invalidateQueries({ queryKey: ["state"] })]); };
-  const connectXunji = async () => { try { setXunjiBusy(true); setXunjiError(undefined); if (xunji?.configured) { await testXunjiSkill(xunjiSkill); setXunjiMessage(tr("Connection updated. Your credentials were saved securely on this device.")); } else { const result = await importXunjiSkill(xunjiSkill, xunjiRange) as ImportResult & { sync?: { status?: string } }; setXunjiMessage(`Sync ${result.sync?.status ?? "complete"}: ${result.added ?? 0} added, ${result.updated ?? 0} updated.`); } setXunjiSkill(""); setDialog(null); await refreshXunjiViews(); } catch (value) { setXunjiError(value); } finally { setXunjiBusy(false); } };
-  const runXunjiSync = async (range: SyncRange) => { try { setXunjiBusy(true); setXunjiError(undefined); const result = await syncXunji(range) as ImportResult & { sync?: { status?: string } }; setXunjiMessage(`Sync ${result.sync?.status ?? "complete"}: ${result.added ?? 0} added, ${result.updated ?? 0} updated.`); await refreshXunjiViews(); } catch (value) { setXunjiError(value); } finally { setXunjiBusy(false); } };
+  const connectXunji = async () => { try { setXunjiBusy(true); setXunjiError(undefined); if (xunji?.configured) { await testXunjiSkill(xunjiSkill); setXunjiMessage(tr("Connection updated. Your credentials were saved securely on this device.")); } else { const result = await importXunjiSkill(xunjiSkill, xunjiRange) as ImportResult & { sync?: { status?: string } }; notify(`Sync ${result.sync?.status ?? "complete"}: ${result.added ?? 0} added, ${result.updated ?? 0} updated.`, result.sync?.status === "partial" || result.sync?.status === "failed" ? "warning" : "success"); } setXunjiSkill(""); setDialog(null); await refreshXunjiViews(); } catch (value) { setXunjiError(value); } finally { setXunjiBusy(false); } };
+  const runXunjiSync = async (range: SyncRange) => { try { setXunjiBusy(true); setXunjiError(undefined); const result = await syncXunji(range) as ImportResult & { sync?: { status?: string } }; notify(`Sync ${result.sync?.status ?? "complete"}: ${result.added ?? 0} added, ${result.updated ?? 0} updated.`, result.sync?.status === "partial" || result.sync?.status === "failed" ? "warning" : "success"); await refreshXunjiViews(); } catch (value) { setXunjiError(value); } finally { setXunjiBusy(false); } };
   const disconnect = async (source: "intervals" | "xunji") => {
     if (!window.confirm(`Disconnect ${source === "intervals" ? "Intervals.icu" : "SynFit"}? The encrypted API key will be removed.`)) return;
     try { await disconnectConnection(source); setDialog(null); await client.invalidateQueries({ queryKey: [source === "intervals" ? "intervals-status" : "xunji-status"] }); }
@@ -457,17 +452,17 @@ function Connections() {
   const sources = connectionSources(Boolean(intervals?.configured), Boolean(xunji?.configured));
   return <section className="connections-page">
     <section className="connections-section"><h2><T>{"Connected"}</T> ({sources.added.length})</h2><div className="connected-sources-grid">
-      {intervals?.configured && <SourceCard source="intervals" title="Intervals.icu" description="Endurance activities and performance metrics." lastSyncLabel="Last synced" lastSync={intervals.sync?.lastSuccessAt ? formatDateTime(intervals.sync.lastSuccessAt) : "Not yet completed"} feedback={<><ErrorBanner error={intervalsStatus.error ?? intervalsError}/>{intervalsMessage && <div className={`source-feedback ${intervalsReport?.sync?.status === "partial" ? "warning-list" : "success"}`}>{intervalsMessage}</div>}{intervalsReport && <IntervalsSyncIssues report={intervalsReport}/>}</>} action={<div className="sync-controls"><SyncRangeSelect label={tr("Intervals.icu sync range")} value={intervalsRange} options={syncRangeOptions} onChange={(value) => setIntervalsRange(parseSyncRange(value))}/><button type="button" className="source-action primary" disabled={intervalsBusy || intervals.locked} onClick={() => void sync(intervalsRange)}><AppIcon name="refresh"/>{tr(intervals.locked ? "Database locked" : intervalsBusy ? "Syncing…" : "Sync now")}</button></div>} menuLabel="Edit connection" onMenuAction={openIntervals}/>}
-      {xunji?.configured && <SourceCard source="xunji" title="SynFit" description="Strength and training records" lastSyncLabel="Last synced" lastSync={xunji.sync?.lastSuccessAt ? formatDateTime(xunji.sync.lastSuccessAt) : "Not yet completed"} feedback={<><ErrorBanner error={xunjiStatus.error ?? xunjiError}/>{xunjiMessage && <div className={`source-feedback ${xunji.sync?.status === "failed" || xunji.sync?.status === "partial" ? "warning-list" : "success"}`}>{xunjiMessage}</div>}<XunjiSyncIssues sync={xunji.sync ?? null}/></>} action={<div className="sync-controls"><SyncRangeSelect label={tr("SynFit sync range")} value={xunjiRange} options={syncRangeOptions.filter((option) => option.value !== "incremental")} onChange={(value) => setXunjiRange(parseSyncRange(value))}/><button type="button" className="source-action primary" disabled={xunjiBusy || xunji.locked} onClick={() => void runXunjiSync(xunjiRange)}><AppIcon name="refresh"/>{tr(xunji.locked ? "Database locked" : xunjiBusy ? "Syncing…" : "Sync now")}</button></div>} menuLabel="Edit connection" onMenuAction={() => setDialog("xunji")}/>}
+      {intervals?.configured && <SourceCard source="intervals" title="Intervals.icu" description="Endurance activities and performance metrics." lastSyncLabel="Last synced" lastSync={intervals.sync?.lastSuccessAt ? formatDateTime(intervals.sync.lastSuccessAt) : "Not yet completed"} feedback={<><ErrorBanner error={intervalsStatus.error}/>{intervalsReport && <IntervalsSyncIssues report={intervalsReport}/>}</>} action={<div className="sync-controls"><SyncRangeSelect label={tr("Intervals.icu sync range")} value={intervalsRange} options={syncRangeOptions} onChange={(value) => setIntervalsRange(parseSyncRange(value))}/><button type="button" className="source-action primary" disabled={intervalsBusy || intervals.locked} onClick={() => void sync(intervalsRange)}><AppIcon name="refresh"/>{tr(intervals.locked ? "Database locked" : intervalsBusy ? "Syncing…" : "Sync now")}</button></div>} menuLabel="Edit connection" onMenuAction={openIntervals}/>}
+      {xunji?.configured && <SourceCard source="xunji" title="SynFit" description="Strength and training records" lastSyncLabel="Last synced" lastSync={xunji.sync?.lastSuccessAt ? formatDateTime(xunji.sync.lastSuccessAt) : "Not yet completed"} feedback={<><ErrorBanner error={xunjiStatus.error}/><XunjiSyncIssues sync={xunji.sync ?? null}/></>} action={<div className="sync-controls"><SyncRangeSelect label={tr("SynFit sync range")} value={xunjiRange} options={syncRangeOptions.filter((option) => option.value !== "incremental")} onChange={(value) => setXunjiRange(parseSyncRange(value))}/><button type="button" className="source-action primary" disabled={xunjiBusy || xunji.locked} onClick={() => void runXunjiSync(xunjiRange)}><AppIcon name="refresh"/>{tr(xunji.locked ? "Database locked" : xunjiBusy ? "Syncing…" : "Sync now")}</button></div>} menuLabel="Edit connection" onMenuAction={() => setDialog("xunji")}/>}
       {!intervalsStatus.isPending && !xunjiStatus.isPending && sources.added.length === 0 && <EmptyState title={tr("No connections yet")} description="Choose one of the available connections below to get started."/>}
     </div></section>
     <section className="connections-section available-connections"><h2><T>{"Available Connections"}</T></h2>{sources.available.length ? <div className="available-sources-grid">
       {sources.available.includes("intervals") && <AvailableSourceCard source="intervals" title="Intervals.icu" description="Sync endurance activities and wellness data." onConnect={openIntervals}/>}
       {sources.available.includes("xunji") && <AvailableSourceCard source="xunji" title="SynFit" description="Sync strength and training records." onConnect={() => { setXunjiRange(90); setDialog("xunji"); }}/>}
     </div> : <EmptyState title={tr("All supported connections are connected")} description="Manage or sync them from the cards above."/>}</section>
-    {dialog === "intervals" && <ConnectionModal title={intervals?.configured ? "Edit Intervals.icu" : "Connect Intervals.icu"} description="The API key is encrypted inside this database." onClose={closeDialog}><label><T>{"API key"}</T><input type="password" autoComplete="off" autoFocus placeholder={tr(intervals?.configured ? "Enter a new key to replace the saved key" : "Enter API key")} value={key} onChange={(event) => setKey(event.target.value)}/></label><label><T>{"Athlete ID"}</T><input value={athleteId} onChange={(event) => setAthleteId(event.target.value)}/></label><p className="helper intervals-helper">{tr("Find your API key and Athlete ID in")} <a href="https://intervals.icu" className="intervals-link" aria-label="Intervals.icu" onClick={(event) => { event.preventDefault(); void openIntervalsWebsite(); }}>Intervals.icu<span aria-hidden="true"> ↗</span></a>{tr("→ Settings → Developer Settings.")}</p><ErrorBanner error={intervalsError}/><div className="modal-actions">{intervals?.configured && <button type="button" className="danger-text" onClick={() => void disconnect("intervals")}><T>{"Disconnect"}</T></button>}<button type="button" className="secondary" onClick={closeDialog}><T>{"Cancel"}</T></button><button type="button" disabled={!key} onClick={() => void saveIntervals()}><T>{"Test and save"}</T></button></div></ConnectionModal>}
-    {dialog === "xunji" && <ConnectionModal title={xunji?.configured ? "Edit SynFit" : "Connect SynFit"} description="Paste the complete training-data Skill exported by SynFit." onClose={closeDialog}><label><T>{"SynFit exported Skill"}</T><textarea rows={8} autoComplete="off" autoFocus spellCheck={false} placeholder={tr("Paste the complete Skill exported by SynFit")} value={xunjiSkill} onChange={(event) => setXunjiSkill(event.target.value)}/></label>{!xunji?.configured && <label><T>{"Sync range"}</T><select aria-label={tr("SynFit sync range")} value={xunjiRange} onChange={(event) => setXunjiRange(parseSyncRange(event.target.value))}>{syncRangeOptions.filter((option) => option.value !== "incremental").map((option) => <option key={option.value} value={option.value}>{tr(option.label)}</option>)}</select></label>}<p className="helper"><T>{"In SynFit, go to Me → Data Export and Import → Training → Copy Training Skill, then paste it above."}</T></p><ErrorBanner error={xunjiError}/><div className="modal-actions">{xunji?.configured && <button type="button" className="danger-text" onClick={() => void disconnect("xunji")}><T>{"Disconnect"}</T></button>}<button type="button" className="secondary" onClick={closeDialog}><T>{"Cancel"}</T></button><button type="button" disabled={!xunjiSkill.trim() || xunjiBusy} onClick={() => void connectXunji()}>{tr(xunjiBusy ? xunji?.configured ? "Testing and saving…" : "Connecting and syncing…" : xunji?.configured ? "Test and save" : "Connect and sync")}</button></div></ConnectionModal>}
-    {dialog === "hevy" && <ConnectionModal title={tr("Import from Hevy")} description="Select a CSV export, review it, then import the workouts." onClose={closeDialog}><label><T>{"Hevy CSV export"}</T><input type="file" accept=".csv,text/csv" onChange={(event) => event.target.files?.[0] && void onFile(event.target.files[0])}/></label>{preview && <ImportSummary value={preview}><button type="button" onClick={() => void commit()}><T>{"Import reviewed workouts"}</T></button></ImportSummary>}<ErrorBanner error={hevyError}/></ConnectionModal>}
+    {dialog === "intervals" && <ConnectionModal title={intervals?.configured ? "Edit Intervals.icu" : "Connect Intervals.icu"} description="The API key is encrypted inside this database." onClose={closeDialog}><label><T>{"API key"}</T><input type="password" autoComplete="off" autoFocus placeholder={tr(intervals?.configured ? "Enter a new key to replace the saved key" : "Enter API key")} value={key} onChange={(event) => setKey(event.target.value)}/></label><label><T>{"Athlete ID"}</T><input value={athleteId} onChange={(event) => setAthleteId(event.target.value)}/></label><p className="helper intervals-helper">{tr("Find your API key and Athlete ID in")} <a href="https://intervals.icu" className="intervals-link" aria-label="Intervals.icu" onClick={(event) => { event.preventDefault(); void openIntervalsWebsite(); }}>Intervals.icu<span aria-hidden="true"> ↗</span></a>{tr("→ Settings → Developer Settings.")}</p><div className="modal-actions">{intervals?.configured && <button type="button" className="danger-text" onClick={() => void disconnect("intervals")}><T>{"Disconnect"}</T></button>}<button type="button" className="secondary" onClick={closeDialog}><T>{"Cancel"}</T></button><button type="button" disabled={!key} onClick={() => void saveIntervals()}><T>{"Test and save"}</T></button></div></ConnectionModal>}
+    {dialog === "xunji" && <ConnectionModal title={xunji?.configured ? "Edit SynFit" : "Connect SynFit"} description="Paste the complete training-data Skill exported by SynFit." onClose={closeDialog}><label><T>{"SynFit exported Skill"}</T><textarea rows={8} autoComplete="off" autoFocus spellCheck={false} placeholder={tr("Paste the complete Skill exported by SynFit")} value={xunjiSkill} onChange={(event) => setXunjiSkill(event.target.value)}/></label>{!xunji?.configured && <label><T>{"Sync range"}</T><select aria-label={tr("SynFit sync range")} value={xunjiRange} onChange={(event) => setXunjiRange(parseSyncRange(event.target.value))}>{syncRangeOptions.filter((option) => option.value !== "incremental").map((option) => <option key={option.value} value={option.value}>{tr(option.label)}</option>)}</select></label>}<p className="helper"><T>{"In SynFit, go to Me → Data Export and Import → Training → Copy Training Skill, then paste it above."}</T></p><div className="modal-actions">{xunji?.configured && <button type="button" className="danger-text" onClick={() => void disconnect("xunji")}><T>{"Disconnect"}</T></button>}<button type="button" className="secondary" onClick={closeDialog}><T>{"Cancel"}</T></button><button type="button" disabled={!xunjiSkill.trim() || xunjiBusy} onClick={() => void connectXunji()}>{tr(xunjiBusy ? xunji?.configured ? "Testing and saving…" : "Connecting and syncing…" : xunji?.configured ? "Test and save" : "Connect and sync")}</button></div></ConnectionModal>}
+    {dialog === "hevy" && <ConnectionModal title={tr("Import from Hevy")} description="Select a CSV export, review it, then import the workouts." onClose={closeDialog}><label><T>{"Hevy CSV export"}</T><input type="file" accept=".csv,text/csv" onChange={(event) => event.target.files?.[0] && void onFile(event.target.files[0])}/></label>{preview && <ImportSummary value={preview}><button type="button" onClick={() => void commit()}><T>{"Import reviewed workouts"}</T></button></ImportSummary>}</ConnectionModal>}
   </section>;
 }
 
@@ -513,7 +508,7 @@ function trainingHistorySourceLabel(source: string): string {
 }
 
 function TimelineWorkout({ item, planned, revision, timezone, onMutated }: { item: TrainingHistorySession; planned: CalendarSession[]; revision: number; timezone: string; onMutated: () => Promise<void> }) {
-  const [busy, setBusy] = useState(false); const [error, setError] = useState<unknown>(); const [editing, setEditing] = useState(false); const [typeOpen, setTypeOpen] = useState(false); const rowRef = useRef<HTMLElement>(null); const menuRef = useRef<HTMLDetailsElement>(null);
+  const [busy, setBusy] = useState(false); const [error, setError] = useOperationError(); const [editing, setEditing] = useState(false); const [typeOpen, setTypeOpen] = useState(false); const rowRef = useRef<HTMLElement>(null); const menuRef = useRef<HTMLDetailsElement>(null);
   const editingSnapshotHash = useRef<string | undefined>(undefined);
   const [duration, setDuration] = useState(String(item.durationMinutes)); const [startAt, setStartAt] = useState("");
   const day = workoutLocalDate(item, timezone);
@@ -554,7 +549,7 @@ function TimelineWorkout({ item, planned, revision, timezone, onMutated }: { ite
     <div className="training-plan-cell"><span className={`training-plan-mark ${item.planMatch ? "matched" : ""}`} aria-label={item.planMatch ? `${item.name} is matched to a planned session` : `${item.name} is not matched to a planned session`} title={item.planMatch ? "Matched to a planned session" : undefined}>{item.planMatch ? "✓" : ""}</span></div>
     <div className="training-actions-cell"><details className={editing ? "training-row-menu editing" : "training-row-menu"} ref={menuRef} onToggle={(event) => { if (!event.currentTarget.open && editing) cancelManualEdit(); }}><summary aria-label={`Actions for ${item.name}`}>•••</summary><div>{editing ? <div className="training-row-menu-editor"><label><T>{"Duration (minutes)"}</T><input type="number" min="1" max="1440" disabled={busy} value={duration} onChange={(event) => setDuration(event.target.value)}/></label><label><T>{"Actual start time"}</T><input type="datetime-local" disabled={busy} value={startAt} onChange={(event) => setStartAt(event.target.value)}/></label><div className="training-row-menu-editor-actions"><button type="button" className="secondary" disabled={busy} onClick={cancelManualEdit}><T>{"Cancel"}</T></button><button type="button" className="training-row-menu-save" disabled={busy || !Number.isInteger(Number(duration)) || Number(duration) < 1} onClick={() => void saveManual()}>{busy ? "Saving…" : "Save"}</button></div></div> : <><label className="training-row-menu-plan"><span><T>{"Planned session"}</T></span><select aria-label={`Planned session for ${item.name}`} disabled={busy} value={item.planMatch?.plannedSessionId ?? ""} onChange={(event) => void changeMatch(event.target.value)}><option value="" disabled>-</option>{eligible.map((session) => <option key={session.id} value={session.id}>{session.name}{!compatible(session) ? " · different domain" : ""}{session.completedTrainingSessionId && session.completedTrainingSessionId !== item.id ? " · linked" : ""}</option>)}{item.isPlanMatchExcluded && <option value="__automatic__"><T>{"Allow automatic matching"}</T></option>}</select>{item.planMatch && <small>{item.planMatch.method === "manual" ? "Linked by you" : "Matched automatically"}</small>}</label>{hasManual && <button type="button" disabled={busy} onClick={beginManualEdit}><T>{"Edit manual details"}</T></button>}{hasManual && hasSynced && <button type="button" className="danger-text" disabled={busy} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); removeManual(); }}><T>{"Remove manual source"}</T></button>}<button type="button" className="danger-text" disabled={busy} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); deleteRecord(); }}><T>{"Delete record"}</T></button></>}</div></details></div>
     {typeOpen && <div className="training-type-options" role="group" aria-label={`Type options for ${item.name}`}>{trainingTypeOptions.map((domain) => <button type="button" key={domain} className={`training-type-option ${domain} ${displayType.id === domain ? "selected" : ""}`} aria-pressed={displayType.id === domain} disabled={busy} onClick={() => void changeType(domain)}>{friendlyLabel(domain)}</button>)}</div>}
-    <ErrorBanner error={error}/>
+
   </article>;
 }
 
@@ -574,6 +569,7 @@ export function Timeline() {
   const loading = query.isPending || calendar.isPending || plan.isPending || profile.isPending;
   return <section className="card training-history">
     <div className="training-history-header"><div><h2><T>{"Training History"}</T></h2><p><T>{"Your recent workouts, sessions and activities."}</T></p></div><div className="training-history-tools"><label className="training-search"><span className="sr-only"><T>{"Search workouts"}</T></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg><input type="search" placeholder={tr("Search workouts...")} value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }}/></label><label className="training-sort"><span className="sr-only"><T>{"Sort training history"}</T></span><select aria-label={tr("Sort training history")} value={sort} onChange={(event) => { setSort(event.target.value as TrainingHistorySort); setPage(1); }}><option value="newest"><T>{"Newest first"}</T></option><option value="oldest"><T>{"Oldest first"}</T></option></select></label></div></div>
+
     <ErrorBanner error={error}/>
     {loading ? <Loading/> : <><div className="training-table-scroll"><div className="training-table"><div className="training-table-heading" aria-hidden="true"><span><T>{"Workout"}</T></span><span><T>{"Date & time"}</T></span><span><T>{"Type"}</T></span><span><T>{"Duration"}</T></span><span><T>{"Source"}</T></span><span className="training-plan-heading"><T>{"Plan Matched"}</T></span><span/></div><div className="training-table-body">{pagination.items.map((item) => <TimelineWorkout key={item.id} item={item} planned={calendar.data ?? []} revision={plan.data?.revision ?? 0} timezone={profile.data?.timezone ?? "UTC"} onMutated={refresh}/>)}{!query.data?.length ? <EmptyState title={tr("No workouts imported yet.")}/> : !filtered.length ? <EmptyState title={tr("No workouts match your search.")}/> : null}</div></div></div><footer className="training-history-footer"><span>{currentLanguage() === "zh-CN" ? `显示第 ${pagination.start}–${pagination.end} 条，共 ${filtered.length} 条训练` : filtered.length ? `Showing ${pagination.start}–${pagination.end} of ${filtered.length} sessions` : "Showing 0 sessions"}</span><div><button type="button" aria-label={tr("Previous page")} disabled={pagination.page === 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>‹</button><button type="button" aria-label={tr("Next page")} disabled={pagination.page === pagination.totalPages} onClick={() => setPage((current) => Math.min(pagination.totalPages, current + 1))}>›</button></div></footer></>}
   </section>;
@@ -584,7 +580,7 @@ export function Backup() {
   const doctor = useQuery({ queryKey: ["backup-doctor"], queryFn: () => api<DoctorResult>("/api/system/doctor") });
   const vault = useQuery({ queryKey: ["vault-status"], queryFn: getVaultStatus });
   const databasePath = (doctor.data as DoctorResult | undefined)?.databasePath;
-  const [message, setMessage] = useState(""); const [error, setError] = useState<unknown>();
+  const [message, setMessage] = useOperationMessage(); const [error, setError] = useOperationError();
   const [preview, setPreview] = useState<BackupPreview>(); const [restoring, setRestoring] = useState(false); const [creating, setCreating] = useState(false);
   const [passwordModal, setPasswordModal] = useState(false); const [requireModal, setRequireModal] = useState(false); const [changing, setChanging] = useState(false); const [passwordDraft, setPasswordDraft] = useState({ currentPassword: "", password: "", confirmation: "" });
   const [currentPassword, setCurrentPassword] = useState("");
@@ -651,11 +647,11 @@ export function Backup() {
         </div>}
     {vault.data?.initialized && !vault.data.locked && <div className="section"><div className="section-heading"><div className="section-copy"><h3><T>{"Edit Password Settings"}</T></h3><p><T>{vault.data.canRemember ? "Change the database password or require it whenever Athria starts." : "Change the database password. Athria asks for it each time it starts."}</T></p></div><div className="section-actions"><button type="button" className="secondary compact" onClick={openChangePassword}><T>{"Change Password"}</T></button>{vault.data.canRemember && <button type="button" className="secondary compact" disabled={!vault.data.remembered} onClick={() => { setError(undefined); setCurrentPassword(""); setRequireModal(true); }}><T>{vault.data.remembered ? "Always Require Password" : "Password Required on Startup"}</T></button>}</div></div></div>}
     <div className="section"><div className="section-heading"><div className="section-copy"><h3><T>{"Create a New Profile"}</T></h3><p><T>{"Start fresh from a new empty profile. Athria will switch to it without restarting; the current database file is left untouched."}</T></p></div><div className="section-actions"><button type="button" className="secondary compact" disabled={creating} onClick={() => void chooseProfileDestination()}><AppIcon name="plus"/><T>{"Create Profile"}</T></button></div></div></div>
-    {profileTarget && <NewProfileModal target={profileTarget} error={error} busy={creating} onClose={() => setProfileTarget(undefined)} onSubmit={() => void createProfile()}/>}
-    {passwordModal && <ChangePasswordModal value={passwordDraft} error={error} busy={changing} onChange={setPasswordDraft} onClose={closeChangePassword} onSubmit={() => void updateVaultPassword()}/>}
-    {vault.data?.canRemember && requireModal && <RequirePasswordModal value={currentPassword} error={error} busy={changing} onChange={setCurrentPassword} onClose={() => { setRequireModal(false); setCurrentPassword(""); setError(undefined); }} onSubmit={() => void requirePassword()}/>}
-    {message && <div className="success">{message}</div>}
-    <ErrorBanner error={doctor.error ?? error}/>
+    {profileTarget && <NewProfileModal target={profileTarget} error={undefined} busy={creating} onClose={() => setProfileTarget(undefined)} onSubmit={() => void createProfile()}/>}
+    {passwordModal && <ChangePasswordModal value={passwordDraft} error={undefined} busy={changing} onChange={setPasswordDraft} onClose={closeChangePassword} onSubmit={() => void updateVaultPassword()}/>}
+    {vault.data?.canRemember && requireModal && <RequirePasswordModal value={currentPassword} error={undefined} busy={changing} onChange={setCurrentPassword} onClose={() => { setRequireModal(false); setCurrentPassword(""); setError(undefined); }} onSubmit={() => void requirePassword()}/>}
+
+    <ErrorBanner error={doctor.error}/>
   </Card>;
 }
 
@@ -774,8 +770,8 @@ function AgentMenu({ integration, state, busy, onUpdate, onRemove }: { integrati
 
 function AgentTile({ integration }: { integration: AgentIntegrationStatus }) {
   const client = useQueryClient();
-  const [message, setMessage] = useState<string>();
-  const [error, setError] = useState<unknown>();
+  const [message, setMessage] = useOperationMessage("info");
+  const [error, setError] = useOperationError();
   const [guide, setGuide] = useState<AgentGuide>();
   const install = useMutation({ mutationFn: () => installAgentIntegration(integration.agent) });
   const remove = useMutation({ mutationFn: () => removeAgentIntegration(integration.agent) });
@@ -791,7 +787,7 @@ function AgentTile({ integration }: { integration: AgentIntegrationStatus }) {
       setError(undefined); setMessage(undefined);
       const result = await install.mutateAsync();
       const next = guideFor(integration, result, true);
-      if (next) setGuide(next); else setMessage(`Restart ${integration.name} to load the update.`);
+      if (next) setGuide(next); else setMessage(tr("Restart {agent} to load the update.").replace("{agent}", integration.name));
       await refresh();
     } catch (value) { setError(value); }
   };
@@ -807,8 +803,8 @@ function AgentTile({ integration }: { integration: AgentIntegrationStatus }) {
     <AgentBadge integration={integration}/>
     <div className="agent-tile-copy"><strong>{integration.name}</strong><span className={`agent-tile-state ${state}`}><i/>{agentStateLabels[state]}</span></div>
     <AgentMenu integration={integration} state={state} busy={busy} onUpdate={() => void update()} onRemove={() => void disconnect()}/>
-    {message && <p className="agent-tile-note" role="status">{message}</p>}
-    <ErrorBanner error={error}/>
+
+
     {guide && <SkillArchiveGuideModal guide={guide} onClose={() => setGuide(undefined)}/>}
   </article>;
 }
@@ -823,7 +819,7 @@ function guideFor(integration: AgentIntegrationStatus, result: AgentIntegrationR
 
 export function SkillArchiveGuideModal({ guide, onClose }: { guide: AgentGuide; onClose: () => void }) {
   useModalDismiss(onClose);
-  const [error, setError] = useState<unknown>();
+  const [error, setError] = useOperationError();
   const openArchives = async () => {
     try { setError(undefined); await openSkillArchiveFolder(); } catch (value) { setError(value); }
   };
@@ -839,7 +835,7 @@ export function SkillArchiveGuideModal({ guide, onClose }: { guide: AgentGuide; 
         {guide.archiveDir && <div className="agent-archive-path"><small><T>{"Skill archives"}</T></small><code title={guide.archiveDir}>{guide.archiveDir}</code></div>}
         {count > 0 && <ul className="agent-archive-list">{guide.archives.map((archive) => <li key={archive.name}><strong>{archive.name}</strong><span>{archive.version}</span></li>)}</ul>}
         <p className="agent-archive-note">Athria shows Connected once {guide.name} runs a Skill and reports the version it loaded.</p>
-        <ErrorBanner error={error}/>
+
         <div className="modal-actions"><button type="button" className="secondary" disabled={!guide.archiveDir} onClick={() => void openArchives()}><T>{"Open ZIP folder"}</T></button><button type="button" onClick={onClose}><T>{"Done"}</T></button></div>
       </div>
     </section>
@@ -892,8 +888,8 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
   const [view, setView] = useState<"list" | "manual">("list");
   const [pending, setPending] = useState<AgentKind>();
   const [guide, setGuide] = useState<AgentGuide>();
-  const [message, setMessage] = useState<string>();
-  const [error, setError] = useState<unknown>();
+  const [message, setMessage] = useOperationMessage("info");
+  const [error, setError] = useOperationError();
   const manual = view === "manual";
   const dismiss = () => { if (manual) setView("list"); else onClose(); };
   useEffect(() => { const onKeyDown = (event: KeyboardEvent) => { if (event.key !== "Escape" || guide) return; if (view === "manual") setView("list"); else onClose(); }; window.addEventListener("keydown", onKeyDown); return () => window.removeEventListener("keydown", onKeyDown); }, [onClose, view, guide]);
@@ -904,7 +900,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
       setPending(integration.agent); setError(undefined); setMessage(undefined);
       const result = await installAgentIntegration(integration.agent);
       const next = guideFor(integration, result, false);
-      if (next) setGuide(next); else setMessage(`Athria was added to ${integration.name}. Restart it to load Athria.`);
+      if (next) setGuide(next); else setMessage(tr("Athria was added to {agent}. Restart it to load Athria.").replace("{agent}", integration.name));
       await client.invalidateQueries({ queryKey: ["agent-integrations"] });
     } catch (value) { setError(value); } finally { setPending(undefined); }
   };
@@ -914,8 +910,8 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
       <div className="modal-body">
         {manual ? <ManualAgentSetup existing={roster} onConnected={() => { setView("list"); void client.invalidateQueries({ queryKey: ["agent-integrations"] }); }}/> : <>
           {integrations.isPending ? <Loading/> : integrations.isError ? <ErrorBanner error={integrations.error}/> : roster.length ? <ul className="agent-modal-list">{roster.map((integration) => <li className="agent-modal-row" key={integration.agent}><AgentBadge integration={integration}/><div className="agent-modal-copy"><strong>{integration.name}</strong><AgentPathRow label="MCP" path={integration.configPath} home={home}/>{integration.skillsMode === "gui_managed" ? <AgentPathRow label="Skills" path={agentSkillsLocation(integration)} home={home} empty="Athria prepares these when you Connect"/> : <AgentPathRow label="Skills" path={integration.skillsPath} home={home}/>}</div>{agentManaged(integration) ? (integration.skillsMode === "gui_managed" && agentState(integration) !== "connected" ? <span className="agent-modal-pending" role="img" aria-label={agentStateLabels[agentState(integration)]} title={agentStateLabels[agentState(integration)]}>{agentStateLabels[agentState(integration)]}</span> : <span className="agent-modal-connected" role="img" aria-label={tr("Connected")} title={tr("Connected")}><AppIcon name="check"/></span>) : <button type="button" className="secondary" disabled={!integration.available || pending === integration.agent} title={integration.available ? undefined : integration.diagnostic} onClick={() => void connect(integration)}>{tr(pending === integration.agent ? "Connecting…" : "Connect")}</button>}</li>)}</ul> : null}
-          {message && <p className="success" role="status">{message}</p>}
-          <ErrorBanner error={error}/>
+
+
           <div className="agent-modal-footer"><button type="button" className="text-button" onClick={() => setView("manual")}><T>{"Don't see your agents? Manually add them →"}</T></button></div>
         </>}
       </div>
@@ -942,7 +938,7 @@ export function SkillUpdateConflictModal({ conflict, result, busy, error, onReso
           <ul className="skill-update-list">{conflict.skills.map((skill) => <li key={skill.name}><strong>{skill.name}</strong><span>{skill.installedVersion} → {skill.bundledVersion}</span></li>)}</ul>
           <p className="skill-update-warning"><T>{"Replace permanently discards the local changes. Backup & Replace saves the current copies first."}</T></p>
         </>}
-        <ErrorBanner error={error}/>
+
         <div className="modal-actions">{result ? <button type="button" onClick={onClose}><T>{"Done"}</T></button> : <><button type="button" className="secondary" disabled={busy} onClick={onClose}><T>{"Not now"}</T></button><button type="button" className="secondary" disabled={busy} onClick={() => onResolve("replace")}>{busy ? "Updating…" : "Replace"}</button><button type="button" disabled={busy} onClick={() => onResolve("backup_replace")}>{busy ? "Updating…" : "Backup & Replace"}</button></>}</div>
       </div>
     </section>
@@ -1029,15 +1025,11 @@ export function Settings() {
 }
 
 function CopyButton({ label, value }: { label: string; value: string }) {
-  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setState("copied");
-      window.setTimeout(() => setState("idle"), 2000);
-    } catch { setState("failed"); }
+    try { await navigator.clipboard.writeText(value); notify(tr("{label} copied.").replace("{label}", tr(label)), "info"); }
+    catch { notify(tr("{label} could not be copied.").replace("{label}", tr(label)), "error"); }
   };
-  return <><button type="button" className="secondary compact" onClick={() => void copy()}>{tr(state === "copied" ? "Copied" : state === "failed" ? "Copy failed" : "Copy")}</button><span className="sr-only" aria-live="polite">{state === "copied" ? tr(`${label} copied.`) : state === "failed" ? tr(`${label} could not be copied.`) : ""}</span></>;
+  return <button type="button" className="secondary compact" onClick={() => void copy()}><T>{"Copy"}</T></button>;
 }
 
 function PromptBlock({ label, value }: { label: string; value: string }) {
@@ -1058,7 +1050,7 @@ export function ManualAgentSetup({ existing = [], onConnected = () => {} }: { ex
   const [configPath, setConfigPath] = useState("");
   const [skillsPath, setSkillsPath] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<unknown>();
+  const [error, setError] = useOperationError();
   const trimmedName = name.trim();
   const duplicate = existing.some((agent) => agent.name.localeCompare(trimmedName, undefined, { sensitivity: "base" }) === 0);
   const valid = Boolean(trimmedName && configPath.trim() && skillsPath.trim() && !duplicate);
@@ -1077,7 +1069,7 @@ export function ManualAgentSetup({ existing = [], onConnected = () => {} }: { ex
       <label><T>{"MCP config file"}</T><input value={configPath} onChange={(event) => setConfigPath(event.target.value)} placeholder="~/path/to/mcp.json"/></label>
       <label><T>{"Skills folder"}</T><input value={skillsPath} onChange={(event) => setSkillsPath(event.target.value)} placeholder="~/path/to/skills"/></label>
     </div>
-    <ErrorBanner error={error}/>
+
     <div className="modal-actions"><button type="button" disabled={!valid || busy} onClick={() => void connect()}>{tr(busy ? "Testing…" : "Test connection")}</button></div>
   </div>;
 }

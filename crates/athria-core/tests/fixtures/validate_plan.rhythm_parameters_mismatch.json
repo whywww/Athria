@@ -13,7 +13,7 @@
         "general_fitness"
       ],
       "preference": "",
-      "maxSessionMinutes": 60,
+      "usualSessionMinutes": 60,
       "trainingRhythm": {
         "kind": "fixed_week",
         "days": [
@@ -412,22 +412,6 @@
         "confidenceLimit": null
       },
       {
-        "enforcement": "advisory",
-        "reasonCode": "MAX_SESSION_DURATION",
-        "status": "pass",
-        "rulePackId": "structure",
-        "ruleVersion": "0.3.0",
-        "subjectRefs": [
-          "w1-flex-1-1"
-        ],
-        "evidence": {
-          "durationMinutes": 60,
-          "maximum": 60
-        },
-        "missingFacts": [],
-        "confidenceLimit": null
-      },
-      {
         "enforcement": "blocker",
         "reasonCode": "COMPONENT_PRESCRIPTION",
         "status": "pass",
@@ -440,22 +424,6 @@
         "evidence": {
           "domain": "recovery",
           "prescription": "duration_only"
-        },
-        "missingFacts": [],
-        "confidenceLimit": null
-      },
-      {
-        "enforcement": "advisory",
-        "reasonCode": "MAX_SESSION_DURATION",
-        "status": "pass",
-        "rulePackId": "structure",
-        "ruleVersion": "0.3.0",
-        "subjectRefs": [
-          "w1-flex-1-2"
-        ],
-        "evidence": {
-          "durationMinutes": 60,
-          "maximum": 60
         },
         "missingFacts": [],
         "confidenceLimit": null
@@ -478,22 +446,6 @@
         "confidenceLimit": null
       },
       {
-        "enforcement": "advisory",
-        "reasonCode": "MAX_SESSION_DURATION",
-        "status": "pass",
-        "rulePackId": "structure",
-        "ruleVersion": "0.3.0",
-        "subjectRefs": [
-          "w1-flex-1-3"
-        ],
-        "evidence": {
-          "durationMinutes": 60,
-          "maximum": 60
-        },
-        "missingFacts": [],
-        "confidenceLimit": null
-      },
-      {
         "enforcement": "blocker",
         "reasonCode": "COMPONENT_PRESCRIPTION",
         "status": "pass",
@@ -506,22 +458,6 @@
         "evidence": {
           "domain": "recovery",
           "prescription": "duration_only"
-        },
-        "missingFacts": [],
-        "confidenceLimit": null
-      },
-      {
-        "enforcement": "advisory",
-        "reasonCode": "MAX_SESSION_DURATION",
-        "status": "pass",
-        "rulePackId": "structure",
-        "ruleVersion": "0.3.0",
-        "subjectRefs": [
-          "w2-flex-2-1"
-        ],
-        "evidence": {
-          "durationMinutes": 60,
-          "maximum": 60
         },
         "missingFacts": [],
         "confidenceLimit": null
@@ -544,22 +480,6 @@
         "confidenceLimit": null
       },
       {
-        "enforcement": "advisory",
-        "reasonCode": "MAX_SESSION_DURATION",
-        "status": "pass",
-        "rulePackId": "structure",
-        "ruleVersion": "0.3.0",
-        "subjectRefs": [
-          "w2-flex-2-2"
-        ],
-        "evidence": {
-          "durationMinutes": 60,
-          "maximum": 60
-        },
-        "missingFacts": [],
-        "confidenceLimit": null
-      },
-      {
         "enforcement": "blocker",
         "reasonCode": "COMPONENT_PRESCRIPTION",
         "status": "pass",
@@ -572,22 +492,6 @@
         "evidence": {
           "domain": "recovery",
           "prescription": "duration_only"
-        },
-        "missingFacts": [],
-        "confidenceLimit": null
-      },
-      {
-        "enforcement": "advisory",
-        "reasonCode": "MAX_SESSION_DURATION",
-        "status": "pass",
-        "rulePackId": "structure",
-        "ruleVersion": "0.3.0",
-        "subjectRefs": [
-          "w2-flex-2-3"
-        ],
-        "evidence": {
-          "durationMinutes": 60,
-          "maximum": 60
         },
         "missingFacts": [],
         "confidenceLimit": null
@@ -685,7 +589,7 @@
     ],
     "dataGaps": [],
     "validatedAt": "2026-09-17T10:30:00.000Z",
-    "inputHash": "fnv1a-f243b681",
+    "inputHash": "fnv1a-15c5ba13",
     "coverage": {
       "hardChecksResolved": 11,
       "hardChecksTotal": 11,

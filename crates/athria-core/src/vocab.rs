@@ -312,7 +312,7 @@ pub fn default_profile() -> Value {
         "timezone": DEFAULT_TIMEZONE,
         "goals": ["general_fitness"],
         "preference": "",
-        "maxSessionMinutes": 60,
+        "usualSessionMinutes": 60,
         "trainingRhythm": { "kind": "flexible_week", "targetDaysPerWeek": 4, "minDaysPerWeek": 3, "maxDaysPerWeek": 5 },
         "equipment": equipment_type_ids(),
         "injuries": [],

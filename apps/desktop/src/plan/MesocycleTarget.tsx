@@ -1,4 +1,4 @@
-import { T, tr } from "../i18n";
+import { T, tr, useLanguage } from "../i18n";
 import { useState, type ReactNode } from "react";
 import type { CurrentPlan } from "../view-models";
 import { domainIconPath, type DomainIconId } from "../domain-icons";
@@ -65,6 +65,7 @@ function DetailSection({ kind, title, children }: { kind: "supporting" | "mainte
 }
 
 export function MesocycleTarget({ plan, today, currentWeek, currentPhaseNames, status = "current" }: MesocycleTargetProps) {
+  const { language } = useLanguage();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const target = plan.target;
   const durationWeeks = Math.max(1, plan.mesocycle.durationWeeks);
@@ -80,13 +81,13 @@ export function MesocycleTarget({ plan, today, currentWeek, currentPhaseNames, s
     <span className="sr-only">{statusLabels[status]}</span>
     <header className="mt-heading">
       <div className="mt-title-group"><div className="mt-heading-text"><h2>{plan.title}</h2><p>{range}</p></div></div>
-      <span className="mt-duration"><CalendarIcon/><strong>{durationWeeks} weeks</strong></span>
+      <span className="mt-duration"><CalendarIcon/><strong>{durationWeeks} <T>{durationWeeks === 1 ? "week" : "weeks"}</T></strong></span>
     </header>
 
     <div className="mt-progress">
-      <span className="mt-progress-week"><strong>Week {currentWeek}</strong> of <strong>{durationWeeks}</strong></span>
+      <span className="mt-progress-week">{language === "zh-CN" ? <>第 <strong>{currentWeek}</strong> 周，共 <strong>{durationWeeks}</strong> 周</> : <><strong>Week {currentWeek}</strong> of <strong>{durationWeeks}</strong></>}</span>
       <div className="mt-progress-phases">{currentPhaseNames.map((name) => <span className="mt-progress-phase" key={name}><DomainIcon label={name}/>{name}</span>)}</div>
-      <span className="mt-progress-asof">As of {formatShortDate(today)}</span>
+      <span className="mt-progress-asof"><T>{"As of"}</T> {formatShortDate(today)}</span>
     </div>
 
     <section className="mt-primary-section">

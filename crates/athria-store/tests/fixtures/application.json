@@ -15,7 +15,7 @@
           "general_fitness"
         ],
         "preference": "",
-        "maxSessionMinutes": 60,
+        "usualSessionMinutes": 60,
         "trainingRhythm": {
           "kind": "flexible_week",
           "targetDaysPerWeek": 4,
@@ -75,7 +75,7 @@
             ]
           }
         },
-        "expectedProfileHash": "fnv1a-1afd758f",
+        "expectedProfileHash": "fnv1a-8663f593",
         "confirmed": true
       },
       "expected": {
@@ -89,7 +89,7 @@
           "general_fitness"
         ],
         "preference": "",
-        "maxSessionMinutes": 60,
+        "usualSessionMinutes": 60,
         "trainingRhythm": {
           "kind": "fixed_week",
           "days": [
@@ -161,7 +161,7 @@
         "unitSystem": "metric",
         "weightKg": null,
         "weightDate": null,
-        "snapshotHash": "fnv1a-21c8df12"
+        "snapshotHash": "fnv1a-d4eaf73a"
       }
     },
     {
@@ -172,7 +172,7 @@
         "heightCm": 171.5,
         "birthDate": "1995-04-03",
         "weightKg": 67.2,
-        "expectedSnapshotHash": "fnv1a-21c8df12"
+        "expectedSnapshotHash": "fnv1a-d4eaf73a"
       },
       "expected": {
         "preferredName": "Compat Athlete",
@@ -182,7 +182,7 @@
         "unitSystem": "metric",
         "weightKg": 67.2,
         "weightDate": "2026-09-17",
-        "snapshotHash": "fnv1a-715c550f"
+        "snapshotHash": "fnv1a-7c667953"
       }
     },
     {
@@ -687,7 +687,7 @@
         "sourceAgent": "compat",
         "model": null,
         "skillVersion": "phase-5",
-        "inputSnapshotHash": "fnv1a-8f77e5d4",
+        "inputSnapshotHash": "fnv1a-162736ac",
         "expectedRevision": 0
       },
       "expected": {
@@ -771,7 +771,7 @@
           "sourceAgent": "compat",
           "model": null,
           "skillVersion": "phase-5",
-          "inputSnapshotHash": "fnv1a-8f77e5d4",
+          "inputSnapshotHash": "fnv1a-162736ac",
           "updatedAt": "2026-09-17T04:00:00.000Z"
         },
         "validation": {
@@ -882,22 +882,6 @@
               "confidenceLimit": null
             },
             {
-              "enforcement": "advisory",
-              "reasonCode": "MAX_SESSION_DURATION",
-              "status": "pass",
-              "rulePackId": "structure",
-              "ruleVersion": "0.3.0",
-              "subjectRefs": [
-                "compat-plan-session"
-              ],
-              "evidence": {
-                "durationMinutes": 40,
-                "maximum": 60
-              },
-              "missingFacts": [],
-              "confidenceLimit": null
-            },
-            {
               "enforcement": "blocker",
               "reasonCode": "COMPONENT_PRESCRIPTION",
               "status": "pass",
@@ -990,7 +974,7 @@
           ],
           "dataGaps": [],
           "validatedAt": "2026-09-17T04:00:00.000Z",
-          "inputHash": "fnv1a-3b2330ef",
+          "inputHash": "fnv1a-a0b7d687",
           "coverage": {
             "hardChecksResolved": 6,
             "hardChecksTotal": 6,
@@ -1091,7 +1075,7 @@
         "sourceAgent": "compat",
         "model": null,
         "skillVersion": "phase-5",
-        "inputSnapshotHash": "fnv1a-8f77e5d4",
+        "inputSnapshotHash": "fnv1a-162736ac",
         "expectedRevision": 0
       },
       "error": {

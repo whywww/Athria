@@ -2,8 +2,9 @@ import { createElement } from "react";
 import { QueryClient } from "@tanstack/query-core";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { NextTrainingDay, PlanExercise } from "../view-models";
+import { LanguageProvider } from "../i18n";
 import { NextTrainingDayCard } from "./CurrentPlanPage";
 
 const squat: PlanExercise = {
@@ -48,10 +49,30 @@ const emptyDay: NextTrainingDay = { reasonCode: null, nextTrainingDay: {
 } };
 
 function render(value: NextTrainingDay) {
-  return renderToStaticMarkup(createElement(QueryClientProvider, { client: new QueryClient() }, createElement(NextTrainingDayCard, { value })));
+  return renderToStaticMarkup(createElement(LanguageProvider, null, createElement(QueryClientProvider, { client: new QueryClient() }, createElement(NextTrainingDayCard, { value }))));
 }
 
 describe("NextTrainingDayCard", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    render(strengthDay);
+  });
+
+  it.each(["en", "zh-CN"])("shows the future tooltip only for future dates in %s and removes the permanent hint", (language) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-24T12:00:00Z"));
+    vi.stubGlobal("localStorage", { getItem: () => language });
+    const tooltip = language === "zh-CN"
+      ? "这是未来的训练，请先将其移至你计划的日期。"
+      : "This is a future workout. Move it to your planned date first.";
+    for (const scheduledDate of ["2026-09-23", "2026-09-24", "2026-09-25"]) {
+      const html = render({ ...strengthDay, nextTrainingDay: { ...strengthDay.nextTrainingDay!, scheduledDate } });
+      expect(html.includes(`title="${tooltip}"`)).toBe(scheduledDate > "2026-09-24");
+      expect(html).not.toContain("Move this plan to the date it was completed before adding a completed workout.");
+      expect(html).not.toContain("添加已完成训练前，请先将计划移至实际完成日期。");
+    }
+  });
   it("renders the full prescription inline instead of an open-details drawer", () => {
     const html = render(strengthDay);
     expect(html).not.toContain("session-heading");
@@ -62,7 +83,9 @@ describe("NextTrainingDayCard", () => {
     expect(html).toContain("Maintain squat strength.");
     expect(html).toContain("45 min");
     expect(html.match(/>Prescription</g)).toHaveLength(1);
-    expect(html).toContain("Add as completed workout");
+    expect(html).toContain(">Complete</button>");
+    expect(html).not.toContain("Add as completed workout");
+    expect(html).not.toContain("✓");
     expect(html).not.toContain("Open details");
   });
 

@@ -1,3 +1,4 @@
+import { ToastProvider } from "./toasts";
 import { T } from "./i18n";
 import React from "react";
 import ReactDOM from "react-dom/client";
@@ -26,7 +27,7 @@ class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, { 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <AppErrorBoundary>
-      <LanguageProvider><QueryClientProvider client={queryClient}><App /></QueryClientProvider></LanguageProvider>
+      <LanguageProvider><QueryClientProvider client={queryClient}><ToastProvider><App /></ToastProvider></QueryClientProvider></LanguageProvider>
     </AppErrorBoundary>
   </React.StrictMode>,
 );

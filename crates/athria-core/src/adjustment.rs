@@ -529,8 +529,12 @@ fn assess_profile_change(
 ) {
     for mismatch in &facts.constraint_mismatches {
         if mismatch.kind == ProfileConstraintKind::MaxSessionDuration {
+            // Ignore legacy duration mismatches: the profile duration is now a target.
+            continue;
+        }
+        if mismatch.kind == ProfileConstraintKind::ExplicitRecoveryDays {
             reasons.push(reason(
-                ReasonCode::ProfileSessionDurationConflict,
+                ReasonCode::ProfileRecoveryConstraintConflict,
                 EvidenceSeverity::Soft,
                 EvidenceAxis::ProfileMismatch,
                 mismatch.evidence_refs.clone(),
@@ -821,6 +825,21 @@ mod tests {
     }
 
     #[test]
+    fn recovery_interval_conflict_is_only_a_watch() {
+        let mut facts = unchanged_profile();
+        facts.constraint_mismatches = vec![ProfileConstraintMismatch {
+            kind: ProfileConstraintKind::ExplicitRecoveryDays,
+            evidence_refs: vec!["EXPLICIT_RECOVERY_INTERVAL".to_owned()],
+            structural: false,
+        }];
+        let assessment = assess_adjustment(&profile_input(facts));
+        assert_eq!(assessment.review_status, ReviewStatus::Watch);
+        assert_eq!(assessment.recommended_scope, RecommendedScope::None);
+        assert!(assessment.hard_overrides.is_empty());
+        assert_eq!(assessment.reasons[0].severity, EvidenceSeverity::Soft);
+    }
+
+    #[test]
     fn structural_training_rhythm_conflict_requires_a_plan_review() {
         let mut facts = unchanged_profile();
         facts.constraint_mismatches = vec![ProfileConstraintMismatch {
@@ -838,7 +857,7 @@ mod tests {
     }
 
     #[test]
-    fn local_duration_conflicts_only_prompt_a_watch() {
+    fn legacy_duration_conflicts_are_ignored() {
         let mut facts = unchanged_profile();
         facts.constraint_mismatches = vec![ProfileConstraintMismatch {
             kind: ProfileConstraintKind::MaxSessionDuration,
@@ -846,10 +865,10 @@ mod tests {
             structural: false,
         }];
         let assessment = assess_adjustment(&profile_input(facts));
-        assert_eq!(assessment.review_status, ReviewStatus::Watch);
+        assert_eq!(assessment.review_status, ReviewStatus::Keep);
         assert_eq!(assessment.recommended_scope, RecommendedScope::None);
         assert!(assessment.hard_overrides.is_empty());
-        assert_eq!(assessment.reasons[0].severity, EvidenceSeverity::Soft);
+        assert!(assessment.reasons.is_empty());
     }
 
     #[test]

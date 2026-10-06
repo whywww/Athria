@@ -29,11 +29,10 @@ export function calendarDays(anchorDay: string, history: TrainingHistorySession[
     ...planned.filter((session) => session.status === "completed").map((session) => session.scheduledDate),
   ].filter((day) => day >= monthStart && day <= monthEnd));
   const scheduled = new Set(planned.filter((session) => session.status === "planned" && !completed.has(session.scheduledDate)).map((session) => session.scheduledDate));
-  const skipped = new Set(planned.filter((session) => session.status === "skipped").map((session) => session.scheduledDate));
-  type Marker = "completed" | "planned" | "skipped";
+  type Marker = "completed" | "planned";
   const result: Array<{ day: string | null; marker: Marker | null; markers: Marker[] }> = Array.from({ length: weekdayIndex(monthStart) }, () => ({ day: null, marker: null, markers: [] }));
   for (let day = monthStart; day <= monthEnd; day = addDays(day, 1)) {
-    const markers: Marker[] = [...(completed.has(day) ? ["completed" as const] : []), ...(scheduled.has(day) ? ["planned" as const] : []), ...(skipped.has(day) ? ["skipped" as const] : [])];
+    const markers: Marker[] = [...(completed.has(day) ? ["completed" as const] : []), ...(scheduled.has(day) ? ["planned" as const] : [])];
     result.push({ day, marker: markers[0] ?? null, markers });
   }
   while (result.length < 42) result.push({ day: null, marker: null, markers: [] });
@@ -45,43 +44,54 @@ function wellnessSleepFormat(value: number) {
   const minutes = Math.round(value / 60); const hours = Math.floor(minutes / 60); const remaining = minutes % 60;
   return `${hours}:${String(remaining).padStart(2, "0")}`;
 }
+function wellnessCompactNumber(value: number) {
+  return String(Number(value.toFixed(1)));
+}
 function wellnessNumber(record: WellnessRecord, key: WellnessKey) {
   const value = record.fields[key]?.value;
-  return typeof value === "number" ? value : null;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 // The first four entries are the featured wellness trends; the next three backfill empty slots (steps, SDNN, sleep), then the remaining signals.
 const wellnessPriority: Array<{ key: WellnessKey; label: string; format: (value: number) => string; tone: string }> = [
-  { key: "sleepScore", label: "Sleep score", format: String, tone: "purple" },
-  { key: "hrvRmssdMs", label: "HRV (ms)", format: String, tone: "orange" },
-  { key: "restingHeartRateBpm", label: "Resting HR (bpm)", format: String, tone: "blue" },
-  { key: "vo2maxMlKgMin", label: "VO2 max (ml/kg/min)", format: String, tone: "green" },
-  { key: "stepsCount", label: "Steps", format: String, tone: "green" },
-  { key: "hrvSdnnMs", label: "HRV SDNN (ms)", format: String, tone: "orange" },
+  { key: "sleepScore", label: "Sleep score", format: wellnessCompactNumber, tone: "purple" },
+  { key: "hrvRmssdMs", label: "HRV (ms)", format: wellnessCompactNumber, tone: "orange" },
+  { key: "restingHeartRateBpm", label: "Resting HR (bpm)", format: wellnessCompactNumber, tone: "blue" },
+  { key: "vo2maxMlKgMin", label: "VO2 max (ml/kg/min)", format: wellnessCompactNumber, tone: "green" },
+  { key: "stepsCount", label: "Steps", format: (value) => String(Math.round(value)), tone: "green" },
+  { key: "hrvSdnnMs", label: "HRV SDNN (ms)", format: wellnessCompactNumber, tone: "orange" },
   { key: "sleepSeconds", label: "Sleep", format: wellnessSleepFormat, tone: "purple" },
-  { key: "avgSleepingHeartRateBpm", label: "Sleeping HR (bpm)", format: String, tone: "blue" },
-  { key: "sleepQuality", label: "Sleep quality", format: String, tone: "purple" },
-  { key: "spo2Percent", label: "SpO2 (%)", format: String, tone: "blue" },
-  { key: "fatigue", label: "Fatigue", format: String, tone: "orange" },
-  { key: "stress", label: "Stress", format: String, tone: "orange" },
-  { key: "soreness", label: "Soreness", format: String, tone: "orange" },
-  { key: "mood", label: "Mood", format: String, tone: "green" },
-  { key: "motivation", label: "Motivation", format: String, tone: "green" },
+  { key: "avgSleepingHeartRateBpm", label: "Sleeping HR (bpm)", format: wellnessCompactNumber, tone: "blue" },
+  { key: "sleepQuality", label: "Sleep quality", format: wellnessCompactNumber, tone: "purple" },
+  { key: "spo2Percent", label: "SpO2 (%)", format: (value) => value.toFixed(1), tone: "blue" },
+  { key: "fatigue", label: "Fatigue", format: wellnessCompactNumber, tone: "orange" },
+  { key: "stress", label: "Stress", format: wellnessCompactNumber, tone: "orange" },
+  { key: "soreness", label: "Soreness", format: wellnessCompactNumber, tone: "orange" },
+  { key: "mood", label: "Mood", format: wellnessCompactNumber, tone: "green" },
+  { key: "motivation", label: "Motivation", format: wellnessCompactNumber, tone: "green" },
 ];
 
-// Every metric curve shares one fourteen-day window ending today, so the header range always matches the trends shown.
+// All selected metrics share the actual data range within seven days of the latest measurement.
 export function wellnessHighlights(records: WellnessRecord[], today: string) {
-  const start = addDays(today, -13); const end = today;
-  const windowRecords = records.filter((record) => record.day >= start && record.day <= end).sort((left, right) => left.day.localeCompare(right.day));
+  const available = records.filter((record) => record.day <= today && wellnessPriority.some((item) => wellnessNumber(record, item.key) !== null));
+  const latestDay = available.map((record) => record.day).sort().at(-1);
+  if (!latestDay) return null;
+  const windowStart = addDays(latestDay, -6);
+  const windowRecords = available.filter((record) => record.day >= windowStart && record.day <= latestDay).sort((left, right) => left.day.localeCompare(right.day));
   const chosen: typeof wellnessPriority = [];
   for (const item of wellnessPriority) {
     if (windowRecords.some((record) => wellnessNumber(record, item.key) !== null)) chosen.push(item);
     if (chosen.length === 4) break;
   }
   if (!chosen.length) return null;
+  const days = windowRecords.filter((record) => chosen.some((item) => wellnessNumber(record, item.key) !== null)).map((record) => record.day);
+  const start = days[0]!; const end = days.at(-1)!;
+  const dayCount = Math.round((Date.parse(end) - Date.parse(start)) / 86400000) + 1;
   const values = chosen.map((item) => {
-    const series = windowRecords.flatMap((record) => { const value = wellnessNumber(record, item.key); return value === null ? [] : [value]; }).slice(-14);
-    const value = series.at(-1)!; const previous = series.at(-2);
-    return { ...item, display: item.format(value), delta: previous === undefined ? null : Number((value - previous).toFixed(1)), series };
+    const samples = windowRecords.flatMap((record) => { const value = wellnessNumber(record, item.key); return value === null ? [] : [{ value, day: record.day }]; });
+    const byDay = new Map(samples.map((sample) => [sample.day, sample.value]));
+    const series = Array.from({ length: dayCount }, (_, index) => byDay.get(addDays(start, index)) ?? null);
+    const value = byDay.get(end); const previous = samples.filter((sample) => sample.day < end).at(-1)?.value;
+    return { ...item, display: value === undefined ? "-" : item.format(value), measurementDay: end, delta: value === undefined || previous === undefined ? null : Number((value - previous).toFixed(1)), series };
   });
   return { start, end, values };
 }
@@ -178,13 +188,17 @@ export function mesocycleProgress(planned: CalendarSession[]) {
   return { completed, total, percent: total ? Math.round((completed / total) * 100) : 0 };
 }
 
-export function weeklyLoad(today: string, history: TrainingHistorySession[], planned: CalendarSession[], timezone: string) {
+export function weeklyLoad(today: string, history: TrainingHistorySession[], timezone: string) {
   const weekStart = overviewDateRange(today).weekStart;
+  const minutesByDay = new Map<string, number>();
+  history.forEach((session) => {
+    const day = localDay(session.startAt, timezone);
+    minutesByDay.set(day, (minutesByDay.get(day) ?? 0) + session.durationMinutes);
+  });
   return weekdayLabels.map((label, index) => {
     const day = addDays(weekStart, index);
-    const completed = history.filter((session) => localDay(session.startAt, timezone) === day).reduce((total, session) => total + session.durationMinutes, 0);
-    const scheduled = planned.filter((session) => session.scheduledDate === day && session.status === "planned").reduce((total, session) => total + session.durationMinutes, 0);
-    return { label, day, completed, scheduled };
+    const previousDay = addDays(day, -7);
+    return { label, day, previousDay, current: day <= today ? minutesByDay.get(day) ?? 0 : 0, previous: minutesByDay.get(previousDay) ?? 0 };
   });
 }
 
@@ -208,13 +222,15 @@ const sparklineBounds = { left: 4, right: 96, top: 5, bottom: 32, baseline: 39 }
 
 function pathNumber(value: number) { return Number(value.toFixed(3)); }
 
-export function sparklineGeometry(input: number[]) {
-  const values = input.filter(Number.isFinite).slice(-14);
-  if (!values.length) return null;
+export function sparklineGeometry(input: (number | null)[]) {
+  const slots = input.slice(-7);
+  const samples = slots.flatMap((value, index) => value !== null && Number.isFinite(value) ? [{ value, index }] : []);
+  if (!samples.length) return null;
+  const values = samples.map((sample) => sample.value);
   const min = Math.min(...values); const max = Math.max(...values); const spread = max - min;
   const width = sparklineBounds.right - sparklineBounds.left;
-  const points = values.map((value, index) => ({
-    x: values.length === 1 ? (sparklineBounds.left + sparklineBounds.right) / 2 : sparklineBounds.left + index / (values.length - 1) * width,
+  const points = samples.map(({ value, index }) => ({
+    x: slots.length === 1 ? (sparklineBounds.left + sparklineBounds.right) / 2 : sparklineBounds.left + index / (slots.length - 1) * width,
     y: spread === 0 ? (sparklineBounds.top + sparklineBounds.bottom) / 2 : sparklineBounds.bottom - (value - min) / spread * (sparklineBounds.bottom - sparklineBounds.top),
   }));
   if (points.length === 1) return { linePath: `M ${pathNumber(points[0]!.x)} ${pathNumber(points[0]!.y)}`, areaPath: null, points };
@@ -241,10 +257,10 @@ export function sparklineGeometry(input: number[]) {
     const next = points[index + 1]!; const segment = next.x - point.x;
     linePath += ` C ${pathNumber(point.x + segment / 3)} ${pathNumber(point.y + tangents[index]! * segment / 3)} ${pathNumber(next.x - segment / 3)} ${pathNumber(next.y - tangents[index + 1]! * segment / 3)} ${pathNumber(next.x)} ${pathNumber(next.y)}`;
   });
-  return { linePath, areaPath: `${linePath} L ${sparklineBounds.right} ${sparklineBounds.baseline} L ${sparklineBounds.left} ${sparklineBounds.baseline} Z`, points };
+  return { linePath, areaPath: `${linePath} L ${pathNumber(points.at(-1)!.x)} ${sparklineBounds.baseline} L ${pathNumber(points[0]!.x)} ${sparklineBounds.baseline} Z`, points };
 }
 
-function Sparkline({ values }: { values: number[] }) {
+function Sparkline({ values }: { values: (number | null)[] }) {
   const uid = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const gradientId = `wellness-spark-${uid}`;
   const sideFadeId = `wellness-spark-side-${uid}`;
@@ -260,13 +276,6 @@ function Sparkline({ values }: { values: number[] }) {
     {geometry.areaPath && <path className="sparkline-area" fill={`url(#${gradientId})`} mask={`url(#${maskId})`} d={geometry.areaPath}/>} 
     {geometry.points.length === 1 ? <circle cx={geometry.points[0]!.x} cy={geometry.points[0]!.y} r="2.2"/> : <path className="sparkline-line" d={geometry.linePath}/>} 
   </svg>;
-}
-
-function wellnessDeltaTone(key: WellnessKey, delta: number | null) {
-  if (delta === null || delta === 0) return "neutral";
-  const lowerIsBetter = key === "restingHeartRateBpm" || key === "avgSleepingHeartRateBpm";
-  const favorable = lowerIsBetter ? delta < 0 : delta > 0;
-  return favorable ? "favorable" : "unfavorable";
 }
 
 function OverviewIcon({ kind }: { kind: "workout" | "target" | "recovery" | (typeof domainOrder)[number] }) {
@@ -357,7 +366,7 @@ export function AdjustmentReviewNotice({ value }: { value: AdjustmentAssessment 
 export function OverviewDashboard({ summary, wellness, history, planned, today, timezone, adjustment }: { summary: TrainingSummary; wellness: WellnessRecord[]; history: TrainingHistorySession[]; planned: CalendarSession[]; today: string; timezone: string; adjustment?: AdjustmentAssessment | undefined }) {
   const [visibleMonth, setVisibleMonth] = useState(today.slice(0, 7));
   const [helpOpen, setHelpOpen] = useState(false);
-  const wellnessData = wellnessHighlights(wellness, today); const recovery = recoveryStatus(wellness); const week = weeklyOverview(today, history, planned, timezone); const load = weeklyLoad(today, history, planned, timezone);
+  const wellnessData = wellnessHighlights(wellness, today); const recovery = recoveryStatus(wellness); const week = weeklyOverview(today, history, planned, timezone); const load = weeklyLoad(today, history, timezone);
   const calendarAnchor = `${visibleMonth}-01`; const days = calendarDays(calendarAnchor, history, planned, timezone);
   const monthLabel = new Intl.DateTimeFormat(currentLanguage(), { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${visibleMonth}-01T12:00:00Z`));
   const monthCompleted = new Set(history.map((session) => localDay(session.startAt, timezone)).filter((day) => day.startsWith(`${visibleMonth}-`)));
@@ -367,7 +376,7 @@ export function OverviewDashboard({ summary, wellness, history, planned, today, 
   const maxDomainDuration = Math.max(1, ...domainOrder.map((domain) => summary.durationMinutesByDomain[domain] ?? 0));
   const completedSeries = load.map((item) => week.current.filter((session) => localDay(session.startAt, timezone) === item.day).length);
   const consistencyDays = twelveWeekConsistency(today, history, timezone);
-  const maxLoad = Math.max(0, ...load.map((item) => item.completed + item.scheduled)); const loadCeiling = Math.max(30, Math.ceil(maxLoad / 30) * 30);
+  const maxLoad = Math.max(0, ...load.flatMap((item) => [item.current, item.previous])); const loadCeiling = Math.max(30, Math.ceil(maxLoad / 30) * 30);
   const incomplete = summary.metrics.strength.workingSets.dataQuality.completeness < 1 || summary.metrics.endurance.distanceMeters.dataQuality.completeness < 1;
 
   return <div className="overview-dashboard">
@@ -389,19 +398,23 @@ export function OverviewDashboard({ summary, wellness, history, planned, today, 
       </section>
 
       <section className="overview-panel overview-calendar"><header><h2>{monthLabel}</h2><div className="calendar-controls"><button type="button" aria-label={tr("Previous month")} onClick={() => setVisibleMonth((value) => monthShift(value, -1))}><span aria-hidden="true">‹</span></button><button type="button" aria-label={tr("Next month")} onClick={() => setVisibleMonth((value) => monthShift(value, 1))}><span aria-hidden="true">›</span></button></div></header>
-        <div className="mini-calendar" aria-label={`${monthLabel} training calendar`}>{weekdayLabels.map((label, index) => <span className="mini-weekday" key={label}>{weekdayName(index, currentLanguage(), "short")}</span>)}{days.map((item, index) => <span className={`mini-day ${item.day === today ? "today" : ""}`} key={item.day ?? `blank-${index}`}>{item.day ? Number(item.day.slice(-2)) : ""}{item.markers.length > 0 && <span className="mini-day-markers">{item.markers.map((marker) => <i key={marker} className={marker} aria-label={tr(marker === "completed" ? "Completed training" : marker === "planned" ? "Scheduled training" : "Skipped plan")}/>)}</span>}</span>)}</div>
-        <div className="calendar-legend"><span><i className="completed"/><T>{"Completed"}</T></span><span><i className="planned"/><T>{"Scheduled"}</T></span><span><i className="skipped"/><T>{"Skipped plan"}</T></span></div>
+        <div className="mini-calendar" aria-label={`${monthLabel} training calendar`}>{weekdayLabels.map((label, index) => <span className="mini-weekday" key={label}>{weekdayName(index, currentLanguage(), "short")}</span>)}{days.map((item, index) => <span className={`mini-day ${item.day === today ? "today" : ""}`} key={item.day ?? `blank-${index}`}>{item.day ? Number(item.day.slice(-2)) : ""}{item.markers.length > 0 && <span className="mini-day-markers">{item.markers.map((marker) => <i key={marker} className={marker} aria-label={tr(marker === "completed" ? "Completed training" : "Scheduled training")}/>)}</span>}</span>)}</div>
+        <div className="calendar-legend"><span><i className="completed"/><T>{"Completed"}</T></span><span><i className="planned"/><T>{"Scheduled"}</T></span></div>
       </section>
 
       <div className="overview-lower-grid"><section className="overview-panel training-load"><header><div><h2><T>{"Training Load"}</T></h2></div><strong>{formatDuration(summary.totalDurationMinutes)}</strong><Change value={week.durationPercent} suffix="% from last week" stacked/><p><T>{"Your weekly training time"}</T></p></header>
-        <div className="load-chart"><div className="load-axis"><span>{loadAxisLabel(loadCeiling)}</span><span>{loadAxisLabel(loadCeiling / 2)}</span><span>0h</span></div><div className="load-bars">{load.map((item) => <div className="load-day" key={item.day}><span className="load-stack" style={{ height: `${((item.completed + item.scheduled) / loadCeiling) * 100}%` }}><i className="load-planned" style={{ height: `${item.completed + item.scheduled ? item.scheduled / (item.completed + item.scheduled) * 100 : 0}%` }}/><i className="load-completed" style={{ height: `${item.completed + item.scheduled ? item.completed / (item.completed + item.scheduled) * 100 : 0}%` }}/></span><small>{tr(item.label)}</small></div>)}</div></div>
+        <div className="load-chart"><div className="load-axis"><span>{loadAxisLabel(loadCeiling)}</span><span>{loadAxisLabel(loadCeiling / 2)}</span><span>0h</span></div><div className="load-bars">{load.map((item) => {
+          const description = `${tr(item.label)} · ${tr("This week")} (${item.day}): ${item.current} ${tr("min")} · ${tr("Last week")} (${item.previousDay}): ${item.previous} ${tr("min")}`;
+          return <div className="load-day" key={item.day} title={description} aria-label={description} tabIndex={0}><span className="load-comparison" aria-hidden="true">{item.previous > 0 && <i className="load-previous" style={{ height: `${item.previous / loadCeiling * 100}%` }}/>}{item.current > 0 && <i className="load-current" style={{ height: `${item.current / loadCeiling * 100}%` }}/>}</span><small>{tr(item.label)}</small></div>;
+        })}</div></div>
+        <div className="load-legend"><span><i className="load-current"/><T>{"This week"}</T></span><span><i className="load-previous"/><T>{"Last week"}</T></span></div>
       </section>
       <section className="overview-panel consistency"><header><div><h2><T>{"Consistency"}</T></h2><p><T>{"Active days this month"}</T></p></div><strong>{monthCompleted.size} / {monthDays}</strong></header>
         <div className="consistency-grid" data-range="twelve-weeks" aria-label={tr("Training consistency over the last twelve weeks")}>{consistencyDays.filter((item) => !item.future).map((item) => <i key={item.day} className={item.active ? "active" : ""} title={item.day}/>)}</div>
         <div className="consistency-note"><TrophyIcon/><div><strong>{tr(monthCompleted.size ? "Nice consistency!" : "Your month starts here")}</strong><small>{monthCompleted.size ? currentLanguage() === "zh-CN" ? `本月已活跃 ${monthCompleted.size} 天。` : `You've been active ${monthCompleted.size} day${monthCompleted.size === 1 ? "" : "s"} this month.` : tr("Complete a workout to begin your streak.")}</small></div></div>
       </section></div>
       <section className="overview-panel overview-wellness"><header><h2><T>{"Wellness"}</T></h2>{wellnessData && <time dateTime={wellnessData.end}>{formatWellnessRange(wellnessData.start, wellnessData.end)}</time>}</header>
-        {!wellnessData ? <p className="overview-empty"><T>{"No wellness data yet."}</T><br/><T>{"Connect to a data source or record with your AI agent."}</T></p> : <div className="wellness-grid">{wellnessData.values.map((item) => <article className={`wellness-${item.tone}`} key={item.key}><div className="wellness-copy"><span>{tr(item.label)}</span><strong>{item.display}</strong><small className={wellnessDeltaTone(item.key, item.delta)}>{item.delta === null ? tr("No earlier value") : currentLanguage() === "zh-CN" ? `${item.delta > 0 ? "↑" : item.delta < 0 ? "↓" : "→"} 较上次 ${Math.abs(item.delta)}` : `${item.delta > 0 ? "↑" : item.delta < 0 ? "↓" : "→"} ${Math.abs(item.delta)} from previous`}</small></div><Sparkline values={item.series}/></article>)}</div>}
+        {!wellnessData ? <p className="overview-empty"><T>{"No wellness data yet."}</T><br/><T>{"Connect to a data source or record with your AI agent."}</T></p> : <div className="wellness-grid">{wellnessData.values.map((item) => <article className={`wellness-${item.tone}`} key={item.key}><div className="wellness-copy"><span>{tr(item.label)}</span><strong title={item.display}>{item.display}</strong><small className="neutral"><time dateTime={item.measurementDay}>{formatWellnessDate(item.measurementDay)}</time></small></div><Sparkline values={item.series}/></article>)}</div>}
       </section></div>
       {helpOpen && <RecoveryHelpModal onClose={() => setHelpOpen(false)}/>}
   </div>;

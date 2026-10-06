@@ -1,4 +1,4 @@
-import { T, tr } from "../i18n";
+import { T, tr, currentLanguage } from "../i18n";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatDuration, friendlyLabel, type CalendarSession, type CurrentPlan, type StoredSessionTemplate } from "../view-models";
 import { domainIconPath } from "../domain-icons";
@@ -144,6 +144,7 @@ interface WeekRowProps {
 }
 
 function weekSummary(week: CalendarWeek): string {
+  const zh = currentLanguage() === "zh-CN";
   const sessions = week.days.flatMap((day) => day.sessions);
   let enduranceMeters = 0; let enduranceMinutes = 0; let strengthSets = 0; let sport = 0; let recovery = 0;
   for (const session of sessions) {
@@ -156,7 +157,7 @@ function weekSummary(week: CalendarWeek): string {
       if (component.prescription.kind === "strength") strengthSets += component.prescription.exercises.reduce((sum, exercise) => sum + exercise.sets, 0);
     }
   }
-  return [enduranceMeters ? `${Math.round(enduranceMeters / 100) / 10} km` : enduranceMinutes ? `${enduranceMinutes} min` : null, strengthSets ? `${strengthSets} sets` : null, sport ? `${sport} sport` : null, recovery ? `${recovery} recovery` : null].filter(Boolean).join(" · ");
+  return [enduranceMeters ? `${Math.round(enduranceMeters / 100) / 10} ${zh ? "公里" : "km"}` : enduranceMinutes ? `${enduranceMinutes} ${zh ? "分钟" : "min"}` : null, strengthSets ? `${strengthSets} ${zh ? "组" : "sets"}` : null, sport ? `${sport} ${zh ? "次运动技能训练" : "sport"}` : null, recovery ? `${recovery} ${zh ? "次恢复训练" : "recovery"}` : null].filter(Boolean).join(" · ");
 }
 
 function compactWeekRange(startDate: string, endDate: string): string {
@@ -183,7 +184,7 @@ const WeekRow = memo(function WeekRow({ week, expanded, isCurrent, today, select
         >
           <span className="wc-week-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="m8 10 4 4 4-4"/></svg></span>
           <span className="wc-week-title">{title}</span>
-          <span className="wc-week-summary">{weekSummary(week) || `${sessionCount} session${sessionCount === 1 ? "" : "s"}`}</span>
+          <span className="wc-week-summary">{weekSummary(week) || (currentLanguage() === "zh-CN" ? `${sessionCount} 次训练` : `${sessionCount} session${sessionCount === 1 ? "" : "s"}`)}</span>
         </button>
       </div>
       {expanded && (
@@ -246,13 +247,13 @@ export function WeeklyCalendar({ plan, sessions, today, onSelectSession, selecte
   const first = weeks.at(0);
   const last = weeks.at(-1);
   const overallRange = first && last ? compactWeekRange(first.startDate, last.endDate) : "";
-  const durationLabel = `${durationWeeks} week${durationWeeks === 1 ? "" : "s"}`;
+  const durationLabel = `${durationWeeks} ${tr(durationWeeks === 1 ? "week" : "weeks")}`;
 
   return (
     <section className="wc-calendar" ref={rootRef} aria-label={tr("Weekly training calendar")}>
       <div className="wc-toolbar">
         <div className="wc-toolbar-text">
-          <h3 className="wc-heading"><T>{"Weekly Calendar"}</T></h3>
+          <h3 className="wc-heading"><T>{"Training Calendar"}</T></h3>
           <span className="wc-subheading">{overallRange}{overallRange ? ` (${durationLabel})` : durationLabel}</span>
         </div>
         <div className="wc-status-legend" aria-label={tr("Session status legend")}>

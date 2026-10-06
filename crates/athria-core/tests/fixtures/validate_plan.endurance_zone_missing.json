@@ -13,7 +13,7 @@
         "general_fitness"
       ],
       "preference": "",
-      "maxSessionMinutes": 60,
+      "usualSessionMinutes": 60,
       "trainingRhythm": {
         "kind": "fixed_week",
         "days": [
@@ -267,22 +267,6 @@
         "confidenceLimit": null
       },
       {
-        "enforcement": "advisory",
-        "reasonCode": "MAX_SESSION_DURATION",
-        "status": "pass",
-        "rulePackId": "structure",
-        "ruleVersion": "0.3.0",
-        "subjectRefs": [
-          "mon-endurance"
-        ],
-        "evidence": {
-          "durationMinutes": 60,
-          "maximum": 60
-        },
-        "missingFacts": [],
-        "confidenceLimit": null
-      },
-      {
         "enforcement": "blocker",
         "reasonCode": "COMPONENT_PRESCRIPTION",
         "status": "pass",
@@ -377,7 +361,7 @@
     ],
     "dataGaps": [],
     "validatedAt": "2026-09-17T10:30:00.000Z",
-    "inputHash": "fnv1a-57bd8dc0",
+    "inputHash": "fnv1a-f01c9702",
     "coverage": {
       "hardChecksResolved": 6,
       "hardChecksTotal": 6,

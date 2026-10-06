@@ -212,10 +212,6 @@ fn profile_change_facts(profile: &Value, plan: &Value, results: &[Value]) -> Pro
             ProfileConstraintKind::TrainingRhythm,
             "PROFILE_TRAINING_RHYTHM",
         ),
-        (
-            ProfileConstraintKind::MaxSessionDuration,
-            "MAX_SESSION_DURATION",
-        ),
         (ProfileConstraintKind::Equipment, "EXERCISE_EQUIPMENT"),
         (
             ProfileConstraintKind::ExplicitRecoveryDays,

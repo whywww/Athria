@@ -297,77 +297,6 @@ fn phase_refs_for_session(plan: &Value, week_number: i64, components: &Value) ->
     Ok(Value::Array(refs))
 }
 
-/// `plannedDatesFollowProfile`: whether a proposed set of occurrences still
-/// satisfies the Profile training rhythm.
-fn planned_dates_follow_profile(profile: &Value, plan: &Value, sessions: &[Value]) -> bool {
-    let mut dates: Vec<&str> = sessions
-        .iter()
-        .filter_map(|session| session["scheduledDate"].as_str())
-        .collect();
-    dates.sort_unstable();
-    dates.dedup();
-    let rhythm = &profile["trainingRhythm"];
-    let duration_weeks = plan["mesocycle"]["durationWeeks"].as_i64().unwrap_or(0);
-    let week_dates = |week_number: i64| -> Vec<&str> {
-        let mut found: Vec<&str> = sessions
-            .iter()
-            .filter(|session| session["weekNumber"].as_i64() == Some(week_number))
-            .filter_map(|session| session["scheduledDate"].as_str())
-            .collect();
-        found.sort_unstable();
-        found.dedup();
-        found
-    };
-    match rhythm["kind"].as_str().unwrap_or("") {
-        "fixed_week" => {
-            let mut days: Vec<u32> = rhythm["days"]
-                .as_array()
-                .map(|days| {
-                    days.iter()
-                        .filter_map(Value::as_u64)
-                        .map(|day| day as u32)
-                        .collect()
-                })
-                .unwrap_or_default();
-            days.sort_unstable();
-            let expected = days
-                .iter()
-                .map(u32::to_string)
-                .collect::<Vec<_>>()
-                .join(",");
-            (1..=duration_weeks).all(|week_number| {
-                let mut weekdays: Vec<u32> = week_dates(week_number)
-                    .iter()
-                    .map(|date| monday_weekday(date))
-                    .collect();
-                weekdays.sort_unstable();
-                weekdays.dedup();
-                weekdays
-                    .iter()
-                    .map(u32::to_string)
-                    .collect::<Vec<_>>()
-                    .join(",")
-                    == expected
-            })
-        }
-        "flexible_week" => {
-            let min_days = rhythm["minDaysPerWeek"].as_i64().unwrap_or(0);
-            let max_days = rhythm["maxDaysPerWeek"].as_i64().unwrap_or(0);
-            (1..=duration_weeks).all(|week_number| {
-                let count = week_dates(week_number).len() as i64;
-                count >= min_days && count <= max_days
-            })
-        }
-        _ => {
-            let interval_days = rhythm["intervalDays"].as_i64().unwrap_or(0);
-            dates.first().copied() == plan["effectiveStartDate"].as_str()
-                && dates.iter().enumerate().all(|(index, date)| {
-                    index == 0 || day_difference(dates[index - 1], date) == interval_days
-                })
-        }
-    }
-}
-
 /// `blockerFailureMessage(validation)`: the plan-save error summary.
 fn blocker_failure_message(validation: &PlanValidation) -> String {
     let failed: Vec<&Value> = validation
@@ -2416,20 +2345,6 @@ impl<S: AthriaStore> AthriaApplication<S> {
                     "Choose a different date for the planned session.",
                 ));
             }
-            let occurrence_id = string_field(current, "occurrenceId");
-            if plan["mesocycle"]["schedule"]["kind"].as_str() != Some("interval")
-                && sessions.iter().any(|session| {
-                    session["status"].as_str() == Some("planned")
-                        && session["occurrenceId"].as_str() != Some(occurrence_id)
-                        && session["scheduledDate"].as_str() == Some(scheduled_date.as_str())
-                })
-            {
-                return Err(failure(
-                    AthriaErrorCode::TrainingDayConflict,
-                    "Another planned training day already uses that date.",
-                    409,
-                ));
-            }
             let effective_start = string_field(&plan, "effectiveStartDate");
             let plan_end = add_days(
                 effective_start,
@@ -2459,44 +2374,6 @@ impl<S: AthriaStore> AthriaApplication<S> {
             );
             moved.insert("updatedAt".into(), Value::String(timestamp.clone()));
             let moved = Value::Object(moved);
-            let proposed: Vec<Value> = sessions
-                .iter()
-                .map(|session| {
-                    if session["id"] == moved["id"] {
-                        moved.clone()
-                    } else {
-                        session.clone()
-                    }
-                })
-                .collect();
-            if !planned_dates_follow_profile(&self.get_profile()?, &plan, &proposed) {
-                return Err(failure(
-                    AthriaErrorCode::ProfileTrainingRhythm,
-                    "The moved training day would break your Profile training rhythm.",
-                    409,
-                ));
-            }
-            if let Some(required) = self.get_profile()?["explicitRecoveryDays"].as_i64() {
-                let mut high_dates: Vec<&str> = proposed
-                    .iter()
-                    .filter(|session| {
-                        session["status"].as_str() != Some("skipped")
-                            && session["recoveryDemand"].as_str() == Some("high")
-                    })
-                    .filter_map(|session| session["scheduledDate"].as_str())
-                    .collect();
-                high_dates.sort_unstable();
-                high_dates.dedup();
-                for pair in high_dates.windows(2) {
-                    if day_difference(pair[0], pair[1]).abs() < required {
-                        return Err(failure(
-                            AthriaErrorCode::ExplicitRecoveryInterval,
-                            "The moved training day is too close to another high-recovery-demand session.",
-                            409,
-                        ));
-                    }
-                }
-            }
             updates = vec![moved];
         }
         let reason = input
@@ -2620,33 +2497,6 @@ impl<S: AthriaStore> AthriaApplication<S> {
             candidate.insert("createdAt".into(), Value::String(timestamp.clone()));
             candidate.insert("updatedAt".into(), Value::String(timestamp.clone()));
             sessions.push(parse_planned_session(&Value::Object(candidate))?);
-        }
-        let profile = self.get_profile()?;
-        if let Some(required) = profile["explicitRecoveryDays"].as_i64() {
-            if sessions
-                .iter()
-                .any(|session| session["recoveryDemand"].as_str() == Some("high"))
-            {
-                let closest = self
-                    .store
-                    .list_current_planned_sessions(&self.owner_id, None)?
-                    .iter()
-                    .filter(|session| {
-                        session["recoveryDemand"].as_str() == Some("high")
-                            && session["status"].as_str() != Some("skipped")
-                            && session["scheduledDate"].as_str() != Some(scheduled_date.as_str())
-                    })
-                    .filter_map(|session| session["scheduledDate"].as_str())
-                    .map(|date| day_difference(date, &scheduled_date).abs())
-                    .min();
-                if closest.is_some_and(|closest| closest < required) {
-                    return Err(failure(
-                        AthriaErrorCode::ExplicitRecoveryInterval,
-                        "The high-recovery-demand sessions are too close together.",
-                        409,
-                    ));
-                }
-            }
         }
         Ok((input, sessions, next_day))
     }

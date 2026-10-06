@@ -1,3 +1,5 @@
+import { notify, notifyError, useOperationError } from "../toasts";
+import { captureMainScroll } from "../scroll-position";
 import { T } from "../i18n";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -66,7 +68,7 @@ export function TemplateLibrary({ onBack, preferredName }: { onBack: () => void;
   const taxonomy = useQuery({ queryKey: ["training-taxonomy"], queryFn: () => api<TrainingTaxonomy>("/api/training-taxonomy") });
   const [editing, setEditing] = useState<{ template: SessionTemplate; revision?: number; mode: TemplateEditorMode } | null>(null);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<unknown>();
+  const [, setError] = useOperationError();
   const begin = (value: StoredSessionTemplate | SessionTemplate, mode: TemplateEditorMode) => {
     const template = editableTemplate(value);
     const revision = "origin" in value && value.origin === "user" ? value.revision : undefined;
@@ -95,13 +97,13 @@ export function TemplateLibrary({ onBack, preferredName }: { onBack: () => void;
       await api(`/api/templates/${encodeURIComponent(item.id)}`, init);
       await client.invalidateQueries({ queryKey: ["templates"] });
     }
-    catch (value) { setError(value); }
+    catch (value) { notifyError(value); }
   };
   return <div className="plan-page template-library">
     <PrimaryPageHeader preferredName={preferredName} subtitle="Reusable workout patterns you can create, edit or delete." actions={<div className="actions"><button type="button" className="secondary template-library-back" onClick={onBack}><TemplateBackIcon/><T>{"Back to plan"}</T></button><button type="button" className="template-library-create" onClick={() => begin(emptyTemplate(), "create")}><TemplatePlusIcon/><T>{"Create template"}</T></button></div>}/>
-    <ErrorBanner error={query.error ?? (editing ? undefined : error)}/>
+    <ErrorBanner error={query.error}/>
     {query.isPending ? <Loading/> : !query.data?.length ? <EmptyState title={t("No templates yet.")}/> : <div className="template-library-grid">{query.data.map((item: StoredSessionTemplate) => <TemplateCard key={item.id} item={displayBuiltinTemplate(item, language)} onEdit={(value) => begin(value, "edit")} onRemove={remove}/>)}</div>}
-    {editing && <TemplateEditorModal value={{ template: editing.template, mode: editing.mode }} taxonomy={taxonomy.data} error={error ?? taxonomy.error} busy={saving} onChange={(template) => setEditing((current) => current ? { ...current, template } : current)} onClose={() => setEditing(null)} onSave={() => void save()}/>}
+    {editing && <TemplateEditorModal value={{ template: editing.template, mode: editing.mode }} taxonomy={taxonomy.data} error={taxonomy.error} busy={saving} onChange={(template) => setEditing((current) => current ? { ...current, template } : current)} onClose={() => setEditing(null)} onSave={() => void save()}/>}
   </div>;
 }
 
@@ -111,7 +113,16 @@ function CurrentPlanView({ plan, templates, profile }: { plan: CurrentPlan; temp
   const today = localDateForTimezone(profile.timezone);
   const durationWeeks = plan.mesocycle.durationWeeks;
   const position = planPosition(plan.effectiveStartDate, today, durationWeeks);
-  const storageKey = `athria:plan:${plan.revision}`;
+  const storageKey = `athria:plan:${plan.ownerId}:${plan.effectiveStartDate}:${durationWeeks}`;
+  for (const suffix of ["scroll", "weeks", "session"]) {
+    if (sessionStorage.getItem(`${storageKey}:${suffix}`) === null) {
+      const previous = sessionStorage.getItem(`athria:plan:${plan.revision}:${suffix}`);
+      if (previous !== null) {
+        sessionStorage.setItem(`${storageKey}:${suffix}`, previous);
+        sessionStorage.removeItem(`athria:plan:${plan.revision}:${suffix}`);
+      }
+    }
+  }
   const calendarQuery = useQuery({
     queryKey: ["calendar", plan.effectiveStartDate, durationWeeks],
     queryFn: () => api<CalendarSession[]>(`/api/plans/calendar?from=${plan.effectiveStartDate}&to=${addDays(plan.effectiveStartDate, durationWeeks * 7 - 1)}`),
@@ -128,15 +139,16 @@ function CurrentPlanView({ plan, templates, profile }: { plan: CurrentPlan; temp
   const requestWeek = (weekNumber: number) => { setScrollToWeek(null); requestAnimationFrame(() => setScrollToWeek(weekNumber)); };
   const handleSelectSession = (sessionId: string, triggerEl: HTMLElement | null) => { setSelectedSessionId(sessionId); sessionStorage.setItem(`${storageKey}:session`, sessionId); triggerRef.current = triggerEl; };
   const selectedSession = calendarSessions.find((session: CalendarSession) => session.id === selectedSessionId) ?? null;
-  const refresh = () => { void client.invalidateQueries({ queryKey: ["calendar"] }); void client.invalidateQueries({ queryKey: ["next-training-day"] }); void client.invalidateQueries({ queryKey: ["current-plan"] }); };
+  const refresh = async () => { await Promise.all(["calendar", "next-training-day", "current-plan"].map((key) => client.invalidateQueries({ queryKey: [key] }))); };
   useEffect(() => {
     const main = document.querySelector("main"); if (!main) return;
+    if (calendarQuery.isPending) return;
     const saved = Number(sessionStorage.getItem(`${storageKey}:scroll`) ?? "0");
-    requestAnimationFrame(() => { main.scrollTop = saved; });
+    const frame = requestAnimationFrame(() => { main.scrollTop = Math.min(saved, Math.max(0, main.scrollHeight - main.clientHeight)); });
     const saveScroll = () => sessionStorage.setItem(`${storageKey}:scroll`, String(main.scrollTop));
     main.addEventListener("scroll", saveScroll, { passive: true });
-    return () => { saveScroll(); main.removeEventListener("scroll", saveScroll); };
-  }, [storageKey]);
+    return () => { cancelAnimationFrame(frame); main.removeEventListener("scroll", saveScroll); };
+  }, [storageKey, calendarQuery.isPending]);
   return <>
     {/* Layer 1 — Mesocycle Target (§5) */}
     <MesocycleTarget plan={plan} today={today} currentWeek={currentWeek} currentPhaseNames={currentPhaseNames} status={position.state === "completed" ? "completed" : position.state === "future" ? "upcoming" : "current"} />
@@ -153,24 +165,34 @@ export function NextTrainingDayCard({ value, plan }: { value: NextTrainingDay | 
   const t = useT();
   const client = useQueryClient();
   const day = value?.nextTrainingDay;
-  const [error, setError] = useState<unknown>(); const [busy, setBusy] = useState(false);
-  const tomorrow = day ? new Date(`${day.scheduledDate}T12:00:00Z`) : null;
-  if (tomorrow) tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-  const [moveDate, setMoveDate] = useState(tomorrow?.toISOString().slice(0, 10) ?? "");
+  const [, setError] = useOperationError(); const [busy, setBusy] = useState(false);
+  const [moveDate, setMoveDate] = useState(day?.scheduledDate ?? "");
   const [postponeId, setPostponeId] = useState<string | null>(null);
-  useEffect(() => { if (!day) return; const date = new Date(`${day.scheduledDate}T12:00:00Z`); date.setUTCDate(date.getUTCDate() + 1); setMoveDate(date.toISOString().slice(0, 10)); setPostponeId(null); }, [day?.occurrenceId, day?.scheduledDate]);
+  useEffect(() => { setMoveDate(day?.scheduledDate ?? ""); setPostponeId(null); }, [day?.occurrenceId, day?.scheduledDate]);
   const refresh = async () => { await Promise.all(["next-training-day", "current-plan", "calendar", "sessions", "summary", "state"].map((key) => client.invalidateQueries({ queryKey: [key] }))); };
-  const act = async (id: string, update: Record<string, unknown>) => { setBusy(true); setError(undefined); try { await api(`/api/planned-sessions/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ ...update, expectedRevision: day!.revision }) }); await refresh(); } catch (value) { setError(value); } finally { setBusy(false); } };
+  const act = async (id: string, update: Record<string, unknown>) => {
+    const restoreScroll = captureMainScroll();
+    setBusy(true); setError(undefined);
+    try {
+      await api(`/api/planned-sessions/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ ...update, expectedRevision: day!.revision }) });
+      if (update.action === "move_occurrence") {
+        notify(t("Workout moved to {date}.").replace("{date}", String(update.scheduledDate)), "success");
+        setPostponeId(null);
+      }
+      await refresh(); restoreScroll();
+    } catch (value) { setError(value); } finally { setBusy(false); }
+  };
   if (!day) return <section className="success next-day-complete"><strong><T>{"Plan up to date"}</T></strong><span>{t(value?.reasonCode === "PLAN_ENDED" ? "There are no unfinished training sessions remaining in this mesocycle." : "No upcoming training day is currently available.")}</span></section>;
-  const isToday = day.scheduledDate === localDateForTimezone(day.timezone);
+  const today = localDateForTimezone(day.timezone);
+  const isToday = day.scheduledDate === today;
   const phaseSummary = day.domainPhases.map((phase) => `${friendlyLabel(phase.domain)} ${phase.name}`).join(" / ");
   const planEnd = plan ? addDays(plan.effectiveStartDate, plan.mesocycle.durationWeeks * 7 - 1) : undefined;
+  const moveOutsidePlan = Boolean(plan && moveDate && (moveDate < plan.effectiveStartDate || (planEnd && moveDate > planEnd)));
   return <section className="mesocycle-card next-training-day">
     <div className="proposal-heading"><div><div><h2>{t(isToday ? "Today" : "Next Training Day")}</h2><p>{localizedWeekdays()[day.dayOfWeek]} · {day.scheduledDate} · {currentLanguage() === "zh-CN" ? `第 ${day.weekNumber} 周` : `Week ${day.weekNumber}`}{phaseSummary ? ` · ${phaseSummary}` : ""}</p></div></div></div>
-    <ErrorBanner error={error}/>
     <div className="session-list">{day.existingSessions.map((session) => <article className={`session-card ${session.status}`} key={session.id}>
       {session.components.length > 0 ? <div className="next-prescriptions">{session.components.map((component) => <Prescription component={component} variant="detailed" fallbackNotes={session.intent} summary={session.intent} meta={formatDuration(session.durationMinutes)} key={component.id}/>)}</div> : <p className="next-prescription-empty"><T>{"No structured prescription is available for this session."}</T></p>}
-      {session.status === "planned" && <><div className="actions"><button disabled={busy || !isToday} title={!isToday ? "Move this session to the date you completed it first." : undefined} onClick={() => void act(session.id, { action: "complete" })}>✓ Add as completed workout</button><button className="secondary" disabled={busy} onClick={() => void act(session.id, { action: "skip" })}><T>{"Skip"}</T></button><button className="secondary" disabled={busy} aria-expanded={postponeId === session.id} aria-controls={`postpone-panel-${session.id}`} onClick={() => { if (postponeId === session.id) { setPostponeId(null); return; } const next = new Date(`${day.scheduledDate}T12:00:00Z`); next.setUTCDate(next.getUTCDate() + 1); setMoveDate(next.toISOString().slice(0, 10)); setPostponeId(session.id); }}><T>{"Move"}</T></button></div>{!isToday && <small><T>{"Move this plan to the date it was completed before adding a completed workout."}</T></small>}{postponeId === session.id && <div className="postpone-panel" id={`postpone-panel-${session.id}`}><label><T>{"Move to date"}</T><input type="date" min={plan?.effectiveStartDate} max={planEnd} value={moveDate} onChange={(event) => setMoveDate(event.target.value)}/></label><button className="secondary" disabled={busy || !moveDate || moveDate === day.scheduledDate} onClick={() => void act(session.id, { action: "move_occurrence", scheduledDate: moveDate })}><T>{"Confirm move"}</T></button></div>}</>}
+      {session.status === "planned" && <><div className="actions"><button disabled={busy || !isToday} title={day.scheduledDate > today ? t("This is a future workout. Move it to your planned date first.") : undefined} onClick={() => void act(session.id, { action: "complete" })}><T>{"Complete"}</T></button><button className="secondary" disabled={busy} onClick={() => void act(session.id, { action: "skip" })}><T>{"Skip"}</T></button><button className="secondary" disabled={busy} aria-expanded={postponeId === session.id} aria-controls={`postpone-panel-${session.id}`} onClick={() => { if (postponeId === session.id) { setPostponeId(null); return; } setMoveDate(day.scheduledDate); setPostponeId(session.id); }}><T>{"Move"}</T></button></div>{postponeId === session.id && <div className="postpone-panel" id={`postpone-panel-${session.id}`}><label><T>{"Move to date"}</T><input type="date" min={plan?.effectiveStartDate} max={planEnd} value={moveDate} onChange={(event) => setMoveDate(event.target.value)}/></label><button className="secondary" disabled={busy || moveOutsidePlan || !moveDate || moveDate === day.scheduledDate} onClick={() => void act(session.id, { action: "move_occurrence", scheduledDate: moveDate })}><T>{"Confirm"}</T></button>{moveOutsidePlan && <small role="alert"><T>{"The workout must stay within this mesocycle."}</T></small>}</div>}</>}
     </article>)}</div></section>;
 }
 

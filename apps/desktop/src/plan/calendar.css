@@ -118,8 +118,8 @@
 .wc-chip-name { min-width: 0; overflow: hidden; overflow-wrap: anywhere; color: var(--wc-ink); font-size: 12px; font-weight: 600; line-height: 1.3; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .wc-duration { min-width: 0; max-width: 100%; color: #637cad; font-size: 10px; font-weight: 600; white-space: nowrap; }
 .wc-status-light { flex: 0 0 auto; display: inline-block; width: 7px; height: 7px; margin: 3px; border-radius: 50%; box-shadow: 0 0 0 3px currentColor; }
-.wc-status-light.status-completed { color: rgba(14, 193, 65, .13); background: #0ec141; }
-.wc-status-light.status-unrecorded { color: rgba(122, 132, 145, .16); background: #8b95a3; }
+.wc-status-light.status-completed { color: rgba(122, 132, 145, .16); background: #8b95a3; }
+.wc-status-light.status-unrecorded { color: rgba(249, 115, 22, .16); background: #f97316; }
 .wc-chip.tone-strength { color: var(--domain-strength-ink); border-color: var(--domain-strength-line); background: var(--domain-strength-soft); }
 .wc-chip.tone-endurance { color: var(--domain-endurance-ink); border-color: var(--domain-endurance-line); background: var(--domain-endurance-soft); }
 .wc-chip.tone-sport_skill { color: var(--domain-sport_skill-ink); border-color: var(--domain-sport_skill-line); background: var(--domain-sport_skill-soft); }
@@ -158,7 +158,7 @@
 .sd-sheet {
   display: flex;
   flex-direction: column;
-  width: min(920px, 94vw);
+  width: min(840px, 94vw);
   height: 100%;
   background: rgba(252, 253, 255, 0.82);
   backdrop-filter: blur(40px) saturate(180%);
@@ -269,11 +269,11 @@
 .rx-table { min-width: 0; }
 .rx-table-row { min-width: 0; display: grid; align-items: center; column-gap: var(--rx-column-gap, 16px); padding-inline: 16px; border-top: 1px solid #edf0f4; }
 .rx-table-header { min-height: 26px; border-top: 0; color: #62728b; background: rgba(249, 251, 253, .62); font-size: 10px; font-weight: 650; letter-spacing: .015em; }
-.rx-strength-table .rx-table-row { grid-template-columns: 40px minmax(0, 2.05fr) minmax(96px, .72fr) minmax(82px, .6fr) minmax(64px, .48fr) minmax(0, 1.45fr); }
-.rx-endurance-table, .rx-blocks-table { --rx-column-gap: 16px; --rx-prescription-column: minmax(210px, 1.85fr); --rx-duration-column: minmax(88px, .72fr); --rx-effort-column: minmax(96px, .8fr); --rx-notes-column: minmax(72px, .68fr); }
-.rx-endurance-table .rx-table-row { grid-template-columns: 100px var(--rx-prescription-column) var(--rx-duration-column) var(--rx-effort-column) var(--rx-notes-column); }
-.rx-blocks-table .rx-table-row { grid-template-columns: 40px minmax(0, 2.1fr) minmax(96px, .7fr) minmax(88px, .66fr) minmax(0, 1.45fr); }
-.rx-blocks-table-plain .rx-table-row { grid-template-columns: 40px minmax(0, 2.1fr) minmax(96px, .7fr) minmax(0, 1.6fr); }
+.rx-strength-table .rx-table-row { grid-template-columns: 40px minmax(0, 1.15fr) minmax(96px, .72fr) minmax(82px, .6fr) minmax(64px, .48fr) minmax(0, 1.65fr); }
+.rx-endurance-table, .rx-blocks-table { --rx-column-gap: 16px; --rx-prescription-column: minmax(140px, 1fr); --rx-duration-column: 88px; --rx-effort-column: 112px; --rx-notes-column: minmax(180px, 1.5fr); }
+.rx-endurance-table .rx-table-row { grid-template-columns: 48px var(--rx-prescription-column) var(--rx-duration-column) var(--rx-effort-column) var(--rx-notes-column); }
+.rx-blocks-table .rx-table-row { grid-template-columns: 40px minmax(0, 1.15fr) minmax(96px, .7fr) minmax(88px, .66fr) minmax(0, 1.65fr); }
+.rx-blocks-table-plain .rx-table-row { grid-template-columns: 40px minmax(0, 1.15fr) minmax(96px, .7fr) minmax(0, 1.85fr); }
 .rx-strength-row { min-height: 48px; padding-block: 6px; font-size: 12px; line-height: 1.35; }
 .rx-endurance-row, .rx-blocks-row { min-height: 48px; padding-block: 6px; font-size: 12px; line-height: 1.35; }
 .rx-table-row > span, .rx-repeat-row > span { min-width: 0; overflow-wrap: anywhere; }
@@ -290,7 +290,7 @@
 .rx-repeat-heading > strong { font-size: 13px; font-weight: 600; }
 .rx-repeat-count { display: inline-flex; align-items: center; justify-content: center; min-width: 29px; padding: 2px 6px; border-radius: 999px; color: #284b78; background: #e9f0f8; font-size: 10px; font-weight: 750; line-height: 1.2; }
 .rx-repeat-summary { min-height: 40px; padding-block: 5px; }
-.rx-repeat-panel { margin: 0 16px 10px 132px; overflow: hidden; border: 0; border-radius: 12px; background: linear-gradient(135deg, #fdfefe, #fbfcfe); box-shadow: inset 0 0 0 1px #dfe4eb, 0 2px 8px rgba(30, 48, 75, .022); }
+.rx-repeat-panel { margin: 0 16px 10px 80px; overflow: hidden; border: 0; border-radius: 12px; background: linear-gradient(135deg, #fdfefe, #fbfcfe); box-shadow: inset 0 0 0 1px #dfe4eb, 0 2px 8px rgba(30, 48, 75, .022); }
 .rx-repeat-row { min-width: 0; min-height: 38px; display: grid; grid-template-columns: var(--rx-prescription-column) var(--rx-duration-column) var(--rx-effort-column) var(--rx-notes-column); align-items: center; column-gap: var(--rx-column-gap); padding-block: 6px; font-size: 12px; line-height: 1.3; }
 .rx-repeat-prescription { min-width: 0; display: grid; align-content: center; padding-left: 12px; }
 .rx-repeat-phase { color: #10294f; font-size: 13px; font-weight: 600; }
@@ -344,9 +344,12 @@
 .sd-reason select { width: auto; padding: 8px 10px; font-size: 12px; }
 .sd-reason-note { flex: 1 1 180px; min-width: 150px; }
 .sd-reason-note input { flex: 1 1 auto; width: auto; min-width: 0; padding: 8px 10px; font-size: 12px; }
-.sd-move { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.sd-move { display: grid; gap: 10px; min-width: 0; }
+.sd-move-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)) auto; align-items: end; gap: 10px; }
+.sd-move-fields > label { display: grid; min-width: 0; white-space: normal; }
+.sd-move-fields input[type="date"], .sd-move-fields select { width: 100%; min-width: 0; }
+.sd-move > .sd-reason-note { min-width: 0; }
 .sd-move label { margin: 0; }
-.sd-move input[type="date"] { width: auto; }
 
 /* --- Narrow screens: week rows become a vertical agenda (§17) ------------- */
 @media (max-width: 900px) {
