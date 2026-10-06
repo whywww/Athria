@@ -26,6 +26,30 @@ fn test_app() -> AthriaApplication<SqliteStore> {
 }
 
 #[test]
+fn training_memory_is_bounded_and_invalidates_plan_inputs_only_when_changed() {
+    let app = test_app();
+    let initial = app.snapshot_hash().unwrap();
+    assert_eq!(app.get_training_memory().unwrap()["revision"], 0);
+    let first = app.update_training_memory(&json!({
+        "contentMarkdown": "自述：有半年规律训练经验。", "expectedRevision": 0
+    })).unwrap();
+    assert_eq!(first["revision"], 1);
+    let after = app.snapshot_hash().unwrap();
+    assert_ne!(after, initial);
+    assert_eq!(app.get_training_state().unwrap()["inputSnapshotHash"], after);
+    assert_eq!(app.update_training_memory(&json!({
+        "contentMarkdown": "自述：有半年规律训练经验。", "expectedRevision": 1
+    })).unwrap()["revision"], 1);
+    assert_eq!(app.snapshot_hash().unwrap(), after);
+    assert_eq!(app.update_training_memory(&json!({
+        "contentMarkdown": "旧内容", "expectedRevision": 0
+    })).unwrap_err().code(), AthriaErrorCode::RevisionConflict);
+    assert_eq!(app.update_training_memory(&json!({
+        "contentMarkdown": "长".repeat(2001), "expectedRevision": 1
+    })).unwrap_err().code(), AthriaErrorCode::InvalidData);
+}
+
+#[test]
 fn data_source_status_reports_connection_and_local_day_freshness_without_secrets() {
     let app = test_app();
     let initial = app.get_data_source_status().unwrap();

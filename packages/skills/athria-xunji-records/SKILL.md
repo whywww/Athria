@@ -7,6 +7,10 @@ description: Read and explain training records previously synced from 训记/Xun
 
 Use Athria's local, normalized Xunji data. Never ask for, retrieve, display, or handle the user's Xunji API key.
 
+## Language
+
+Reply in the user's requested language, or the language of their latest substantive message; a brief acknowledgment does not switch it. Explain synchronized records in that language while preserving quotes, names, and underlying values. Ask only if the language is unclear.
+
 ## Workflow
 
 1. Call `get_xunji_sync_status` to establish whether Xunji is connected and when the local data was last synchronized.

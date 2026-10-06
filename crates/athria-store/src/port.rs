@@ -31,6 +31,14 @@ impl AthriaStore for SqliteStore {
         Ok(profile.clone())
     }
 
+    fn get_training_memory(&self, owner_id: &str) -> Result<Option<Value>> {
+        SqliteStore::get_training_memory(self, owner_id)
+    }
+
+    fn save_training_memory(&self, owner_id: &str, content_markdown: &str, expected_revision: i64) -> Result<Value> {
+        SqliteStore::save_training_memory(self, owner_id, content_markdown, expected_revision)
+    }
+
     fn list_sessions(&self, owner_id: &str, since: Option<&str>) -> Result<Vec<Value>> {
         SqliteStore::list_sessions(self, owner_id, since)
     }

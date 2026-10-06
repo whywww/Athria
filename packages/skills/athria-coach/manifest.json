@@ -1,14 +1,17 @@
 {
   "name": "athria-coach",
-  "version": "0.1.0",
-  "purpose": "Answer training questions and explain evidence from Athria without changing stored data.",
+  "version": "0.1.2",
+  "purpose": "Answer training questions and review evidence, routing meaningful experience-memory changes to the athlete-profile skill.",
   "appliesWhen": [
     "The user asks how training is going, why performance may have changed, what recent history suggests, or what to consider next without requesting a stored change."
   ],
   "doesNotApplyWhen": [
     "The user asks to save a plan, update their athlete information or wellness, or change or record a workout."
   ],
-  "requiredContext": ["AthleteProfile", "TrainingStateSnapshot"],
+  "requiredContext": [
+    "AthleteProfile",
+    "TrainingStateSnapshot"
+  ],
   "allowedTools": [
     "get_athlete_profile",
     "get_training_state",
@@ -25,9 +28,16 @@
     "estimate_1rm",
     "calculate_heart_rate_zones",
     "evaluate_rpe_autoregulation",
-    "evaluate_progression"
+    "evaluate_progression",
+    "get_training_memory"
   ],
-  "workflow": ["understand-question", "read-targeted-evidence", "calculate-if-needed", "explain-evidence", "recommend-with-boundaries"],
+  "workflow": [
+    "understand-question",
+    "read-targeted-evidence",
+    "calculate-if-needed",
+    "explain-evidence",
+    "recommend-with-boundaries"
+  ],
   "safetyRules": [
     "Use read-only tools only and never change Athria data.",
     "Separate recorded facts, deterministic calculations, and coaching interpretation.",

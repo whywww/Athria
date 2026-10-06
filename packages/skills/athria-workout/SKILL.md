@@ -7,6 +7,10 @@ description: "Inspect and execute Athria's immediate workout queue: show today's
 
 Handle one or a few concrete workouts while preserving the structure of the Current Mesocycle.
 
+## Language
+
+Use the user's requested language, or the language of their latest substantive message; a brief approval does not switch it. Use that language for replies, previews, and newly generated workout text written through MCP. Preserve user and source text, unchanged data, and structured MCP fields, IDs, enums, numbers, and notation. If the write language is unclear, ask once before the usual approval.
+
 ## Read the execution context
 
 - Use `get_next_training_day` for the current execution queue and `list_planned_sessions` for a bounded calendar window.

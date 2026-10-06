@@ -22,7 +22,7 @@ use crate::sessions::js_number_value;
 pub use athria_core::DEFAULT_OWNER_ID;
 
 /// Latest schema version this store opens and creates.
-pub const SUPPORTED_SCHEMA_VERSION: i64 = 26;
+pub const SUPPORTED_SCHEMA_VERSION: i64 = 27;
 
 /// Canonical Rust compatibility baseline. Future changes must add explicit
 /// Rust migrations from this schema rather than silently replacing it.
@@ -56,6 +56,14 @@ fn migration_v26_sql() -> String {
     sql.push_str("INSERT INTO athria_migrations(version, applied_at) VALUES (26, CURRENT_TIMESTAMP);\n");
     sql
 }
+
+const MIGRATION_V27_SQL: &str = "
+CREATE TABLE training_memory (owner_id TEXT PRIMARY KEY, content_markdown TEXT NOT NULL CHECK(length(content_markdown) BETWEEN 1 AND 2000), revision INTEGER NOT NULL CHECK(revision >= 1), updated_at TEXT NOT NULL);
+CREATE TRIGGER athria_version_training_memory_INSERT AFTER INSERT ON training_memory BEGIN UPDATE athria_data_version SET version=version+1 WHERE id=1; END;
+CREATE TRIGGER athria_version_training_memory_UPDATE AFTER UPDATE ON training_memory BEGIN UPDATE athria_data_version SET version=version+1 WHERE id=1; END;
+CREATE TRIGGER athria_version_training_memory_DELETE AFTER DELETE ON training_memory BEGIN UPDATE athria_data_version SET version=version+1 WHERE id=1; END;
+INSERT INTO athria_migrations(version, applied_at) VALUES (27, CURRENT_TIMESTAMP);
+";
 
 pub(crate) fn database_error(error: rusqlite::Error) -> AthriaError {
     if let rusqlite::Error::SqliteFailure(inner, _) = &error {
@@ -465,8 +473,8 @@ impl SqliteStore {
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(database_error)
     }
-    /// Opens an Athria database, creating it when empty and migrating v24/v25
-    /// databases to v26. Other schema versions are rejected.
+    /// Opens an Athria database, creating it when empty and migrating v24-v26
+    /// databases to v27. Other schema versions are rejected.
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         Self::open_with_clock(path, Arc::new(SystemClock))
     }
@@ -486,7 +494,7 @@ impl SqliteStore {
         Ok(store)
     }
 
-    /// In-memory store used by unit tests; bootstraps a fresh v26 database.
+    /// In-memory store used by unit tests; bootstraps a fresh v27 database.
     pub fn open_in_memory() -> Result<Self> {
         Self::open_in_memory_with_clock(Arc::new(SystemClock))
     }
@@ -629,7 +637,7 @@ impl SqliteStore {
         }
         match self.schema_version()? {
             SUPPORTED_SCHEMA_VERSION => Ok(()),
-            25 | 24 => self.migrate_to_v26(),
+            26 | 25 | 24 => self.migrate_to_v27(),
             version if version < SUPPORTED_SCHEMA_VERSION => Err(AthriaError::new(
                 AthriaErrorCode::SchemaVersionUnsupported,
                 format!(
@@ -645,13 +653,13 @@ impl SqliteStore {
         }
     }
 
-    fn migrate_to_v26(&self) -> Result<()> {
+    fn migrate_to_v27(&self) -> Result<()> {
         self.connection.execute_batch("BEGIN IMMEDIATE").map_err(database_error)?;
         let migration = (|| {
             match self.schema_version()? {
-                26 => Ok(()),
-                25 => self.connection.execute_batch(&migration_v26_sql()).map_err(database_error),
-                24 => self.connection.execute_batch(&format!("{MIGRATION_V25_SQL} {}", migration_v26_sql())).map_err(database_error),
+                26 => self.connection.execute_batch(MIGRATION_V27_SQL).map_err(database_error),
+                25 => self.connection.execute_batch(&format!("{} {MIGRATION_V27_SQL}", migration_v26_sql())).map_err(database_error),
+                24 => self.connection.execute_batch(&format!("{MIGRATION_V25_SQL} {} {MIGRATION_V27_SQL}", migration_v26_sql())).map_err(database_error),
                 _ => Err(AthriaError::new(AthriaErrorCode::SchemaVersionUnsupported, "Database schema changed while opening.")),
             }
         })();
@@ -695,6 +703,7 @@ impl SqliteStore {
             Uuid::new_v4()
         ));
         sql.push_str(&migration_v26_sql());
+        sql.push_str(MIGRATION_V27_SQL);
         sql.push_str("COMMIT;\n");
         self.connection.execute_batch(&sql).map_err(database_error)
     }
@@ -756,6 +765,39 @@ impl SqliteStore {
             )
             .map_err(database_error)?;
         Ok(())
+    }
+
+    pub fn get_training_memory(&self, owner_id: &str) -> Result<Option<Value>> {
+        self.connection.query_row(
+            "SELECT content_markdown, revision, updated_at FROM training_memory WHERE owner_id=?1",
+            params![owner_id],
+            |row| Ok(json!({
+                "ownerId": owner_id,
+                "contentMarkdown": row.get::<_, String>(0)?,
+                "revision": row.get::<_, i64>(1)?,
+                "updatedAt": row.get::<_, String>(2)?,
+            })),
+        ).optional().map_err(database_error)
+    }
+
+    pub fn save_training_memory(&self, owner_id: &str, content_markdown: &str, expected_revision: i64) -> Result<Value> {
+        self.transaction(&mut || {
+            let existing = self.get_training_memory(owner_id)?;
+            let revision = existing.as_ref().and_then(|value| value["revision"].as_i64()).unwrap_or(0);
+            if revision != expected_revision {
+                return Err(AthriaError::new(AthriaErrorCode::RevisionConflict, "Training memory changed. Refresh and try again."));
+            }
+            if existing.as_ref().is_some_and(|value| value["contentMarkdown"].as_str() == Some(content_markdown)) {
+                return Ok(existing.expect("checked above"));
+            }
+            let updated_at = self.now();
+            let new_revision = revision + 1;
+            self.connection.execute(
+                "INSERT INTO training_memory(owner_id, content_markdown, revision, updated_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(owner_id) DO UPDATE SET content_markdown=excluded.content_markdown, revision=excluded.revision, updated_at=excluded.updated_at",
+                params![owner_id, content_markdown, new_revision, updated_at],
+            ).map_err(database_error)?;
+            Ok(json!({"ownerId": owner_id, "contentMarkdown": content_markdown, "revision": new_revision, "updatedAt": updated_at}))
+        })
     }
 
     pub fn get_wellness(&self, owner_id: &str, day: &str) -> Result<Option<Value>> {
@@ -1685,6 +1727,22 @@ mod tests {
     }
 
     #[test]
+    fn training_memory_is_owner_scoped_revision_checked_and_versioned() {
+        let store = SqliteStore::open_in_memory().unwrap();
+        assert!(store.get_training_memory("athlete-a").unwrap().is_none());
+        let before_version = store.data_version().unwrap();
+        let first = store.save_training_memory("athlete-a", "Reported: beginner.", 0).unwrap();
+        assert_eq!(first["revision"], 1);
+        assert!(store.data_version().unwrap() > before_version);
+        assert!(store.get_training_memory("athlete-b").unwrap().is_none());
+        assert_eq!(store.save_training_memory("athlete-a", "Reported: beginner.", 1).unwrap(), first);
+        assert_eq!(store.save_training_memory("athlete-a", "Changed", 0).unwrap_err().code(), AthriaErrorCode::RevisionConflict);
+        let updated = store.save_training_memory("athlete-a", "Observed: consistent training.", 1).unwrap();
+        assert_eq!(updated["revision"], 2);
+        assert_eq!(store.get_training_memory("athlete-b").unwrap(), None);
+    }
+
+    #[test]
     fn migrates_v24_and_rejects_other_unsupported_schema_versions() {
         let directory = tempfile::tempdir().unwrap();
 
@@ -1708,7 +1766,7 @@ mod tests {
             connection.execute_batch("DROP INDEX plan_drafts_owner_status; DROP TABLE plan_draft_weeks; DROP TABLE plan_drafts; INSERT INTO athria_migrations(version, applied_at) VALUES (24, CURRENT_TIMESTAMP); INSERT INTO vault_meta(id, database_uuid, format_version, updated_at) VALUES (1, 'old-uuid', 1, CURRENT_TIMESTAMP);").unwrap();
         }
         let migrated = SqliteStore::open(&v24).unwrap();
-        assert_eq!(migrated.schema_version().unwrap(), 26);
+        assert_eq!(migrated.schema_version().unwrap(), 27);
         assert!(migrated.table_exists("plan_drafts").unwrap());
         assert_eq!(migrated.data_version().unwrap(), 0);
 
@@ -1719,14 +1777,25 @@ mod tests {
             connection.execute_batch("INSERT INTO athria_migrations(version, applied_at) VALUES (25, CURRENT_TIMESTAMP); INSERT INTO vault_meta(id, database_uuid, format_version, updated_at) VALUES (1, 'v25-uuid', 1, CURRENT_TIMESTAMP); INSERT INTO profiles(owner_id, data, updated_at) VALUES ('default', '{\"preferredName\":\"Original\"}', CURRENT_TIMESTAMP);").unwrap();
         }
         let migrated = SqliteStore::open(&v25).unwrap();
-        assert_eq!(migrated.schema_version().unwrap(), 26);
+        assert_eq!(migrated.schema_version().unwrap(), 27);
         assert_eq!(migrated.data_version().unwrap(), 0);
         assert_eq!(migrated.get_profile("default").unwrap().unwrap()["preferredName"], "Original");
+
+        let v26 = directory.path().join("v26.sqlite3");
+        {
+            let connection = Connection::open(&v26).unwrap();
+            connection.execute_batch(SCHEMA_V25_SQL).unwrap();
+            connection.execute_batch("INSERT INTO athria_migrations(version, applied_at) VALUES (25, CURRENT_TIMESTAMP); INSERT INTO vault_meta(id, database_uuid, format_version, updated_at) VALUES (1, 'v26-uuid', 1, CURRENT_TIMESTAMP);").unwrap();
+            connection.execute_batch(&migration_v26_sql()).unwrap();
+        }
+        let migrated = SqliteStore::open(&v26).unwrap();
+        assert_eq!(migrated.schema_version().unwrap(), 27);
+        assert!(migrated.get_training_memory("default").unwrap().is_none());
 
         let newer = directory.path().join("newer.sqlite3");
         {
             let store = SqliteStore::open(&newer).unwrap();
-            store.connection.execute("INSERT INTO athria_migrations(version, applied_at) VALUES (27, CURRENT_TIMESTAMP)", []).unwrap();
+            store.connection.execute("INSERT INTO athria_migrations(version, applied_at) VALUES (28, CURRENT_TIMESTAMP)", []).unwrap();
         }
         assert_eq!(
             SqliteStore::open(&newer).unwrap_err().code(),

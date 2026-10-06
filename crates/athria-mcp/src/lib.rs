@@ -59,6 +59,7 @@ enum ToolKind {
     GetDatabaseContext,
     GetDataSourceStatus,
     GetAthleteProfile,
+    GetTrainingMemory,
     GetTrainingState,
     ListTrainingSessions,
     ListWellness,
@@ -98,6 +99,7 @@ enum ToolKind {
     RemoveManualTrainingSource,
     UpdateWellness,
     UpdateAthleteProfile,
+    UpdateTrainingMemory,
     ReportSkillVersion,
 }
 
@@ -107,6 +109,7 @@ impl ToolKind {
             "get_database_context" => Self::GetDatabaseContext,
             "get_data_source_status" => Self::GetDataSourceStatus,
             "get_athlete_profile" => Self::GetAthleteProfile,
+            "get_training_memory" => Self::GetTrainingMemory,
             "get_training_state" => Self::GetTrainingState,
             "list_training_sessions" => Self::ListTrainingSessions,
             "list_wellness" => Self::ListWellness,
@@ -146,6 +149,7 @@ impl ToolKind {
             "remove_manual_training_source" => Self::RemoveManualTrainingSource,
             "update_wellness" => Self::UpdateWellness,
             "update_athlete_profile" => Self::UpdateAthleteProfile,
+            "update_training_memory" => Self::UpdateTrainingMemory,
             "report_skill_version" => Self::ReportSkillVersion,
             _ => return None,
         })
@@ -278,6 +282,7 @@ impl<S: AthriaStore> McpService<S> {
                 profile["profileHash"] = json!(app.profile_hash().map_err(ToolError::application)?);
                 Ok(profile)
             }
+            ToolKind::GetTrainingMemory => application(app.get_training_memory()),
             ToolKind::GetTrainingState => application(app.get_training_state()),
             ToolKind::ListTrainingSessions => serialize(
                 app.list_sessions_with_snapshots(days(input, 30)?)
@@ -441,6 +446,7 @@ impl<S: AthriaStore> McpService<S> {
                 ),
             ),
             ToolKind::UpdateAthleteProfile => application(app.update_profile(input)),
+            ToolKind::UpdateTrainingMemory => application(app.update_training_memory(input)),
             ToolKind::ReportSkillVersion => {
                 let report = athria_skills::ReportInput {
                     skill: required_str(input, "skill")?.to_string(),
@@ -839,7 +845,7 @@ mod tests {
     #[test]
     fn exposes_contract_and_calls_application() {
         let service = service();
-        assert_eq!(service.tools().len(), 43);
+        assert_eq!(service.tools().len(), 45);
         assert!(service.tools().iter().all(|tool| {
             tool.get("handlerKey").and_then(Value::as_str).is_some()
                 && tool.get("outputSchema").is_some()
@@ -942,7 +948,7 @@ mod tests {
         let service = service();
         let fixtures: Value =
             serde_json::from_str(include_str!("../tests/fixtures/tool-results.json")).unwrap();
-        assert_eq!(fixtures.as_object().unwrap().len(), 43);
+        assert_eq!(fixtures.as_object().unwrap().len(), 45);
 
         for (tool, registered) in service.tools().iter().zip(&service.registry) {
             let name = tool["name"].as_str().unwrap();
@@ -963,6 +969,24 @@ mod tests {
         let error: Value =
             serde_json::from_str(output["content"][0]["text"].as_str().unwrap()).unwrap();
         assert_eq!(error["code"], "INVALID_INPUT");
+    }
+    #[test]
+    fn training_memory_tools_read_write_and_enforce_revision_and_length() {
+        let service = service();
+        let empty = service.call_result("get_training_memory", &json!({}));
+        assert_eq!(empty["structuredContent"]["result"]["revision"], 0);
+        let saved = service.call_result("update_training_memory", &json!({
+            "contentMarkdown": "Reported: three months of training.", "expectedRevision": 0
+        }));
+        assert_eq!(saved["structuredContent"]["result"]["revision"], 1);
+        let stale = service.call_result("update_training_memory", &json!({
+            "contentMarkdown": "Stale", "expectedRevision": 0
+        }));
+        assert_eq!(stale["isError"], true);
+        let too_long = service.call_result("update_training_memory", &json!({
+            "contentMarkdown": "x".repeat(2001), "expectedRevision": 1
+        }));
+        assert_eq!(too_long["isError"], true);
     }
     #[test]
     fn optional_day_windows_use_dispatcher_defaults() {
@@ -1020,6 +1044,7 @@ mod tests {
             "remove_manual_training_source",
             "update_wellness",
             "update_athlete_profile",
+            "update_training_memory",
             "commit_plan_draft",
             "discard_plan_draft",
         ];
@@ -1107,7 +1132,7 @@ mod tests {
     #[test]
     fn rmcp_server_advertises_only_the_wire_it_emits() {
         let server = RmcpServer::new(service());
-        assert_eq!(server.tools.len(), 43);
+        assert_eq!(server.tools.len(), 45);
         assert!(server.tools.iter().all(|tool| tool.output_schema.is_some()));
         assert_eq!(
             server.supported_protocol_versions().as_ref(),

@@ -373,7 +373,7 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
             let session_duration = int_field(session, "durationMinutes");
             let maximum_duration = int_field(profile, "maxSessionMinutes");
             results.push(rule(
-                "blocker",
+                "advisory",
                 "MAX_SESSION_DURATION",
                 if session_duration <= maximum_duration {
                     "pass"
@@ -813,6 +813,41 @@ mod tests {
             .expect("rule must run");
         assert_eq!(advisory["status"], "pass");
         assert_eq!(advisory["enforcement"], "advisory");
+    }
+
+    #[test]
+    fn session_duration_is_a_nonblocking_advisory() {
+        let mut draft =
+            json!({ "mesocycle": two_high_session_plan(), "effectiveStartDate": "2026-09-07" });
+        let normal = validate_plan(&profile(Value::Null), &draft, "2026-09-17T00:00:00.000Z");
+        let normal_duration = normal
+            .results
+            .iter()
+            .find(|item| {
+                item["reasonCode"] == "MAX_SESSION_DURATION"
+                    && item["subjectRefs"] == json!(["mon-1"])
+            })
+            .unwrap();
+        assert_eq!(normal_duration["status"], "pass");
+        assert_eq!(normal_duration["enforcement"], "advisory");
+
+        draft["mesocycle"]["weeks"][0]["sessions"][0]["durationMinutes"] = json!(120);
+        let long = validate_plan(&profile(Value::Null), &draft, "2026-09-17T00:00:00.000Z");
+        let long_duration = long
+            .results
+            .iter()
+            .find(|item| {
+                item["reasonCode"] == "MAX_SESSION_DURATION"
+                    && item["subjectRefs"] == json!(["mon-1"])
+            })
+            .unwrap();
+        assert_eq!(long_duration["status"], "fail");
+        assert_eq!(long_duration["enforcement"], "advisory");
+        assert_eq!(
+            long_duration["evidence"],
+            json!({ "durationMinutes": 120, "maximum": 60 })
+        );
+        assert!(long.valid);
     }
 
     #[test]

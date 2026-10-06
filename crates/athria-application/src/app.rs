@@ -457,6 +457,24 @@ impl<S: AthriaStore> AthriaApplication<S> {
         self.store.get_profile(&self.owner_id)
     }
 
+    pub fn get_training_memory(&self) -> Result<Value> {
+        Ok(self.store.get_training_memory(&self.owner_id)?.unwrap_or_else(|| json!({
+            "ownerId": self.owner_id, "contentMarkdown": "", "revision": 0, "updatedAt": null
+        })))
+    }
+
+    pub fn update_training_memory(&self, input: &Value) -> Result<Value> {
+        let content = input.get("contentMarkdown").and_then(Value::as_str)
+            .ok_or_else(|| invalid_input("contentMarkdown: expected Markdown text"))?;
+        if content.trim().is_empty() || content.chars().count() > 2000 {
+            return Err(invalid_input("Training memory must contain 1-2000 characters. Condense the current summary before saving."));
+        }
+        let revision = input.get("expectedRevision").and_then(Value::as_i64)
+            .filter(|revision| *revision >= 0)
+            .ok_or_else(|| invalid_input("expectedRevision: expected a nonnegative integer"))?;
+        self.store.save_training_memory(&self.owner_id, content, revision)
+    }
+
     pub fn get_profile_snapshot(&self) -> Result<Value> {
         let mut profile = self.get_profile()?;
         let hash = stable_hash(&profile);
@@ -780,11 +798,15 @@ impl<S: AthriaStore> AthriaApplication<S> {
 
     /// `snapshotHash()`: the hash the plan/personal-information writes compare against.
     pub fn snapshot_hash(&self) -> Result<String> {
-        Ok(stable_hash(&json!({
+        let mut snapshot = json!({
             "profile": self.get_profile()?,
             "sessions": self.list_sessions(90)?,
             "wellness": self.list_wellness(42)?,
-        })))
+        });
+        if let Some(memory) = self.store.get_training_memory(&self.owner_id)? {
+            snapshot["trainingMemory"] = memory;
+        }
+        Ok(stable_hash(&snapshot))
     }
 
     pub fn get_training_state(&self) -> Result<Value> {

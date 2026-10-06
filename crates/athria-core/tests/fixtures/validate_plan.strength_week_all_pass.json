@@ -536,7 +536,7 @@
         "confidenceLimit": null
       },
       {
-        "enforcement": "blocker",
+        "enforcement": "advisory",
         "reasonCode": "MAX_SESSION_DURATION",
         "status": "pass",
         "rulePackId": "structure",
@@ -681,7 +681,7 @@
         }
       },
       {
-        "enforcement": "blocker",
+        "enforcement": "advisory",
         "reasonCode": "MAX_SESSION_DURATION",
         "status": "pass",
         "rulePackId": "structure",
@@ -917,8 +917,8 @@
     "validatedAt": "2026-09-17T10:30:00.000Z",
     "inputHash": "fnv1a-9bb8cff0",
     "coverage": {
-      "hardChecksResolved": 13,
-      "hardChecksTotal": 13,
+      "hardChecksResolved": 11,
+      "hardChecksTotal": 11,
       "movementFactsResolved": 4,
       "movementFactsTotal": 4,
       "muscleFactsResolved": 4,

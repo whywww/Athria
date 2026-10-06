@@ -1,6 +1,6 @@
 {
   "name": "athria-workout",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "Inspect and execute near-term workouts without redesigning the whole Mesocycle.",
   "appliesWhen": [
     "The user asks what to do today, to add near-term sessions, skip, restore, or move a planned session, record or correct a manual workout, or explicitly correct a workout-plan match."

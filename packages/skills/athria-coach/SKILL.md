@@ -1,19 +1,24 @@
 ---
 name: athria-coach
-description: Analyze Athria profile, training, wellness, and current-plan evidence to answer coaching questions without changing data. Use for progress reviews, training-history interpretation, performance questions, and recommendations; do not use when the user asks to save a plan, update personal facts, or execute a workout change.
+description: Analyze Athria profile, training memory, wellness, and current-plan evidence for progress reviews and coaching questions. Route meaningful experience or capability memory updates to the athlete-profile skill; do not directly save plans, personal facts, or workouts.
 ---
 
 # Athria Coach
 
 Answer the user's training question with the smallest useful evidence set. This Skill is read-only: advice never authorizes or performs a write.
 
+## Language
+
+Reply in the user's requested language, or the language of their latest substantive message; a brief acknowledgment does not switch it. Explain records in that language while preserving quotes, names, and underlying values. Ask only if the language is unclear.
+
 ## Workflow
 
 1. Identify the question, relevant domains, comparison period, and decision the user is trying to make.
-2. Start with `get_athlete_profile` and the narrowest useful combination of `get_training_state`, `get_training_summary`, `list_training_sessions`, `list_wellness`, `get_current_plan`, `list_planned_sessions`, or `get_next_training_day`.
+2. Start with `get_athlete_profile`, `get_training_memory`, and the narrowest useful combination of `get_training_state`, `get_training_summary`, `list_training_sessions`, `list_wellness`, `get_current_plan`, `list_planned_sessions`, or `get_next_training_day`.
 3. Use deterministic calculators only when their required inputs are present. `estimate_1rm` is an estimate; `calculate_heart_rate_zones` requires an explicit maximum heart rate and must not derive one from age. Keep Strength and Endurance measurements separate.
 4. Explain what the records show, what is an interpretation, what is missing, and the practical recommendation. Treat absent load, RPE, heart rate, sleep, soreness, weight, or duration as unavailable rather than zero.
 5. When the question is specifically whether the current cycle should change, call `get_plan_adjustment_review` with `weekly_review` or `user_request`. Report `keep`, `watch`, `review_recommended`, or `review_required` and its evidence without drafting or saving a replacement plan.
+6. If this review produces meaningful new evidence about training experience or capability, route a concise memory revision through `$athria-athlete-profile`; do not append routine workout details. Tell the athlete what changed after it is saved.
 
 ## Handoffs
 

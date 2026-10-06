@@ -1,6 +1,6 @@
 {
   "name": "athria-training-planner",
-  "version": "0.9.0",
+  "version": "0.9.3",
   "purpose": "Create, review, revise, validate, and save the single current Mesocycle and its reusable session templates.",
   "appliesWhen": [
     "The user asks to create their first training cycle, revise the current cycle, review an ending cycle, plan the next cycle, or manage session templates."
@@ -9,7 +9,11 @@
     "The user only wants analysis or coaching advice without changing a plan.",
     "The user wants to update athlete facts, wellness, or one or two immediate workouts."
   ],
-  "requiredContext": ["AthleteProfile", "TrainingStateSnapshot", "WellnessRecord"],
+  "requiredContext": [
+    "AthleteProfile",
+    "TrainingStateSnapshot",
+    "WellnessRecord"
+  ],
   "allowedTools": [
     "get_database_context",
     "get_data_source_status",
@@ -36,9 +40,21 @@
     "discard_plan_draft",
     "create_session_template",
     "update_session_template",
-    "delete_session_template"
+    "delete_session_template",
+    "get_training_memory"
   ],
-  "workflow": ["confirm-database", "review-profile-and-evidence", "review-data-source-freshness", "confirm-outline", "create-or-resume-draft", "upsert-weeks", "validate", "confirm-detailed-plan", "freshness-check", "commit-plan-draft"],
+  "workflow": [
+    "confirm-database",
+    "review-profile-and-evidence",
+    "review-data-source-freshness",
+    "confirm-outline",
+    "create-or-resume-draft",
+    "upsert-weeks",
+    "validate",
+    "confirm-detailed-plan",
+    "freshness-check",
+    "commit-plan-draft"
+  ],
   "outputSchema": "CurrentPlan",
   "approvalPoints": [
     "Before reading athlete data, confirm the absolute database path",

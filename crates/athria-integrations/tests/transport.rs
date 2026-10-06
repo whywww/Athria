@@ -62,6 +62,23 @@ fn intervals_builds_authenticated_windows_and_isolates_failures() {
 }
 
 #[test]
+fn intervals_retries_transport_errors_without_losing_other_endpoints() {
+    let client = FakeClient::new(vec![
+        Err("temporary connection failure".into()),
+        response(200, json!([{ "id": 1 }])),
+        response(200, json!([])),
+        response(200, json!([])),
+    ]);
+    let result = fetch_intervals(&client, "secret", "42", "2026-10-02T12:00:00Z", None, None);
+    assert_eq!(result["activities"], json!([{ "id": 1 }]));
+    assert_eq!(result["wellness"], json!([]));
+    assert_eq!(result["events"], json!([]));
+    let requests = client.requests.borrow();
+    assert_eq!(requests.len(), 4);
+    assert_eq!(requests[0].url, requests[1].url);
+}
+
+#[test]
 fn xunji_keeps_successful_days_and_never_returns_the_key() {
     let client = FakeClient::new(vec![
         response(200, json!({ "res": { "trains": [{ "localid": 1 }] } })),

@@ -1,7 +1,7 @@
 interface:
   display_name: "Athria Athlete Profile"
-  short_description: "Set up and maintain athlete facts, constraints, and wellness"
-  default_prompt: "Use $athria-athlete-profile to update my Athria profile and assess whether my current plan is affected."
+  short_description: "Start Athria, set up your profile, and maintain athlete facts"
+  default_prompt: "Use $athria-athlete-profile to start Athria and guide me from my current profile and plan."
 
 dependencies:
   tools:

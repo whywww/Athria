@@ -48,7 +48,10 @@
   "list_wellness": [],
   "get_wellness_day": {},
   "list_xunji_training_sessions": [],
-  "get_xunji_sync_status": { "connected": false, "lastSuccessAt": null },
+  "get_xunji_sync_status": {
+    "connected": false,
+    "lastSuccessAt": null
+  },
   "get_training_summary": {},
   "get_current_plan": null,
   "list_session_templates": [],
@@ -85,5 +88,17 @@
   "upsert_plan_draft_week": {},
   "validate_plan_draft": {},
   "commit_plan_draft": {},
-  "discard_plan_draft": {}
+  "discard_plan_draft": {},
+  "get_training_memory": {
+    "ownerId": "local-user",
+    "contentMarkdown": "",
+    "revision": 0,
+    "updatedAt": null
+  },
+  "update_training_memory": {
+    "ownerId": "local-user",
+    "contentMarkdown": "Training experience: beginner.",
+    "revision": 1,
+    "updatedAt": "2026-09-17T04:00:00.000Z"
+  }
 }

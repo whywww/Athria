@@ -446,7 +446,7 @@ const adjustmentReasonMessages: Record<string, string> = {
   TRAINING_INTERRUPTION: "Training has been interrupted for 7 days or more.",
   NEXT_WEEK_INFEASIBLE: "Next week cannot fit the plan as written.",
   PROFILE_TRAINING_RHYTHM_CONFLICT: "Your preferred weekly training rhythm differs from this plan.",
-  PROFILE_SESSION_DURATION_CONFLICT: "Some sessions are longer than your maximum session duration.",
+  PROFILE_SESSION_DURATION_CONFLICT: "Some sessions exceed your usual session length; review any exceptions you have not agreed to.",
   PROFILE_EQUIPMENT_CONFLICT: "Some planned exercises need equipment you no longer have.",
   PROFILE_RECOVERY_CONSTRAINT_CONFLICT: "The plan does not keep your required recovery days free.",
   GOAL_PLAN_INTENT_DRIFT: "The plan no longer matches your current goals.",

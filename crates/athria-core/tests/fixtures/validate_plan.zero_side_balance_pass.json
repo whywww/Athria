@@ -304,7 +304,7 @@
         "confidenceLimit": null
       },
       {
-        "enforcement": "blocker",
+        "enforcement": "advisory",
         "reasonCode": "MAX_SESSION_DURATION",
         "status": "pass",
         "rulePackId": "structure",
@@ -476,8 +476,8 @@
     "validatedAt": "2026-09-17T10:30:00.000Z",
     "inputHash": "fnv1a-aa54524d",
     "coverage": {
-      "hardChecksResolved": 8,
-      "hardChecksTotal": 8,
+      "hardChecksResolved": 7,
+      "hardChecksTotal": 7,
       "movementFactsResolved": 1,
       "movementFactsTotal": 1,
       "muscleFactsResolved": 1,

@@ -239,7 +239,9 @@ pub fn fetch_intervals<C: HttpClient>(
                 }
                 Err(message) => {
                     result = json!(message);
-                    break;
+                    if attempt == 2 {
+                        break;
+                    }
                 }
             }
         }

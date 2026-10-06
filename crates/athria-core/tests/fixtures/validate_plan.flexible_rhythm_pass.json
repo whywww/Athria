@@ -412,7 +412,7 @@
         "confidenceLimit": null
       },
       {
-        "enforcement": "blocker",
+        "enforcement": "advisory",
         "reasonCode": "MAX_SESSION_DURATION",
         "status": "pass",
         "rulePackId": "structure",
@@ -445,7 +445,7 @@
         "confidenceLimit": null
       },
       {
-        "enforcement": "blocker",
+        "enforcement": "advisory",
         "reasonCode": "MAX_SESSION_DURATION",
         "status": "pass",
         "rulePackId": "structure",
@@ -478,7 +478,7 @@
         "confidenceLimit": null
       },
       {
-        "enforcement": "blocker",
+        "enforcement": "advisory",
         "reasonCode": "MAX_SESSION_DURATION",
         "status": "pass",
         "rulePackId": "structure",
@@ -511,7 +511,7 @@
         "confidenceLimit": null
       },
       {
-        "enforcement": "blocker",
+        "enforcement": "advisory",
         "reasonCode": "MAX_SESSION_DURATION",
         "status": "pass",
         "rulePackId": "structure",
@@ -544,7 +544,7 @@
         "confidenceLimit": null
       },
       {
-        "enforcement": "blocker",
+        "enforcement": "advisory",
         "reasonCode": "MAX_SESSION_DURATION",
         "status": "pass",
         "rulePackId": "structure",
@@ -577,7 +577,7 @@
         "confidenceLimit": null
       },
       {
-        "enforcement": "blocker",
+        "enforcement": "advisory",
         "reasonCode": "MAX_SESSION_DURATION",
         "status": "pass",
         "rulePackId": "structure",
@@ -687,8 +687,8 @@
     "validatedAt": "2026-09-17T10:30:00.000Z",
     "inputHash": "fnv1a-2c4d995d",
     "coverage": {
-      "hardChecksResolved": 17,
-      "hardChecksTotal": 17,
+      "hardChecksResolved": 11,
+      "hardChecksTotal": 11,
       "movementFactsResolved": 0,
       "movementFactsTotal": 0,
       "muscleFactsResolved": 0,

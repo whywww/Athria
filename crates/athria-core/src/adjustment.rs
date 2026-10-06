@@ -528,6 +528,16 @@ fn assess_profile_change(
     hard_overrides: &mut Vec<HardOverride>,
 ) {
     for mismatch in &facts.constraint_mismatches {
+        if mismatch.kind == ProfileConstraintKind::MaxSessionDuration {
+            reasons.push(reason(
+                ReasonCode::ProfileSessionDurationConflict,
+                EvidenceSeverity::Soft,
+                EvidenceAxis::ProfileMismatch,
+                mismatch.evidence_refs.clone(),
+                RecommendedScope::None,
+            ));
+            continue;
+        }
         if mismatch.kind == ProfileConstraintKind::TrainingRhythm && !mismatch.structural {
             reasons.push(reason(
                 ReasonCode::ProfileTrainingRhythmConflict,
@@ -828,7 +838,7 @@ mod tests {
     }
 
     #[test]
-    fn local_duration_conflicts_prefer_week_scope() {
+    fn local_duration_conflicts_only_prompt_a_watch() {
         let mut facts = unchanged_profile();
         facts.constraint_mismatches = vec![ProfileConstraintMismatch {
             kind: ProfileConstraintKind::MaxSessionDuration,
@@ -836,8 +846,10 @@ mod tests {
             structural: false,
         }];
         let assessment = assess_adjustment(&profile_input(facts));
-        assert_eq!(assessment.review_status, ReviewStatus::ReviewRequired);
-        assert_eq!(assessment.recommended_scope, RecommendedScope::Week);
+        assert_eq!(assessment.review_status, ReviewStatus::Watch);
+        assert_eq!(assessment.recommended_scope, RecommendedScope::None);
+        assert!(assessment.hard_overrides.is_empty());
+        assert_eq!(assessment.reasons[0].severity, EvidenceSeverity::Soft);
     }
 
     #[test]

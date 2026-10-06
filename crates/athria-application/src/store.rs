@@ -94,6 +94,8 @@ pub trait AthriaStore {
 
     fn get_profile(&self, owner_id: &str) -> Result<Value>;
     fn save_profile(&self, profile: &Value) -> Result<Value>;
+    fn get_training_memory(&self, owner_id: &str) -> Result<Option<Value>>;
+    fn save_training_memory(&self, owner_id: &str, content_markdown: &str, expected_revision: i64) -> Result<Value>;
 
     fn list_sessions(&self, owner_id: &str, since: Option<&str>) -> Result<Vec<Value>>;
     fn list_sessions_by_source(
