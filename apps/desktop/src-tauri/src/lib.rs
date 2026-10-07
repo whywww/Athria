@@ -16,6 +16,8 @@ use uuid::Uuid;
 use zeroize::Zeroizing;
 
 mod application_ipc;
+mod daily_sync;
+use daily_sync::{sync_training_apps_daily, set_connection_daily_auto_sync, daily_auto_sync_enabled};
 mod agent_integrations;
 mod skill_updates;
 use skill_updates::{skill_update_status, check_skill_updates, install_skill_update, set_skill_auto_update};
@@ -25,7 +27,7 @@ use application_ipc::{DesktopApplication, dispatch as dispatch_application};
 use agent_integrations::{AgentKind, SkillUpdateAction, home_dir, resource_skills};
 use athria_application::AthriaApplication;
 use athria_integrations::{
-    XUNJI_SYNC_DAYS, fetch_intervals, fetch_xunji_training, sync_date_window,
+    fetch_intervals, fetch_xunji_training,
 };
 use athria_mcp::{McpService, serve_http_with_refresh_shutdown, serve_stdio_with_refresh};
 use athria_runtime::{ReqwestHttpClient, create_local_workspace, preview_backup};
@@ -41,6 +43,7 @@ struct RuntimeState {
     mcp_token: String,
     generation: AtomicU64,
     switch_lock: Mutex<()>,
+    syncs: daily_sync::SyncRegistry,
 }
 
 struct ActiveApplicationGuard<'a>(std::sync::MutexGuard<'a, Option<DesktopApplication>>);
@@ -746,6 +749,12 @@ async fn sync_intervals(
     range: Option<Value>,
 ) -> Result<Value, String> {
     let generation = database_generation(&state);
+    run_intervals_sync(&state, range, false, generation).await?
+        .ok_or_else(|| "Intervals.icu is already syncing.".to_string())
+}
+
+async fn run_intervals_sync(state: &RuntimeState, range: Option<Value>, automatic: bool, generation: u64) -> Result<Option<Value>, String> {
+    let Some(_lease) = state.syncs.acquire(generation, "intervals")? else { return Ok(None); };
     let bundle = vault_bundle(&state).await?;
     let secret = secret_for(&bundle, "intervals")
         .ok_or_else(|| "Intervals.icu is not configured".to_string())?;
@@ -755,36 +764,29 @@ async fn sync_intervals(
         .and_then(Value::as_str)
         .unwrap_or("0")
         .to_string();
-    let api_key = decrypted_connection_key(&state, "intervals").await?;
+    if cached_master_key(state, &bundle).is_none() {
+        return Err("This database is locked. Enter its database password to continue.".to_string());
+    }
     let (previous, attempted_at) = {
         let app = active_application(&state)?;
+        ensure_generation(state, generation)?;
         (
             app.get_intervals_sync_status()
                 .map_err(|error| error.message().to_owned())?,
             app.store().now(),
         )
     };
-    let requested_days = range.as_ref().and_then(Value::as_i64);
-    let window = sync_date_window(
-        previous
-            .as_ref()
-            .and_then(|value| value.get("lastSuccessAt"))
-            .and_then(Value::as_str),
-        requested_days,
-        &attempted_at,
-    )
-    .map_err(|error| error.message().to_owned())?;
-    let payload = fetch_intervals(
-        &ReqwestHttpClient::default(),
-        &api_key,
-        &athlete_id,
-        &attempted_at,
-        Some(&window.range_start),
-        Some(&window.range_start),
-    );
+    let window = daily_sync::sync_window(previous.as_ref(), range.as_ref(), &attempted_at)?;
+    if !daily_sync::record_attempt(state, generation, "intervals", &attempted_at, automatic)? { return Ok(None); }
+    let api_key = decrypted_connection_key(state, "intervals").await?;
+    let fetch_at = attempted_at.clone();
+    let start = window.range_start.clone();
+    let payload = tauri::async_runtime::spawn_blocking(move || fetch_intervals(
+        &ReqwestHttpClient::default(), &api_key, &athlete_id, &fetch_at, Some(&start), Some(&start),
+    )).await.map_err(|error| error.to_string())?;
     let application = active_application(&state)?;
     ensure_generation(&state, generation)?;
-    application.commit_intervals(&payload, &json!({ "attemptedAt": attempted_at, "rangeStart": window.range_start, "rangeEnd": window.range_end })).map_err(|error| error.message().to_owned())
+    application.commit_intervals(&payload, &json!({ "attemptedAt": attempted_at, "rangeStart": window.range_start, "rangeEnd": window.range_end })).map(Some).map_err(|error| error.message().to_owned())
 }
 
 #[tauri::command]
@@ -804,7 +806,7 @@ async fn intervals_status(state: State<'_, RuntimeState>) -> Result<Value, Strin
     let sync = application
         .get_intervals_sync_status()
         .map_err(|error| error.message().to_owned())?;
-    Ok(json!({ "configured": configured, "athleteId": athlete_id, "locked": locked, "sync": sync }))
+    Ok(json!({ "configured": configured, "athleteId": athlete_id, "locked": locked, "sync": sync, "dailyAutoSync": secret.map(daily_auto_sync_enabled).unwrap_or(true) }))
 }
 
 #[tauri::command]
@@ -854,10 +856,13 @@ async fn import_xunji_skill(
     vault_password: Option<String>,
 ) -> Result<Value, String> {
     let generation = database_generation(&state);
+    let _lease = state.syncs.acquire(generation, "xunji")?
+        .ok_or_else(|| "SynFit is already syncing.".to_string())?;
     let mut api_key = extract_xunji_api_key(&skill_text)?;
     let attempted_at = active_application(&state)?
         .store()
         .now();
+    daily_sync::record_attempt(&state, generation, "xunji", &attempted_at, false)?;
     let fetched = fetch_xunji_training(
         &ReqwestHttpClient::default(),
         &api_key,
@@ -890,18 +895,26 @@ async fn import_xunji_skill(
 #[tauri::command]
 async fn sync_xunji(state: State<'_, RuntimeState>, range: Option<Value>) -> Result<Value, String> {
     let generation = database_generation(&state);
-    let api_key = decrypted_connection_key(&state, "xunji")
-        .await
-        .map_err(|_| "Xunji is not configured or its saved key is locked.".to_string())?;
+    run_xunji_sync(&state, range, false, generation).await?
+        .ok_or_else(|| "SynFit is already syncing.".to_string())
+}
+
+async fn run_xunji_sync(state: &RuntimeState, range: Option<Value>, automatic: bool, generation: u64) -> Result<Option<Value>, String> {
+    let Some(_lease) = state.syncs.acquire(generation, "xunji")? else { return Ok(None); };
+    let bundle = vault_bundle(state).await?;
+    if secret_for(&bundle, "xunji").is_none() || cached_master_key(state, &bundle).is_none() {
+        return Err("Xunji is not configured or its saved key is locked.".to_string());
+    }
     let (previous, attempted_at) = {
         let app = active_application(&state)?;
+        ensure_generation(state, generation)?;
         (
             app.get_xunji_sync_status()
                 .map_err(|error| error.message().to_owned())?,
             app.store().now(),
         )
     };
-    if let Some(last) = previous
+    if !automatic && let Some(last) = previous
         .as_ref()
         .and_then(|value| value.get("lastAttemptAt"))
         .and_then(Value::as_str)
@@ -914,28 +927,19 @@ async fn sync_xunji(state: State<'_, RuntimeState>, range: Option<Value>) -> Res
             return Err("Wait 30 seconds before syncing Xunji again.".to_string());
         }
     }
-    let window = sync_date_window(
-        previous
-            .as_ref()
-            .and_then(|value| value.get("lastSuccessAt"))
-            .and_then(Value::as_str),
-        range
-            .as_ref()
-            .and_then(Value::as_i64)
-            .or(Some(XUNJI_SYNC_DAYS)),
-        &attempted_at,
-    )
-    .map_err(|error| error.message().to_owned())?;
-    match fetch_xunji_training(
-        &ReqwestHttpClient::default(),
-        &api_key,
-        window.days,
-        &attempted_at,
-    ) {
+    let window = daily_sync::sync_window(previous.as_ref(), range.as_ref(), &attempted_at)?;
+    if !daily_sync::record_attempt(state, generation, "xunji", &attempted_at, automatic)? { return Ok(None); }
+    let api_key = decrypted_connection_key(state, "xunji").await?;
+    let fetch_at = attempted_at.clone();
+    let fetched = tauri::async_runtime::spawn_blocking(move || fetch_xunji_training(
+        &ReqwestHttpClient::default(), &api_key, window.days, &fetch_at,
+    )).await.map_err(|error| error.to_string())?;
+    match fetched {
         Ok(fetched) => {
             let application = active_application(&state)?;
             ensure_generation(&state, generation)?;
             application.commit_xunji(&fetched, &attempted_at).map_err(|error| error.message().to_owned())
+                .map(Some)
         }
         Err(_) => {
             let app = active_application(&state)?;
@@ -953,14 +957,15 @@ async fn sync_xunji(state: State<'_, RuntimeState>, range: Option<Value>) -> Res
 async fn xunji_status(state: State<'_, RuntimeState>) -> Result<Value, String> {
     let generation = database_generation(&state);
     let bundle = vault_bundle(&state).await?;
-    let configured = secret_for(&bundle, "xunji").is_some();
+    let secret = secret_for(&bundle, "xunji");
+    let configured = secret.is_some();
     let locked = bundle.envelope.is_some() && cached_master_key(&state, &bundle).is_none();
     let application = active_application(&state)?;
     ensure_generation(&state, generation)?;
     let sync = application
         .get_xunji_sync_status()
         .map_err(|error| error.message().to_owned())?;
-    Ok(json!({ "configured": configured, "locked": locked, "sync": sync }))
+    Ok(json!({ "configured": configured, "locked": locked, "sync": sync, "dailyAutoSync": secret.map(daily_auto_sync_enabled).unwrap_or(true) }))
 }
 
 #[tauri::command]
@@ -1546,6 +1551,7 @@ pub fn run() -> i32 {
             mcp_token,
             generation: AtomicU64::new(0),
             switch_lock: Mutex::new(()),
+            syncs: daily_sync::SyncRegistry::default(),
         })
         .invoke_handler(tauri::generate_handler![
             startup_status,
@@ -1563,6 +1569,8 @@ pub fn run() -> i32 {
             disconnect_connection,
             test_intervals_credentials,
             sync_intervals,
+            sync_training_apps_daily,
+            set_connection_daily_auto_sync,
             intervals_status,
             import_xunji_skill,
             test_xunji_skill,
@@ -1646,6 +1654,7 @@ mod tests {
             mcp_token: String::new(),
             generation: AtomicU64::new(0),
             switch_lock: Mutex::new(()),
+            syncs: super::daily_sync::SyncRegistry::default(),
         };
         let missing = root.join("missing.sqlite3");
         assert!(switch_database_at(&state, &missing, &root).is_err());
@@ -1722,6 +1731,7 @@ mod tests {
             mcp_token: String::new(),
             generation: AtomicU64::new(0),
             switch_lock: Mutex::new(()),
+            syncs: super::daily_sync::SyncRegistry::default(),
         };
         let invalid = root.join("invalid.sqlite3");
         std::fs::write(&invalid, "not sqlite").unwrap();
@@ -1751,6 +1761,7 @@ mod tests {
             mcp_token: String::new(),
             generation: AtomicU64::new(0),
             switch_lock: Mutex::new(()),
+            syncs: super::daily_sync::SyncRegistry::default(),
         };
         let target = root.join("new.sqlite3");
         let target = validate_new_profile_target(target.to_str().unwrap(), &missing).unwrap();

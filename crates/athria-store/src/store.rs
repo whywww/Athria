@@ -22,7 +22,7 @@ use crate::sessions::js_number_value;
 pub use athria_core::DEFAULT_OWNER_ID;
 
 /// Latest schema version this store opens and creates.
-pub const SUPPORTED_SCHEMA_VERSION: i64 = 28;
+pub const SUPPORTED_SCHEMA_VERSION: i64 = 29;
 
 /// Canonical Rust compatibility baseline. Future changes must add explicit
 /// Rust migrations from this schema rather than silently replacing it.
@@ -74,6 +74,11 @@ SET data = json_remove(
     '$.maxSessionMinutes')
 WHERE json_type(data, '$.maxSessionMinutes') IS NOT NULL;
 INSERT INTO athria_migrations(version, applied_at) VALUES (28, CURRENT_TIMESTAMP);
+";
+
+const MIGRATION_V29_SQL: &str = "
+CREATE TABLE daily_sync_attempts (owner_id TEXT NOT NULL, source TEXT NOT NULL, local_date TEXT NOT NULL, attempted_at TEXT NOT NULL, PRIMARY KEY(owner_id, source, local_date));
+INSERT INTO athria_migrations(version, applied_at) VALUES (29, CURRENT_TIMESTAMP);
 ";
 
 pub(crate) fn database_error(error: rusqlite::Error) -> AthriaError {
@@ -458,13 +463,28 @@ impl SqliteStore {
         })
     }
     pub fn upsert_connection_secret(&self, secret: &EncryptedSecret) -> Result<()> {
-        if self.get_vault()?.envelope.is_none() {
-            return Err(AthriaError::new(
-                AthriaErrorCode::InvalidData,
-                "The connection vault is not initialized.",
-            ));
+        self.transaction(&mut || {
+            let bundle = self.get_vault()?;
+            if bundle.envelope.is_none() {
+                return Err(AthriaError::new(AthriaErrorCode::InvalidData, "The connection vault is not initialized."));
+            }
+            let mut replacement = secret.clone();
+            if let Some(setting) = bundle.secrets.iter().find(|value| value.source == secret.source)
+                .and_then(|value| value.config.get("dailyAutoSync")) {
+                replacement.config["dailyAutoSync"] = setting.clone();
+            }
+            self.write_secret(&replacement)
+        })
+    }
+    pub fn set_connection_daily_auto_sync(&self, source: &str, enabled: bool) -> Result<()> {
+        let updated = self.connection.execute(
+            "UPDATE connection_secrets SET config=json_set(config, '$.dailyAutoSync', json(?2)), updated_at=CURRENT_TIMESTAMP WHERE source=?1",
+            params![source, enabled.to_string()],
+        ).map_err(database_error)?;
+        if updated == 0 {
+            return Err(AthriaError::new(AthriaErrorCode::InvalidData, "This training app is not connected."));
         }
-        self.write_secret(secret)
+        Ok(())
     }
     pub fn delete_connection_secret(&self, source: &str) -> Result<bool> {
         Ok(self
@@ -484,8 +504,8 @@ impl SqliteStore {
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(database_error)
     }
-    /// Opens an Athria database, creating it when empty and migrating v24-v27
-    /// databases to v28. Other schema versions are rejected.
+    /// Opens an Athria database, creating it when empty and migrating v24-v28
+    /// databases to v29. Other schema versions are rejected.
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         Self::open_with_clock(path, Arc::new(SystemClock))
     }
@@ -506,7 +526,7 @@ impl SqliteStore {
         Ok(store)
     }
 
-    /// In-memory store used by unit tests; bootstraps a fresh v28 database.
+    /// In-memory store used by unit tests; bootstraps a fresh v29 database.
     pub fn open_in_memory() -> Result<Self> {
         Self::open_in_memory_with_clock(Arc::new(SystemClock))
     }
@@ -649,7 +669,7 @@ impl SqliteStore {
         }
         match self.schema_version()? {
             SUPPORTED_SCHEMA_VERSION => Ok(()),
-            27 | 26 | 25 | 24 => self.migrate_to_v28(),
+            28 | 27 | 26 | 25 | 24 => self.migrate_to_v29(),
             version if version < SUPPORTED_SCHEMA_VERSION => Err(AthriaError::new(
                 AthriaErrorCode::SchemaVersionUnsupported,
                 format!(
@@ -665,16 +685,18 @@ impl SqliteStore {
         }
     }
 
-    fn migrate_to_v28(&self) -> Result<()> {
+    fn migrate_to_v29(&self) -> Result<()> {
         self.connection.execute_batch("BEGIN IMMEDIATE").map_err(database_error)?;
         let migration = (|| {
             match self.schema_version()? {
+                28 => Ok(()),
                 27 => self.connection.execute_batch(MIGRATION_V28_SQL).map_err(database_error),
                 26 => self.connection.execute_batch(&format!("{MIGRATION_V27_SQL} {MIGRATION_V28_SQL}")).map_err(database_error),
                 25 => self.connection.execute_batch(&format!("{} {MIGRATION_V27_SQL} {MIGRATION_V28_SQL}", migration_v26_sql())).map_err(database_error),
                 24 => self.connection.execute_batch(&format!("{MIGRATION_V25_SQL} {} {MIGRATION_V27_SQL} {MIGRATION_V28_SQL}", migration_v26_sql())).map_err(database_error),
                 _ => Err(AthriaError::new(AthriaErrorCode::SchemaVersionUnsupported, "Database schema changed while opening.")),
-            }
+            }?;
+            self.connection.execute_batch(MIGRATION_V29_SQL).map_err(database_error)
         })();
         match migration {
             Ok(()) => self.connection.execute_batch("COMMIT").map_err(database_error),
@@ -718,6 +740,7 @@ impl SqliteStore {
         sql.push_str(&migration_v26_sql());
         sql.push_str(MIGRATION_V27_SQL);
         sql.push_str(MIGRATION_V28_SQL);
+        sql.push_str(MIGRATION_V29_SQL);
         sql.push_str("COMMIT;\n");
         self.connection.execute_batch(&sql).map_err(database_error)
     }
@@ -1240,6 +1263,25 @@ impl SqliteStore {
                 .map_err(database_error)?;
             self.reconcile_plan_matches(owner_id)?;
             Ok(plan.clone())
+        })
+    }
+
+    /// Claim an automatic attempt, or record a manual one, before making network requests.
+    /// The write transaction also checks historical sync state for pre-upgrade attempts.
+    pub fn begin_daily_sync_attempt(&self, source: &str, owner_id: &str, timezone: &str, attempted_at: &str, automatic: bool) -> Result<bool> {
+        let day = athria_core::tz::local_date(attempted_at, timezone)?;
+        self.transaction(&mut || {
+            if automatic {
+                let previous = self.get_connection_sync_state(source, owner_id)?;
+                if let Some(last) = previous.as_ref().and_then(|value| value.get("lastAttemptAt")).and_then(Value::as_str) {
+                    if athria_core::tz::local_date(last, timezone)? == day { return Ok(false); }
+                }
+            }
+            let inserted = self.connection.execute(
+                "INSERT OR IGNORE INTO daily_sync_attempts(owner_id, source, local_date, attempted_at) VALUES (?1, ?2, ?3, ?4)",
+                params![owner_id, source, day, attempted_at],
+            ).map_err(database_error)?;
+            Ok(!automatic || inserted == 1)
         })
     }
 
@@ -1788,7 +1830,7 @@ mod tests {
             drop(preview);
             assert_eq!(std::fs::read(&path).unwrap(), before);
             let store = SqliteStore::open(&path).unwrap();
-            assert_eq!(store.schema_version().unwrap(), 28);
+            assert_eq!(store.schema_version().unwrap(), SUPPORTED_SCHEMA_VERSION);
             let a = store.get_profile("a").unwrap().unwrap();
             assert_eq!(a, json!({"usualSessionMinutes": 90, "preferredName": "Original", "equipment": ["dumbbell"]}));
             assert_eq!(store.get_profile("b").unwrap().unwrap(), json!({"usualSessionMinutes": 120}));
@@ -1808,12 +1850,32 @@ mod tests {
     }
 
     #[test]
+    fn migrates_v28_without_losing_existing_sync_state() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("v28.sqlite3");
+        let before = json!({ "ownerId": "local-user", "source": "intervals", "lastAttemptAt": "2026-10-07T08:00:00Z", "lastSuccessAt": null,
+            "rangeStart": "2026-10-01", "rangeEnd": "2026-10-07", "status": "failed", "data": { "errors": { "activities": "offline" } } });
+        {
+            let store = SqliteStore::open(&path).unwrap();
+            store.save_connection_sync_state(&before).unwrap();
+            store.connection.execute_batch("DROP TABLE daily_sync_attempts; DELETE FROM athria_migrations WHERE version=29;").unwrap();
+        }
+        let store = SqliteStore::open(&path).unwrap();
+        assert_eq!(store.schema_version().unwrap(), SUPPORTED_SCHEMA_VERSION);
+        assert_eq!(store.get_connection_sync_state("intervals", "local-user").unwrap().unwrap(), before);
+        assert!(!store.begin_daily_sync_attempt("intervals", "local-user", "Asia/Hong_Kong", "2026-10-07T09:00:00Z", true).unwrap());
+        assert!(store.begin_daily_sync_attempt("xunji", "local-user", "Asia/Hong_Kong", "2026-10-07T09:00:00Z", true).unwrap());
+        let reopened = SqliteStore::open(&path).unwrap();
+        assert!(!reopened.begin_daily_sync_attempt("xunji", "local-user", "Asia/Hong_Kong", "2026-10-07T10:00:00Z", true).unwrap());
+    }
+
+    #[test]
     fn session_minutes_migration_rolls_back_all_profile_updates_on_failure() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("rollback.sqlite3");
         {
             let store = SqliteStore::open(&path).unwrap();
-            store.connection.execute("DELETE FROM athria_migrations WHERE version=28", []).unwrap();
+            store.connection.execute("DELETE FROM athria_migrations WHERE version>=28", []).unwrap();
             store.connection.execute_batch("INSERT INTO profiles VALUES ('a', '{\"maxSessionMinutes\":90}', 'original'); INSERT INTO profiles VALUES ('b', 'invalid json', 'original');").unwrap();
         }
         assert!(SqliteStore::open(&path).is_err());
@@ -1848,7 +1910,7 @@ mod tests {
             connection.execute_batch("DROP INDEX plan_drafts_owner_status; DROP TABLE plan_draft_weeks; DROP TABLE plan_drafts; INSERT INTO athria_migrations(version, applied_at) VALUES (24, CURRENT_TIMESTAMP); INSERT INTO vault_meta(id, database_uuid, format_version, updated_at) VALUES (1, 'old-uuid', 1, CURRENT_TIMESTAMP);").unwrap();
         }
         let migrated = SqliteStore::open(&v24).unwrap();
-        assert_eq!(migrated.schema_version().unwrap(), 28);
+        assert_eq!(migrated.schema_version().unwrap(), SUPPORTED_SCHEMA_VERSION);
         assert!(migrated.table_exists("plan_drafts").unwrap());
         assert_eq!(migrated.data_version().unwrap(), 0);
 
@@ -1859,7 +1921,7 @@ mod tests {
             connection.execute_batch("INSERT INTO athria_migrations(version, applied_at) VALUES (25, CURRENT_TIMESTAMP); INSERT INTO vault_meta(id, database_uuid, format_version, updated_at) VALUES (1, 'v25-uuid', 1, CURRENT_TIMESTAMP); INSERT INTO profiles(owner_id, data, updated_at) VALUES ('default', '{\"preferredName\":\"Original\"}', CURRENT_TIMESTAMP);").unwrap();
         }
         let migrated = SqliteStore::open(&v25).unwrap();
-        assert_eq!(migrated.schema_version().unwrap(), 28);
+        assert_eq!(migrated.schema_version().unwrap(), SUPPORTED_SCHEMA_VERSION);
         assert_eq!(migrated.data_version().unwrap(), 0);
         assert_eq!(migrated.get_profile("default").unwrap().unwrap()["preferredName"], "Original");
 
@@ -1871,13 +1933,13 @@ mod tests {
             connection.execute_batch(&migration_v26_sql()).unwrap();
         }
         let migrated = SqliteStore::open(&v26).unwrap();
-        assert_eq!(migrated.schema_version().unwrap(), 28);
+        assert_eq!(migrated.schema_version().unwrap(), SUPPORTED_SCHEMA_VERSION);
         assert!(migrated.get_training_memory("default").unwrap().is_none());
 
         let newer = directory.path().join("newer.sqlite3");
         {
             let store = SqliteStore::open(&newer).unwrap();
-            store.connection.execute("INSERT INTO athria_migrations(version, applied_at) VALUES (29, CURRENT_TIMESTAMP)", []).unwrap();
+            store.connection.execute("INSERT INTO athria_migrations(version, applied_at) VALUES (30, CURRENT_TIMESTAMP)", []).unwrap();
         }
         assert_eq!(
             SqliteStore::open(&newer).unwrap_err().code(),

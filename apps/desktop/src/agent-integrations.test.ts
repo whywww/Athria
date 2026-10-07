@@ -2,12 +2,18 @@ import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient } from "@tanstack/query-core";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { LanguageProvider } from "./i18n";
 import { AddAgentModal, AgentIntegrations, AgentTiles, ManualAgentSetup, MoreAgentsModal, SkillArchiveGuideModal, SkillUpdateConflictModal, agentTileColumns, shortenHomePath, sortAgentRoster, splitAgentTiles } from "./App";
 import type { AgentIntegrationStatus, McpStatus } from "./api";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+
+beforeEach(() => {
+  vi.stubGlobal("localStorage", { getItem: () => "en", setItem: () => {} });
+  renderToStaticMarkup(createElement(LanguageProvider, null, createElement("div")));
+  vi.unstubAllGlobals();
+});
 
 const render = (node: ReactElement, rows: AgentIntegrationStatus[]) => {
   const client = new QueryClient();
@@ -63,6 +69,42 @@ const roster: AgentIntegrationStatus[] = [
   { ...workBuddy, mcp: "installed" },
 ];
 
+describe("GitHub Copilot", () => {
+  it("shows its official mark and requested connection paths", () => {
+    const agent: AgentIntegrationStatus = { ...qoderCn, agent: "github_copilot", name: "GitHub Copilot", configPath: "C:/Users/test/.copilot/mcp-config.json", skillsPath: "C:/Users/test/.copilot/skills" };
+    const html = renderWithHome(createElement(AddAgentModal, { onClose: () => {} }), [agent]);
+    expect(html).toContain("GitHub Copilot");
+    expect(html).toContain('class="agent-icon agent-github-copilot"');
+    expect(html).toContain("copilot.png");
+    expect(html).toContain("~/.copilot/mcp-config.json");
+    expect(html).toContain("~/.copilot/skills");
+    const connected = render(createElement(AddAgentModal, { onClose: () => {} }), [{ ...agent, mcp: "installed", skills: "installed" }]);
+    expect(connected).toContain('class="agent-modal-connected" disabled=""');
+  });
+});
+
+describe("international agents", () => {
+  const agents: AgentIntegrationStatus[] = [
+    { ...qoderCn, agent: "qoder", name: "Qoder", configPath: "C:/Users/test/.qoder/settings.json", skillsPath: "C:/Users/test/.qoder/skills" },
+    { ...traeCn, agent: "trae", name: "Trae", configPath: "C:/Users/test/.trae/mcp.json", skillsPath: "C:/Users/test/.trae/skills" },
+  ];
+  it("shows official marks and independent MCP and skills paths", () => {
+    const html = renderWithHome(createElement(AddAgentModal, { onClose: () => {} }), [...agents, qoderCn, traeCn]);
+    expect(html).toContain("Qoder</");
+    expect(html).toContain("Trae</");
+    expect(html).toContain('class="agent-icon agent-qoder"');
+    expect(html).toContain('class="agent-icon agent-trae"');
+    expect(html.match(/class="agent-logo"/g)).toHaveLength(4);
+    expect(html).toContain("qoder.png");
+    for (const path of ["~/.qoder/settings.json", "~/.qoder/skills", "~/.trae/mcp.json", "~/.trae/skills", "~/.qoder-cn/skills", "~/.trae-cn/skills"]) expect(html).toContain(path);
+  });
+  it("shows connected international agents as separate tiles", () => {
+    const html = render(createElement(AgentIntegrations), agents.map((agent) => ({ ...agent, mcp: "installed", skills: "installed" })));
+    expect(html.match(/class="agent-tile"/g)).toHaveLength(2);
+    expect(html.match(/class="agent-logo"/g)).toHaveLength(2);
+  });
+});
+
 describe("AgentIntegrations", () => {
   it("renders one tile per connected agent and hides unconnected ones", () => {
     const html = render(createElement(AgentIntegrations), integrations);
@@ -71,7 +113,7 @@ describe("AgentIntegrations", () => {
     expect(html).toContain("Claude Desktop");
     expect(html).not.toContain("Claude Code");
     expect(html).toContain("Connected");
-    expect(html).toContain("Skills setup required");
+    expect(html).toContain("Verification required");
     expect(html).not.toContain("More Agents");
     expect(html).not.toContain("agent-tile-more");
     expect(html).toContain("Add Agent</button>");
@@ -154,7 +196,7 @@ describe("AgentIntegrations", () => {
     expect(html.match(/>Connect<\/button>/g)).toHaveLength(1);
     expect(html.match(/class="agent-modal-connected"/g)).toHaveLength(1);
     expect(html.match(/class="agent-modal-pending"/g)).toHaveLength(1);
-    expect(html).toContain("Skills setup required");
+    expect(html).toContain("Verification required");
   });
 
   it("localizes the Add Agent title and Connect action", () => {
@@ -175,6 +217,8 @@ describe("AgentIntegrations", () => {
     expect(html).toContain("C:/Users/test/.codex/config.toml");
     expect(html.match(/class="agent-modal-connected"/g)).toHaveLength(1);
     expect(html).toContain('aria-label="Connected"');
+    expect(html).toContain('<button type="button" class="agent-modal-connected" disabled="" aria-label="Connected" title="Connected">Connected</button>');
+    expect(html).not.toContain('class="app-icon app-icon-check"');
     expect(html.match(/>Connect<\/button>/g)).toBeNull();
   });
 
@@ -193,7 +237,7 @@ describe("AgentIntegrations", () => {
     expect(html).toContain("C:/c/claude_desktop_config.json");
     expect(html).toContain("C:/a/agent-integration/claude_desktop");
     expect(html).toContain('class="agent-modal-pending"');
-    expect(html).toContain("Skills setup required");
+    expect(html).toContain("Verification required");
     expect(html).not.toContain("Need manual install");
   });
 
@@ -240,6 +284,12 @@ describe("AgentIntegrations", () => {
     expect(html).not.toContain("Need manual install");
   });
 
+  it("places connected agents last while preserving the order within each group", () => {
+    const html = render(createElement(AddAgentModal, { onClose: () => {} }), [codex, workBuddy, claudeCode, traeCn, qoderCn]);
+    const names = [...html.matchAll(/<strong>([^<]+)<\/strong>/g)].map((match) => match[1]);
+    expect(names).toEqual(["Qoder CN", "Trae CN", "WorkBuddy", "Claude Code", "Codex"]);
+  });
+
   it("keeps the manual setup entry point in the dialog", () => {
     const html = render(createElement(AddAgentModal, { onClose: () => {} }), [codex]);
     expect(html.match(/class="agent-modal-connected"/g)).toHaveLength(1);
@@ -250,7 +300,7 @@ describe("AgentIntegrations", () => {
 describe("ManualAgentSetup", () => {
   it("asks for a name and the two filesystem paths", () => {
     const html = renderToStaticMarkup(createElement(ManualAgentSetup));
-    expect(html).toContain("Tell me your agent name");
+    expect(html).toContain("Please tell me the name of the AI coding client you are currently running");
     expect(html).toContain("Agent name");
     expect(html).toContain("MCP config file");
     expect(html).toContain("Skills folder");
@@ -270,7 +320,7 @@ describe("ManualAgentSetup", () => {
     Object.defineProperty(globalThis, "navigator", { configurable: true, value: { language: "zh-CN" } });
     const html = renderToStaticMarkup(createElement(LanguageProvider, null, createElement(ManualAgentSetup)));
     expect(html).toContain("复制以下内容询问你的 AI 助手");
-    expect(html).toContain("请告诉我你的助手名称");
+    expect(html).toContain("请告诉我你当前运行的 AI 编程客户端名称");
     expect(html).toContain(">复制</button>");
     expect(html).toContain(">测试连接</button>");
     renderToStaticMarkup(createElement(LanguageProvider, null, createElement("div")));
@@ -389,8 +439,19 @@ describe("GUI-managed agent Skills", () => {
   it("asks for Skills setup instead of reporting a fresh install as connected", () => {
     const html = renderWithHome(createElement(AgentIntegrations), [claudeDesktop]);
     expect(html).toContain('class="agent-tile-state skills_setup_required"');
-    expect(html).toContain("Skills setup required");
+    expect(html).toContain("Verification required");
     expect(html).not.toContain('agent-tile-state connected');
+  });
+
+  it("hides the GUI-managed archive path in the tile menu and translates verification", () => {
+    const agent = { ...claudeDesktop, skillArchiveDir: "C:/a/agent-integration/claude_desktop" };
+    const html = renderWithHome(createElement(AgentIntegrations), [agent]);
+    expect(html).toContain("claude_desktop_config.json");
+    expect(html).not.toContain(agent.skillArchiveDir);
+    expect(html).not.toContain(">Skills</small>");
+    const chinese = renderChinese(createElement(AgentIntegrations), [agent]);
+    expect(chinese).toContain("待验证");
+    expect(chinese).not.toContain("Verification required");
   });
 
   it("reports Connected once a reported Skill matches the bundled version", () => {
@@ -433,8 +494,13 @@ describe("GUI-managed agent Skills", () => {
       onClose: () => {},
     }));
     expect(html).toContain("Finish connecting Claude Desktop");
-    expect(html).toContain("Choose Customize, then Skills.");
-    expect(html).toContain("the 2 ZIP files");
+    expect(html).toContain("Athria has configured MCP. Follow the steps below to manually configure Skills.");
+    const steps = ["Claude Desktop → Settings → Skills.", "Click Add in the top-right corner → Upload Skill.", "Drag in all the ZIP files Athria prepared, then click Upload.", "Copy the prompt below, then paste and send it in a new Claude Desktop conversation."];
+    for (const step of steps) expect(html).toContain(step);
+    expect(steps.map((step) => html.indexOf(step))).toEqual(steps.map((step) => html.indexOf(step)).sort((a, b) => a - b));
+    expect(html).toContain("Copy prompt");
+    expect(html).toContain("Only load and verify the connection; do not modify my data.");
+    expect(html).not.toContain("Choose Customize");
     expect(html).toContain("athria-coach");
     expect(html).toContain("C:/a/agent-integration/claude_desktop");
     expect(html).toContain("Open ZIP folder");
@@ -447,7 +513,17 @@ describe("GUI-managed agent Skills", () => {
       onClose: () => {},
     }));
     expect(html).toContain("Claude Desktop needs the refreshed Skills");
-    expect(html).toContain("refreshed the MCP configuration");
-    expect(html).toContain("the ZIP files");
+    expect(html).toContain("Athria has updated the MCP configuration. Follow the steps below to manually update Skills.");
+    expect(html).toContain("Drag in all the ZIP files Athria prepared");
+  });
+
+  it.each([false, true])("translates every guide instruction in Chinese (updating: %s)", (updating) => {
+    const html = renderChinese(createElement(SkillArchiveGuideModal, {
+      guide: { name: "Claude Desktop", archiveDir: "C:/a/agent-integration/claude_desktop", archives, updating },
+      onClose: () => {},
+    }), []);
+    for (const text of [updating ? "Claude Desktop 需要更新 Skill" : "完成 Claude Desktop 连接", updating ? "Athria 已更新 MCP 配置。请按以下步骤手动更新 Skill。" : "Athria 已配置好 MCP。请按以下步骤手动配置 Skill。", "打开 Skills", "Claude Desktop → 设置 → Skills。", "添加 Skill", "点击右上角“添加”→“上传 Skill”。", "上传所有 ZIP", "拖入 Athria 准备的所有 ZIP 文件，然后点击“上传”。", "加载 Skill", "复制下面的提示词，在 Claude Desktop 新建对话中粘贴并发送。", "请加载我上传的所有 Athria Skills", "只进行加载和连接验证，不修改我的数据。", "复制提示词", "Skill 压缩包", "打开 ZIP 文件夹", "完成", "Claude Desktop 运行 Skill 并回报实际加载的版本后，Athria 会显示“已连接”。", "athria-coach", "C:/a/agent-integration/claude_desktop"]) expect(html).toContain(text);
+    expect(html).not.toContain("Copy prompt");
+    expect(html).not.toContain("Follow the steps below");
   });
 });

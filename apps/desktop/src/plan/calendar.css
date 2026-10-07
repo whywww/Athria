@@ -263,11 +263,16 @@
 .rx-panel-aside { display: inline-flex; align-items: center; flex: 0 0 auto; gap: 8px; }
 .rx-panel-meta { color: #4a5766; font-size: 12px; font-weight: 650; white-space: nowrap; }
 .rx-domain { display: inline-flex; align-items: center; flex: 0 0 auto; gap: 6px; padding: 4px 9px; border: 1px solid rgba(229, 234, 240, .92); border-radius: 999px; color: #3b4b65; background: linear-gradient(180deg, #f7f9fc, #eef2f7); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .92); font-size: 10px; font-weight: 650; white-space: nowrap; }
+.rx-panel-strength .rx-domain { color: var(--domain-strength-ink); border-color: var(--domain-strength-line); background: var(--domain-strength-soft); }
+.rx-panel-endurance .rx-domain { color: var(--domain-endurance-ink); border-color: var(--domain-endurance-line); background: var(--domain-endurance-soft); }
+.rx-panel-sport_skill .rx-domain { color: var(--domain-sport_skill-ink); border-color: var(--domain-sport_skill-line); background: var(--domain-sport_skill-soft); }
+.rx-panel-mind_body .rx-domain { color: var(--domain-mind_body-ink); border-color: var(--domain-mind_body-line); background: var(--domain-mind_body-soft); }
+.rx-panel-recovery .rx-domain { color: var(--domain-recovery-ink); border-color: var(--domain-recovery-line); background: var(--domain-recovery-soft); }
 .rx-panel-chip { display: inline-flex; align-items: center; flex: 0 0 auto; padding: 2px 8px; border-radius: 999px; color: #284b78; background: #e9f0f8; font-size: 10px; font-weight: 650; white-space: nowrap; }
 .rx-domain-glyph { flex: 0 0 auto; width: 13px; height: 13px; }
 .rx-table { min-width: 0; }
 .rx-table-row { min-width: 0; display: grid; align-items: center; column-gap: var(--rx-column-gap, 16px); padding-inline: 16px; border-top: 1px solid #edf0f4; }
-.rx-table-header { min-height: 26px; border-top: 0; color: #62728b; background: rgba(249, 251, 253, .62); font-size: 10px; font-weight: 650; letter-spacing: .015em; }
+.rx-table-header { min-height: 26px; border-top: 0; color: #62728b; background: rgba(249, 251, 253, .62); font-size: 12px; font-weight: 650; letter-spacing: .015em; }
 .rx-strength-table .rx-table-row { grid-template-columns: 40px minmax(0, 1.15fr) minmax(96px, .72fr) minmax(82px, .6fr) minmax(64px, .48fr) minmax(0, 1.65fr); }
 .rx-endurance-table, .rx-blocks-table { --rx-column-gap: 16px; --rx-prescription-column: minmax(140px, 1fr); --rx-duration-column: 88px; --rx-effort-column: 112px; --rx-notes-column: minmax(180px, 1.5fr); }
 .rx-endurance-table .rx-table-row { grid-template-columns: 48px var(--rx-prescription-column) var(--rx-duration-column) var(--rx-effort-column) var(--rx-notes-column); }

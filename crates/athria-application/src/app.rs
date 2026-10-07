@@ -1372,9 +1372,14 @@ impl<S: AthriaStore> AthriaApplication<S> {
                 .map(|value| value["lastSuccessAt"].clone())
                 .unwrap_or(Value::Null)
         };
+        let mut sync_data = json!({ "activities": counts.to_json(), "wellnessCount": wellness_count, "errors": errors });
+        if !failed_dates.is_empty() {
+            sync_data["failedDates"] = json!(failed_dates.iter().map(|(date, failures)| json!({ "date": date, "failures": failures })).collect::<Vec<_>>());
+        }
+        if !undated_failures.is_empty() { sync_data["undatedFailures"] = json!(undated_failures); }
         let state = self.store.save_connection_sync_state(&json!({ "ownerId": self.owner_id, "source": "intervals", "lastAttemptAt": attempted_at,
             "lastSuccessAt": last_success, "rangeStart": range_start, "rangeEnd": range_end, "status": status,
-            "data": { "activities": counts.to_json(), "wellnessCount": wellness_count, "errors": errors } }))?;
+            "data": sync_data }))?;
         let mut result = json!({ "added": counts.added, "updated": counts.updated, "wellnessCount": wellness_count, "errors": errors, "sync": state });
         if !failed_dates.is_empty() {
             result["failedDates"] = json!(failed_dates.into_iter().map(|(date, failures)| json!({ "date": date, "failures": failures })).collect::<Vec<_>>());

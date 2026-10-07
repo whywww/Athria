@@ -10,10 +10,13 @@ use std::{
 use tauri::{AppHandle, Manager};
 use toml_edit::{Array, DocumentMut, Item, Table, value};
 use uuid::Uuid;
-const AGENTS: [AgentKind; 7] = [
+const AGENTS: [AgentKind; 10] = [
+    AgentKind::GitHubCopilot,
     AgentKind::Codex,
     AgentKind::ClaudeCode,
     AgentKind::ClaudeDesktop,
+    AgentKind::Qoder,
+    AgentKind::Trae,
     AgentKind::QoderCn,
     AgentKind::TraeCn,
     AgentKind::Cursor,
@@ -23,9 +26,13 @@ const AGENTS: [AgentKind; 7] = [
 #[derive(Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentKind {
+    #[serde(rename = "github_copilot")]
+    GitHubCopilot,
     Codex,
     ClaudeCode,
     ClaudeDesktop,
+    Qoder,
+    Trae,
     QoderCn,
     TraeCn,
     Cursor,
@@ -230,6 +237,10 @@ fn paths(agent: AgentKind) -> Result<AgentPaths, String> {
     let home = home_dir()?;
     let skills = |relative: &str| SkillsTarget::Filesystem(home.join(relative));
     match agent {
+        AgentKind::GitHubCopilot => Ok(AgentPaths {
+            config: home.join(".copilot/mcp-config.json"),
+            skills: skills(".copilot/skills"),
+        }),
         AgentKind::Codex => Ok(AgentPaths {
             config: home.join(".codex/config.toml"),
             skills: skills(".agents/skills"),
@@ -253,6 +264,14 @@ fn paths(agent: AgentKind) -> Result<AgentPaths, String> {
                 skills: SkillsTarget::GuiManaged,
             })
         }
+        AgentKind::Qoder => Ok(AgentPaths {
+            config: home.join(".qoder/settings.json"),
+            skills: skills(".qoder/skills"),
+        }),
+        AgentKind::Trae => Ok(AgentPaths {
+            config: home.join(".trae/mcp.json"),
+            skills: skills(".trae/skills"),
+        }),
         AgentKind::QoderCn => Ok(AgentPaths {
             config: home.join(".qoder-cn/settings.json"),
             skills: skills(".qoder-cn/skills"),
@@ -304,9 +323,12 @@ pub(crate) fn gui_skill_reports_path(config_root: &Path, agent: AgentKind) -> Pa
 
 fn identity(agent: AgentKind) -> (&'static str, &'static str) {
     match agent {
+        AgentKind::GitHubCopilot => ("github_copilot", "GitHub Copilot"),
         AgentKind::Codex => ("codex", "Codex"),
         AgentKind::ClaudeCode => ("claude_code", "Claude Code"),
         AgentKind::ClaudeDesktop => ("claude_desktop", "Claude Desktop"),
+        AgentKind::Qoder => ("qoder", "Qoder"),
+        AgentKind::Trae => ("trae", "Trae"),
         AgentKind::QoderCn => ("qoder_cn", "Qoder CN"),
         AgentKind::TraeCn => ("trae_cn", "Trae CN"),
         AgentKind::Cursor => ("cursor", "Cursor"),
@@ -371,11 +393,22 @@ fn exists_in(base: Option<PathBuf>, relative: &str) -> bool {
     base.is_some_and(|base| base.join(relative).exists())
 }
 
+fn claude_desktop_windows_available(local_app_data: &Path) -> bool {
+    local_app_data.join("AnthropicClaude/Claude.exe").is_file()
+        || local_app_data.join("Packages/Claude_pzs8sxrjxfjjc").is_dir()
+}
+
 fn is_available(agent: AgentKind, target: &AgentPaths) -> bool {
     if !cfg!(any(windows, target_os = "macos")) {
         return false;
     }
     match agent {
+        AgentKind::GitHubCopilot => {
+            command_available("copilot")
+                || target.config.exists()
+                || target.skills_dir().is_some_and(|path| path.exists())
+                || (cfg!(windows) && exists_in(env_path("APPDATA"), "npm/copilot.cmd"))
+        }
         AgentKind::Codex => {
             command_available("codex")
                 || target.config.exists()
@@ -389,9 +422,28 @@ fn is_available(agent: AgentKind, target: &AgentPaths) -> bool {
         AgentKind::ClaudeDesktop => {
             target.config.exists()
                 || if cfg!(windows) {
-                    exists_in(env_path("LOCALAPPDATA"), "AnthropicClaude/Claude.exe")
+                    env_path("LOCALAPPDATA")
+                        .is_some_and(|path| claude_desktop_windows_available(&path))
                 } else {
                     Path::new("/Applications/Claude.app").exists()
+                }
+        }
+        AgentKind::Qoder => {
+            target.config.exists()
+                || target.skills_dir().is_some_and(|path| path.exists())
+                || if cfg!(windows) {
+                    exists_in(env_path("ProgramFiles"), "Qoder IDE/Qoder IDE.exe")
+                } else {
+                    Path::new("/Applications/Qoder.app").exists()
+                }
+        }
+        AgentKind::Trae => {
+            target.config.exists()
+                || target.skills_dir().is_some_and(|path| path.exists())
+                || if cfg!(windows) {
+                    exists_in(env_path("APPDATA"), "Trae")
+                } else {
+                    Path::new("/Applications/Trae.app").exists()
                 }
         }
         AgentKind::QoderCn => {
@@ -684,6 +736,17 @@ fn backup_existing(path: &Path, backup: &Path, name: &str) -> Result<(), String>
         fs::copy(path, destination)
             .map(|_| ())
             .map_err(|error| format!("Could not back up {}: {error}", path.display()))
+    }
+}
+
+fn discard_install_backup(root: &Path, backup: &Path) -> Option<String> {
+    let retained = || Some(backup.to_string_lossy().into_owned());
+    let Ok(directory) = root.join("agent-integration-backups").canonicalize() else { return retained(); };
+    let Ok(resolved) = backup.canonicalize() else { return retained(); };
+    if resolved.parent() != Some(directory.as_path()) { return retained(); }
+    match fs::remove_dir_all(&resolved) {
+        Ok(()) => None,
+        Err(_) => retained(),
     }
 }
 
@@ -1168,7 +1231,7 @@ pub fn install(
         mcp: "installed",
         skills,
         restart_required: true,
-        backup_path: Some(backup.to_string_lossy().into_owned()),
+        backup_path: discard_install_backup(backup_root, &backup),
         skill_archive_dir,
         skill_archives,
     })
@@ -1208,7 +1271,11 @@ fn install_custom_at(app: &AppHandle, agent: &CustomAgentDefinition, backup_root
 pub fn install_by_id(app: &AppHandle, id: &str, backup_root: &Path) -> Result<OperationResult, String> {
     if let Some(agent) = AgentKind::from_id(id) { return install(app, agent, backup_root); }
     let agents = read_custom_agents(backup_root)?;
-    install_custom_at(app, custom_agent(&agents, id)?, backup_root)
+    let mut result = install_custom_at(app, custom_agent(&agents, id)?, backup_root)?;
+    if let Some(path) = &result.backup_path {
+        result.backup_path = discard_install_backup(backup_root, Path::new(path));
+    }
+    Ok(result)
 }
 
 pub fn add_custom_agent(app: &AppHandle, name: &str, config_path: &str, skills_path: &str, config_root: &Path) -> Result<OperationResult, String> {
@@ -1228,13 +1295,16 @@ pub fn add_custom_agent(app: &AppHandle, name: &str, config_path: &str, skills_p
     let definition = CustomAgentDefinition {
         id: format!("custom_{}", Uuid::new_v4().simple()), name: name.to_string(), config_path, skills_path, format,
     };
-    let result = install_custom_at(app, &definition, config_root)?;
+    let mut result = install_custom_at(app, &definition, config_root)?;
     agents.push(definition);
     if let Err(error) = write_custom_agents(config_root, &agents) {
         if let Some(path) = &result.backup_path {
             restore_backup(&custom_paths(agents.last().expect("custom agent was just appended")), Path::new(path));
         }
         return Err(format!("The connection was verified, but Athria could not save the custom agent: {error}"));
+    }
+    if let Some(path) = &result.backup_path {
+        result.backup_path = discard_install_backup(config_root, Path::new(path));
     }
     Ok(result)
 }
@@ -1301,6 +1371,37 @@ pub fn remove_by_id(id: &str, backup_root: &Path) -> Result<OperationResult, Str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn detects_packaged_and_legacy_claude_desktop_on_windows() {
+        let root = env::temp_dir().join(format!("athria-claude-detection-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        assert!(!claude_desktop_windows_available(&root));
+        let package = root.join("Packages/Claude_pzs8sxrjxfjjc");
+        fs::create_dir_all(&package).unwrap();
+        assert!(claude_desktop_windows_available(&root));
+        fs::remove_dir(&package).unwrap();
+        fs::create_dir_all(root.join("AnthropicClaude")).unwrap();
+        fs::write(root.join("AnthropicClaude/Claude.exe"), []).unwrap();
+        assert!(claude_desktop_windows_available(&root));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn successful_install_discards_only_its_own_backup() {
+        let root = env::temp_dir().join(format!("athria-backup-cleanup-{}", Uuid::new_v4()));
+        let backup = backup_path(&root, "custom").unwrap();
+        let retained = backup_path(&root, "saved-skills").unwrap();
+        fs::write(backup.join("config"), "previous config").unwrap();
+        assert!(discard_install_backup(&root, &backup).is_none());
+        assert!(!backup.exists());
+        assert!(retained.exists());
+        let outside = root.join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        assert!(discard_install_backup(&root, &outside).is_some());
+        assert!(outside.exists());
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn downloaded_source_drives_install_conflicts_exports_and_handshakes() {
@@ -1548,6 +1649,9 @@ mod tests {
     #[test]
     fn agent_config_paths_are_stable() {
         let cases = [
+            (AgentKind::GitHubCopilot, ".copilot/mcp-config.json", ".copilot/skills"),
+            (AgentKind::Qoder, ".qoder/settings.json", ".qoder/skills"),
+            (AgentKind::Trae, ".trae/mcp.json", ".trae/skills"),
             (AgentKind::QoderCn, ".qoder-cn/settings.json", ".qoder-cn/skills"),
             (AgentKind::TraeCn, ".trae-cn/mcp.json", ".trae-cn/skills"),
             (AgentKind::Cursor, ".cursor/mcp.json", ".cursor/skills"),
@@ -1709,6 +1813,27 @@ mod tests {
         // Claude Desktop has no managed Skills folder to scan or reconcile.
         assert!(paths(AgentKind::ClaudeDesktop).unwrap().skills_dir().is_none());
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn international_agents_preserve_existing_json_configuration() {
+        for (agent, id, name) in [(AgentKind::GitHubCopilot, "github_copilot", "GitHub Copilot"), (AgentKind::Qoder, "qoder", "Qoder"), (AgentKind::Trae, "trae", "Trae")] {
+            assert_eq!(identity(agent), (id, name));
+            assert!(AgentKind::from_id(id) == Some(agent));
+            let root = env::temp_dir().join(format!("athria-agent-test-{}", Uuid::new_v4()));
+            let path = root.join("mcp.json");
+            fs::create_dir_all(&root).unwrap();
+            let original = json!({"theme": "dark", "mcpServers": {"existing": {"command": "user-server", "args": ["--keep"]}}});
+            fs::write(&path, serde_json::to_vec(&original).unwrap()).unwrap();
+            install_mcp(agent, &path, "/Athria").unwrap();
+            assert_eq!(mcp_status(agent, &path, "/Athria"), "installed");
+            let installed = read_json(&path).unwrap();
+            assert_eq!(installed["theme"], original["theme"]);
+            assert_eq!(installed["mcpServers"]["existing"], original["mcpServers"]["existing"]);
+            remove_mcp(agent, &path).unwrap();
+            assert_eq!(read_json(&path).unwrap(), original);
+            fs::remove_dir_all(root).unwrap();
+        }
     }
 
     #[test]

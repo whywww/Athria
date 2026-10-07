@@ -3,7 +3,7 @@ import { TauriAthriaClient } from "./athria-client";
 import type { IntervalsConnectionStatus, SyncRange } from "./view-models";
 
 export interface McpStatus { configured: boolean; executablePath: string; arguments: ["mcp"]; skillsPath: string | null; homeDir: string | null }
-export type OfficialAgentKind = "codex" | "claude_code" | "claude_desktop" | "qoder_cn" | "trae_cn" | "cursor" | "workbuddy";
+export type OfficialAgentKind = "github_copilot" | "codex" | "claude_code" | "claude_desktop" | "qoder" | "trae" | "qoder_cn" | "trae_cn" | "cursor" | "workbuddy";
 export type AgentKind = string;
 export type IntegrationComponentStatus = "installed" | "outdated" | "modified" | "missing" | "conflict" | "unsupported" | "unavailable" | "unverified";
 /** How an agent receives Athria Skills: Athria copies into filesystem agents; the user installs them in a GUI-managed agent. */
@@ -60,6 +60,22 @@ export async function getIntervalsStatus(): Promise<IntervalsConnectionStatus> {
 export async function importXunjiSkill(skillText: string, range: SyncRange, vaultPassword?: string): Promise<unknown> { return invoke("import_xunji_skill", { skillText, range, vaultPassword }); }
 export async function testXunjiSkill(skillText: string, vaultPassword?: string): Promise<unknown> { return invoke("test_xunji_skill", { skillText, vaultPassword }); }
 export async function syncXunji(range: SyncRange): Promise<unknown> { return invoke("sync_xunji", { range }); }
+export interface TrainingSyncResult {
+  added?: number;
+  updated?: number;
+  wellnessCount?: number;
+  errors?: Record<string, string>;
+  failedDates?: Array<{ date: string; failures: Array<{ activityId: string; reason: string }> }>;
+  undatedFailures?: Array<{ activityId: string; reason: string }>;
+  sync?: { status?: string };
+}
+export interface DailyTrainingSyncResponse {
+  results: Array<{ source: "intervals" | "xunji"; result?: TrainingSyncResult; error?: string }>;
+}
+export async function syncTrainingAppsDaily(): Promise<DailyTrainingSyncResponse> { return invoke("sync_training_apps_daily"); }
+export async function setConnectionDailyAutoSync(source: "intervals" | "xunji", enabled: boolean): Promise<{ dailyAutoSync: boolean }> {
+  return invoke("set_connection_daily_auto_sync", { source, enabled });
+}
 export async function getXunjiStatus<T>(): Promise<T> { return invoke("xunji_status"); }
 export async function getMcpStatus(): Promise<McpStatus> { return invoke("mcp_status"); }
 export async function getAgentIntegrationsStatus(): Promise<AgentIntegrationStatus[]> { return invoke("agent_integrations_status"); }

@@ -71,6 +71,7 @@ fn intervals_skips_a_failed_date_and_advances_partial_sync_time() {
     assert_eq!(partial["sync"]["lastSuccessAt"], "2026-09-14T08:00:00Z");
     assert_eq!(partial["failedDates"][0]["date"], "2026-09-11");
     assert_eq!(partial["failedDates"][0]["failures"][0]["activityId"], "bad-eleven");
+    assert_eq!(app.get_intervals_sync_status().unwrap().unwrap()["data"]["failedDates"], partial["failedDates"]);
     let ids: Vec<String> = app.list_sessions(90).unwrap().iter().map(|session| session["externalId"].as_str().unwrap().to_owned()).collect();
     assert_eq!(ids.len(), 3);
     for id in ["activities:new-ten", "activities:old-eleven", "activities:new-twelve"] { assert!(ids.contains(&id.to_string()), "missing {id}"); }

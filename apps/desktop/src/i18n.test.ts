@@ -98,7 +98,7 @@ describe("desktop language", () => {
     expect(translate("Updating…", "zh-CN")).toBe("正在更新…");
     expect(translate("Weight", "zh-CN")).toBe("体重");
     expect(translate("I prefer a varied mix of training styles.", "zh-CN")).toBe("我喜欢多种训练方式的组合。");
-    expect(translate("A reusable single-domain pattern, such as \"Lower Strength A\". Templates carry structure only — no exercises or sets.", "zh-CN")).toContain("可重复使用的单领域模式");
+    expect(translate("A reusable abstract structure for a type of training that defines what the training should include without fixing specific exercises, sets or loads.", "zh-CN")).toContain("一类训练的可复用抽象结构");
     expect(translate("Marathon", "en")).toBe("Marathon");
   });
 

@@ -258,6 +258,7 @@ export function parseSyncRange(value: string): SyncRange { return value === "inc
 export interface HevyImportStatus { fileName: string; importedAt: string; status: string; counts: { sessions?: number; sets?: number; rows?: number } }
 export interface IntervalsConnectionStatus {
   configured: boolean;
+  dailyAutoSync: boolean;
   locked: boolean;
   athleteId: string;
   sync: null | {
@@ -266,11 +267,12 @@ export interface IntervalsConnectionStatus {
     rangeStart: string;
     rangeEnd: string;
     status: "success" | "partial" | "failed";
-    data: { activities?: { added?: number; updated?: number }; wellnessCount?: number; errors?: Record<string, string> };
+    data: { activities?: { added?: number; updated?: number }; wellnessCount?: number; errors?: Record<string, string>; failedDates?: Array<{ date: string; failures: Array<{ activityId: string; reason: string }> }>; undatedFailures?: Array<{ activityId: string; reason: string }> };
   };
 }
 export interface XunjiConnectionStatus {
   configured: boolean;
+  dailyAutoSync: boolean;
   locked: boolean;
   sync: null | {
     lastAttemptAt: string;
@@ -370,6 +372,14 @@ export function formatPersonalWeight(kg: number, unitSystem: UnitSystem): string
 
 export function formatDateTime(value: string, timezone?: string): string {
   return new Intl.DateTimeFormat(currentLanguage(), { dateStyle: "medium", timeStyle: "short", timeZone: timezone }).format(new Date(value));
+}
+
+export function formatSyncDateTimeParts(value: string, timezone?: string): { date: string; separator: string; time: string } {
+  const parts = new Intl.DateTimeFormat(currentLanguage(), { dateStyle: "medium", timeStyle: "short", timeZone: timezone }).formatToParts(new Date(value));
+  const timeStart = parts.findIndex((part) => part.type === "hour");
+  const prefix = parts.slice(0, timeStart).map((part) => part.value).join("");
+  const date = prefix.trimEnd();
+  return { date, separator: prefix.slice(date.length), time: parts.slice(timeStart).map((part) => part.value).join("") };
 }
 
 export function formatProposalValue(value: unknown): string {

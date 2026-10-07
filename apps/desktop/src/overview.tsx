@@ -295,18 +295,10 @@ function Sparkline({ values }: { values: (number | null)[] }) {
   </svg>;
 }
 
-function OverviewIcon({ kind }: { kind: "workout" | "target" | "recovery" | (typeof domainOrder)[number] }) {
-  const icon = kind === "workout" ? domainIconPath("strength")
-    : kind === "target" ? <><circle cx="11" cy="13" r="7"/><circle cx="11" cy="13" r="3.2"/><path d="m13.5 10.5 6-6M16 4.5h3.5V8"/></>
+function OverviewIcon({ kind }: { kind: "target" | "recovery" | (typeof domainOrder)[number] }) {
+  const icon = kind === "target" ? <><circle cx="11" cy="13" r="7"/><circle cx="11" cy="13" r="3.2"/><path d="m13.5 10.5 6-6M16 4.5h3.5V8"/></>
     : domainIconPath(kind);
   return <span className={`overview-icon icon-${kind}`} data-icon={kind} aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{icon}</svg></span>;
-}
-
-function MiniBars({ values, tone, slots = 4 }: { values: number[]; tone: "coral" | "green"; slots?: number }) {
-  const visible = values.slice(-slots);
-  const padded: Array<number | null> = [...Array(Math.max(0, slots - visible.length)).fill(null), ...visible];
-  const max = Math.max(1, ...visible);
-  return <span className={`summary-bars ${tone} ${visible.length ? "" : "empty"}`} data-chart={`${tone}-bars`} aria-hidden="true">{padded.map((value, index) => <i key={index} style={{ height: value === null ? undefined : `${Math.max(18, value / max * 100)}%` }}/>)}</span>;
 }
 
 function TrophyIcon() {
@@ -324,7 +316,7 @@ function Change({ value, suffix = " from last week", stacked = false }: { value:
   return <small className={`metric-change ${direction}`}>{arrow} {Math.abs(value)}{tr(suffix)}</small>;
 }
 
-function SummaryCard({ icon, title, value, children, className = "" }: { icon: "workout" | "target" | "recovery"; title: string; value: ReactNode; children: ReactNode; className?: string }) {
+function SummaryCard({ icon, title, value, children, className = "" }: { icon: "target" | "recovery"; title: string; value: ReactNode; children: ReactNode; className?: string }) {
   return <article className={`overview-summary-card ${className}`}><OverviewIcon kind={icon}/><div className="summary-card-copy"><span>{title}</span><strong>{value}</strong>{children}</div></article>;
 }
 
@@ -341,9 +333,9 @@ export function RecoveryHelpModal({ onClose }: { onClose: () => void }) {
         </ul>
         <p className="recovery-help-lead"><T>{"Each signal is scored separately, then the three scores are averaged to estimate readiness:"}</T></p>
         <ul className="recovery-help-verdicts">
-          <li className="ready"><i/><div><strong>Ready · 70+</strong><span><T>{"Recovered. Train as planned."}</T></span></div></li>
-          <li className="caution"><i/><div><strong>Caution · 45-69</strong><span><T>{"You can train, but keep it lighter."}</T></span></div></li>
-          <li className="rest"><i/><div><strong>Rest · below 45</strong><span><T>{"Prioritize recovery today."}</T></span></div></li>
+          <li className="ready"><i/><div><strong><T>{"Ready · 70+"}</T></strong><span><T>{"Recovered. Train as planned."}</T></span></div></li>
+          <li className="caution"><i/><div><strong><T>{"Caution · 45-69"}</T></strong><span><T>{"You can train, but keep it lighter."}</T></span></div></li>
+          <li className="rest"><i/><div><strong><T>{"Rest · below 45"}</T></strong><span><T>{"Prioritize recovery today."}</T></span></div></li>
         </ul>
         <p className="recovery-help-note"><T>{"No estimate is shown when signals are missing or baselines are insufficient. HRV and resting heart rate baselines each require at least 7 valid days from the same source in the previous 28 days. Training load and subjective check-ins are not included. These are Athria's estimation rules, not a scientifically validated score or a reproduction of another product's algorithm."}</T></p>
       </div>
@@ -357,7 +349,7 @@ function ActivityDonut({ summary }: { summary: TrainingSummary }) {
   return <div className="activity-donut"><svg viewBox="0 0 42 42" aria-hidden="true"><circle className="donut-track" cx="21" cy="21" r="15.9"/>{total > 0 && values.map((value, index) => {
     const percent = value / total * 100; const start = offset; offset += percent;
     return <circle key={domainOrder[index]} className={`donut-segment domain-${domainOrder[index]}`} cx="21" cy="21" r="15.9" pathLength="100" strokeDasharray={`${percent} ${100 - percent}`} strokeDashoffset={-start}/>;
-  })}</svg><span><strong>{summary.sessionCount}</strong><small>Workout{summary.sessionCount === 1 ? "" : "s"}</small></span></div>;
+  })}</svg><span><strong>{summary.sessionCount}</strong><small>{tr(summary.sessionCount === 1 ? "Workout" : "Workouts")}</small></span></div>;
 }
 
 function monthShift(month: string, amount: number) { const date = new Date(`${month}-01T12:00:00Z`); date.setUTCMonth(date.getUTCMonth() + amount); return date.toISOString().slice(0, 7); }
@@ -389,48 +381,51 @@ export function OverviewDashboard({ summary, wellness, history, planned, today, 
   const monthDays = Number(overviewDateRange(calendarAnchor).monthEnd.slice(-2));
   const meso = mesocycleProgress(planned);
   const maxDomainDuration = Math.max(1, ...domainOrder.map((domain) => summary.durationMinutesByDomain[domain] ?? 0));
-  const completedSeries = load.map((item) => week.current.filter((session) => localDay(session.startAt, timezone) === item.day).length);
   const consistencyDays = twelveWeekConsistency(today, history, timezone);
   const maxLoad = Math.max(0, ...load.flatMap((item) => [item.current, item.previous])); const loadCeiling = Math.max(30, Math.ceil(maxLoad / 30) * 30);
   const incomplete = summary.metrics.strength.workingSets.dataQuality.completeness < 1 || summary.metrics.endurance.distanceMeters.dataQuality.completeness < 1;
 
   return <div className="overview-dashboard">
     {adjustment && <AdjustmentReviewNotice value={adjustment}/>}
-    <section className="overview-summary-grid" aria-label={tr("This week so far")}>
-      <SummaryCard icon="workout" title={tr("Completed Workouts")} value={summary.sessionCount} className="bars-summary"><Change value={week.sessionDelta}/><MiniBars values={completedSeries} tone="green"/></SummaryCard>
-      <SummaryCard icon="target" title={tr("Plan Progress")} value={`${meso.completed} / ${meso.total}`} className="plan-summary"><small>{tr("this mesocycle")}</small><span className="progress-ring" style={{ "--progress": `${meso.percent * 3.6}deg` } as React.CSSProperties}><b>{meso.percent}%</b></span></SummaryCard>
-      <SummaryCard icon="recovery" title={tr("Overall Readiness")} value={tr(recovery.label)} className="recovery-summary"><small>{tr(recovery.detail)}</small>{recovery.day && <small>{tr("Assessment date")}: <time dateTime={recovery.day}>{formatWellnessDate(recovery.day)}</time> ({tr(recovery.day === today ? "Today" : "Yesterday")})</small>}<button type="button" className="recovery-help" aria-haspopup="dialog" onClick={() => setHelpOpen(true)}><T>{"How do we calculate?"}</T><span aria-hidden="true">→</span></button><span className={`progress-ring ${recoveryRingTone(recovery.label)}`} style={{ "--progress": `${(recovery.value ?? 0) * 3.6}deg` } as React.CSSProperties}><b>{recovery.value ?? "—"}</b></span></SummaryCard>
-    </section>
-
     <div className="overview-layout">
-      <section className="overview-panel overview-activity"><header><div><h2><T>{"Activity Mix"}</T></h2><p><T>{"Your workouts this week"}</T></p></div><button type="button" className="activity-arrow" aria-label={tr("Open Training")} title={tr("Open Training")} onClick={() => window.dispatchEvent(new CustomEvent("athria-open-training"))}><span aria-hidden="true">›</span></button></header>
-        {!summary.sessionCount ? <p className="overview-empty"><T>{"No completed workouts yet this week."}</T><br/>{tr("Connect to your ")}<button type="button" className="overview-empty-link" onClick={() => window.dispatchEvent(new CustomEvent("athria-open-connections"))}>{tr("training apps")}</button>{tr(" or check out your ")}<button type="button" className="overview-empty-link" onClick={() => document.getElementById("overview-next-day")?.scrollIntoView({ behavior: "smooth", block: "start" })}>{tr("next plan")}</button>{tr(".")}</p> : <div className="activity-content"><ActivityDonut summary={summary}/><div className="activity-list">{domainOrder.map((domain) => {
-          const count = summary.byDomain[domain] ?? 0; const duration = summary.durationMinutesByDomain[domain] ?? 0;
-          const detail = domain === "strength" ? `${formatDuration(duration)} · ${summary.metrics.strength.workingSets.value} ${currentLanguage() === "zh-CN" ? "组" : "sets"}` : domain === "endurance" ? `${formatDuration(duration)} · ${formatDistance(summary.metrics.endurance.distanceMeters.value)}` : domain === "sport_skill" && summary.sports.length ? `${formatDuration(duration)} · ${summary.sports.map((sport) => sport.name).join(", ")}` : formatDuration(duration);
-          return <article className={`activity-row domain-${domain}`} key={domain}><OverviewIcon kind={domain}/><div><span><strong>{friendlyLabel(domain)}</strong><small>{currentLanguage() === "zh-CN" ? `${count} 次训练` : `${count} workout${count === 1 ? "" : "s"}`}</small><em>{detail}</em></span><i><b style={{ width: `${duration / maxDomainDuration * 100}%` }}/></i></div></article>;
-        })}</div></div>}
-        {summary.sessionCount > 0 && incomplete && <p className="overview-note"><T>{"Some workout details were unavailable, so sport-specific totals may be incomplete."}</T></p>}
-      </section>
+      <div className="overview-left-column">
+        <section className="overview-summary-grid" aria-label={tr("This week so far")}>
+          <SummaryCard icon="target" title={tr("Plan Progress")} value={`${meso.completed} / ${meso.total}`} className="plan-summary"><small>{tr("this mesocycle")}</small><span className="progress-ring" style={{ "--progress": `${meso.percent * 3.6}deg` } as React.CSSProperties}><b>{meso.percent}%</b></span></SummaryCard>
+          <SummaryCard icon="recovery" title={tr("Overall Readiness")} value={tr(recovery.label)} className="recovery-summary"><small>{tr(recovery.detail)}</small>{recovery.day && <small>{tr("Assessment date")}: <time dateTime={recovery.day}>{formatWellnessDate(recovery.day)}</time> ({tr(recovery.day === today ? "Today" : "Yesterday")})</small>}<button type="button" className="recovery-help" aria-haspopup="dialog" onClick={() => setHelpOpen(true)}><T>{"How do we calculate?"}</T><span aria-hidden="true">→</span></button><span className={`progress-ring ${recoveryRingTone(recovery.label)}`} style={{ "--progress": `${(recovery.value ?? 0) * 3.6}deg` } as React.CSSProperties}><b>{recovery.value ?? "—"}</b></span></SummaryCard>
+        </section>
 
-      <section className="overview-panel overview-calendar"><header><h2>{monthLabel}</h2><div className="calendar-controls"><button type="button" aria-label={tr("Previous month")} onClick={() => setVisibleMonth((value) => monthShift(value, -1))}><span aria-hidden="true">‹</span></button><button type="button" aria-label={tr("Next month")} onClick={() => setVisibleMonth((value) => monthShift(value, 1))}><span aria-hidden="true">›</span></button></div></header>
-        <div className="mini-calendar" aria-label={`${monthLabel} training calendar`}>{weekdayLabels.map((label, index) => <span className="mini-weekday" key={label}>{weekdayName(index, currentLanguage(), "short")}</span>)}{days.map((item, index) => <span className={`mini-day ${item.day === today ? "today" : ""}`} key={item.day ?? `blank-${index}`}>{item.day ? Number(item.day.slice(-2)) : ""}{item.markers.length > 0 && <span className="mini-day-markers">{item.markers.map((marker) => <i key={marker} className={marker} aria-label={tr(marker === "completed" ? "Completed training" : "Scheduled training")}/>)}</span>}</span>)}</div>
-        <div className="calendar-legend"><span><i className="completed"/><T>{"Completed"}</T></span><span><i className="planned"/><T>{"Scheduled"}</T></span></div>
-      </section>
+        <section className="overview-panel overview-activity"><header><div><h2><T>{"Your workouts this week"}</T></h2></div><button type="button" className="activity-arrow" aria-label={tr("Open Training")} title={tr("Open Training")} onClick={() => window.dispatchEvent(new CustomEvent("athria-open-training"))}><span aria-hidden="true">›</span></button></header>
+          {!summary.sessionCount ? <p className="overview-empty"><T>{"No completed workouts yet this week."}</T><br/>{tr("Connect to your ")}<button type="button" className="overview-empty-link" onClick={() => window.dispatchEvent(new CustomEvent("athria-open-connections"))}>{tr("training apps")}</button>{tr(" or check out your ")}<button type="button" className="overview-empty-link" onClick={() => document.getElementById("overview-next-day")?.scrollIntoView({ behavior: "smooth", block: "start" })}>{tr("next plan")}</button>{tr(".")}</p> : <div className="activity-content"><ActivityDonut summary={summary}/><div className="activity-list">{domainOrder.map((domain) => {
+            const count = summary.byDomain[domain] ?? 0; const duration = summary.durationMinutesByDomain[domain] ?? 0;
+            const detail = domain === "strength" ? `${formatDuration(duration)} · ${summary.metrics.strength.workingSets.value} ${currentLanguage() === "zh-CN" ? "组" : "sets"}` : domain === "endurance" ? `${formatDuration(duration)} · ${formatDistance(summary.metrics.endurance.distanceMeters.value)}` : domain === "sport_skill" && summary.sports.length ? `${formatDuration(duration)} · ${summary.sports.map((sport) => sport.name).join(", ")}` : formatDuration(duration);
+            return <article className={`activity-row domain-${domain}`} key={domain}><OverviewIcon kind={domain}/><div><span><strong>{friendlyLabel(domain)}</strong><small>{currentLanguage() === "zh-CN" ? `${count} 次训练` : `${count} workout${count === 1 ? "" : "s"}`}</small><em>{detail}</em></span><i><b style={{ width: `${duration / maxDomainDuration * 100}%` }}/></i></div></article>;
+          })}</div></div>}
+          {summary.sessionCount > 0 && incomplete && <p className="overview-note"><T>{"Some workout details were unavailable, so sport-specific totals may be incomplete."}</T></p>}
+        </section>
 
-      <div className="overview-lower-grid"><section className="overview-panel training-load"><header><div><h2><T>{"Training Load"}</T></h2></div><strong>{formatDuration(summary.totalDurationMinutes)}</strong><Change value={week.durationPercent} suffix="% from last week" stacked/><p><T>{"Your weekly training time"}</T></p></header>
-        <div className="load-chart"><div className="load-axis"><span>{loadAxisLabel(loadCeiling)}</span><span>{loadAxisLabel(loadCeiling / 2)}</span><span>0h</span></div><div className="load-bars">{load.map((item) => {
-          const description = `${tr(item.label)} · ${tr("This week")} (${item.day}): ${item.current} ${tr("min")} · ${tr("Last week")} (${item.previousDay}): ${item.previous} ${tr("min")}`;
-          return <div className="load-day" key={item.day} title={description} aria-label={description} tabIndex={0}><span className="load-comparison" aria-hidden="true">{item.previous > 0 && <i className="load-previous" style={{ height: `${item.previous / loadCeiling * 100}%` }}/>}{item.current > 0 && <i className="load-current" style={{ height: `${item.current / loadCeiling * 100}%` }}/>}</span><small>{tr(item.label)}</small></div>;
-        })}</div></div>
-        <div className="load-legend"><span><i className="load-current"/><T>{"This week"}</T></span><span><i className="load-previous"/><T>{"Last week"}</T></span></div>
-      </section>
-      <section className="overview-panel consistency"><header><div><h2><T>{"Consistency"}</T></h2><p><T>{"Active days this month"}</T></p></div><strong>{monthCompleted.size} / {monthDays}</strong></header>
-        <div className="consistency-grid" data-range="twelve-weeks" aria-label={tr("Training consistency over the last twelve weeks")}>{consistencyDays.filter((item) => !item.future).map((item) => <i key={item.day} className={item.active ? "active" : ""} title={item.day}/>)}</div>
-        <div className="consistency-note"><TrophyIcon/><div><strong>{tr(monthCompleted.size ? "Nice consistency!" : "Your month starts here")}</strong><small>{monthCompleted.size ? currentLanguage() === "zh-CN" ? `本月已活跃 ${monthCompleted.size} 天。` : `You've been active ${monthCompleted.size} day${monthCompleted.size === 1 ? "" : "s"} this month.` : tr("Complete a workout to begin your streak.")}</small></div></div>
-      </section></div>
-      <section className="overview-panel overview-wellness"><header><h2><T>{"Wellness"}</T></h2>{wellnessData && <time dateTime={wellnessData.end}>{formatWellnessRange(wellnessData.start, wellnessData.end)}</time>}</header>
-        {!wellnessData ? <p className="overview-empty"><T>{"No wellness data yet."}</T><br/><T>{"Connect to a data source or record with your AI agent."}</T></p> : <div className="wellness-grid">{wellnessData.values.map((item) => <article className={`wellness-${item.tone}`} key={item.key}><div className="wellness-copy"><span>{tr(item.label)}</span><strong title={item.display}>{item.display}</strong></div><Sparkline values={item.series}/><small className={`wellness-assessment ${item.assessment.level}`} title={wellnessAssessmentTitle(item.assessment)}>{tr(item.assessment.message)}</small></article>)}</div>}
-      </section></div>
-      {helpOpen && <RecoveryHelpModal onClose={() => setHelpOpen(false)}/>}
+        <div className="overview-lower-grid"><section className="overview-panel training-load"><header><div><h2><T>{"Training Load"}</T></h2></div><strong>{formatDuration(summary.totalDurationMinutes)}</strong><Change value={week.durationPercent} suffix="% from last week" stacked/><p><T>{"Your weekly training time"}</T></p></header>
+          <div className="load-chart"><div className="load-axis"><span>{loadAxisLabel(loadCeiling)}</span><span>{loadAxisLabel(loadCeiling / 2)}</span><span>0h</span></div><div className="load-bars">{load.map((item) => {
+            const description = `${tr(item.label)} · ${tr("This week")} (${item.day}): ${item.current} ${tr("min")} · ${tr("Last week")} (${item.previousDay}): ${item.previous} ${tr("min")}`;
+            return <div className="load-day" key={item.day} title={description} aria-label={description} tabIndex={0}><span className="load-comparison" aria-hidden="true">{item.previous > 0 && <i className="load-previous" style={{ height: `${item.previous / loadCeiling * 100}%` }}/>}{item.current > 0 && <i className="load-current" style={{ height: `${item.current / loadCeiling * 100}%` }}/>}</span><small>{tr(item.label)}</small></div>;
+          })}</div></div>
+          <div className="load-legend"><span><i className="load-current"/><T>{"This week"}</T></span><span><i className="load-previous"/><T>{"Last week"}</T></span></div>
+        </section>
+        <section className="overview-panel consistency"><header><div><h2><T>{"Consistency"}</T></h2><p><T>{"Active days this month"}</T></p></div><strong>{monthCompleted.size} / {monthDays}</strong></header>
+          <div className="consistency-grid" data-range="twelve-weeks" aria-label={tr("Training consistency over the last twelve weeks")}>{consistencyDays.filter((item) => !item.future).map((item) => <i key={item.day} className={item.active ? "active" : ""} title={item.day}/>)}</div>
+          <div className="consistency-note"><TrophyIcon/><div><strong>{tr(monthCompleted.size ? "Nice consistency!" : "Your month starts here")}</strong><small>{monthCompleted.size ? currentLanguage() === "zh-CN" ? `本月已活跃 ${monthCompleted.size} 天。` : `You've been active ${monthCompleted.size} day${monthCompleted.size === 1 ? "" : "s"} this month.` : tr("Complete a workout to begin your streak.")}</small></div></div>
+        </section></div>
+      </div>
+      <div className="overview-right-column">
+        <section className="overview-panel overview-calendar"><header><h2>{monthLabel}</h2><div className="calendar-controls"><button type="button" aria-label={tr("Previous month")} onClick={() => setVisibleMonth((value) => monthShift(value, -1))}><span aria-hidden="true">‹</span></button><button type="button" aria-label={tr("Next month")} onClick={() => setVisibleMonth((value) => monthShift(value, 1))}><span aria-hidden="true">›</span></button></div></header>
+          <div className="mini-calendar" aria-label={`${monthLabel} training calendar`}>{weekdayLabels.map((label, index) => <span className="mini-weekday" key={label}>{weekdayName(index, currentLanguage(), "short")}</span>)}{days.map((item, index) => <span className={`mini-day ${item.day === today ? "today" : ""}`} key={item.day ?? `blank-${index}`}>{item.day ? Number(item.day.slice(-2)) : ""}{item.markers.length > 0 && <span className="mini-day-markers">{item.markers.map((marker) => <i key={marker} className={marker} aria-label={tr(marker === "completed" ? "Completed training" : "Scheduled training")}/>)}</span>}</span>)}</div>
+          <div className="calendar-legend"><span><i className="completed"/><T>{"Completed"}</T></span><span><i className="planned"/><T>{"Scheduled"}</T></span></div>
+        </section>
+
+        <section className="overview-panel overview-wellness"><header><h2><T>{"Wellness"}</T></h2>{wellnessData && <time dateTime={wellnessData.end}>{formatWellnessRange(wellnessData.start, wellnessData.end)}</time>}</header>
+          {!wellnessData ? <p className="overview-empty"><T>{"No wellness data yet."}</T><br/><T>{"Connect to a data source or record with your AI agent."}</T></p> : <div className="wellness-grid">{wellnessData.values.map((item) => <article className={`wellness-${item.tone}`} key={item.key}><div className="wellness-copy"><span>{tr(item.label)}</span><strong title={item.display}>{item.display}</strong></div><Sparkline values={item.series}/><small className={`wellness-assessment ${item.assessment.level}`} title={wellnessAssessmentTitle(item.assessment)}>{tr(item.assessment.message)}</small></article>)}</div>}
+        </section>
+      </div>
+    </div>
+    {helpOpen && <RecoveryHelpModal onClose={() => setHelpOpen(false)}/>}
   </div>;
 }
