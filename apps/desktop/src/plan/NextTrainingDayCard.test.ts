@@ -82,7 +82,7 @@ describe("NextTrainingDayCard", () => {
     expect(html).toContain("4 × 5");
     expect(html).toContain("Maintain squat strength.");
     expect(html).toContain("45 min");
-    expect(html.match(/>Prescription</g)).toHaveLength(1);
+    expect(html).not.toContain("rx-eyebrow");
     expect(html).toContain(">Complete</button>");
     expect(html).not.toContain("Add as completed workout");
     expect(html).not.toContain("✓");

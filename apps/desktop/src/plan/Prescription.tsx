@@ -31,7 +31,6 @@ function PrescriptionPanel({ component, summary, meta, chip, children }: { compo
   const domain = component.domain.value;
   return <article className={`rx-panel${domain ? ` rx-panel-${domain}` : ""}`}>
     <header className="rx-panel-header">
-      <span className="rx-eyebrow"><T>{"Prescription"}</T></span>
       <div className="rx-panel-title-row">
         <div className="rx-panel-copy"><h4>{component.name}</h4>{summary && <span className="rx-panel-summary">{summary}</span>}</div>
         {(domain || meta || chip) && <span className="rx-panel-aside">{chip && <span className="rx-panel-chip">{chip}</span>}{domain && <span className="rx-domain" title={friendlyLabel(domain)}><svg className="rx-domain-glyph" data-domain-icon={domain} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{domainIconPath(domain)}</svg><span>{friendlyLabel(domain)}</span></span>}{meta && <span className="rx-panel-meta">{meta}</span>}</span>}

@@ -17,6 +17,8 @@ use zeroize::Zeroizing;
 
 mod application_ipc;
 mod agent_integrations;
+mod skill_updates;
+use skill_updates::{skill_update_status, check_skill_updates, install_skill_update, set_skill_auto_update};
 mod legacy_replica_cleanup;
 use legacy_replica_cleanup::cleanup_legacy_replicas;
 use application_ipc::{DesktopApplication, dispatch as dispatch_application};
@@ -1534,6 +1536,7 @@ pub fn run() -> i32 {
                 .build(),
         )
         .plugin(tauri_plugin_dialog::init())
+        .manage(skill_updates::UpdateRuntime::default())
         .manage(RuntimeState {
             vault_key: Mutex::new(None),
             application: Mutex::new(application),
@@ -1546,6 +1549,10 @@ pub fn run() -> i32 {
         })
         .invoke_handler(tauri::generate_handler![
             startup_status,
+            skill_update_status,
+            check_skill_updates,
+            install_skill_update,
+            set_skill_auto_update,
             athria_request,
             vault_status,
             setup_vault,

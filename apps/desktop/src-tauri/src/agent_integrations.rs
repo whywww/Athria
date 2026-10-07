@@ -149,7 +149,7 @@ pub struct AgentSkillUpdate {
 #[serde(rename_all = "camelCase")]
 pub struct AgentSkillUpdateFailure {
     agent: String,
-    message: String,
+    pub(crate) message: String,
 }
 
 #[derive(Serialize)]
@@ -157,7 +157,7 @@ pub struct AgentSkillUpdateFailure {
 pub struct SkillReconciliationResult {
     updated: Vec<AgentSkillUpdate>,
     conflicts: Vec<AgentSkillUpdate>,
-    failures: Vec<AgentSkillUpdateFailure>,
+    pub(crate) failures: Vec<AgentSkillUpdateFailure>,
 }
 
 #[derive(Clone, Copy, Deserialize)]
@@ -439,7 +439,7 @@ pub(crate) fn resource_skills(app: &AppHandle) -> Result<PathBuf, String> {
         .iter()
         .all(|name| path.join(name).join("SKILL.md").is_file())
     {
-        Ok(path)
+        crate::skill_updates::source(&path)
     } else {
         Err("Athria's bundled Skills are missing. Reinstall Athria and try again.".to_string())
     }
@@ -1001,9 +1001,22 @@ fn gui_skills_diagnostic(name: &str, report: &GuiSkillsStatus) -> Option<String>
     None
 }
 
-/// Prepares one archive per bundled Skill for the user to upload.
+/// Prepares one archive per active Skill for the user to upload.
 fn export_gui_skills(source_root: &Path, paths: &GuiSkillsPaths) -> Result<athria_skills::ArchiveSet, String> {
     athria_skills::export_archives(source_root, &paths.dir, env!("CARGO_PKG_VERSION"))
+}
+
+/// Refresh exports only for an integration the user already configured.
+pub(crate) fn refresh_gui_archives(app: &AppHandle, config_root: &Path) -> (bool, Option<String>) {
+    let paths = gui_skills_paths(config_root, AgentKind::ClaudeDesktop);
+    if !paths.dir.exists() { return (false, None); }
+    let result = resource_skills(app).and_then(|source| {
+        let status = gui_skills_status(&source, &paths)?;
+        let needs_install = status.status != "installed";
+        export_gui_skills(&source, &paths)?;
+        Ok(needs_install)
+    });
+    match result { Ok(needs_install) => (needs_install, None), Err(error) => (false, Some(error)) }
 }
 
 /// The agent keeps its own copy of an uploaded Skill, so removing the
@@ -1288,6 +1301,44 @@ pub fn remove_by_id(id: &str, backup_root: &Path) -> Result<OperationResult, Str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn downloaded_source_drives_install_conflicts_exports_and_handshakes() {
+        use athria_skills::updates;
+        use base64::{Engine, engine::general_purpose::STANDARD};
+        let root = env::temp_dir().join(format!("athria-downloaded-agent-{}", Uuid::new_v4()));
+        let fixture: Value = serde_json::from_str(include_str!("../../../../crates/athria-skills/tests/fixtures/node-release.json")).unwrap();
+        let key = fixture["publicKey"].as_str().unwrap();
+        let envelope = STANDARD.decode(fixture["envelope"].as_str().unwrap()).unwrap();
+        let index = updates::verify_index(&envelope, key).unwrap();
+        let cache = root.join("cache");
+        updates::atomic_write(&cache.join("index.json"), &envelope).unwrap();
+        updates::install(&cache, &STANDARD.decode(fixture["archive"].as_str().unwrap()).unwrap(), &index.packages[0]).unwrap();
+        let bundled = root.join("bundled");
+        copy_tree(&cache.join("versions/0.1.1"), &bundled).unwrap();
+        for name in SKILLS { fs::write(bundled.join(name).join("SKILL.md"), "old instructions").unwrap(); }
+        let target = root.join("agent"); install_skills(&bundled, &target).unwrap();
+        let source = updates::resolve_source(&cache, &bundled, &semver::Version::parse("0.1.0").unwrap(), &semver::Version::parse("0.2.1-beta.1").unwrap(), &updates::digest(b"contract"), key);
+        assert_eq!(skills_status(&source, &target), "outdated");
+        fs::write(target.join(SKILLS[0]).join("SKILL.md"), "local edits").unwrap();
+        assert_eq!(skill_state(&source.join(SKILLS[0]), &target.join(SKILLS[0]), SKILLS[0]).0, SkillState::Modified);
+        for name in SKILLS {
+            if skill_state(&source.join(name), &target.join(name), name).0 == SkillState::UpdateAvailable {
+                replace_skill(&source.join(name), &target.join(name), name).unwrap();
+            }
+        }
+        assert_eq!(fs::read_to_string(target.join(SKILLS[0]).join("SKILL.md")).unwrap(), "local edits");
+        resolve_skill_update_at(&source, &target, SkillUpdateAction::BackupReplace, &root.join("backups"), "test").unwrap();
+        assert_eq!(skills_status(&source, &target), "installed");
+        let gui = gui_skills_paths(&root, AgentKind::ClaudeDesktop);
+        let archives = export_gui_skills(&source, &gui).unwrap(); assert_eq!(archives.archives.len(), 5);
+        assert_eq!(gui_skills_status(&source, &gui).unwrap().status, "unverified");
+        for identity in athria_skills::expected_skills(&source).unwrap() {
+            athria_skills::record_report(&gui.reports, &athria_skills::ReportInput { skill: identity.name, version: identity.version, hash: identity.hash }).unwrap();
+        }
+        assert_eq!(gui_skills_status(&source, &gui).unwrap().status, "installed");
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn json_merge_preserves_other_servers() {

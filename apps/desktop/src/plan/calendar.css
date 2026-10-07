@@ -256,7 +256,6 @@
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
 }
 .rx-panel-header { padding: 10px 16px 9px; border-bottom: 1px solid #e9edf2; background: linear-gradient(135deg, #fff, #fdfefe); }
-.rx-eyebrow { display: block; margin-bottom: 3px; color: #728096; font-size: 9px; font-weight: 750; letter-spacing: .13em; text-transform: uppercase; }
 .rx-panel-title-row { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .rx-panel-copy { min-width: 0; display: grid; gap: 2px; }
 .rx-panel-title-row h4 { min-width: 0; margin: 0; color: #0b2142; font-size: 19px; font-weight: 720; line-height: 1.15; letter-spacing: -.025em; overflow-wrap: anywhere; }

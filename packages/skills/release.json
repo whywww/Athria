@@ -1,0 +1,6 @@
+{
+  "version": "0.1.0",
+  "minAppVersion": "0.2.1-beta.1",
+  "maxAppVersion": "0.3.0",
+  "supportedContracts": ["current"]
+}

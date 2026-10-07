@@ -37,6 +37,9 @@ use rmcp::{
 
 const CONTRACT: &str = include_str!("../contract.json");
 
+/// The exact tool contract compiled into this MCP implementation.
+pub fn skill_contract() -> &'static str { CONTRACT }
+
 /// The newest revision whose wire shape this server actually emits. Advertising
 /// a newer one makes era-negotiating clients negotiate it and then reject our
 /// results on local schema validation.

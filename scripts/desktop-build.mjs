@@ -36,9 +36,7 @@ function run(command, environment = {}, cwd = projectRoot) {
   const result = spawnSync(command[0], command.slice(1), {
     cwd,
     env: { ...process.env, ...environment },
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
+    stdio: "inherit",
   });
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`${command[0]} exited with code ${result.status}`);

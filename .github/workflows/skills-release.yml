@@ -1,0 +1,39 @@
+name: Skill release
+on:
+  push:
+    tags: ["skills-v*"]
+  workflow_dispatch:
+    inputs:
+      revoke_versions:
+        description: "Comma-separated published Skill versions to revoke"
+        required: true
+        type: string
+permissions:
+  contents: write
+concurrency:
+  group: skill-release-index
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm typecheck
+      - run: pnpm validate:skill
+      - if: github.event_name == 'push'
+        run: pnpm package:skills
+      - name: Publish signed Skill catalog
+        run: node scripts/publish-skills.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SKILLS_SIGNING_PRIVATE_KEY: ${{ secrets.SKILLS_SIGNING_PRIVATE_KEY }}
+          SKILLS_REVOKE_VERSIONS: ${{ inputs.revoke_versions }}

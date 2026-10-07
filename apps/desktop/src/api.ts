@@ -68,6 +68,25 @@ export async function addCustomAgent(name: string, configPath: string, skillsPat
 export async function reconcileAgentSkills(): Promise<SkillReconciliationResult> { return invoke("reconcile_agent_skills"); }
 export async function resolveAgentSkillUpdate(agent: AgentKind, action: "replace" | "backup_replace"): Promise<SkillUpdateResult> { return invoke("resolve_agent_skill_update", { agent, action }); }
 export async function openSkillArchiveFolder(): Promise<void> { await invoke("open_skill_archive_folder"); }
+export interface SkillUpdateStatus {
+  automatic: boolean;
+  keyConfigured: boolean;
+  currentVersion: string;
+  source: "bundled" | "downloaded";
+  phase: "idle" | "checking" | "downloading" | "installing";
+  availableVersion: string | null;
+  latestVersion: string | null;
+  upgradeRequired: boolean;
+  lastAttempt: number | null;
+  lastSuccess: number | null;
+  error: string | null;
+  syncFailures: string[];
+  claudeInstallRequired: boolean;
+}
+export async function getSkillUpdateStatus(): Promise<SkillUpdateStatus> { return invoke("skill_update_status"); }
+export async function checkSkillUpdates(background = false): Promise<SkillUpdateStatus> { return invoke("check_skill_updates", { background }); }
+export async function installSkillUpdate(version: string): Promise<SkillUpdateStatus> { return invoke("install_skill_update", { version }); }
+export async function setSkillAutoUpdate(automatic: boolean): Promise<SkillUpdateStatus> { return invoke("set_skill_auto_update", { automatic }); }
 export async function openIntervalsWebsite(): Promise<void> { await invoke("open_intervals_website"); }
 export async function removeAgentIntegration(agent: AgentKind): Promise<AgentIntegrationResult> { return invoke("remove_agent_integration", { agent }); }
 

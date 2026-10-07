@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --configLoader runner",
-    "build": "tsc -b && vite build --configLoader runner",
+    "dev": "vite --configLoader native",
+    "build": "tsc -b && vite build --configLoader native",
     "typecheck": "tsc -b --pretty false",
     "tauri": "tauri"
   },

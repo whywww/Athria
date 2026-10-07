@@ -39,6 +39,10 @@ export function useOperationMessage(kind: ToastKind = "success") {
   return [undefined as string | undefined, setMessage] as const;
 }
 function messageText(message: string) {
+  const intervalsSync = /^Sync (.*): activities (\d+) added, (\d+) updated; wellness (\d+) synced\.$/.exec(message);
+  if (intervalsSync) return tr("Sync {status}: activities {added} added, {updated} updated; wellness {wellness} synced.")
+    .replace("{status}", intervalsSync[1] === "success" ? tr("Successful") : tr(intervalsSync[1]!))
+    .replace("{added}", intervalsSync[2]!).replace("{updated}", intervalsSync[3]!).replace("{wellness}", intervalsSync[4]!);
   const sync = /^Sync (.*): (\d+) added, (\d+) updated\.$/.exec(message);
   if (sync) return tr("Sync {status}: {added} added, {updated} updated.")
     .replace("{status}", tr(sync[1]!)).replace("{added}", sync[2]!).replace("{updated}", sync[3]!);

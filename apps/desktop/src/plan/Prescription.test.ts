@@ -54,7 +54,8 @@ const recovery: PlanComponent = {
 describe("Prescription", () => {
   it("renders the strength table with a rightmost notes column", () => {
     const html = render(strength);
-    for (const value of ["Prescription", "Strength main block", "2 exercises", 'data-domain-icon="strength"', "Sets × Reps", "Effort", "Romanian Deadlift", "Hinge", "3 × 8–10", "60 kg", "RPE 7", "2 min", "Tempo 3-1-1", "Alternatives: Good Morning", "Controlled", "rx-notes-cell"]) expect(html).toContain(value);
+    for (const value of ["Strength main block", "2 exercises", 'data-domain-icon="strength"', "Sets × Reps", "Effort", "Romanian Deadlift", "Hinge", "3 × 8–10", "60 kg", "RPE 7", "2 min", "Tempo 3-1-1", "Alternatives: Good Morning", "Controlled", "rx-notes-cell"]) expect(html).toContain(value);
+    expect(html).not.toContain("rx-eyebrow");
     expect(html).toContain('role="columnheader">Notes</span>');
     expect(html).not.toContain("RIR");
   });

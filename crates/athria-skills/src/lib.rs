@@ -15,6 +15,7 @@
 pub mod archive;
 pub mod export;
 pub mod reports;
+pub mod updates;
 
 pub use export::{
     ArchiveSet, BUNDLED_SKILLS, EXPORT_MANIFEST, ExportedSkill, MANAGED_MARKER, SkillArchive,

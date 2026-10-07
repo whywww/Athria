@@ -405,12 +405,26 @@ describe("GUI-managed agent Skills", () => {
     expect(html).toContain("Update MCP / Skills");
   });
 
-  it("offers Update MCP / Skills for GUI-managed agents and Update or Repair for the rest", () => {
-    const gui = renderWithHome(createElement(AgentIntegrations), [verified]);
+  it("offers Reconnect for connected agents in both languages above Remove Agent", () => {
+    for (const agent of [codex, verified]) {
+      const html = renderWithHome(createElement(AgentIntegrations), [agent]);
+      expect(html).toContain("Reconnect</button>");
+      expect(html.indexOf("<small>MCP</small>")).toBeLessThan(html.indexOf("Reconnect</button>"));
+      expect(html.indexOf("Reconnect</button>")).toBeLessThan(html.indexOf("Remove Agent</button>"));
+      const chinese = renderChinese(createElement(AgentIntegrations), [agent]);
+      expect(chinese).toContain("重新连接</button>");
+    }
+  });
+
+  it("keeps Update MCP / Skills for GUI-managed agents needing setup and Update or Repair for the rest", () => {
+    const gui = renderWithHome(createElement(AgentIntegrations), [claudeDesktop]);
     expect(gui).toContain("Update MCP / Skills");
     const filesystem = renderWithHome(createElement(AgentIntegrations), [{ ...codex, mcp: "outdated" }]);
     expect(filesystem).toContain("Update</button>");
     expect(filesystem).not.toContain("Update MCP / Skills");
+    expect(filesystem).not.toContain("Reconnect</button>");
+    const repair = renderWithHome(createElement(AgentIntegrations), [{ ...codex, mcp: "conflict" }]);
+    expect(repair).toContain("Repair</button>");
   });
 
   it("guides the upload with the prepared archives", () => {
