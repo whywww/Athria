@@ -5,7 +5,7 @@
 
 **Connect your training data to the AI you already use.**
 
-[![Version](https://img.shields.io/badge/version-0.2.1--beta.1-315c4c)](package.json)
+[![Version](https://img.shields.io/badge/version-0.2.1--beta.2-315c4c)](package.json)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20x64%20%7C%20macOS%20Apple%20Silicon-315c4c)
 ![Runtime](https://img.shields.io/badge/data-local--first-e9a23b)
 </div>
@@ -37,7 +37,7 @@ You can also use Athria itself to view your training history, recent status, and
 
 Athria does not tie you to a specific AI. You choose the AI; Athria connects it to your training data.
 
-> **Athria 0.2.1-beta.1 is a beta pre-release under active development.** Features and data formats may still change.
+> **Athria 0.2.1-beta.2 is a beta pre-release under active development.** Features and data formats may still change.
 
 ### What can I do with it?
 
@@ -97,7 +97,7 @@ A few things are worth knowing:
 
 ### Current limitations
 
-Athria 0.2.1-beta.1 is a **beta pre-release under active development**.
+Athria 0.2.1-beta.2 is a **beta pre-release under active development**.
 
 Current limitations include:
 
@@ -138,7 +138,7 @@ Athria 是一个免费的训练数据和 AI 助手。
 
 Athria 不绑定特定的 AI。你可以继续使用自己选择的 AI，Athria 负责在它和你的训练数据之间建立连接。
 
-> **Athria 0.2.1-beta.1 是仍在开发中的 Beta 预发布版本。** 功能和数据格式仍可能发生变化。
+> **Athria 0.2.1-beta.2 是仍在开发中的 Beta 预发布版本。** 功能和数据格式仍可能发生变化。
 
 ### Athria 可以做什么？
 
@@ -198,7 +198,7 @@ Athria 的核心训练数据保存在你的电脑上，不需要注册 Athria �
 
 ### 当前限制
 
-Athria 0.2.1-beta.1 是**仍在开发中的 Beta 预发布版本**。
+Athria 0.2.1-beta.2 是**仍在开发中的 Beta 预发布版本**。
 
 当前主要限制包括：
 

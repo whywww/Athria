@@ -49,10 +49,34 @@ its catalog is rejected to avoid discarding history. Catalog upload can briefly
 be unavailable during replacement; clients retain their last verified copy and
 retry at the next check. Workflow concurrency serializes all index updates.
 
+## Update compatibility without releasing identical Skills
+
+The signed catalog is authoritative for application version bounds and MCP
+fingerprints. The immutable `manifest.json` beside each ZIP records its original
+publication metadata; it is not overwritten when compatibility is adjusted.
+Package version, download URL, ZIP hash and every Skill identity stay unchanged.
+
+After testing an existing package with another application/MCP version, run
+the **Skill release** workflow manually from the default branch. Select
+`operation: compatibility`, fill in `target_version`, `min_app_version`,
+`max_app_version`, and the complete comma-separated `supported_contracts` list.
+The minimum is inclusive and the maximum exclusive. Enter explicit SHA-256
+fingerprints of tested MCP contracts; `current` is not accepted for this action.
+Compute a checked-out MCP's fingerprint using the exported
+`contractFingerprint` function in `scripts/skill-release.mjs`.
+
+This operation verifies the old signature, changes only the compatibility
+fields, preserves all package bytes and revocation flags, then signs and uploads
+the catalog. It neither builds nor uploads a ZIP and needs no new package tag.
+Re-running an old package publication also preserves newer catalog declarations.
+Clients check the new declaration at their next successful update check; an
+already installed compatible package is not downloaded again. Tightening the
+range can make an installed package ineligible and triggers normal fallback.
+
 ## Revoke a release
 
 Run the **Skill release** workflow manually from the protected default branch
-with comma-separated versions in `revoke_versions`. It verifies the old signed
+with `operation: revoke` and comma-separated versions in `revoke_versions`. It verifies the old signed
 index, marks those versions revoked and signs a new index. It does not rebuild
 or overwrite package assets. On the next successful check, clients fall back to
 an installed, compatible, non-revoked package or to the bundled baseline. If a

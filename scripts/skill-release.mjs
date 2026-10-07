@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, readdirSync, lstatSync, writeFileSync } from "
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { isDeepStrictEqual } from "node:util";
 
 export const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const skillNames = ["athria-athlete-profile", "athria-coach", "athria-training-planner", "athria-workout", "athria-xunji-records"];
@@ -112,8 +113,26 @@ export function signIndex(index, pem, pinned) {
 }
 export function mergeRelease(index, manifest) {
   const existing = index.packages.find((p) => p.version === manifest.version);
-  if (existing && JSON.stringify({ ...existing, revoked: false }) !== JSON.stringify({ ...manifest, revoked: false })) throw new Error("Cannot replace an existing Skill release with different content.");
+  if (existing && !isDeepStrictEqual(packageContent(existing), packageContent(manifest))) throw new Error("Cannot replace an existing Skill release with different content.");
   return { schemaVersion: 1, packages: existing ? index.packages : [...index.packages, manifest] };
+}
+
+function packageContent(entry) {
+  return { version: entry.version, url: entry.url, sha256: entry.sha256,
+    skills: [...entry.skills].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0).map(({ name, version, hash }) => ({ name, version, hash })) };
+}
+
+export function updateCompatibility(index, version, compatibility) {
+  assertVersion(version);
+  const allowed = ["minAppVersion", "maxAppVersion", "supportedContracts"];
+  if (!compatibility || Object.keys(compatibility).length !== allowed.length || Object.keys(compatibility).some((key) => !allowed.includes(key))) throw new Error("Only compatibility fields may be updated.");
+  const { minAppVersion, maxAppVersion, supportedContracts } = compatibility;
+  assertVersion(minAppVersion); assertVersion(maxAppVersion);
+  if (compareVersions(minAppVersion, maxAppVersion) >= 0) throw new Error("Empty application compatibility range.");
+  if (!Array.isArray(supportedContracts) || !supportedContracts.length || supportedContracts.some((v) => typeof v !== "string" || !/^[a-f0-9]{64}$/.test(v))) throw new Error("Provide explicit tested MCP fingerprints; 'current' is not allowed.");
+  if (!index.packages.some((p) => p.version === version)) throw new Error(`Cannot change compatibility for unknown Skill version ${version}.`);
+  const replacement = { minAppVersion, maxAppVersion, supportedContracts: [...new Set(supportedContracts)] };
+  return { ...index, packages: index.packages.map((entry) => entry.version === version ? { ...entry, ...replacement } : entry) };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

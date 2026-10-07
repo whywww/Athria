@@ -100,6 +100,11 @@ pub fn newest<'a>(index: &'a Index, app: &Version, contract: &str) -> Option<&'a
         .max_by_key(|p| Version::parse(&p.version).ok())
 }
 
+/// Metadata edits to the same package version never require another download.
+pub fn available_update<'a>(index: &'a Index, app: &Version, contract: &str, current: &Version) -> Option<&'a Package> {
+    newest(index, app, contract).filter(|p| Version::parse(&p.version).is_ok_and(|version| version > *current))
+}
+
 /// Atomic replacement also works on Windows when the destination already exists.
 pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
     fs::create_dir_all(path.parent().ok_or("Missing parent directory.")?).map_err(|e| e.to_string())?;
@@ -321,6 +326,30 @@ mod tests {
         save_preferences(&root, &Preferences { automatic: false, ..Default::default() }).unwrap();
         save_preferences(&root, &Preferences { automatic: true, ..Default::default() }).unwrap();
         assert!(read_preferences(&root).unwrap().automatic); fs::remove_dir_all(root).unwrap();
+    }
+    #[test] fn compatibility_edits_reuse_installed_content_and_narrowing_falls_back() {
+        let root = temp(); let (mut p, bytes) = fixture(&root);
+        p.max_app_version = "0.2.1-beta.3".into();
+        let app = Version::parse("0.2.1-beta.2").unwrap();
+        let baseline = Version::parse("0.1.0").unwrap();
+        let current = Version::parse(&p.version).unwrap();
+        let bundled = root.join("bundled"); let contract = digest(b"contract");
+        let mut index = Index { schema_version: 1, packages: vec![p] };
+        let (envelope, key) = signed(&index); atomic_write(&root.join("index.json"), &envelope).unwrap();
+        install(&root, &bytes, &index.packages[0]).unwrap();
+        let original = resolve_source(&root, &bundled, &baseline, &app, &contract, &key);
+        index.packages[0].max_app_version = "0.2.1-beta.4".into();
+        index.packages[0].supported_contracts.push(digest(b"another tested MCP"));
+        let (envelope, _) = signed(&index); atomic_write(&root.join("index.json"), &envelope).unwrap();
+        assert!(available_update(&index, &app, &contract, &current).is_none());
+        assert_eq!(resolve_source(&root, &bundled, &baseline, &app, &contract, &key), original);
+        let future_app = Version::parse("0.2.1-beta.3").unwrap();
+        assert!(available_update(&index, &future_app, &contract, &current).is_none());
+        assert_eq!(resolve_source(&root, &bundled, &baseline, &future_app, &contract, &key), original);
+        index.packages[0].min_app_version = "0.2.1-beta.3".into();
+        let (envelope, _) = signed(&index); atomic_write(&root.join("index.json"), &envelope).unwrap();
+        assert_eq!(resolve_source(&root, &bundled, &baseline, &app, &contract, &key), bundled);
+        fs::remove_dir_all(root).unwrap();
     }
     #[test] fn rejects_duplicates_links_and_extraction_bombs() {
         use std::io::Write;

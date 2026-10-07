@@ -71,8 +71,7 @@ impl UpdateRuntime {
         if let Ok(index) = updates::cached_index(&root, updates::PUBLIC_KEY) {
             let (app_version, contract, _) = context()?;
             let current = Version::parse(&status.current_version).map_err(|e| e.to_string())?;
-            let best = updates::newest(&index, &app_version, &contract);
-            status.available_version = best.filter(|p| Version::parse(&p.version).is_ok_and(|v| v > current)).map(|p| p.version.clone());
+            status.available_version = updates::available_update(&index, &app_version, &contract, &current).map(|p| p.version.clone());
             let latest = index.packages.iter().filter(|p| !p.revoked).max_by_key(|p| Version::parse(&p.version).ok());
             status.latest_version = latest.map(|p| p.version.clone());
             status.upgrade_required = latest.is_some_and(|p| Version::parse(&p.version).is_ok_and(|v| v > current) && !p.compatible(&app_version, &contract));

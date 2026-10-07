@@ -48,7 +48,7 @@ Weight 等按日期变化的数据属于 Wellness，不应写入 Profile。
 
 SynFit MCP 接口是只读的。同步动作由 Athria 的 **Connections** 页面负责。
 
-统一的数据源预检使用 `get_data_source_status`。Intervals.icu 和训记返回 API 连接及当天同步状态；同步动作由 Athria 的 **Connections** 页面负责。Hevy 导入功能在 0.2.1-beta.1 中尚未开放；接口可能返回其历史导入状态，但不代表此版本支持新导入。
+统一的数据源预检使用 `get_data_source_status`。Intervals.icu 和训记返回 API 连接及当天同步状态；同步动作由 Athria 的 **Connections** 页面负责。Hevy 导入功能在 0.2.1-beta.2 中尚未开放；接口可能返回其历史导入状态，但不代表此版本支持新导入。
 
 ---
 

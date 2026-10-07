@@ -4,9 +4,31 @@ on:
     tags: ["skills-v*"]
   workflow_dispatch:
     inputs:
+      operation:
+        description: "Update compatibility declarations or revoke releases"
+        required: true
+        default: compatibility
+        type: choice
+        options: [compatibility, revoke]
+      target_version:
+        description: "Existing Skill package version for compatibility changes"
+        required: false
+        type: string
+      min_app_version:
+        description: "Inclusive minimum application version"
+        required: false
+        type: string
+      max_app_version:
+        description: "Exclusive maximum application version"
+        required: false
+        type: string
+      supported_contracts:
+        description: "Complete comma-separated list of tested MCP SHA-256 fingerprints"
+        required: false
+        type: string
       revoke_versions:
         description: "Comma-separated published Skill versions to revoke"
-        required: true
+        required: false
         type: string
 permissions:
   contents: write
@@ -37,3 +59,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SKILLS_SIGNING_PRIVATE_KEY: ${{ secrets.SKILLS_SIGNING_PRIVATE_KEY }}
           SKILLS_REVOKE_VERSIONS: ${{ inputs.revoke_versions }}
+          SKILLS_OPERATION: ${{ github.event_name == 'push' && 'publish' || inputs.operation }}
+          SKILLS_TARGET_VERSION: ${{ inputs.target_version }}
+          SKILLS_MIN_APP_VERSION: ${{ inputs.min_app_version }}
+          SKILLS_MAX_APP_VERSION: ${{ inputs.max_app_version }}
+          SKILLS_SUPPORTED_CONTRACTS: ${{ inputs.supported_contracts }}
