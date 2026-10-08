@@ -35,9 +35,9 @@ const strengthDay: NextTrainingDay = { reasonCode: null, nextTrainingDay: {
     id: "session-1", occurrenceId: "occ-1", weekNumber: 2, name: "Lower Strength A", intent: "Maintain squat strength.",
     scheduledDate: "2026-09-24", order: 0, durationMinutes: 45, templateRef: null, phaseRefs: [], recoveryDemand: "normal",
     keySession: false, status: "planned", notes: "", legacySnapshot: false, overrideReason: null,
+    domain: "strength",
     components: [{
       id: "component-1", name: "Main lifts",
-      domain: { value: "strength", source: "agent", confidence: 0.9, evidence: "", taxonomyVersion: "1" },
       prescription: { kind: "strength", exercises: [squat] },
     }],
   }],
@@ -82,11 +82,24 @@ describe("NextTrainingDayCard", () => {
     expect(html).toContain("4 × 5");
     expect(html).toContain("Maintain squat strength.");
     expect(html).toContain("45 min");
+    expect(html).toContain('data-domain-icon="strength"');
+    expect(html).not.toContain('class="component-domain"');
     expect(html).not.toContain("rx-eyebrow");
     expect(html).toContain(">Complete</button>");
     expect(html).not.toContain("Add as completed workout");
     expect(html).not.toContain("✓");
     expect(html).not.toContain("Open details");
+  });
+
+  it("passes the same session domain to all prescription kinds", () => {
+    const session = strengthDay.nextTrainingDay!.existingSessions[0]!;
+    const html = render({ ...strengthDay, nextTrainingDay: { ...strengthDay.nextTrainingDay!, existingSessions: [{
+      ...session, domain: "functional", components: [...session.components, { id: "run", name: "Easy run", prescription: { kind: "endurance", segments: [] } }],
+    }] } });
+    expect(html.match(/data-domain-icon="functional"/g)).toHaveLength(2);
+    expect(html).not.toContain('data-domain-icon="strength"');
+    expect(html).not.toContain('data-domain-icon="endurance"');
+    expect(html).not.toContain('class="component-domain"');
   });
 
   it("keeps an explicit empty state when a session has no structured components", () => {

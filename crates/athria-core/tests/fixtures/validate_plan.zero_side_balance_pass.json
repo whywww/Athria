@@ -104,13 +104,6 @@
                   {
                     "id": "mon-lower",
                     "name": "Strength",
-                    "domain": {
-                      "value": "strength",
-                      "source": "user_confirmed",
-                      "confidence": 1,
-                      "evidence": "golden fixture",
-                      "taxonomyVersion": "strength-2.0"
-                    },
                     "prescription": {
                       "kind": "strength",
                       "exercises": [
@@ -183,7 +176,8 @@
                 ],
                 "progressionNote": null,
                 "schedulingRationale": null,
-                "legacySnapshot": false
+                "legacySnapshot": false,
+                "domain": "strength"
               }
             ]
           }
@@ -305,17 +299,15 @@
       },
       {
         "enforcement": "blocker",
-        "reasonCode": "COMPONENT_PRESCRIPTION",
+        "reasonCode": "SESSION_STRENGTH_PRESCRIPTION",
         "status": "pass",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [
-          "mon-strength",
-          "mon-lower"
+          "mon-strength"
         ],
         "evidence": {
-          "domain": "strength",
-          "prescription": "strength"
+          "hasStrengthPrescription": true
         },
         "missingFacts": [],
         "confidenceLimit": null
@@ -458,7 +450,7 @@
     ],
     "dataGaps": [],
     "validatedAt": "2026-09-17T10:30:00.000Z",
-    "inputHash": "fnv1a-160b0c7f",
+    "inputHash": "fnv1a-72695449",
     "coverage": {
       "hardChecksResolved": 7,
       "hardChecksTotal": 7,

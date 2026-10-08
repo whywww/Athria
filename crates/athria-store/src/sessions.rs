@@ -137,30 +137,7 @@ fn endurance_number(session: &Value, key: &str) -> f64 {
 }
 
 fn inferred_domains(session: &Value) -> BTreeSet<String> {
-    let declared: Vec<String> = array(session, "domains")
-        .iter()
-        .filter_map(Value::as_str)
-        .map(str::to_string)
-        .collect();
-    if !declared.is_empty() {
-        return declared.into_iter().collect();
-    }
-    let modality = text_or(session, "modality", "");
-    let mut domains = BTreeSet::new();
-    if modality == "strength" || !array(session, "strengthSets").is_empty() {
-        domains.insert("strength".to_string());
-    }
-    if modality == "endurance" {
-        domains.insert("endurance".to_string());
-    }
-    if modality == "mixed" {
-        domains.insert("strength".to_string());
-        domains.insert("endurance".to_string());
-    }
-    if modality == "recovery" {
-        domains.insert("recovery".to_string());
-    }
-    domains
+    session.get("domains").and_then(Value::as_array).map(|items| items.iter().filter_map(Value::as_str).map(str::to_owned).collect()).unwrap_or_default()
 }
 
 fn duplicate_score(left: &Value, right: &Value) -> Result<Option<f64>> {
@@ -195,27 +172,15 @@ fn duplicate_score(left: &Value, right: &Value) -> Result<Option<f64>> {
     } else if start_difference > 30.0 && overlap_ratio < 0.5 {
         return Ok(None);
     }
-    let left_modality = text_or(left, "modality", "");
-    let right_modality = text_or(right, "modality", "");
-    if left_modality != "unknown"
-        && right_modality != "unknown"
-        && left_modality != right_modality
-        && left_modality != "mixed"
-        && right_modality != "mixed"
-    {
-        return Ok(None);
-    }
-    let left_sport = normalized_token(text(left, "sport"));
-    let right_sport = normalized_token(text(right, "sport"));
-    if left_modality == "endurance"
-        && right_modality == "endurance"
-        && !left_sport.is_empty()
-        && !right_sport.is_empty()
-        && left_sport != right_sport
-    {
-        return Ok(None);
-    }
-
+    let activity_type = |session: &Value| text(session, "type").filter(|value| !value.trim().is_empty()).map(|value| {
+        athria_core::training_type::classify(value).map(|(kind, _, _)| kind.to_owned())
+            .unwrap_or_else(|| athria_core::training_type::token(value))
+    });
+    let left_type = activity_type(left);
+    let right_type = activity_type(right);
+    if left_type.is_some() && right_type.is_some() && left_type != right_type { return Ok(None); }
+    let same_type = left_type.is_some() && left_type == right_type;
+    let endurance_pair = same_type && inferred_domains(left).contains("endurance") && inferred_domains(right).contains("endurance");
     let start_score: f64 = if start_difference <= 2.0 {
         45.0
     } else if start_difference <= 5.0 {
@@ -232,13 +197,7 @@ fn duplicate_score(left: &Value, right: &Value) -> Result<Option<f64>> {
     } else {
         start_score.max((overlap_ratio * 45.0).round())
     };
-    let modality_score = if left_modality == right_modality {
-        20.0
-    } else if left_modality == "mixed" || right_modality == "mixed" {
-        14.0
-    } else {
-        5.0
-    };
+    let type_score = if same_type { 20.0 } else { 5.0 };
     let duration_score = ratio_score(
         number(left, "durationMinutes"),
         number(right, "durationMinutes"),
@@ -250,8 +209,8 @@ fn duplicate_score(left: &Value, right: &Value) -> Result<Option<f64>> {
     if !left_sets.is_empty() && !right_sets.is_empty() {
         content_score =
             (jaccard(&exercise_tokens(left_sets), &exercise_tokens(right_sets)) * 20.0).round();
-    } else if left_modality == "endurance" && right_modality == "endurance" {
-        if !left_sport.is_empty() && left_sport == right_sport {
+    } else if endurance_pair {
+        if same_type {
             content_score += 10.0;
         }
         content_score += ratio_score(
@@ -266,7 +225,7 @@ fn duplicate_score(left: &Value, right: &Value) -> Result<Option<f64>> {
         }
     }
     Ok(Some(
-        time_score + modality_score + duration_score + content_score,
+        time_score + type_score + duration_score + content_score,
     ))
 }
 
@@ -290,7 +249,7 @@ fn information_score(session: &Value) -> i64 {
     if number(session, "durationMinutes") > 0.0 {
         score += 5;
     }
-    if text_or(session, "modality", "") != "unknown" {
+    if !array(session, "domains").is_empty() {
         score += 3;
     }
     score -= array(session, "missingFields").len() as i64;
@@ -481,32 +440,16 @@ fn plan_match_score(planned: &Value, actual: &Value, timezone: &str) -> Result<O
     {
         return Ok(None);
     }
-    let planned_domains: BTreeSet<String> = array(planned, "components")
-        .iter()
-        .filter_map(|component| {
-            component
-                .get("domain")
-                .and_then(|domain| domain.get("value"))
-                .and_then(Value::as_str)
-        })
-        .map(str::to_string)
-        .collect();
-    let actual_domains = inferred_domains(actual);
-    if planned_domains.is_disjoint(&actual_domains) {
-        return Ok(None);
-    }
-    let domain_score = if planned_domains.len() == 1 && actual_domains.len() == 1 {
-        30.0
-    } else {
-        20.0
-    };
+    let planned_type = text(planned, "type").and_then(athria_core::training_type::classify).map(|(kind, _, _)| kind);
+    let actual_type = text(actual, "type").and_then(athria_core::training_type::classify).map(|(kind, _, _)| kind);
+    if planned_type.is_none() || planned_type != actual_type { return Ok(None); }
     let duration_score = ratio_score(
         number(planned, "durationMinutes"),
         number(actual, "durationMinutes"),
         &[(0.1, 15.0), (0.2, 12.0), (0.35, 8.0), (0.5, 4.0)],
     );
     Ok(Some(
-        35.0 + domain_score + duration_score + planned_content_score(planned, actual)?,
+        35.0 + 30.0 + duration_score + planned_content_score(planned, actual)?,
     ))
 }
 
@@ -576,23 +519,7 @@ impl SqliteStore {
         Ok(summaries)
     }
 
-    pub(crate) fn type_overrides(&self, owner_id: &str) -> Result<HashMap<String, String>> {
-        let mut statement = self
-            .sqlite()
-            .prepare("SELECT training_session_id, domain FROM training_session_type_overrides WHERE owner_id = ?1")
-            .map_err(database_error)?;
-        let rows = statement
-            .query_map(params![owner_id], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-            })
-            .map_err(database_error)?;
-        let mut overrides = HashMap::new();
-        for row in rows {
-            let (training_session_id, domain) = row.map_err(database_error)?;
-            overrides.insert(training_session_id, domain);
-        }
-        Ok(overrides)
-    }
+
 
     pub(crate) fn excluded_workouts(&self, owner_id: &str) -> Result<HashSet<String>> {
         let mut statement = self
@@ -614,7 +541,6 @@ impl SqliteStore {
         matches: &HashMap<String, Value>,
         sources: &HashMap<String, Vec<Value>>,
         excluded: &HashSet<String>,
-        overrides: &HashMap<String, String>,
     ) -> Result<Value> {
         let id = text_or(session, "id", "").to_string();
         let plan_match = matches.get(&id);
@@ -624,15 +550,7 @@ impl SqliteStore {
                 "stored training session is not a JSON object",
             ));
         };
-        if let Some(domain) = overrides.get(&id) {
-            fields.insert("domains".to_string(), json!([domain]));
-            let missing: Vec<Value> = array(session, "missingFields")
-                .iter()
-                .filter(|item| item.as_str() != Some("domains"))
-                .cloned()
-                .collect();
-            fields.insert("missingFields".to_string(), Value::Array(missing));
-        }
+
         fields.insert(
             "plannedSessionId".to_string(),
             plan_match
@@ -673,11 +591,10 @@ impl SqliteStore {
         let matches = self.match_details(owner_id)?;
         let sources = self.source_summaries(owner_id)?;
         let excluded = self.excluded_workouts(owner_id)?;
-        let overrides = self.type_overrides(owner_id)?;
         stored
             .into_iter()
             .map(|session| {
-                Self::with_derived_match(&session, &matches, &sources, &excluded, &overrides)
+                Self::with_derived_match(&session, &matches, &sources, &excluded)
             })
             .collect()
     }
@@ -727,7 +644,13 @@ impl SqliteStore {
             updated: 0,
         };
         self.transaction(&mut || {
-            for value in sessions {
+            for input in sessions {
+                let normalized = athria_core::schema::parse_training_session(input)?;
+                let mut value = input.clone();
+                for key in ["type", "subtype", "domains"] { value[key] = normalized[key].clone(); }
+                value.as_object_mut().unwrap().remove("sport");
+                value.as_object_mut().unwrap().remove("modality");
+                let value = &value;
                 let owner_id = text_or(value, "ownerId", DEFAULT_OWNER_ID);
                 let source = text_or(value, "source", "");
                 let external_id = text_or(value, "externalId", "");
@@ -995,16 +918,10 @@ impl SqliteStore {
         } else {
             HashSet::new()
         };
-        let has_overrides = self.table_exists("training_session_type_overrides")?;
-        let override_ids: HashSet<String> = if has_overrides {
-            self.type_overrides(owner_id)?.into_keys().collect()
-        } else {
-            HashSet::new()
-        };
-        let mut protected: HashSet<String> = linked.clone();
-        protected.extend(excluded.iter().cloned());
-        protected.extend(override_ids);
 
+
+        let mut protected = linked.clone();
+        protected.extend(excluded.iter().cloned());
         let mut used: HashSet<String> = HashSet::new();
         let mut canonical: Vec<Value> = Vec::new();
         let mut assignments: Vec<(String, String)> = Vec::new();
@@ -1089,13 +1006,12 @@ impl SqliteStore {
         for session in &canonical {
             self.sqlite()
                 .execute(
-                    "INSERT INTO training_sessions(id, owner_id, source, external_id, modality, start_at, data) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    "INSERT INTO training_sessions(id, owner_id, source, external_id, start_at, data) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                     params![
                         text_or(session, "id", ""),
                         owner_id,
                         text_or(session, "source", ""),
                         text_or(session, "externalId", ""),
-                        text_or(session, "modality", ""),
                         text_or(session, "startAt", ""),
                         session.to_string()
                     ],
@@ -1116,14 +1032,7 @@ impl SqliteStore {
                 params![owner_id],
             )
             .map_err(database_error)?;
-        if has_overrides {
-            self.sqlite()
-                .execute(
-                    "DELETE FROM training_session_type_overrides WHERE owner_id = ?1 AND training_session_id NOT IN (SELECT id FROM training_sessions WHERE owner_id = ?1)",
-                    params![owner_id],
-                )
-                .map_err(database_error)?;
-        }
+
         if has_exclusions {
             self.sqlite()
                 .execute(
@@ -1413,6 +1322,9 @@ impl SqliteStore {
                 return Err(AthriaError::new(AthriaErrorCode::ManualSourceNotFound, "MANUAL_SOURCE_NOT_FOUND"));
             };
             let current = parse_json_column(&data)?;
+            if text(&current, "type").and_then(athria_core::training_type::classify).is_none() {
+                return Err(AthriaError::new(AthriaErrorCode::InvalidData, "session.type: expected a known activity type"));
+            }
             let requested_start = start_at.map(str::to_string);
             let start_at = requested_start.clone().unwrap_or_else(|| text_or(&current, "startAt", "").to_string());
             let timezone = text(&current, "timezone").map(str::to_string).unwrap_or(self.profile_timezone(owner_id)?);
@@ -1449,45 +1361,7 @@ impl SqliteStore {
 
     /// `setTrainingSessionTypeOverride`: force one domain on a canonical
     /// session and re-derive plan matches.
-    pub fn set_training_session_type_override(
-        &self,
-        owner_id: &str,
-        training_session_id: &str,
-        domain: &str,
-    ) -> Result<Value> {
-        let exists: Option<String> = self
-            .sqlite()
-            .query_row(
-                "SELECT id FROM training_sessions WHERE owner_id = ?1 AND id = ?2",
-                params![owner_id, training_session_id],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(database_error)?;
-        if exists.is_none() {
-            return Err(AthriaError::new(
-                AthriaErrorCode::TrainingSessionNotFound,
-                "TRAINING_SESSION_NOT_FOUND",
-            ));
-        }
-        self.sqlite()
-            .execute(
-                "INSERT INTO training_session_type_overrides(owner_id, training_session_id, domain, updated_at) VALUES (?1, ?2, ?3, ?4)
-                 ON CONFLICT(owner_id, training_session_id) DO UPDATE SET domain = excluded.domain, updated_at = excluded.updated_at",
-                params![owner_id, training_session_id, domain, self.now()],
-            )
-            .map_err(database_error)?;
-        self.reconcile_plan_matches(owner_id)?;
-        self.list_sessions(owner_id, None)?
-            .into_iter()
-            .find(|session| text_or(session, "id", "") == training_session_id)
-            .ok_or_else(|| {
-                AthriaError::new(
-                    AthriaErrorCode::TrainingSessionNotFound,
-                    "TRAINING_SESSION_NOT_FOUND",
-                )
-            })
-    }
+
 
     /// `deleteManualTrainingSession`: drop the manual observation and rebuild.
     pub fn delete_manual_training_session(
@@ -1527,7 +1401,6 @@ impl SqliteStore {
                 "DELETE FROM training_session_sources WHERE owner_id = ?1 AND training_session_id = ?2",
                 "DELETE FROM plan_workout_matches WHERE owner_id = ?1 AND training_session_id = ?2",
                 "DELETE FROM workout_plan_exclusions WHERE owner_id = ?1 AND training_session_id = ?2",
-                "DELETE FROM training_session_type_overrides WHERE owner_id = ?1 AND training_session_id = ?2",
                 "DELETE FROM training_sessions WHERE owner_id = ?1 AND id = ?2",
             ] {
                 self.sqlite().execute(statement, params![owner_id, training_session_id]).map_err(database_error)?;
@@ -1562,8 +1435,8 @@ mod tests {
         name: &str,
     ) -> Value {
         json!({
-            "id": id, "ownerId": DEFAULT_OWNER_ID, "source": source, "externalId": external_id, "modality": "endurance",
-            "domains": ["endurance"], "sport": "Run", "name": name, "startAt": start_at, "endAt": end_at,
+            "id": id, "ownerId": DEFAULT_OWNER_ID, "source": source, "externalId": external_id, "type": "Run",
+            "domains": ["endurance"], "type": "Run", "name": name, "startAt": start_at, "endAt": end_at,
             "durationMinutes": minutes, "status": "completed", "timezone": "Asia/Hong_Kong", "plannedSessionId": null,
             "timePrecision": "exact", "sources": [], "planMatch": null, "isPlanMatchExcluded": false,
             "strengthSets": [], "endurance": null, "missingFields": [],
@@ -1584,7 +1457,7 @@ mod tests {
                     "weekNumber": 1, "focus": null,
                     "sessions": [{
                         "id": "s1", "scheduledDate": "2026-09-10", "order": 0, "status": "planned", "templateRef": null,
-                        "name": "Easy Run", "intent": "Aerobic base", "durationMinutes": 60, "recoveryDemand": "low", "keySession": false,
+                        "type": "Run", "subtype": null, "name": "Easy Run", "intent": "Aerobic base", "durationMinutes": 60, "recoveryDemand": "low", "keySession": false,
                         "components": [{
                             "id": "c1", "name": "Run",
                             "domain": { "value": "endurance", "source": "user_confirmed", "confidence": 1, "evidence": "", "taxonomyVersion": "strength-2.0" },
@@ -1820,7 +1693,7 @@ mod tests {
     }
 
     #[test]
-    fn stored_sessions_keep_the_domains_the_importer_declared() {
+    fn stored_sessions_use_type_and_ignore_legacy_modality() {
         let store = store();
         let mut session = run(
             "hevy",
@@ -1838,6 +1711,26 @@ mod tests {
             .sqlite()
             .query_row("SELECT data FROM training_sessions", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(parse_json_column(&stored).unwrap()["domains"], json!([]));
+        assert_eq!(parse_json_column(&stored).unwrap()["domains"], json!(["endurance"]));
+        assert!(parse_json_column(&stored).unwrap().get("modality").is_none());
     }
+    #[test]
+    fn matching_and_deduplication_use_type_and_ignore_subtype() {
+        let mut planned = json!({"type":"Swim","subtype":"poolswim","scheduledDate":"2026-10-07","durationMinutes":60,"components":[]});
+        let actual = json!({"type":"Swim","subtype":"openwaterswim","startAt":"2026-10-07T11:03:08Z","endAt":"2026-10-07T11:51:08Z","durationMinutes":48,"source":"intervals","domains":["endurance"],"endurance":{"distanceMeters":925},"strengthSets":[]});
+        assert!(plan_match_score(&planned, &actual, "Asia/Hong_Kong").unwrap().unwrap() >= 70.0);
+        planned["type"] = json!("Run");
+        assert_eq!(plan_match_score(&planned, &actual, "Asia/Hong_Kong").unwrap(), None);
+        planned["type"] = json!("Unknown");
+        assert_eq!(plan_match_score(&planned, &actual, "Asia/Hong_Kong").unwrap(), None);
+        let mut other = actual.clone();
+        other["source"] = json!("manual");
+        other["subtype"] = json!("poolswim");
+        assert!(duplicate_score(&actual, &other).unwrap().unwrap() >= 75.0);
+        other["type"] = json!("Run");
+        assert_eq!(duplicate_score(&actual, &other).unwrap(), None);
+        other["type"] = json!("CustomWorkout");
+        assert_eq!(duplicate_score(&actual, &other).unwrap(), None);
+    }
+
 }

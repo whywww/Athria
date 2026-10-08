@@ -89,13 +89,6 @@
                   {
                     "id": "mon-flush",
                     "name": "Recovery",
-                    "domain": {
-                      "value": null,
-                      "source": "ai_inferred",
-                      "confidence": 0.4,
-                      "evidence": "golden fixture",
-                      "taxonomyVersion": "strength-2.0"
-                    },
                     "prescription": {
                       "kind": "duration_only",
                       "notes": ""
@@ -104,7 +97,8 @@
                 ],
                 "progressionNote": null,
                 "schedulingRationale": null,
-                "legacySnapshot": false
+                "legacySnapshot": false,
+                "domain": null
               }
             ]
           }
@@ -206,30 +200,13 @@
         "confidenceLimit": null
       },
       {
-        "enforcement": "blocker",
-        "reasonCode": "COMPONENT_PRESCRIPTION",
-        "status": "pass",
-        "rulePackId": "structure",
-        "ruleVersion": "0.3.0",
-        "subjectRefs": [
-          "mon-recovery",
-          "mon-flush"
-        ],
-        "evidence": {
-          "domain": null,
-          "prescription": "duration_only"
-        },
-        "missingFacts": [],
-        "confidenceLimit": null
-      },
-      {
         "enforcement": "info",
-        "reasonCode": "COMPONENT_DOMAIN_MISSING",
+        "reasonCode": "SESSION_DOMAIN_MISSING",
         "status": "unknown",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [
-          "mon-flush"
+          "mon-recovery"
         ],
         "evidence": {},
         "missingFacts": [
@@ -313,8 +290,8 @@
     ],
     "dataGaps": [
       {
-        "code": "COMPONENT_DOMAIN_MISSING",
-        "subjectRef": "mon-flush",
+        "code": "SESSION_DOMAIN_MISSING",
+        "subjectRef": "mon-recovery",
         "factPath": "domain",
         "requiredByRuleCodes": [],
         "blocking": false,
@@ -322,10 +299,10 @@
       }
     ],
     "validatedAt": "2026-09-17T10:30:00.000Z",
-    "inputHash": "fnv1a-44571a14",
+    "inputHash": "fnv1a-8c028cc8",
     "coverage": {
-      "hardChecksResolved": 6,
-      "hardChecksTotal": 6,
+      "hardChecksResolved": 5,
+      "hardChecksTotal": 5,
       "movementFactsResolved": 0,
       "movementFactsTotal": 0,
       "muscleFactsResolved": 0,

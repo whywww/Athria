@@ -14,7 +14,7 @@ const taxonomy: TrainingTaxonomy = {
     muscleGroups: [{ id: "quadriceps", label: "Quadriceps", parentId: null, selectable: true }],
     equipment: [],
   },
-  templateVariables: { strength: ["exercise_selection", "sets", "load"], endurance: ["duration", "distance", "rpe"], sport_skill: ["drill"], mind_body: ["technique"], recovery: ["movement"] },
+  templateVariables: { strength: ["exercise_selection", "sets", "load"], endurance: ["duration", "distance", "rpe"], sport_skill: ["drill"], functional: ["duration"], mind_body: ["technique"], mobility: ["movement"] },
 };
 
 const strengthTemplate: SessionTemplate = { id: "lower", name: "Lower Strength A", intent: "Own the squat pattern.", domain: "strength", nodes: [{ role: "primary", variables: ["exercise_selection"], optionalVariables: ["load"], movementPatternIds: ["squat"], matchPolicy: "all" }] };

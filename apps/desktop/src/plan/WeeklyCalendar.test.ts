@@ -50,11 +50,10 @@ function session(id: string, scheduledDate: string, overrides: Partial<CalendarS
   };
 }
 
-function component(domain: NonNullable<PlanComponent["domain"]["value"]>, prescription: PlanComponent["prescription"] = { kind: "duration_only", notes: "" }): PlanComponent {
+function component(domain: import("../view-models").TemplateComponentDomain, prescription: PlanComponent["prescription"] = { kind: "duration_only", notes: "" }): PlanComponent {
   return {
     id: `component-${domain}`,
     name: domain,
-    domain: { value: domain, source: "agent", confidence: 1, evidence: "test", taxonomyVersion: "1" },
     prescription,
   };
 }
@@ -87,8 +86,8 @@ describe("WeeklyCalendar", () => {
 
   it("uses domain icons, domain tone classes, and compact reliable week totals", () => {
     const html = render([
-      session("endurance", "2026-09-07", { durationMinutes: 40, components: [component("endurance")] }),
-      session("strength", "2026-09-08", { components: [component("strength", { kind: "strength", exercises: [{ sets: 4 } as PlanExercise, { sets: 4 } as PlanExercise] })] }),
+      session("endurance", "2026-09-07", { durationMinutes: 40, domain: "endurance", components: [component("endurance")] }),
+      session("strength", "2026-09-08", { domain: "strength", components: [component("strength", { kind: "strength", exercises: [{ sets: 4 } as PlanExercise, { sets: 4 } as PlanExercise] })] }),
     ]);
 
     expect(sessionMarkup(html, "endurance")).toContain("tone-endurance");
@@ -124,13 +123,13 @@ describe("WeeklyCalendar", () => {
       name: "Long Easy Aerobic Session With An Unbroken Descriptive Name",
       durationMinutes: 65,
       displayState: "unrecorded",
-      components: [component("endurance"), component("strength")],
+      domain: "endurance", components: [component("endurance"), component("strength")],
     })]);
     const chip = sessionMarkup(html, "long");
 
     expect(chip).toContain('class="wc-chip-domains"');
     expect(chip).toContain('data-domain-icon="endurance"');
-    expect(chip).toContain('data-domain-icon="strength"');
+    expect(chip).not.toContain('data-domain-icon="strength"');
     expect(chip).toContain('class="wc-duration">1 hr 5 min');
     expect(chip).toContain("wc-status-light status-unrecorded");
     expect(chip.indexOf("wc-chip-domains")).toBeLessThan(chip.indexOf("wc-status-light status-unrecorded"));
@@ -144,5 +143,39 @@ describe("WeeklyCalendar", () => {
     expect(html).toContain('data-session-id="overflow-1"');
     expect(html).toContain('data-session-id="overflow-2"');
     expect(html).not.toContain('data-session-id="overflow-3"');
+  });
+});
+
+
+describe("six-domain session classification", () => {
+  it("uses the session domain even when its activity type is unknown", () => {
+    const html = render([session("run-walk", "2026-09-13", {
+      name: "周末轻松跑走",
+      type: null,
+      domain: "endurance",
+      domains: [],
+      components: [component("endurance"), component("endurance")],
+    })]);
+    const chip = sessionMarkup(html, "run-walk");
+
+    expect(chip).toContain("tone-endurance");
+    expect(chip.match(/data-domain-icon="endurance"/g)).toHaveLength(1);
+    expect(html).toContain('class="wc-week-summary">45 min');
+  });
+
+  it("keeps sessions neutral when the session classification is unknown", () => {
+    const html = render([session("unknown", "2026-09-13", { domains: [] })]);
+    const chip = sessionMarkup(html, "unknown");
+
+    expect(chip).toContain("tone-neutral");
+    expect(chip).not.toContain("data-domain-icon");
+  });
+
+  it("shows only the Functional session domain for mixed prescription kinds", () => {
+    const html = render([session("hyrox", "2026-09-07", { type: "FunctionalTraining", subtype: "hyrox", domain: "functional", domains: ["functional"], components: [component("strength"), component("endurance")] })]);
+    const chip = sessionMarkup(html, "hyrox");
+    expect(chip).toContain('data-domain-icon="functional"');
+    expect(chip).not.toContain('data-domain-icon="endurance"');
+    expect(html).toContain("45 min functional");
   });
 });

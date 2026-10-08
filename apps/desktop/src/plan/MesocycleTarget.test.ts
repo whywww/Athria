@@ -30,12 +30,29 @@ const plan: CurrentPlan = {
 };
 
 describe("MesocycleTarget", () => {
+  it("uses domain IDs for phase icons and colors regardless of translated labels", () => {
+    const html = renderToStaticMarkup(createElement(MesocycleTarget, {
+      plan,
+      today: "2026-09-07",
+      currentWeek: 1,
+      currentPhases: [
+        { domain: "endurance", name: "耐力训练 · 游泳与跑走重启" },
+        { domain: "strength", name: "力量训练 · 全身力量维持" },
+      ],
+    }));
+    expect(html).toContain('class="mt-progress-phase" data-domain="endurance"');
+    expect(html).toContain('class="mt-progress-phase" data-domain="strength"');
+    expect(html).toContain('cx="13.5" cy="5.5"');
+    expect(html).toContain('d="M7 9v6M4.5 10.5v3M17 9v6M19.5 10.5v3M7 12h10"');
+    expect(html).not.toContain('cx="12" cy="12" r="3"');
+  });
+
   it("renders the plan details collapsed by default", () => {
     const html = renderToStaticMarkup(createElement(MesocycleTarget, {
       plan,
       today: "2026-09-07",
       currentWeek: 1,
-      currentPhaseNames: [],
+      currentPhases: [],
     }));
 
     expect(html).toContain('aria-expanded="false"');
@@ -55,7 +72,7 @@ describe("MesocycleTarget", () => {
       plan: legacy,
       today: "2026-09-07",
       currentWeek: 1,
-      currentPhaseNames: ["Endurance · Base"],
+      currentPhases: [{ domain: "endurance", name: "Endurance · Base" }],
     }));
 
     expect(html).toContain("Build a durable aerobic base");

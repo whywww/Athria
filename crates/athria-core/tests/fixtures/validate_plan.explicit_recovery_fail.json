@@ -72,7 +72,7 @@
         },
         "domainProgressions": [
           {
-            "domain": "recovery",
+            "domain": "mobility",
             "phases": [
               {
                 "id": "recovery-base",
@@ -106,13 +106,6 @@
                   {
                     "id": "flush-0",
                     "name": "Recovery",
-                    "domain": {
-                      "value": "recovery",
-                      "source": "user_confirmed",
-                      "confidence": 1,
-                      "evidence": "golden fixture",
-                      "taxonomyVersion": "strength-2.0"
-                    },
                     "prescription": {
                       "kind": "duration_only",
                       "notes": ""
@@ -121,7 +114,8 @@
                 ],
                 "progressionNote": null,
                 "schedulingRationale": null,
-                "legacySnapshot": false
+                "legacySnapshot": false,
+                "domain": "mobility"
               },
               {
                 "id": "high-1",
@@ -138,13 +132,6 @@
                   {
                     "id": "flush-1",
                     "name": "Recovery",
-                    "domain": {
-                      "value": "recovery",
-                      "source": "user_confirmed",
-                      "confidence": 1,
-                      "evidence": "golden fixture",
-                      "taxonomyVersion": "strength-2.0"
-                    },
                     "prescription": {
                       "kind": "duration_only",
                       "notes": ""
@@ -153,7 +140,8 @@
                 ],
                 "progressionNote": null,
                 "schedulingRationale": null,
-                "legacySnapshot": false
+                "legacySnapshot": false,
+                "domain": "mobility"
               }
             ]
           }
@@ -254,11 +242,11 @@
         "evidence": {
           "durationWeeks": 1,
           "sessionDomains": [
-            "recovery"
+            "mobility"
           ],
           "progressions": [
             {
-              "domain": "recovery",
+              "domain": "mobility",
               "phases": [
                 {
                   "id": "recovery-base",
@@ -272,40 +260,6 @@
               ]
             }
           ]
-        },
-        "missingFacts": [],
-        "confidenceLimit": null
-      },
-      {
-        "enforcement": "blocker",
-        "reasonCode": "COMPONENT_PRESCRIPTION",
-        "status": "pass",
-        "rulePackId": "structure",
-        "ruleVersion": "0.3.0",
-        "subjectRefs": [
-          "high-0",
-          "flush-0"
-        ],
-        "evidence": {
-          "domain": "recovery",
-          "prescription": "duration_only"
-        },
-        "missingFacts": [],
-        "confidenceLimit": null
-      },
-      {
-        "enforcement": "blocker",
-        "reasonCode": "COMPONENT_PRESCRIPTION",
-        "status": "pass",
-        "rulePackId": "structure",
-        "ruleVersion": "0.3.0",
-        "subjectRefs": [
-          "high-1",
-          "flush-1"
-        ],
-        "evidence": {
-          "domain": "recovery",
-          "prescription": "duration_only"
         },
         "missingFacts": [],
         "confidenceLimit": null
@@ -400,10 +354,10 @@
     ],
     "dataGaps": [],
     "validatedAt": "2026-09-17T10:30:00.000Z",
-    "inputHash": "fnv1a-8af08d4a",
+    "inputHash": "fnv1a-10d5d10c",
     "coverage": {
-      "hardChecksResolved": 7,
-      "hardChecksTotal": 7,
+      "hardChecksResolved": 5,
+      "hardChecksTotal": 5,
       "movementFactsResolved": 0,
       "movementFactsTotal": 0,
       "muscleFactsResolved": 0,

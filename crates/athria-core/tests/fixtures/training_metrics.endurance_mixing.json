@@ -8,11 +8,9 @@
         "ownerId": "local-user",
         "source": "intervals_icu",
         "externalId": "e-1",
-        "modality": "endurance",
         "domains": [
           "endurance"
         ],
-        "sport": null,
         "name": "e-1",
         "startAt": "2026-09-07T06:00:00Z",
         "endAt": "2026-09-07T07:00:00Z",
@@ -36,18 +34,18 @@
             "zone2": 1200
           }
         },
-        "missingFields": []
+        "missingFields": [],
+        "type": null,
+        "subtype": null
       },
       {
         "id": "e-2",
         "ownerId": "local-user",
         "source": "intervals_icu",
         "externalId": "e-2",
-        "modality": "endurance",
         "domains": [
           "endurance"
         ],
-        "sport": null,
         "name": "e-2",
         "startAt": "2026-09-08T06:00:00Z",
         "endAt": "2026-09-08T06:40:00Z",
@@ -68,18 +66,18 @@
           "maxPowerWatts": null,
           "heartRateZoneSeconds": {}
         },
-        "missingFields": []
+        "missingFields": [],
+        "type": null,
+        "subtype": null
       },
       {
         "id": "e-3",
         "ownerId": "local-user",
         "source": "manual",
         "externalId": "e-3",
-        "modality": "recovery",
         "domains": [
-          "recovery"
+          "mobility"
         ],
-        "sport": null,
         "name": "e-3",
         "startAt": "2026-09-09T07:00:00Z",
         "endAt": "2026-09-09T07:30:00Z",
@@ -93,7 +91,9 @@
         "isPlanMatchExcluded": false,
         "strengthSets": [],
         "endurance": null,
-        "missingFields": []
+        "missingFields": [],
+        "type": "Mobility",
+        "subtype": null
       }
     ]
   },
@@ -188,13 +188,13 @@
     },
     "endurance": {
       "durationMinutes": {
-        "value": 130,
+        "value": 100,
         "unit": "min",
         "method": "sum_duration",
         "formulaVersion": "0.2.0",
         "timeRange": {
           "start": "2026-09-07T06:00:00Z",
-          "end": "2026-09-09T07:30:00Z"
+          "end": "2026-09-08T06:40:00Z"
         },
         "dataQuality": {
           "completeness": 1,
@@ -216,7 +216,7 @@
         "formulaVersion": "0.2.0",
         "timeRange": {
           "start": "2026-09-07T06:00:00Z",
-          "end": "2026-09-09T07:30:00Z"
+          "end": "2026-09-08T06:40:00Z"
         },
         "dataQuality": {
           "completeness": 0,
@@ -232,13 +232,13 @@
         "limitations": []
       },
       "paceSecondsPerKm": {
-        "value": 780,
+        "value": 600,
         "unit": "s/km",
         "method": "elapsed_duration_per_kilometer",
         "formulaVersion": "0.2.0",
         "timeRange": {
           "start": "2026-09-07T06:00:00Z",
-          "end": "2026-09-09T07:30:00Z"
+          "end": "2026-09-08T06:40:00Z"
         },
         "dataQuality": {
           "completeness": 1,
@@ -263,7 +263,7 @@
         "formulaVersion": "0.2.0",
         "timeRange": {
           "start": "2026-09-07T06:00:00Z",
-          "end": "2026-09-09T07:30:00Z"
+          "end": "2026-09-08T06:40:00Z"
         },
         "dataQuality": {
           "completeness": 0,

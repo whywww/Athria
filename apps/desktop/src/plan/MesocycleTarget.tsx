@@ -11,7 +11,7 @@ export interface MesocycleTargetProps {
   plan: CurrentPlan;
   today: string;
   currentWeek: number;
-  currentPhaseNames: string[];
+  currentPhases: { domain: DomainIconId; name: string }[];
   status?: MesocycleTargetStatus;
 }
 
@@ -46,11 +46,8 @@ function DetailIcon({ kind }: { kind: "details" | "supporting" | "maintenance" |
   return <span className="mt-detail-icon"><LineIcon>{icon}</LineIcon></span>;
 }
 
-function DomainIcon({ label }: { label: string }) {
-  const key = label.split("·", 1)[0]?.trim().toLowerCase() ?? "";
-  const domain: DomainIconId = key.includes("strength") ? "strength" : key.includes("endurance") ? "endurance" : key.includes("sport") ? "sport_skill" : key.includes("mind") ? "mind_body" : "recovery";
-  const tone = domain === "sport_skill" ? "sport" : domain === "mind_body" ? "mind" : domain;
-  return <span className={`mt-domain-icon mt-domain-${tone}`}><LineIcon>{domainIconPath(domain)}</LineIcon></span>;
+function DomainIcon({ domain }: { domain: DomainIconId }) {
+  return <span className="mt-domain-icon"><LineIcon>{domainIconPath(domain)}</LineIcon></span>;
 }
 
 function DetailSection({ kind, title, children }: { kind: "supporting" | "maintenance" | "coordination"; title: string; children: ReactNode }) {
@@ -64,7 +61,7 @@ function DetailSection({ kind, title, children }: { kind: "supporting" | "mainte
   </section>;
 }
 
-export function MesocycleTarget({ plan, today, currentWeek, currentPhaseNames, status = "current" }: MesocycleTargetProps) {
+export function MesocycleTarget({ plan, today, currentWeek, currentPhases, status = "current" }: MesocycleTargetProps) {
   const { language } = useLanguage();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const target = plan.target;
@@ -86,7 +83,7 @@ export function MesocycleTarget({ plan, today, currentWeek, currentPhaseNames, s
 
     <div className="mt-progress">
       <span className="mt-progress-week">{language === "zh-CN" ? <>第 <strong>{currentWeek}</strong> 周，共 <strong>{durationWeeks}</strong> 周</> : <><strong>Week {currentWeek}</strong> of <strong>{durationWeeks}</strong></>}</span>
-      <div className="mt-progress-phases">{currentPhaseNames.map((name) => <span className="mt-progress-phase" key={name}><DomainIcon label={name}/>{name}</span>)}</div>
+      <div className="mt-progress-phases">{currentPhases.map(({ domain, name }) => <span className="mt-progress-phase" data-domain={domain} key={domain}><DomainIcon domain={domain}/>{name}</span>)}</div>
       <span className="mt-progress-asof"><T>{"As of"}</T> {formatShortDate(today)}</span>
     </div>
 

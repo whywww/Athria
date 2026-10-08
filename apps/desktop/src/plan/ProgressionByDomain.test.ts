@@ -41,7 +41,7 @@ describe("ProgressionByDomain", () => {
     ];
     const html = renderToStaticMarkup(createElement(ProgressionByDomain, { currentWeek: 1, progressions: singleDomain }));
 
-    expect(html).toContain("Sport skill");
+    expect(html).toContain("Sport-skill");
     expect(html).toContain("Acquisition");
     expect(html).toContain("W1");
     expect(html).not.toContain("This focus stays hidden");

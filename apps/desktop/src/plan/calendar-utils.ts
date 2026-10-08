@@ -1,4 +1,4 @@
-import { friendlyLabel, type CalendarSession, type Mesocycle, type PlanComponent } from "../view-models";
+import { friendlyLabel, type CalendarSession, type Mesocycle, type TemplateComponentDomain } from "../view-models";
 import { formatShortDate, weekdayIndex } from "./view";
 import { currentLanguage, translate, weekdayName } from "../i18n";
 
@@ -8,8 +8,8 @@ import { currentLanguage, translate, weekdayName } from "../i18n";
  * week/date maths stays in `./view` so this module never re-derives weeks.
  */
 
-/** A resolved, non-null training domain carried by a component. */
-export type DomainValue = NonNullable<PlanComponent["domain"]["value"]>;
+/** A resolved, non-null training domain carried by a session. */
+export type DomainValue = TemplateComponentDomain;
 
 /** Monday-based short weekday labels, indexed by `weekdayIndex()` (0 = Mon). */
 export const weekdayShort: string[] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -19,7 +19,7 @@ export function localizedWeekdayShort(index: number): string { return weekdayNam
 export function phaseLabelsForSession(progressions: Mesocycle["domainProgressions"], session: Pick<CalendarSession, "phaseRefs">): string[] {
   return session.phaseRefs.flatMap((ref) => {
     const phase = progressions.find((item) => item.domain === ref.domain)?.phases.find((item) => item.id === ref.phaseId);
-    return phase ? [`${friendlyLabel(ref.domain)} · ${phase.name.trim() || friendlyLabel(phase.phaseType)}`] : [];
+    return phase ? [phase.name.trim() || friendlyLabel(phase.phaseType)] : [];
   });
 }
 
@@ -31,18 +31,10 @@ export function phaseNamesForWeek(progressions: Mesocycle["domainProgressions"],
   }).join(" / ");
 }
 
-/** Distinct, non-null domains of a session's components, in execution order. */
+/** Calendar classification always belongs to the whole session. */
 export function sessionDomains(session: CalendarSession): DomainValue[] {
-  const seen = new Set<DomainValue>();
-  const result: DomainValue[] = [];
-  for (const component of session.components) {
-    const value = component.domain.value;
-    if (value !== null && !seen.has(value)) {
-      seen.add(value);
-      result.push(value);
-    }
-  }
-  return result;
+  const domain = session.domain ?? session.domains?.[0];
+  return domain ? [domain] : [];
 }
 
 /** Visual tone used for chip/badge styling; never relies on colour alone (§16.4). */

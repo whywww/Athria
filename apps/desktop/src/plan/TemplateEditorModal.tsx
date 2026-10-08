@@ -16,10 +16,10 @@ import { ErrorBanner, Loading } from "../components";
 export type TemplateEditorMode = "create" | "edit";
 export interface TemplateEditorValue { template: SessionTemplate; mode: TemplateEditorMode }
 
-export const componentDomains: TemplateComponentDomain[] = ["strength", "endurance", "sport_skill", "mind_body", "recovery"];
-const roles: Record<TemplateComponentDomain, string[]> = { strength: ["primary", "secondary", "accessory", "trunk"], endurance: ["warm_up", "steady", "repeat_work_recovery", "cool_down"], sport_skill: ["preparation", "technical", "tactical", "small_sided_game", "match", "competition", "conditioning", "cool_down"], recovery: ["down_regulation", "mobility", "easy_movement"], mind_body: ["centering", "practice_flow", "breathing", "down_regulation"] };
+export const componentDomains: TemplateComponentDomain[] = ["strength", "endurance", "sport_skill", "mind_body", "mobility", "functional"];
+const roles: Record<TemplateComponentDomain, string[]> = { strength: ["primary", "secondary", "accessory", "trunk"], endurance: ["warm_up", "steady", "repeat_work_recovery", "cool_down"], sport_skill: ["preparation", "technical", "tactical", "small_sided_game", "match", "competition", "conditioning", "cool_down"], mobility: ["down_regulation", "mobility", "easy_movement"], functional: ["primary", "secondary", "accessory", "trunk", "warm_up", "steady", "repeat_work_recovery", "cool_down"], mind_body: ["centering", "practice_flow", "breathing", "down_regulation"] };
 export const emptyTemplate = (domain: TemplateComponentDomain = "strength"): SessionTemplate => {
-  const variable = domain === "strength" ? "exercise_selection" : domain === "sport_skill" ? "drill" : domain === "mind_body" ? "technique" : domain === "recovery" ? "movement" : "duration";
+  const variable = domain === "strength" ? "exercise_selection" : domain === "sport_skill" ? "drill" : domain === "mind_body" ? "technique" : domain === "mobility" ? "movement" : "duration";
   return { id: crypto.randomUUID(), name: "", intent: "", domain, nodes: [{ role: roles[domain][0]!, variables: [variable] }] } as SessionTemplate;
 };
 

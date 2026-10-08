@@ -541,10 +541,9 @@ fn plan_with_run() -> Value {
                 "weekNumber": 1, "focus": null,
                 "sessions": [{
                     "id": "s1", "scheduledDate": "2026-09-10", "order": 0, "status": "planned", "templateRef": null,
-                    "name": "Easy Run", "intent": "Aerobic base", "durationMinutes": 60, "recoveryDemand": "low", "keySession": false,
+                    "type": "Run", "subtype": null, "domain": "endurance", "name": "Easy Run", "intent": "Aerobic base", "durationMinutes": 60, "recoveryDemand": "low", "keySession": false,
                     "components": [{
                         "id": "c1", "name": "Run",
-                        "domain": { "value": "endurance", "source": "user_confirmed", "confidence": 1, "evidence": "", "taxonomyVersion": "strength-2.0" },
                         "prescription": { "kind": "duration_only", "notes": "" },
                     }],
                     "progressionNote": null, "schedulingRationale": null, "legacySnapshot": false,
@@ -565,8 +564,8 @@ fn imported_session(
     name: &str,
 ) -> Value {
     json!({
-        "id": id, "ownerId": "local-user", "source": source, "externalId": external_id, "modality": "endurance",
-        "domains": ["endurance"], "sport": "Run", "name": name, "startAt": start_at, "endAt": end_at,
+        "id": id, "ownerId": "local-user", "source": source, "externalId": external_id, "type": "Run",
+        "domains": ["endurance"], "type": "Run", "name": name, "startAt": start_at, "endAt": end_at,
         "durationMinutes": minutes, "status": "completed", "timezone": "Asia/Hong_Kong", "plannedSessionId": null,
         "timePrecision": "exact", "sources": [], "planMatch": null, "isPlanMatchExcluded": false,
         "strengthSets": [], "endurance": null, "missingFields": [],
@@ -596,7 +595,7 @@ fn recorded_sessions_are_stored_as_completed_manual_observations() {
     let app = test_app();
     let recorded = app
         .record_training_session(&json!({
-            "modality": "strength",
+            "type": "StrengthTraining",
             "name": "Lower Strength",
             "startAt": "2026-09-16T09:00:00.000Z",
             "endAt": "2026-09-16T10:00:00.000Z",
@@ -609,7 +608,7 @@ fn recorded_sessions_are_stored_as_completed_manual_observations() {
     assert_eq!(recorded["source"], json!("manual"));
     assert_eq!(recorded["status"], json!("completed"));
     assert_eq!(recorded["externalId"], json!(id));
-    assert_eq!(recorded["domains"], json!([]));
+    assert_eq!(recorded["domains"], json!(["strength"]));
     assert_eq!(recorded["strengthSets"][0]["setType"], json!("normal"));
     // The response is the parsed schema document in declaration order.
     assert_eq!(
@@ -624,9 +623,9 @@ fn recorded_sessions_are_stored_as_completed_manual_observations() {
             "ownerId",
             "source",
             "externalId",
-            "modality",
+            "type",
+            "subtype",
             "domains",
-            "sport",
             "name",
             "startAt",
             "endAt",
@@ -655,7 +654,7 @@ fn recorded_sessions_are_stored_as_completed_manual_observations() {
     let explicit = app
         .record_training_session(&json!({
             "id": "manual-1", "externalId": "manual-external-1",
-            "modality": "strength", "name": "Upper Strength",
+            "type": "StrengthTraining", "name": "Upper Strength",
             "startAt": "2026-09-15T09:00:00.000Z", "endAt": "2026-09-15T10:00:00.000Z", "durationMinutes": 60,
             "strengthSets": [{ "exerciseRaw": "Bench Press", "setIndex": 0, "weight": 60, "weightUnit": "kg", "reps": 8 }],
         }))
@@ -671,8 +670,8 @@ fn stale_session_edit_is_rejected_after_another_connection_updates_the_workout()
     let first = AthriaApplication::new(SqliteStore::open(&path).unwrap());
     let second = AthriaApplication::new(SqliteStore::open(&path).unwrap());
     second.record_training_session(&json!({
-        "id": "manual-shared", "name": "Easy Run", "modality": "endurance", "domains": ["endurance"],
-        "sport": "Run", "startAt": "2026-09-16T09:00:00.000Z", "endAt": "2026-09-16T10:00:00.000Z",
+        "id": "manual-shared", "name": "Easy Run", "type": "Run", "domains": ["endurance"],
+        "type": "Run", "startAt": "2026-09-16T09:00:00.000Z", "endAt": "2026-09-16T10:00:00.000Z",
         "durationMinutes": 60, "timezone": "Asia/Hong_Kong", "timePrecision": "exact",
     })).unwrap();
     let snapshot = first.list_sessions_with_snapshots(365).unwrap().remove(0);
@@ -688,21 +687,21 @@ fn stale_session_edit_is_rejected_after_another_connection_updates_the_workout()
 }
 
 #[test]
-fn list_sessions_derives_endurance_domains_and_reports_missing_ones() {
+fn list_sessions_uses_type_domains_without_metric_inference() {
     let app = test_app();
-    // Nothing to derive from: `domains` is recorded as a missing field.
+    // A known type classifies even when no metric details are present.
     let bare_id = record(
         &app,
         json!({
-            "modality": "endurance", "name": "Bare Run",
+            "type": "Run", "name": "Bare Run",
             "startAt": "2026-09-14T10:00:00.000Z", "endAt": "2026-09-14T10:30:00.000Z", "durationMinutes": 30,
         }),
     );
-    // Endurance details present: the domain is derived from them.
+    // Metrics do not alter the classification.
     let detailed_id = record(
         &app,
         json!({
-            "modality": "endurance", "name": "Easy Run",
+            "type": "Run", "name": "Easy Run",
             "startAt": "2026-09-16T10:00:00.000Z", "endAt": "2026-09-16T10:30:00.000Z", "durationMinutes": 30,
             "endurance": { "distanceMeters": 5000 },
         }),
@@ -710,16 +709,15 @@ fn list_sessions_derives_endurance_domains_and_reports_missing_ones() {
 
     let sessions = app.list_sessions(90).unwrap();
     let bare = listed(&sessions, &bare_id);
-    assert_eq!(bare["domains"], json!([]));
-    assert_eq!(bare["missingFields"], json!(["domains"]));
+    assert_eq!(bare["domains"], json!(["endurance"]));
+    assert_eq!(bare["missingFields"], json!([]));
     let detailed = listed(&sessions, &detailed_id);
     assert_eq!(detailed["domains"], json!(["endurance"]));
     assert_eq!(detailed["missingFields"], json!([]));
 
-    // Only the response carries the derived domains; the stored document keeps
-    // the empty array the schema parsed.
+    // The classification is also stored, not synthesized while reading.
     let stored = app.store().list_sessions("local-user", None).unwrap();
-    assert_eq!(listed(&stored, &detailed_id)["domains"], json!([]));
+    assert_eq!(listed(&stored, &detailed_id)["domains"], json!(["endurance"]));
 }
 
 #[test]
@@ -767,7 +765,7 @@ fn training_state_reports_the_snapshot_hash_and_the_current_metrics() {
     record(
         &app,
         json!({
-            "modality": "strength", "name": "Lower Strength",
+            "type": "StrengthTraining", "name": "Lower Strength",
             "startAt": "2026-09-16T09:00:00.000Z", "endAt": "2026-09-16T10:00:00.000Z", "durationMinutes": 60,
             "strengthSets": [{ "exerciseRaw": "Back Squat", "setIndex": 0, "weight": 100, "weightUnit": "kg", "reps": 5 }],
         }),
@@ -781,7 +779,7 @@ fn training_summary_groups_domains_and_sports() {
     record(
         &app,
         json!({
-            "modality": "strength", "domains": ["strength"], "name": "Lower Strength",
+            "type": "StrengthTraining", "domains": ["strength"], "name": "Lower Strength",
             "startAt": "2026-09-16T09:00:00.000Z", "endAt": "2026-09-16T10:00:00.000Z", "durationMinutes": 60,
             "strengthSets": [{ "exerciseRaw": "Back Squat", "setIndex": 0, "weight": 100, "weightUnit": "kg", "reps": 5 }],
         }),
@@ -789,28 +787,28 @@ fn training_summary_groups_domains_and_sports() {
     record(
         &app,
         json!({
-            "modality": "endurance", "domains": ["endurance"], "sport": "Run", "name": "Easy Run",
+            "domains": ["endurance"], "type": "Run", "name": "Easy Run",
             "startAt": "2026-09-15T10:00:00.000Z", "endAt": "2026-09-15T10:30:00.000Z", "durationMinutes": 30,
         }),
     );
     record(
         &app,
         json!({
-            "modality": "unknown", "domains": ["sport_skill"], "sport": "Basketball", "name": "Basketball",
+             "domains": ["sport_skill"], "type": "Basketball", "name": "Basketball",
             "startAt": "2026-09-15T12:00:00.000Z", "endAt": "2026-09-15T13:30:00.000Z", "durationMinutes": 90,
         }),
     );
     record(
         &app,
         json!({
-            "modality": "unknown", "domains": ["sport_skill"], "sport": " Basketball ", "name": "Basketball",
+             "domains": ["sport_skill"], "type": " Basketball ", "name": "Basketball",
             "startAt": "2026-09-16T12:00:00.000Z", "endAt": "2026-09-16T12:30:00.000Z", "durationMinutes": 30,
         }),
     );
     record(
         &app,
         json!({
-            "modality": "unknown", "domains": ["sport_skill"], "sport": "Tennis", "name": "Tennis",
+             "domains": ["sport_skill"], "type": "Tennis", "name": "Tennis",
             "startAt": "2026-09-14T12:00:00.000Z", "endAt": "2026-09-14T12:45:00.000Z", "durationMinutes": 45,
         }),
     );
@@ -848,16 +846,17 @@ fn training_summary_groups_domains_and_sports() {
             "endurance",
             "sport_skill",
             "mind_body",
-            "recovery"
+            "mobility",
+            "functional"
         ]
     );
     assert_eq!(
         summary["byDomain"],
-        json!({ "strength": 1, "endurance": 1, "sport_skill": 3, "mind_body": 0, "recovery": 0 })
+        json!({ "strength": 1, "endurance": 1, "sport_skill": 3, "mind_body": 0, "mobility": 0, "functional": 0 })
     );
     assert_eq!(
         summary["durationMinutesByDomain"],
-        json!({ "strength": 60, "endurance": 30, "sport_skill": 165, "mind_body": 0, "recovery": 0 })
+        json!({ "strength": 60, "endurance": 30, "sport_skill": 165, "mind_body": 0, "mobility": 0, "functional": 0 })
     );
     assert_eq!(
         summary["sports"],
@@ -875,7 +874,7 @@ fn training_summary_groups_domains_and_sports() {
     assert_eq!(window["totalDurationMinutes"], json!(120));
     assert_eq!(
         window["byDomain"],
-        json!({ "strength": 0, "endurance": 1, "sport_skill": 1, "mind_body": 0, "recovery": 0 })
+        json!({ "strength": 0, "endurance": 1, "sport_skill": 1, "mind_body": 0, "mobility": 0, "functional": 0 })
     );
 
     // Inverted and malformed windows fail before any store read.
@@ -901,7 +900,7 @@ fn plan_matches_can_be_linked_excluded_and_restored() {
     let id = record(
         &app,
         json!({
-            "modality": "endurance", "domains": ["endurance"], "sport": "Run", "name": "Easy Run",
+            "domains": ["endurance"], "type": "Run", "name": "Easy Run",
             "startAt": "2026-09-10T10:00:00.000Z", "endAt": "2026-09-10T11:00:00.000Z", "durationMinutes": 60,
         }),
     );
@@ -959,7 +958,7 @@ fn plan_match_failures_keep_the_typescript_error_map() {
     let id = record(
         &app,
         json!({
-            "modality": "endurance", "domains": ["endurance"], "sport": "Run", "name": "Easy Run",
+            "domains": ["endurance"], "type": "Run", "name": "Easy Run",
             "startAt": "2026-09-10T10:00:00.000Z", "endAt": "2026-09-10T11:00:00.000Z", "durationMinutes": 60,
         }),
     );
@@ -1025,7 +1024,7 @@ fn plan_match_failures_keep_the_typescript_error_map() {
     let late = record(
         &app,
         json!({
-            "modality": "endurance", "domains": ["endurance"], "sport": "Run", "name": "Easy Run",
+            "domains": ["endurance"], "type": "Run", "name": "Easy Run",
             "startAt": "2026-09-11T10:00:00.000Z", "endAt": "2026-09-11T11:00:00.000Z", "durationMinutes": 60,
         }),
     );
@@ -1078,32 +1077,15 @@ fn plan_match_failures_keep_the_typescript_error_map() {
 }
 
 #[test]
-fn manual_sessions_can_be_retyped_and_retimed() {
+fn manual_sessions_can_be_retimed() {
     let app = test_app();
     let id = record(
         &app,
         json!({
-            "modality": "endurance", "name": "Tempo Run", "sport": "Run",
+            "name": "Tempo Run", "type": "Run",
             "startAt": "2026-09-16T02:00:00.000Z", "endAt": "2026-09-16T03:00:00.000Z", "durationMinutes": 60,
             "timePrecision": "date_only", "missingFields": ["actual start time"],
         }),
-    );
-
-    // An unknown domain never reaches the store.
-    let invalid = app
-        .update_training_session_type(&id, &json!({ "domain": "yoga", "confirmed": true }))
-        .unwrap_err();
-    assert_eq!(invalid.code(), AthriaErrorCode::InvalidData);
-    assert_eq!(invalid.message(), "type.domain: expected a training domain");
-
-    let retyped = app
-        .update_training_session_type(&id, &json!({ "domain": "recovery", "confirmed": true }))
-        .unwrap();
-    assert_eq!(retyped["domains"], json!(["recovery"]));
-    // The forced domain wins over the derived one in `listSessions`.
-    assert_eq!(
-        app.list_sessions(90).unwrap()[0]["domains"],
-        json!(["recovery"])
     );
 
     // A retime keeps the duration and records the exact start.
@@ -1177,15 +1159,7 @@ fn manual_sessions_can_be_retyped_and_retimed() {
         "The manual workout details could not be updated."
     );
     assert_eq!(missing_source.status(), 404);
-    let unknown = app
-        .update_training_session_type(
-            "absent-session",
-            &json!({ "domain": "strength", "confirmed": true }),
-        )
-        .unwrap_err();
-    assert_eq!(unknown.code(), AthriaErrorCode::TrainingSessionNotFound);
-    assert_eq!(unknown.message(), "The workout was not found.");
-    assert_eq!(unknown.status(), 404);
+
 }
 
 #[test]
@@ -1194,7 +1168,7 @@ fn session_deletions_follow_the_manual_and_canonical_rules() {
     let id = record(
         &app,
         json!({
-            "modality": "endurance", "name": "Easy Run",
+            "type": "Run", "name": "Easy Run",
             "startAt": "2026-09-16T02:00:00.000Z", "endAt": "2026-09-16T03:00:00.000Z", "durationMinutes": 60,
         }),
     );
@@ -1222,7 +1196,7 @@ fn session_deletions_follow_the_manual_and_canonical_rules() {
     let second = record(
         &app,
         json!({
-            "modality": "strength", "name": "Lower Strength",
+            "type": "StrengthTraining", "name": "Lower Strength",
             "startAt": "2026-09-15T09:00:00.000Z", "endAt": "2026-09-15T10:00:00.000Z", "durationMinutes": 60,
             "strengthSets": [{ "exerciseRaw": "Back Squat", "setIndex": 0, "weight": 100, "weightUnit": "kg", "reps": 5 }],
         }),
@@ -1374,6 +1348,7 @@ fn training_taxonomy_exposes_the_versioned_vocabularies() {
             "taxonomyVersion",
             "templateCatalogVersion",
             "domains",
+            "activityTypes",
             "equipmentCategories",
             "strength",
             "templateVariables",
@@ -1391,7 +1366,8 @@ fn training_taxonomy_exposes_the_versioned_vocabularies() {
             "endurance",
             "sport_skill",
             "mind_body",
-            "recovery"
+            "mobility",
+            "functional"
         ])
     );
     assert_eq!(
@@ -1458,10 +1434,9 @@ fn training_taxonomy_exposes_the_versioned_vocabularies() {
 // ---------------------------------------------------------------------------
 
 /// One confirmed component of a planned prescription.
-fn plan_component(id: &str, name: &str, domain: &str) -> Value {
+fn plan_component(id: &str, name: &str, _domain: &str) -> Value {
     json!({
         "id": id, "name": name,
-        "domain": { "value": domain, "source": "user_confirmed", "confidence": 1, "evidence": "", "taxonomyVersion": "strength-2.0" },
         "prescription": { "kind": "duration_only", "notes": "" },
     })
 }
@@ -1476,7 +1451,7 @@ fn plan_session(
 ) -> Value {
     json!({
         "id": id, "scheduledDate": scheduled_date, "order": order, "status": "planned", "templateRef": null,
-        "name": "Easy Run", "intent": "Aerobic base", "durationMinutes": 45, "recoveryDemand": recovery_demand, "keySession": false,
+        "type": "Run", "subtype": null, "domain": "endurance", "name": "Easy Run", "intent": "Aerobic base", "durationMinutes": 45, "recoveryDemand": recovery_demand, "keySession": false,
         "components": components,
         "progressionNote": null, "schedulingRationale": null, "legacySnapshot": false,
     })
@@ -1661,6 +1636,51 @@ fn adjustment_review_requires_a_current_plan() {
         .review_current_plan_for_adjustment(AdjustmentTrigger::WeeklyReview)
         .unwrap_err();
     assert_eq!(error.code(), AthriaErrorCode::NoCurrentPlan);
+}
+
+#[test]
+fn first_opening_reviews_previous_week_and_later_requests_check_profile_conflicts() {
+    for now in ["2026-09-20T16:30:00.000Z", "2026-09-23T04:00:00.000Z"] {
+        let clock = Arc::new(FixedClock::new(now));
+        let store = SqliteStore::open_in_memory_with_clock(clock.clone()).unwrap();
+        let app = AthriaApplication::with_clock(store, "local-user", clock);
+        patch_profile(&app, json!({ "timezone": "Asia/Hong_Kong", "trainingRhythm": { "kind": "fixed_week", "days": [0] } }));
+        let mut plan = monday_plan_write(0);
+        plan["mesocycle"]["weeks"][0]["sessions"][0]["keySession"] = json!(true);
+        plan["mesocycle"]["weeks"][1]["sessions"][0]["keySession"] = json!(true);
+        app.save_current_plan(&plan).unwrap();
+        let first = app.review_scheduled_plan_reminder(None, None).unwrap();
+        assert_eq!(first.assessment.trigger, AdjustmentTrigger::WeeklyReview);
+        let missed = first.assessment.reasons.iter().find(|reason| reason.reason_code == ReasonCode::KeySessionMissed).unwrap();
+        assert_eq!(missed.evidence_refs, vec!["s1"]);
+        assert!(!missed.evidence_refs.contains(&"s2".to_owned()));
+        let later = app.review_scheduled_plan_reminder(Some("2026-09-21"), None).unwrap();
+        assert_eq!(later.assessment.trigger, AdjustmentTrigger::ProfileChange);
+        assert!(!later.show_reminder);
+        patch_profile(&app, json!({ "trainingRhythm": { "kind": "fixed_week", "days": [1] } }));
+        let conflict = app.review_scheduled_plan_reminder(Some("2026-09-21"), None).unwrap();
+        assert!(conflict.show_reminder);
+        assert_eq!(conflict.assessment.review_status, ReviewStatus::ReviewRequired);
+        let next_week = app.review_scheduled_plan_reminder(Some("2026-09-14"), None).unwrap();
+        assert_eq!(next_week.assessment.trigger, AdjustmentTrigger::WeeklyReview);
+    }
+}
+
+#[test]
+fn previous_week_review_includes_unresolved_sunday_but_not_this_weeks_sessions() {
+    let clock = Arc::new(FixedClock::new("2026-09-21T04:00:00.000Z"));
+    let store = SqliteStore::open_in_memory_with_clock(clock.clone()).unwrap();
+    let app = AthriaApplication::with_clock(store, "local-user", clock);
+    patch_profile(&app, json!({ "timezone": "Asia/Hong_Kong", "trainingRhythm": { "kind": "fixed_week", "days": [6] } }));
+    let mut plan = monday_plan_write(0);
+    plan["mesocycle"]["schedule"]["days"] = json!([6]);
+    plan["mesocycle"]["weeks"][0]["sessions"][0]["scheduledDate"] = json!("2026-09-20");
+    plan["mesocycle"]["weeks"][0]["sessions"][0]["keySession"] = json!(true);
+    plan["mesocycle"]["weeks"][1]["sessions"][0]["scheduledDate"] = json!("2026-09-27");
+    app.save_current_plan(&plan).unwrap();
+    let review = app.review_scheduled_plan_reminder(None, None).unwrap();
+    let missed = review.assessment.reasons.iter().find(|reason| reason.reason_code == ReasonCode::KeySessionMissed).unwrap();
+    assert_eq!(missed.evidence_refs, vec!["s1"]);
 }
 
 #[test]
@@ -1874,7 +1894,7 @@ fn patch_profile(app: &AthriaApplication<SqliteStore>, patch: Value) -> Value {
 
 /// A planned-session write payload for the next-training-day use cases.
 fn next_day_session(id: &str) -> Value {
-    json!({
+    json!({ "type": "Run", "subtype": null,
         "id": id, "status": "planned", "templateRef": null, "name": "Tempo Run", "intent": "Threshold",
         "durationMinutes": 50, "recoveryDemand": "normal", "keySession": false,
         "components": [plan_component(&format!("{id}-c1"), "Run", "endurance")],
@@ -1998,6 +2018,9 @@ fn saved_plans_materialize_weekly_occurrences_with_impact_and_revision() {
             .map(String::as_str)
             .collect::<Vec<_>>(),
         [
+            "type",
+            "domain",
+            "subtype",
             "id",
             "scheduledDate",
             "order",
@@ -2029,6 +2052,10 @@ fn saved_plans_materialize_weekly_occurrences_with_impact_and_revision() {
             .collect::<Vec<_>>(),
         [
             "id",
+            "type",
+            "subtype",
+            "domain",
+            "domains",
             "occurrenceId",
             "revision",
             "scheduledDate",
@@ -2303,9 +2330,10 @@ fn completing_a_planned_session_records_a_dated_manual_workout() {
     assert_eq!(completed["revision"], json!(1));
     assert_eq!(workout["source"], json!("manual"));
     assert_eq!(workout["status"], json!("completed"));
-    assert_eq!(workout["modality"], json!("endurance"));
+    assert_eq!(workout["type"], json!("Run"));
     assert_eq!(workout["domains"], json!(["endurance"]));
-    assert_eq!(workout["sport"], json!(null));
+    assert!(workout.get("sport").is_none());
+    assert_eq!(workout["type"], "Run");
     assert_eq!(workout["plannedSessionId"], json!("s1"));
     assert_eq!(workout["timePrecision"], json!("date_only"));
     assert_eq!(workout["startAt"], json!("2026-09-14T04:00:00.000Z"));
@@ -2710,4 +2738,77 @@ fn next_training_day_sessions_validate_and_save_with_revision_guards() {
         "The planned sessions changed. Refresh and confirm the update again."
     );
     assert_eq!(replay.status(), 409);
+}
+
+#[test]
+fn intervals_swim_resync_matches_plan_and_preserves_user_choices() {
+    let app = test_app();
+    let mut plan = plan_with_run();
+    plan["mesocycle"]["weeks"][0]["sessions"][0]["scheduledDate"] = json!("2026-10-07");
+    plan["mesocycle"]["weeks"][0]["sessions"][0]["name"] = json!("Swimming class");
+    plan["mesocycle"]["weeks"][0]["sessions"][0]["type"] = json!("Swim");
+    app.store().save_current_plan(&plan, 0).unwrap();
+    let context = json!({ "attemptedAt": "2026-10-08T02:02:22Z", "rangeStart": "2026-10-07", "rangeEnd": "2026-10-07" });
+    let payload = json!({ "activities": [{ "id": "i194646139", "type": "OpenWaterSwim", "name": "Swim",
+        "start_date": "2026-10-07T11:03:08Z", "moving_time": 2880, "distance": 925 }], "wellness": [] });
+    let id = "intervals:activities:i194646139";
+    let mut old = imported_session("intervals", "activities:i194646139", id, "2026-10-07T11:03:08Z", "2026-10-07T11:51:08Z", 48, "Swim");
+    old["modality"] = json!("unknown");
+    old["domains"] = json!([]);
+    old["sport"] = json!("OpenWaterSwim");
+    app.store().upsert_sessions(&[old]).unwrap();
+    app.commit_intervals(&payload, &context).unwrap();
+    let read = || app.store().list_sessions("local-user", None).unwrap();
+    let sessions = read();
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0]["type"], "Swim");
+    assert_eq!(sessions[0]["subtype"], "openwaterswim");
+    assert_eq!(sessions[0]["domains"], json!(["endurance"]));
+    assert_eq!(sessions[0]["durationMinutes"], 48);
+    assert_eq!(sessions[0]["endurance"]["distanceMeters"], 925);
+    assert_eq!(sessions[0]["planMatch"]["method"], "auto");
+    assert_eq!(sessions[0]["plannedSessionId"], "s1");
+    app.set_training_session_plan_match(id, &json!({ "plannedSessionId": "s1", "expectedRevision": 1, "confirmed": true })).unwrap();
+    app.commit_intervals(&payload, &context).unwrap();
+    assert_eq!(read()[0]["planMatch"]["method"], "manual");
+    app.set_training_session_plan_match(id, &json!({ "plannedSessionId": null, "expectedRevision": 1, "confirmed": true })).unwrap();
+    app.commit_intervals(&payload, &context).unwrap();
+    let sessions = read();
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0]["domains"], json!(["endurance"]));
+    assert_eq!(sessions[0]["isPlanMatchExcluded"], true);
+    assert_eq!(sessions[0]["planMatch"], Value::Null);
+}
+
+#[test]
+fn six_domains_count_functional_duration_once_and_strength_from_content() {
+    let app = test_app();
+    for (index, kind) in ["StrengthTraining","Run","Tennis","Yoga","Mobility","Hyrox"].into_iter().enumerate() {
+        record(&app, json!({"type":kind,"name":kind,"startAt":format!("2026-09-16T{:02}:00:00Z", index+1),"endAt":format!("2026-09-16T{:02}:30:00Z", index+1),"durationMinutes":30,"strengthSets":if kind == "Hyrox" {json!([{ "exerciseRaw":"Squat","setIndex":0,"reps":10,"weight":20,"weightUnit":"kg" }])} else {json!([])},"endurance":{"averageHeartRate":140}}));
+    }
+    let summary = app.get_training_summary(30, None, None).unwrap();
+    for domain in ["strength","endurance","sport_skill","mind_body","mobility","functional"] {
+        assert_eq!(summary["byDomain"][domain], 1);
+        assert_eq!(summary["durationMinutesByDomain"][domain], 30);
+    }
+    assert_eq!(summary["totalDurationMinutes"], 180);
+    assert_eq!(summary["metrics"]["strength"]["workingSets"]["value"], 1);
+    assert_eq!(summary["metrics"]["endurance"]["durationMinutes"]["value"], 30);
+}
+
+#[test]
+fn new_manual_records_and_plans_require_a_known_type() {
+    let app = test_app();
+    let mut value = json!({"name":"Unknown","startAt":"2026-09-16T01:00:00Z","endAt":"2026-09-16T01:30:00Z","durationMinutes":30});
+    assert_eq!(app.record_training_session(&value).unwrap_err().code(), AthriaErrorCode::InvalidData);
+    value["type"] = json!("Unknown");
+    assert_eq!(app.record_training_session(&value).unwrap_err().code(), AthriaErrorCode::InvalidData);
+    value["sport"] = json!("WeightTraining");
+    value["type"] = Value::Null;
+    let session = app.record_training_session(&value).unwrap();
+    assert_eq!(session["type"], "StrengthTraining");
+    assert_eq!(session["subtype"], Value::Null);
+    let mut plan = monday_plan_write(0);
+    plan["mesocycle"]["weeks"][0]["sessions"][0]["type"] = Value::Null;
+    assert_eq!(app.save_current_plan(&plan).unwrap_err().code(), AthriaErrorCode::InvalidData);
 }

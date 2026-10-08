@@ -308,12 +308,8 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
             .collect();
         let mut session_domains: Vec<String> = Vec::new();
         for session in &prescriptions {
-            for component in array_field(session, "components") {
-                if let Some(domain) = field(field(component, "domain"), "value").as_str() {
-                    if !session_domains.iter().any(|existing| existing == domain) {
-                        session_domains.push(domain.to_string());
-                    }
-                }
+            if let Some(domain) = crate::training_type::session_domain(session) {
+                if !session_domains.iter().any(|existing| existing == domain) { session_domains.push(domain.to_string()); }
             }
         }
         let domains_match = progression_domains.len()
@@ -370,51 +366,19 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
             let occurrences = 1.0 / duration_weeks as f64;
             let multiplier = 1.0f64.max(occurrences);
             let session_id = string_field(session, "id");
+            if crate::training_type::session_domain(session).is_none() {
+                results.push(rule("info", "SESSION_DOMAIN_MISSING", "unknown", &[session_id], json!({}), &["domain"], Value::Null, "structure"));
+                data_gaps.push(json!({"code":"SESSION_DOMAIN_MISSING","subjectRef":session_id,"factPath":"domain","requiredByRuleCodes":[],"blocking":false,"resolution":"agent_infer"}));
+            }
+            if crate::training_type::session_domain(session) == Some("strength") {
+                let has_strength = array_field(session, "components").iter().any(|component| component["prescription"]["kind"] == "strength");
+                results.push(rule("blocker", "SESSION_STRENGTH_PRESCRIPTION", if has_strength { "pass" } else { "fail" }, &[session_id], json!({"hasStrengthPrescription":has_strength}), &[], Value::Null, "structure"));
+            }
             for component in array_field(session, "components") {
                 let component_id = string_field(component, "id");
-                let domain_value = field(field(component, "domain"), "value");
                 let prescription = field(component, "prescription");
                 let prescription_kind = string_field(prescription, "kind");
-                let prescription_consistent = if prescription_kind == "duration_only" {
-                    domain_value.as_str() != Some("strength")
-                } else {
-                    domain_value.as_str() == Some(prescription_kind)
-                };
-                results.push(rule(
-                    "blocker",
-                    "COMPONENT_PRESCRIPTION",
-                    if prescription_consistent {
-                        "pass"
-                    } else {
-                        "fail"
-                    },
-                    &[session_id, component_id],
-                    json!({ "domain": domain_value, "prescription": prescription_kind }),
-                    &[],
-                    Value::Null,
-                    "structure",
-                ));
-                if domain_value.is_null() {
-                    results.push(rule(
-                        "info",
-                        "COMPONENT_DOMAIN_MISSING",
-                        "unknown",
-                        &[component_id],
-                        json!({}),
-                        &["domain"],
-                        Value::Null,
-                        "structure",
-                    ));
-                    data_gaps.push(json!({
-                        "code": "COMPONENT_DOMAIN_MISSING",
-                        "subjectRef": component_id,
-                        "factPath": "domain",
-                        "requiredByRuleCodes": [],
-                        "blocking": false,
-                        "resolution": "agent_infer",
-                    }));
-                }
-                if prescription_kind != "strength" || domain_value.as_str() != Some("strength") {
+                if prescription_kind != "strength" {
                     continue;
                 }
                 for exercise in array_field(prescription, "exercises") {
@@ -716,10 +680,6 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
 mod tests {
     use super::*;
 
-    fn fact(value: Value) -> Value {
-        json!({ "value": value, "source": "user_confirmed", "confidence": 1, "evidence": "fixture", "taxonomyVersion": TAXONOMY_VERSION })
-    }
-
     fn high_session(id: &str, scheduled_date: &str) -> Value {
         json!({
             "id": id,
@@ -727,10 +687,10 @@ mod tests {
             "order": 0,
             "recoveryDemand": "high",
             "durationMinutes": 45,
+            "domain": "mobility",
             "components": [{
                 "id": format!("{id}-recovery"),
                 "name": "Recovery",
-                "domain": fact(json!("recovery")),
                 "prescription": { "kind": "duration_only", "notes": "" },
             }],
         })
@@ -741,7 +701,7 @@ mod tests {
             "durationWeeks": 1,
             "schedule": { "kind": "fixed_week", "days": [0, 2] },
             "domainProgressions": [{
-                "domain": "recovery",
+                "domain": "mobility",
                 "phases": [{
                     "id": "recovery-base", "phaseType": "foundation", "name": "Base",
                     "startWeek": 1, "endWeek": 1, "focus": "Base", "progression": [],
@@ -851,4 +811,25 @@ mod tests {
         assert_eq!(validation.coverage.hard_checks_total, 0);
         assert!(validation.input_hash.starts_with("fnv1a-"));
     }
+    #[test]
+    fn prescriptions_support_mobility_mind_body_and_functional_content() {
+        for (domain, kind) in [("mobility","mobility"),("mind_body","mind_body"),("functional","functional"),("functional","strength"),("functional","endurance")] {
+            let mut mesocycle = two_high_session_plan();
+            for session in mesocycle["weeks"][0]["sessions"].as_array_mut().unwrap() {
+                session["domain"] = json!(domain);
+                session["components"][0]["prescription"] = match kind {
+                    "strength" => json!({"kind":kind,"exercises":[]}),
+                    "endurance" => json!({"kind":kind,"segments":[]}),
+                    _ => json!({"kind":kind,"blocks":[]}),
+                };
+            }
+            mesocycle["domainProgressions"][0]["domain"] = json!(domain);
+            let draft = json!({"mesocycle":mesocycle,"effectiveStartDate":"2026-09-07"});
+            let validation = validate_plan(&profile(Value::Null), &draft, "2026-09-17T00:00:00Z");
+            assert!(!validation.results.iter().any(|rule| rule["reasonCode"] == "COMPONENT_DOMAIN_MISSING"));
+            assert!(validation.data_gaps.is_empty(), "{domain}/{kind}");
+            assert!(validation.valid, "{domain}/{kind}");
+        }
+    }
+
 }

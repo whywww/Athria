@@ -21,8 +21,8 @@ describe("untouched default profile detection", () => {
 
 const template: SessionTemplate = { id: "lower", name: "Lower", intent: "Lower-body pattern", domain: "strength", nodes: [{ name: "Squat pattern", role: "primary", movementPatternIds: ["squat"], targetMuscleIds: ["quadriceps"], matchPolicy: "all", variables: ["exercise_selection"] }] };
 const history = [
-  { id: "new", name: "Evening Yoga Flow", startAt: "2026-09-10T12:00:00Z", domains: ["mind_body"], sport: "Yoga", source: "xunji", sources: [{ source: "xunji", externalId: "2" }], planMatch: { plannedSessionId: "yoga-plan", method: "manual" as const } },
-  { id: "old", name: "Easy Run", startAt: "2026-09-06T23:00:00Z", domains: ["endurance"], sport: "Running", source: "intervals", sources: [{ source: "intervals", externalId: "1" }], planMatch: null },
+  { id: "new", name: "Evening Yoga Flow", startAt: "2026-09-10T12:00:00Z", domains: ["mind_body"], type: "Yoga", subtype: null, source: "xunji", sources: [{ source: "xunji", externalId: "2" }], planMatch: { plannedSessionId: "yoga-plan", method: "manual" as const } },
+  { id: "old", name: "Easy Run", startAt: "2026-09-06T23:00:00Z", domains: ["endurance"], type: "Running", subtype: null, source: "intervals", sources: [{ source: "intervals", externalId: "1" }], planMatch: null },
 ].map((item) => ({ timezone: null, durationMinutes: 30, timePrecision: "exact" as const, plannedSessionId: item.planMatch?.plannedSessionId ?? null, isPlanMatchExcluded: false, ...item })) satisfies TrainingHistorySession[];
 
 describe("dashboard v7 view models", () => {

@@ -12,12 +12,13 @@ use crate::DEFAULT_OWNER_ID;
 /// `athleteProfileSchema` default `timezone`.
 pub const DEFAULT_TIMEZONE: &str = "Asia/Hong_Kong";
 
-pub const DOMAIN_IDS: [&str; 5] = [
+pub const DOMAIN_IDS: [&str; 6] = [
     "strength",
     "endurance",
     "sport_skill",
     "mind_body",
-    "recovery",
+    "mobility",
+    "functional",
 ];
 
 pub const MOVEMENT_PATTERN_IDS: [&str; 33] = [

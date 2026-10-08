@@ -1,5 +1,5 @@
 use athria_integrations::{
-    interval_modality, normalize_intervals_activity, normalize_xunji_training, parse_hevy_csv,
+    normalize_intervals_activity, normalize_xunji_training, parse_hevy_csv,
     sync_date_window,
 };
 use serde_json::{Value, json};
@@ -17,12 +17,6 @@ fn integration_adapter_fixture_matches() {
         .value,
         hevy["expected"]
     );
-    for case in fixture["modalities"].as_array().unwrap() {
-        assert_eq!(
-            json!(interval_modality(case.get("input"))),
-            case["expected"]
-        );
-    }
     for case in fixture["intervals"].as_array().unwrap() {
         assert_eq!(
             normalize_intervals_activity(&case["item"], case["resource"].as_str().unwrap(), "Asia/Hong_Kong")
@@ -87,5 +81,80 @@ fn explicit_sync_windows_preserve_the_requested_days() {
         .unwrap();
 
         assert_eq!(actual.days, days);
+    }
+}
+
+#[test]
+fn intervals_normalizes_sport_families_and_domains() {
+    let families = [
+        ("Swim", "endurance", vec!["Swim", "OpenWaterSwim", "PoolSwim"]),
+        ("Run", "endurance", vec!["Run", "TrailRun", "VirtualRun"]),
+        ("Ride", "endurance", vec!["Ride", "VirtualRide", "MountainBikeRide", "GravelRide", "TrackRide", "Cyclocross", "EBikeRide", "EMountainBikeRide"]),
+        ("Rowing", "endurance", vec!["Rowing", "VirtualRow"]),
+        ("Hike", "endurance", vec!["Hike"]),
+        ("Walk", "endurance", vec!["Walk"]),
+    ];
+    let normalize = |kind: Value| normalize_intervals_activity(&json!({
+        "id": "test", "type": kind, "start_date": "2026-10-07T11:03:08Z"
+    }), "activities", "Asia/Hong_Kong").unwrap().unwrap();
+    for (sport, domain, aliases) in families {
+        for alias in aliases {
+            for input in [alias.to_owned(), alias.to_lowercase(), alias.chars().map(|c| c.to_string()).collect::<Vec<_>>().join(" - ")] {
+                let session = normalize(json!(input));
+                assert_eq!(session["type"], sport);
+                assert_eq!(session["domains"], json!([domain]));
+            }
+        }
+    }
+    for sport in ["Tennis", "TableTennis", "Badminton", "Padel", "Pickleball", "Squash", "Racquetball"] {
+        let session = normalize(json!(sport));
+        assert_eq!(session["type"], sport);
+        assert_eq!(session["domains"], json!(["sport_skill"]));
+    }
+    let unknown = normalize(json!("NotReallySwim"));
+    assert_eq!(unknown["type"], "NotReallySwim");
+    assert_eq!(unknown["domains"], json!([]));
+    for invalid in [Value::Null, json!(""), json!("  "), json!(42), json!({})] {
+        let session = normalize_intervals_activity(&json!({
+            "id": "fallback", "type": invalid, "sport": "OpenWaterSwim", "name": "Run",
+            "start_date": "2026-10-07T11:03:08Z"
+        }), "activities", "Asia/Hong_Kong").unwrap().unwrap();
+        assert_eq!(session["type"], "Swim");
+    }
+    let session = normalize_intervals_activity(&json!({
+        "id": "priority", "type": "Unlisted", "sport": "Swim", "name": "Swim",
+        "start_date": "2026-10-07T11:03:08Z"
+    }), "activities", "Asia/Hong_Kong").unwrap().unwrap();
+    assert_eq!(session["type"], "Unlisted");
+    assert_eq!(session["domains"], json!([]));
+}
+
+#[test]
+fn xunji_uses_explicit_cardio_types_and_keeps_conflicts_unclassified() {
+    let fixture: Value = serde_json::from_str(include_str!("fixtures/integrations.json")).unwrap();
+    let mut strength = fixture["xunji"][0]["input"].clone();
+    strength["movements"][0]["metrics"] = json!({"avgHeartRate":140});
+    assert_eq!(normalize_xunji_training(&strength).unwrap()["type"], "StrengthTraining");
+    let mut input = fixture["xunji"][1]["input"].clone();
+    let session = normalize_xunji_training(&input).unwrap();
+    assert_eq!(session["type"], "Run");
+    assert_eq!(session["domains"], json!(["endurance"]));
+    input["movements"][0]["recordPreset"] = Value::Null;
+    assert_eq!(normalize_xunji_training(&input).unwrap()["type"], "Run");
+    input["movements"][0]["name"] = json!("Unknown cardio");
+    assert_eq!(normalize_xunji_training(&input).unwrap()["domains"], json!([]));
+    input["movements"] = json!([{ "cardio":true,"recordPreset":"Run","metrics":{} }, {"cardio":true,"recordPreset":"Ride","metrics":{}}]);
+    assert_eq!(normalize_xunji_training(&input).unwrap()["type"], Value::Null);
+}
+
+#[test]
+fn intervals_adapter_covers_every_alias_without_metric_inference() {
+    for (kind, domain, aliases) in athria_core::training_type::TYPES {
+        for alias in *aliases {
+            let session = normalize_intervals_activity(&json!({"id":"classification","type":alias,"start_date":"2026-10-07T11:00:00Z","moving_time":3540,"average_heartrate":140}), "activities", "Asia/Hong_Kong").unwrap().unwrap();
+            assert_eq!(session["type"], *kind);
+            assert_eq!(session["domains"], json!([domain]));
+            assert_eq!(session["subtype"], json!(athria_core::training_type::classify(alias).unwrap().1));
+        }
     }
 }

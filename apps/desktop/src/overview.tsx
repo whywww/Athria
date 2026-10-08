@@ -1,13 +1,50 @@
 import { assessWellness, type WellnessAssessment, type WellnessAssessmentKey } from "./wellness-assessment";
 import { T, tr, currentLanguage, weekdayName } from "./i18n";
-import { useId, useState, type ReactNode } from "react";
+import { useId, useLayoutEffect, useState, type ReactNode } from "react";
 import { adjustmentReasonMessage, formatDistance, formatDuration, friendlyLabel, type AdjustmentAssessment, type CalendarSession, type TrainingHistorySession, type TrainingSummary, type WellnessRecord } from "./view-models";
 import { addDays, weekdayIndex } from "./plan/view";
 import { domainIconPath } from "./domain-icons";
 import { useModalDismiss } from "./components";
 
-const domainOrder = ["strength", "endurance", "sport_skill", "mind_body", "recovery"] as const;
+const domainOrder = ["strength", "endurance", "sport_skill", "mind_body", "mobility", "functional"] as const;
 const weekdayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+function useOverviewEntrance() {
+  const [entrance, setEntrance] = useState({ progress: 1, playing: true });
+  useLayoutEffect(() => {
+    const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let frame = 0;
+    let started: number | undefined;
+    let finished = false;
+    const finish = () => {
+      finished = true;
+      window.cancelAnimationFrame(frame);
+      setEntrance({ progress: 1, playing: false });
+    };
+    const tick = (now: number) => {
+      if (finished) return;
+      started ??= now;
+      const elapsed = now - started;
+      if (elapsed >= 1600) { finish(); return; }
+      const fraction = Math.min(1, elapsed / 1300);
+      setEntrance({ progress: 1 - (1 - fraction) ** 3, playing: true });
+      frame = window.requestAnimationFrame(tick);
+    };
+    const onMotionChange = () => { if (motion.matches) finish(); };
+    if (motion.matches) finish();
+    else {
+      setEntrance({ progress: 0, playing: true });
+      frame = window.requestAnimationFrame(tick);
+    }
+    motion.addEventListener("change", onMotionChange);
+    return () => {
+      finished = true;
+      window.cancelAnimationFrame(frame);
+      motion.removeEventListener("change", onMotionChange);
+    };
+  }, []);
+  return entrance;
+}
 
 function localDay(startAt: string, timezone: string) {
   const parts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(startAt));
@@ -196,7 +233,7 @@ export function weeklyOverview(today: string, history: TrainingHistorySession[],
   const currentMinutes = duration(current); const previousMinutes = duration(previous);
   const weekEnd = addDays(weekStart, 6);
   const weekPlan = planned.filter((session) => session.scheduledDate >= weekStart && session.scheduledDate <= weekEnd && session.status !== "skipped");
-  return { current, sessionDelta: current.length - previous.length, currentMinutes, durationPercent: previousMinutes > 0 ? Math.round(((currentMinutes - previousMinutes) / previousMinutes) * 100) : null, completedPlans: weekPlan.filter((session) => session.status === "completed").length, planTotal: weekPlan.length, unrecordedPlans: weekPlan.filter((session) => session.displayState === "unrecorded").length, skippedPlans: planned.filter((session) => session.scheduledDate >= weekStart && session.scheduledDate <= weekEnd && session.status === "skipped").length };
+  return { current, sessionDelta: current.length - previous.length, currentMinutes, durationPercent: previousMinutes > 0 ? Math.round(((currentMinutes - previousMinutes) / previousMinutes) * 100) : null, completedPlans: weekPlan.filter((session) => session.status === "completed").length, planTotal: weekPlan.length, planMinutes: weekPlan.reduce((total, session) => total + session.durationMinutes, 0), unrecordedPlans: weekPlan.filter((session) => session.displayState === "unrecorded").length, skippedPlans: planned.filter((session) => session.scheduledDate >= weekStart && session.scheduledDate <= weekEnd && session.status === "skipped").length };
 }
 
 export function mesocycleProgress(planned: CalendarSession[]) {
@@ -251,7 +288,11 @@ export function sparklineGeometry(input: (number | null)[]) {
     y: spread === 0 ? (sparklineBounds.top + sparklineBounds.bottom) / 2 : sparklineBounds.bottom - (value - min) / spread * (sparklineBounds.bottom - sparklineBounds.top),
   }));
   if (points.length === 1) return { linePath: `M ${pathNumber(points[0]!.x)} ${pathNumber(points[0]!.y)}`, areaPath: null, points };
+  const linePath = monotonePath(points);
+  return { linePath, areaPath: `${linePath} L ${pathNumber(points.at(-1)!.x)} ${sparklineBounds.baseline} L ${pathNumber(points[0]!.x)} ${sparklineBounds.baseline} Z`, points };
+}
 
+function monotonePath(points: { x: number; y: number }[]) {
   const slopes = points.slice(0, -1).map((point, index) => (points[index + 1]!.y - point.y) / (points[index + 1]!.x - point.x));
   const tangents = points.map((_, index) => {
     if (index === 0) return slopes[0]!;
@@ -274,7 +315,7 @@ export function sparklineGeometry(input: (number | null)[]) {
     const next = points[index + 1]!; const segment = next.x - point.x;
     linePath += ` C ${pathNumber(point.x + segment / 3)} ${pathNumber(point.y + tangents[index]! * segment / 3)} ${pathNumber(next.x - segment / 3)} ${pathNumber(next.y - tangents[index + 1]! * segment / 3)} ${pathNumber(next.x)} ${pathNumber(next.y)}`;
   });
-  return { linePath, areaPath: `${linePath} L ${pathNumber(points.at(-1)!.x)} ${sparklineBounds.baseline} L ${pathNumber(points[0]!.x)} ${sparklineBounds.baseline} Z`, points };
+  return linePath;
 }
 
 function Sparkline({ values }: { values: (number | null)[] }) {
@@ -297,7 +338,7 @@ function Sparkline({ values }: { values: (number | null)[] }) {
 
 function OverviewIcon({ kind }: { kind: "target" | "recovery" | (typeof domainOrder)[number] }) {
   const icon = kind === "target" ? <><circle cx="11" cy="13" r="7"/><circle cx="11" cy="13" r="3.2"/><path d="m13.5 10.5 6-6M16 4.5h3.5V8"/></>
-    : domainIconPath(kind);
+    : domainIconPath(kind === "recovery" ? "mobility" : kind);
   return <span className={`overview-icon icon-${kind}`} data-icon={kind} aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{icon}</svg></span>;
 }
 
@@ -316,8 +357,15 @@ function Change({ value, suffix = " from last week", stacked = false }: { value:
   return <small className={`metric-change ${direction}`}>{arrow} {Math.abs(value)}{tr(suffix)}</small>;
 }
 
-function SummaryCard({ icon, title, value, children, className = "" }: { icon: "target" | "recovery"; title: string; value: ReactNode; children: ReactNode; className?: string }) {
-  return <article className={`overview-summary-card ${className}`}><OverviewIcon kind={icon}/><div className="summary-card-copy"><span>{title}</span><strong>{value}</strong>{children}</div></article>;
+function SummaryCard({ title, titleAction, value, ring, children, className = "" }: { title: string; titleAction?: ReactNode; value: ReactNode; ring: ReactNode; children: ReactNode; className?: string }) {
+  return <article className={`overview-summary-card ${className}`}><span className="summary-card-width" aria-hidden="true"><span>Readiness</span><span className="summary-card-width-help">(How to calculate?)</span></span><div className="summary-card-copy"><span className="summary-card-title"><span>{title}</span>{titleAction}</span><strong>{value}</strong>{children}</div>{ring}</article>;
+}
+
+export function SummaryProgressRing({ percent, children, tone = "plan", entranceProgress = 1 }: { percent: number; children: ReactNode; tone?: string; entranceProgress?: number }) {
+  const uid = useId().replace(/[^a-zA-Z0-9_-]/g, "");
+  const progress = Math.max(0, Math.min(100, percent * entranceProgress));
+  const colors = tone === "ready" ? ["#a3e4b7", "#50b875", "#329553"] : tone === "caution" ? ["#ffe0a0", "#e8a33d", "#cf8423"] : tone === "rest" ? ["#ffb69b", "#dd633e", "#bd4728"] : ["#8CDFFF", "var(--domain-endurance)", "#2385EF"];
+  return <span className={`progress-ring${tone === "plan" ? "" : ` ${tone}`}`}><svg viewBox="0 0 100 100" aria-hidden="true"><defs><linearGradient id={`summary-ring-${uid}`} gradientUnits="userSpaceOnUse" x1="10" y1="5" x2="90" y2="95"><stop offset="0" stopColor={colors[0]} stopOpacity=".9"/><stop offset=".45" stopColor={colors[1]} stopOpacity=".88"/><stop offset="1" stopColor={colors[2]} stopOpacity=".95"/></linearGradient></defs><circle className="summary-ring-track" cx="50" cy="50" r="40"/>{progress > 0 && <circle className="summary-ring-fill" cx="50" cy="50" r="40" pathLength="100" stroke={`url(#summary-ring-${uid})`} strokeDasharray={progress < 100 ? `${progress} 100` : undefined} transform="rotate(-90 50 50)"/>}</svg><b>{children}</b></span>;
 }
 
 export function RecoveryHelpModal({ onClose }: { onClose: () => void }) {
@@ -343,13 +391,80 @@ export function RecoveryHelpModal({ onClose }: { onClose: () => void }) {
   </div>;
 }
 
-function ActivityDonut({ summary }: { summary: TrainingSummary }) {
-  const values = domainOrder.map((domain) => summary.byDomain[domain] ?? 0);
-  const total = values.reduce((sum, value) => sum + value, 0); let offset = 0;
-  return <div className="activity-donut"><svg viewBox="0 0 42 42" aria-hidden="true"><circle className="donut-track" cx="21" cy="21" r="15.9"/>{total > 0 && values.map((value, index) => {
-    const percent = value / total * 100; const start = offset; offset += percent;
-    return <circle key={domainOrder[index]} className={`donut-segment domain-${domainOrder[index]}`} cx="21" cy="21" r="15.9" pathLength="100" strokeDasharray={`${percent} ${100 - percent}`} strokeDashoffset={-start}/>;
-  })}</svg><span><strong>{summary.sessionCount}</strong><small>{tr(summary.sessionCount === 1 ? "Workout" : "Workouts")}</small></span></div>;
+export function weeklyRingProgress(actual: number, target: number) {
+  const ratio = target > 0 ? Math.max(0, actual / target) : 0;
+  return { ratio, percent: Math.round(ratio * 100), full: ratio >= 1, remainder: ratio > 0 ? (ratio % 1 || 1) : 0 };
+}
+
+export function activityAxis(maximum: number, counts = false) {
+  const rough = Math.max(counts ? 1 : 5, maximum / 4);
+  const magnitude = 10 ** Math.floor(Math.log10(rough));
+  const step = [1, 2, 5, 10].map((value) => value * magnitude).find((value) => value >= rough)!;
+  const ceiling = Math.max(step * 3, Math.ceil(maximum / step) * step);
+  return { ceiling, ticks: Array.from({ length: Math.round(ceiling / step) + 1 }, (_, index) => index * step) };
+}
+
+function WeeklyActivityRings({ summary, minutesTarget, countTarget, entranceProgress }: { summary: TrainingSummary; minutesTarget: number; countTarget: number; entranceProgress: number }) {
+  const uid = useId().replace(/[^a-zA-Z0-9_-]/g, "");
+  const rings = [
+    { kind: "minutes", radius: 112, actual: summary.totalDurationMinutes, target: minutesTarget, label: tr("Minutes") },
+    { kind: "sessions", radius: 86, actual: summary.sessionCount, target: countTarget, label: tr("Workout count") },
+  ];
+  return <div className="weekly-rings-block" role="img" aria-label={rings.map((ring) => `${ring.label}: ${ring.actual} / ${ring.target > 0 ? ring.target : tr("No target set")} · ${weeklyRingProgress(ring.actual, ring.target).percent}%`).join("; ")}><div className="weekly-rings">
+    <svg viewBox="0 0 260 260" aria-hidden="true"><defs>
+      {rings.map((ring) => <linearGradient key={ring.kind} id={`ring-glass-${ring.kind}-${uid}`} gradientUnits="userSpaceOnUse" x1="30" y1="20" x2="230" y2="240"><stop offset="0" stopColor={ring.kind === "minutes" ? "#8CDFFF" : "#FFD29A"} stopOpacity=".9"/><stop offset=".45" stopColor={ring.kind === "minutes" ? "#36AEFF" : "#FF9850"} stopOpacity=".88"/><stop offset="1" stopColor={ring.kind === "minutes" ? "#2385EF" : "#F87540"} stopOpacity=".95"/></linearGradient>)}
+      <filter id={`ring-tip-${uid}`} x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="0" dy="2" stdDeviation="2" floodColor="#52687c" floodOpacity=".18"/></filter>
+    </defs>
+      {rings.map((ring) => {
+        const progress = weeklyRingProgress(ring.actual, ring.target);
+        const drawn = weeklyRingProgress(ring.actual * entranceProgress, ring.target);
+        const angle = drawn.remainder * Math.PI * 2 - Math.PI / 2;
+        return <g key={ring.kind} className={`weekly-ring weekly-ring-${ring.kind}`} data-progress={progress.percent}>
+          <circle className="weekly-ring-track" cx="130" cy="130" r={ring.radius}/>
+          {drawn.full && <circle className="weekly-ring-fill" stroke={`url(#ring-glass-${ring.kind}-${uid})`} cx="130" cy="130" r={ring.radius}/>}
+          {drawn.ratio > 0 && <circle className="weekly-ring-fill" stroke={`url(#ring-glass-${ring.kind}-${uid})`} cx="130" cy="130" r={ring.radius} pathLength="100" strokeDasharray={`${drawn.remainder * 100} 100`} transform="rotate(-90 130 130)"/>}
+          {drawn.ratio > 0 && <circle className="weekly-ring-tip" fill={`url(#ring-glass-${ring.kind}-${uid})`} cx={130 + ring.radius * Math.cos(angle)} cy={130 + ring.radius * Math.sin(angle)} r="12" filter={drawn.ratio > 1 ? `url(#ring-tip-${uid})` : undefined}/>}
+        </g>;
+      })}
+    </svg>
+    <div className="weekly-rings-center"><strong>{summary.sessionCount}</strong><span>{tr("Workout count")}</span><hr/><strong>{Number(summary.totalDurationMinutes.toFixed(1))}</strong><span>{tr("Minutes")}</span></div>
+  </div></div>;
+}
+
+/* The `bottom` offset (inside the marker's inner box) that keeps a duration label just above its marker without leaving the 104px plot box. */
+export function durationLabelBottom(pointY: number) {
+  return 4 + Math.min(6, Math.round(pointY) - 14);
+}
+
+function ActivityDomainChart({ summary }: { summary: TrainingSummary }) {
+  const counts = activityAxis(Math.max(0, ...domainOrder.map((domain) => summary.byDomain[domain] ?? 0)), true);
+  const minutes = activityAxis(Math.max(0, ...domainOrder.map((domain) => summary.durationMinutesByDomain[domain] ?? 0)));
+  const points = domainOrder.map((domain, index) => ({ x: (index + .5) / domainOrder.length * 100, y: 100 * (1 - (summary.durationMinutesByDomain[domain] ?? 0) / minutes.ceiling) }));
+  const linePath = monotonePath(points);
+  return <section className="activity-domain-chart" aria-label={tr("Workout frequency and duration")} data-chart="weekly-combined">
+    <div className="activity-chart-legend"><span><i className="legend-bar"/>{tr("Bars: frequency")}</span><span><i className="legend-line"/>{tr("Line: duration")}</span></div>
+    <div className="activity-chart-plot">
+      <div className="activity-chart-axis-units"><span>{tr("Count")}</span><span>{currentLanguage() === "en" ? "Min" : tr("Minutes")}</span></div>
+      <div className="activity-chart-grid" aria-hidden="true">{[...counts.ticks].reverse().map((tick) => <div key={tick} style={{ bottom: `${tick / counts.ceiling * 100}%` }}><span>{tick}</span><i/></div>)}</div>
+      <div className="activity-chart-right-axis" aria-hidden="true">{minutes.ticks.map((tick) => <span key={tick} style={{ bottom: `${tick / minutes.ceiling * 100}%` }}>{tick}</span>)}</div>
+      <div className="activity-chart-columns">{domainOrder.map((domain, index) => {
+        const count = summary.byDomain[domain] ?? 0;
+        const duration = Number((summary.durationMinutesByDomain[domain] ?? 0).toFixed(1));
+        const label = `${friendlyLabel(domain)}: ${count} ${tr("Count")} · ${duration} ${tr("Minutes")}`;
+        return <div className={`activity-chart-column domain-${domain}`} key={domain} style={{ "--entrance-delay": `${index * 50}ms` } as React.CSSProperties} aria-label={label} title={label} tabIndex={0}>
+          <div className="activity-chart-bar-slot"><div className={`activity-chart-bar ${count > 0 ? "" : "zero"}`} style={{ height: count > 0 ? `${count / counts.ceiling * 100}%` : "4px" }}/></div>
+          <div className="activity-chart-label"><OverviewIcon kind={domain}/><span>{currentLanguage() === "zh-CN" ? ({ strength: "力量", endurance: "耐力", sport_skill: "技能", mind_body: "身心", mobility: "灵活", functional: "功能" }[domain]) : friendlyLabel(domain)}</span></div>
+        </div>;
+      })}</div>
+      <svg className="activity-duration-line" viewBox="0 0 100 104" preserveAspectRatio="none" aria-hidden="true"><path d={linePath}/></svg>
+      <div className="activity-duration-points" aria-hidden="true">{points.map((point, index) => {
+        const domain = domainOrder[index]!;
+        const duration = Number((summary.durationMinutesByDomain[domain] ?? 0).toFixed(1));
+        const bottom = durationLabelBottom(point.y);
+        return <i key={domain} style={{ left: `${point.x}%`, top: `${point.y / 104 * 100}%` }}>{duration > 0 ? <span style={{ bottom: `${bottom}px` }}>{duration}</span> : <span className="zero" style={{ bottom: `${bottom}px` }}>0</span>}</i>;
+      })}</div>
+    </div>
+  </section>;
 }
 
 function monthShift(month: string, amount: number) { const date = new Date(`${month}-01T12:00:00Z`); date.setUTCMonth(date.getUTCMonth() + amount); return date.toISOString().slice(0, 7); }
@@ -362,15 +477,19 @@ const noticeCopy = {
   review_required: "Plan review required — ask your agent:",
 } as const;
 
-export function AdjustmentReviewNotice({ value }: { value: AdjustmentAssessment }) {
+export function AdjustmentReviewNotice({ value, onDismiss }: { value: AdjustmentAssessment; onDismiss?: (() => void) | undefined }) {
   const [dismissed, setDismissed] = useState(false);
   const reason = [...value.reasons].sort((left, right) => severityRank[left.severity] - severityRank[right.severity])[0];
   if (!reason || dismissed) return null;
   const status = value.reviewStatus as keyof typeof noticeCopy;
-  return <div className={`adjustment-notice adjustment-notice-${status}`} role="status"><span>{tr(noticeCopy[status])} {adjustmentReasonMessage(reason)}</span><button type="button" className="adjustment-notice-close" aria-label={tr("Dismiss message")} onClick={() => setDismissed(true)}>×</button></div>;
+  const conditionChanged = reason.reasonCode.startsWith("PROFILE_") || ["GOAL_PLAN_INTENT_DRIFT", "RACE_TARGET_PLAN_INTENT_DRIFT", "PREFERENCE_CHANGED", "MESOCYCLE_DURATION_PREFERENCE_CHANGED"].includes(reason.reasonCode);
+  const prefix = conditionChanged ? "Plan conditions changed:" : value.trigger === "weekly_review" ? "Last week's review — consider this week's plan:" : noticeCopy[status];
+  const message = adjustmentReasonMessage(reason, value.trigger === "weekly_review");
+  return <div className={`adjustment-notice adjustment-notice-${status}`} role="status"><span>{tr(prefix)} {message}</span><button type="button" className="adjustment-notice-close" aria-label={tr("Dismiss message")} onClick={() => { setDismissed(true); onDismiss?.(); }}>×</button></div>;
 }
 
-export function OverviewDashboard({ summary, wellness, history, planned, today, timezone, adjustment }: { summary: TrainingSummary; wellness: WellnessRecord[]; history: TrainingHistorySession[]; planned: CalendarSession[]; today: string; timezone: string; adjustment?: AdjustmentAssessment | undefined }) {
+export function OverviewDashboard({ summary, wellness, history, planned, today, timezone, adjustment, onDismissReview }: { summary: TrainingSummary; wellness: WellnessRecord[]; history: TrainingHistorySession[]; planned: CalendarSession[]; today: string; timezone: string; adjustment?: AdjustmentAssessment | undefined; onDismissReview?: (() => void) | undefined }) {
+  const entrance = useOverviewEntrance();
   const [visibleMonth, setVisibleMonth] = useState(today.slice(0, 7));
   const [helpOpen, setHelpOpen] = useState(false);
   const wellnessData = wellnessHighlights(wellness, today); const recovery = recoveryStatus(wellness, today); const week = weeklyOverview(today, history, planned, timezone); const load = weeklyLoad(today, history, timezone);
@@ -380,33 +499,29 @@ export function OverviewDashboard({ summary, wellness, history, planned, today, 
   planned.filter((session) => session.status === "completed" && session.scheduledDate.startsWith(`${visibleMonth}-`)).forEach((session) => monthCompleted.add(session.scheduledDate));
   const monthDays = Number(overviewDateRange(calendarAnchor).monthEnd.slice(-2));
   const meso = mesocycleProgress(planned);
-  const maxDomainDuration = Math.max(1, ...domainOrder.map((domain) => summary.durationMinutesByDomain[domain] ?? 0));
   const consistencyDays = twelveWeekConsistency(today, history, timezone);
   const maxLoad = Math.max(0, ...load.flatMap((item) => [item.current, item.previous])); const loadCeiling = Math.max(30, Math.ceil(maxLoad / 30) * 30);
   const incomplete = summary.metrics.strength.workingSets.dataQuality.completeness < 1 || summary.metrics.endurance.distanceMeters.dataQuality.completeness < 1;
 
-  return <div className="overview-dashboard">
-    {adjustment && <AdjustmentReviewNotice value={adjustment}/>}
+  return <div className="overview-dashboard" data-entering={entrance.playing ? "true" : undefined}>
+    {adjustment && <AdjustmentReviewNotice key={`${adjustment.currentPlanRevision}:${adjustment.profileHash}:${adjustment.inputSnapshotHash}`} value={adjustment} onDismiss={onDismissReview}/>}
     <div className="overview-layout">
       <div className="overview-left-column">
         <section className="overview-summary-grid" aria-label={tr("This week so far")}>
-          <SummaryCard icon="target" title={tr("Plan Progress")} value={`${meso.completed} / ${meso.total}`} className="plan-summary"><small>{tr("this mesocycle")}</small><span className="progress-ring" style={{ "--progress": `${meso.percent * 3.6}deg` } as React.CSSProperties}><b>{meso.percent}%</b></span></SummaryCard>
-          <SummaryCard icon="recovery" title={tr("Overall Readiness")} value={tr(recovery.label)} className="recovery-summary"><small>{tr(recovery.detail)}</small>{recovery.day && <small>{tr("Assessment date")}: <time dateTime={recovery.day}>{formatWellnessDate(recovery.day)}</time> ({tr(recovery.day === today ? "Today" : "Yesterday")})</small>}<button type="button" className="recovery-help" aria-haspopup="dialog" onClick={() => setHelpOpen(true)}><T>{"How do we calculate?"}</T><span aria-hidden="true">→</span></button><span className={`progress-ring ${recoveryRingTone(recovery.label)}`} style={{ "--progress": `${(recovery.value ?? 0) * 3.6}deg` } as React.CSSProperties}><b>{recovery.value ?? "—"}</b></span></SummaryCard>
+          <SummaryCard title={tr("Plan Progress")} value={`${meso.completed} / ${meso.total}`} className="plan-summary" ring={<SummaryProgressRing percent={meso.percent} entranceProgress={entrance.progress}>{meso.percent}%</SummaryProgressRing>}><small>{tr("this mesocycle")}</small></SummaryCard>
+          <SummaryCard title={tr("Readiness")} titleAction={<button type="button" className="recovery-help" aria-haspopup="dialog" onClick={() => setHelpOpen(true)}>{currentLanguage() === "zh-CN" ? "（" : "("}<T>{"How to calculate?"}</T>{currentLanguage() === "zh-CN" ? "）" : ")"}</button>} value={tr(recovery.label)} className="recovery-summary" ring={<SummaryProgressRing percent={recovery.value ?? 0} tone={recoveryRingTone(recovery.label)} entranceProgress={entrance.progress}>{recovery.value ?? "-"}</SummaryProgressRing>}><small>{tr(recovery.detail)}</small>{recovery.day && <small>{tr("Assessment date")}: <time dateTime={recovery.day}>{formatWellnessDate(recovery.day)}</time> ({tr(recovery.day === today ? "Today" : "Yesterday")})</small>}</SummaryCard>
         </section>
 
         <section className="overview-panel overview-activity"><header><div><h2><T>{"Your workouts this week"}</T></h2></div><button type="button" className="activity-arrow" aria-label={tr("Open Training")} title={tr("Open Training")} onClick={() => window.dispatchEvent(new CustomEvent("athria-open-training"))}><span aria-hidden="true">›</span></button></header>
-          {!summary.sessionCount ? <p className="overview-empty"><T>{"No completed workouts yet this week."}</T><br/>{tr("Connect to your ")}<button type="button" className="overview-empty-link" onClick={() => window.dispatchEvent(new CustomEvent("athria-open-connections"))}>{tr("training apps")}</button>{tr(" or check out your ")}<button type="button" className="overview-empty-link" onClick={() => document.getElementById("overview-next-day")?.scrollIntoView({ behavior: "smooth", block: "start" })}>{tr("next plan")}</button>{tr(".")}</p> : <div className="activity-content"><ActivityDonut summary={summary}/><div className="activity-list">{domainOrder.map((domain) => {
-            const count = summary.byDomain[domain] ?? 0; const duration = summary.durationMinutesByDomain[domain] ?? 0;
-            const detail = domain === "strength" ? `${formatDuration(duration)} · ${summary.metrics.strength.workingSets.value} ${currentLanguage() === "zh-CN" ? "组" : "sets"}` : domain === "endurance" ? `${formatDuration(duration)} · ${formatDistance(summary.metrics.endurance.distanceMeters.value)}` : domain === "sport_skill" && summary.sports.length ? `${formatDuration(duration)} · ${summary.sports.map((sport) => sport.name).join(", ")}` : formatDuration(duration);
-            return <article className={`activity-row domain-${domain}`} key={domain}><OverviewIcon kind={domain}/><div><span><strong>{friendlyLabel(domain)}</strong><small>{currentLanguage() === "zh-CN" ? `${count} 次训练` : `${count} workout${count === 1 ? "" : "s"}`}</small><em>{detail}</em></span><i><b style={{ width: `${duration / maxDomainDuration * 100}%` }}/></i></div></article>;
-          })}</div></div>}
+          <div className="activity-content"><WeeklyActivityRings summary={summary} minutesTarget={week.planMinutes} countTarget={week.planTotal} entranceProgress={entrance.progress}/><ActivityDomainChart summary={summary}/></div>
+          {!summary.sessionCount && <p className="overview-empty"><T>{"No completed workouts yet this week."}</T><br/>{tr("Connect to your ")}<button type="button" className="overview-empty-link" onClick={() => window.dispatchEvent(new CustomEvent("athria-open-connections"))}>{tr("training apps")}</button>{tr(" or check out your ")}<button type="button" className="overview-empty-link" onClick={() => document.getElementById("overview-next-day")?.scrollIntoView({ behavior: "smooth", block: "start" })}>{tr("next plan")}</button>{tr(".")}</p>}
           {summary.sessionCount > 0 && incomplete && <p className="overview-note"><T>{"Some workout details were unavailable, so sport-specific totals may be incomplete."}</T></p>}
         </section>
 
         <div className="overview-lower-grid"><section className="overview-panel training-load"><header><div><h2><T>{"Training Load"}</T></h2></div><strong>{formatDuration(summary.totalDurationMinutes)}</strong><Change value={week.durationPercent} suffix="% from last week" stacked/><p><T>{"Your weekly training time"}</T></p></header>
-          <div className="load-chart"><div className="load-axis"><span>{loadAxisLabel(loadCeiling)}</span><span>{loadAxisLabel(loadCeiling / 2)}</span><span>0h</span></div><div className="load-bars">{load.map((item) => {
+          <div className="load-chart"><div className="load-axis"><span>{loadAxisLabel(loadCeiling)}</span><span>{loadAxisLabel(loadCeiling / 2)}</span><span>0h</span></div><div className="load-bars">{load.map((item, index) => {
             const description = `${tr(item.label)} · ${tr("This week")} (${item.day}): ${item.current} ${tr("min")} · ${tr("Last week")} (${item.previousDay}): ${item.previous} ${tr("min")}`;
-            return <div className="load-day" key={item.day} title={description} aria-label={description} tabIndex={0}><span className="load-comparison" aria-hidden="true">{item.previous > 0 && <i className="load-previous" style={{ height: `${item.previous / loadCeiling * 100}%` }}/>}{item.current > 0 && <i className="load-current" style={{ height: `${item.current / loadCeiling * 100}%` }}/>}</span><small>{tr(item.label)}</small></div>;
+            return <div className="load-day" key={item.day} style={{ "--entrance-delay": `${index * 50}ms` } as React.CSSProperties} title={description} aria-label={description} tabIndex={0}><span className="load-comparison" aria-hidden="true">{item.previous > 0 && <i className="load-previous" style={{ height: `${item.previous / loadCeiling * 100}%` }}/>}{item.current > 0 && <i className="load-current" style={{ height: `${item.current / loadCeiling * 100}%` }}/>}</span><small>{tr(item.label)}</small></div>;
           })}</div></div>
           <div className="load-legend"><span><i className="load-current"/><T>{"This week"}</T></span><span><i className="load-previous"/><T>{"Last week"}</T></span></div>
         </section>

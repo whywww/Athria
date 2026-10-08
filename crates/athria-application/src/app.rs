@@ -166,31 +166,24 @@ fn parse_date_input(value: &str, path: &str) -> Result<String> {
     }
 }
 
+/// New planning writes must identify the activity; stored migrated plans may be unclassified.
+fn require_plan_types(value: &Value) -> Result<()> {
+    match value {
+        Value::Array(items) => for item in items { require_plan_types(item)?; },
+        Value::Object(object) => {
+            if object.contains_key("components") && object.contains_key("name") && object.get("type").and_then(Value::as_str).and_then(athria_core::training_type::classify).is_none() {
+                return Err(invalid_input("session.type: expected a known activity type"));
+            }
+            for item in object.values() { require_plan_types(item)?; }
+        },
+        _ => {},
+    }
+    Ok(())
+}
+
 /// `sessionDomains`: the stored domains, or the ones implied by the payload.
 fn session_domains(session: &Value) -> Vec<Value> {
-    let domains = session
-        .get("domains")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    if !domains.is_empty() {
-        return domains;
-    }
-    let mut derived = Vec::new();
-    if session
-        .get("strengthSets")
-        .and_then(Value::as_array)
-        .is_some_and(|sets| !sets.is_empty())
-    {
-        derived.push(Value::String("strength".into()));
-    }
-    if session
-        .get("endurance")
-        .is_some_and(|endurance| !endurance.is_null())
-    {
-        derived.push(Value::String("endurance".into()));
-    }
-    derived
+    session.get("domains").and_then(Value::as_array).cloned().unwrap_or_default()
 }
 
 /// `listSessions` mapping: fill in the derived domains and, when nothing could
@@ -251,17 +244,10 @@ fn plan_validation_draft(plan: &Value) -> Value {
     json!({ "mesocycle": plan["mesocycle"], "effectiveStartDate": plan["effectiveStartDate"] })
 }
 
-/// `phaseRefsForSession`: one reference per distinct resolved component domain,
+/// `phaseRefsForSession`: one reference for the whole session domain,
 /// resolved through the plan's domain progressions and the week's phase.
-fn phase_refs_for_session(plan: &Value, week_number: i64, components: &Value) -> Result<Value> {
-    let mut domains: Vec<&str> = Vec::new();
-    for component in components.as_array().map(Vec::as_slice).unwrap_or(&[]) {
-        if let Some(domain) = component["domain"]["value"].as_str() {
-            if !domains.contains(&domain) {
-                domains.push(domain);
-            }
-        }
-    }
+fn phase_refs_for_session(plan: &Value, week_number: i64, session: &Value) -> Result<Value> {
+    let domains: Vec<&str> = athria_core::training_type::session_domain(session).into_iter().collect();
     let progressions = plan["mesocycle"]["domainProgressions"]
         .as_array()
         .map(Vec::as_slice)
@@ -563,6 +549,10 @@ impl<S: AthriaStore> AthriaApplication<S> {
             "taxonomyVersion": TAXONOMY_VERSION,
             "templateCatalogVersion": TEMPLATE_CATALOG_VERSION,
             "domains": DOMAIN_IDS,
+            "activityTypes": athria_core::training_type::TYPES.iter().map(|(kind, domain, aliases)| {
+                let subtypes: Vec<String> = aliases.iter().filter_map(|alias| athria_core::training_type::classify(alias).and_then(|(_, subtype, _)| subtype)).collect::<std::collections::BTreeSet<_>>().into_iter().collect();
+                json!({ "type": kind, "domain": domain, "subtypes": subtypes })
+            }).collect::<Vec<_>>(),
             "equipmentCategories": equipment_categories(),
             "strength": {
                 "movementPatterns": movement_pattern_taxonomy(),
@@ -829,7 +819,7 @@ impl<S: AthriaStore> AthriaApplication<S> {
                 continue;
             }
             let Some(name) = session
-                .get("sport")
+                .get("type")
                 .and_then(Value::as_str)
                 .map(str::trim)
                 .filter(|name| !name.is_empty())
@@ -896,6 +886,9 @@ impl<S: AthriaStore> AthriaApplication<S> {
         candidate.insert("status".into(), Value::String("completed".into()));
         candidate.entry("plannedSessionId").or_insert(Value::Null);
         let session = parse_training_session(&Value::Object(candidate))?;
+        if session["type"].as_str().and_then(athria_core::training_type::classify).is_none() {
+            return Err(invalid_input("session.type: expected a known activity type"));
+        }
         self.store.transaction(&mut || {
             let existing = self.store.list_sessions(&self.owner_id, None)?.iter()
                 .any(|current| current["id"].as_str() == Some(id.as_str()));
@@ -966,33 +959,7 @@ impl<S: AthriaStore> AthriaApplication<S> {
             })
     }
 
-    pub fn update_training_session_type(&self, id: &str, value: &Value) -> Result<Value> {
-        object_input(value, "type")?;
-        require_confirmed(value, "type")?;
-        let domain = value
-            .get("domain")
-            .and_then(Value::as_str)
-            .filter(|domain| DOMAIN_IDS.contains(domain))
-            .ok_or_else(|| invalid_input("type.domain: expected a training domain"))?;
-        self.checked_session_write(id, value, &mut || self.store
-            .set_training_session_type_override(&self.owner_id, id, domain))
-            .map_err(|error| {
-                let code = error.code();
-                failure(
-                    code,
-                    if code == AthriaErrorCode::TrainingSessionNotFound {
-                        "The workout was not found."
-                    } else {
-                        "The workout type could not be updated."
-                    },
-                    if code == AthriaErrorCode::TrainingSessionNotFound {
-                        404
-                    } else {
-                        409
-                    },
-                )
-            })
-    }
+
 
     pub fn update_manual_training_session(&self, id: &str, value: &Value) -> Result<Value> {
         object_input(value, "session")?;
@@ -1652,6 +1619,7 @@ impl<S: AthriaStore> AthriaApplication<S> {
             ));
         }
         let week = parse_plan_week(week)?;
+        require_plan_types(&week)?;
         let duration = draft["data"]["mesocycle"]["durationWeeks"]
             .as_i64()
             .unwrap_or(0);
@@ -1878,6 +1846,7 @@ impl<S: AthriaStore> AthriaApplication<S> {
     /// validation a plan save would run, without writing anything.
     pub fn validate_current_plan(&self, value: &Value) -> Result<PlanValidation> {
         let input = parse_current_plan_write(value)?;
+        require_plan_types(&input)?;
         self.assert_template_references(&input["mesocycle"])?;
         Ok(validate_plan(
             &self.get_profile()?,
@@ -1931,7 +1900,7 @@ impl<S: AthriaStore> AthriaApplication<S> {
                 candidate.insert("weekNumber".into(), Value::from(week_number));
                 candidate.insert(
                     "phaseRefs".into(),
-                    phase_refs_for_session(plan, week_number, &session["components"])?,
+                    phase_refs_for_session(plan, week_number, &session)?,
                 );
                 candidate.insert("exerciseOverrides".into(), Value::Array(Vec::new()));
                 candidate.insert("notes".into(), Value::String(String::new()));
@@ -1951,6 +1920,7 @@ impl<S: AthriaStore> AthriaApplication<S> {
     /// the planned occurrences and write through the store.
     pub fn save_current_plan(&self, value: &Value) -> Result<Value> {
         let input = parse_current_plan_write(value)?;
+        require_plan_types(&input)?;
         if input["ownerId"].as_str() != Some(self.owner_id.as_str()) {
             return Err(failure(
                 AthriaErrorCode::OwnerMismatch,
@@ -2193,6 +2163,9 @@ impl<S: AthriaStore> AthriaApplication<S> {
                 };
                 json!({
                     "id": session["id"],
+                    "type": session["type"], "subtype": session["subtype"],
+                    "domain": athria_core::training_type::session_domain(&session),
+                    "domains": athria_core::training_type::session_domain(&session).into_iter().collect::<Vec<_>>(),
                     "occurrenceId": session["occurrenceId"],
                     "revision": revision,
                     "scheduledDate": session["scheduledDate"],
@@ -2269,35 +2242,10 @@ impl<S: AthriaStore> AthriaApplication<S> {
             let start_at = tz::local_noon(scheduled_date, &timezone)?;
             let duration_minutes = current["durationMinutes"].as_i64().unwrap_or(0);
             let end_at = tz::iso_from_millis(tz::millis(&start_at)? + duration_minutes * 60_000);
-            let components = current["components"]
-                .as_array()
-                .map(Vec::as_slice)
-                .unwrap_or(&[]);
-            let has_domain = |name: &str| {
-                components
-                    .iter()
-                    .any(|component| component["domain"]["value"].as_str() == Some(name))
-            };
-            let modality = if has_domain("strength") {
-                "strength"
-            } else if has_domain("endurance") {
-                "endurance"
-            } else {
-                "recovery"
-            };
-            let domains: Vec<Value> = components
-                .iter()
-                .filter_map(|component| {
-                    component["domain"]["value"]
-                        .as_str()
-                        .map(|domain| Value::String(domain.to_owned()))
-                })
-                .collect();
             let session = self.record_training_session(&json!({
                 "name": current["name"],
-                "modality": modality,
-                "domains": domains,
-                "sport": Value::Null,
+                "type": current["type"],
+                "subtype": current["subtype"],
                 "startAt": start_at,
                 "endAt": end_at,
                 "durationMinutes": duration_minutes,
@@ -2375,7 +2323,7 @@ impl<S: AthriaStore> AthriaApplication<S> {
             moved.insert("weekNumber".into(), Value::from(week_number));
             moved.insert(
                 "phaseRefs".into(),
-                phase_refs_for_session(&plan, week_number, &current["components"])?,
+                phase_refs_for_session(&plan, week_number, &current)?,
             );
             moved.insert("updatedAt".into(), Value::String(timestamp.clone()));
             let moved = Value::Object(moved);
@@ -2412,6 +2360,7 @@ impl<S: AthriaStore> AthriaApplication<S> {
     /// occurrences and the next training day they belong to.
     fn build_next_training_day_sessions(&self, raw: &Value) -> Result<(Value, Vec<Value>, Value)> {
         let input = parse_next_training_day_write(raw)?;
+        require_plan_types(&input)?;
         let next = self.get_next_training_day(None)?;
         let Some(next_day) = next["nextTrainingDay"]
             .as_object()
@@ -2492,7 +2441,7 @@ impl<S: AthriaStore> AthriaApplication<S> {
             candidate.insert("weekNumber".into(), Value::from(week_number));
             candidate.insert(
                 "phaseRefs".into(),
-                phase_refs_for_session(&plan, week_number, &item["components"])?,
+                phase_refs_for_session(&plan, week_number, &item)?,
             );
             candidate.insert("exerciseOverrides".into(), Value::Array(Vec::new()));
             candidate.insert("status".into(), Value::String("planned".into()));

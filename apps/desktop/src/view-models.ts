@@ -111,11 +111,10 @@ export interface RecoveryBlock { name: string; durationMinutes?: number; instruc
 export interface PlanComponent {
   id: string;
   name: string;
-  domain: { value: "strength" | "endurance" | "sport_skill" | "mind_body" | "recovery" | null; source: string; confidence: number; evidence: string; taxonomyVersion: string };
   prescription: { kind: "strength"; exercises: PlanExercise[] }
     | { kind: "endurance"; segments: Array<EnduranceStep | EnduranceRepeat> }
     | { kind: "sport_skill"; sessionType: "practice" | "match" | "competition"; blocks: SportBlock[] }
-    | { kind: "recovery" | "mind_body"; blocks: RecoveryBlock[] }
+    | { kind: "mobility" | "mind_body" | "functional"; blocks: RecoveryBlock[] }
     | { kind: "duration_only"; notes: string };
 }
 
@@ -123,11 +122,11 @@ export interface Mesocycle {
   durationWeeks: number;
   schedule: AthleteProfile["trainingRhythm"];
   domainProgressions: Array<{ domain: TemplateComponentDomain; phases: DomainPhase[] }>;
-  weeks: Array<{ weekNumber: number; focus: string | null; sessions: Array<{ id: string; scheduledDate: string; order: number; templateRef: TemplateRef | null; name: string; intent: string; durationMinutes: number; recoveryDemand: "low" | "normal" | "high"; keySession: boolean; components: PlanComponent[]; progressionNote: string | null; schedulingRationale: string | null; legacySnapshot: boolean }> }>;
+  weeks: Array<{ weekNumber: number; focus: string | null; sessions: Array<{ id: string; scheduledDate: string; order: number; templateRef: TemplateRef | null; domain?: TemplateComponentDomain | null; type?: string | null; subtype?: string | null; name: string; intent: string; durationMinutes: number; recoveryDemand: "low" | "normal" | "high"; keySession: boolean; components: PlanComponent[]; progressionNote: string | null; schedulingRationale: string | null; legacySnapshot: boolean }> }>;
   adjustmentRules: Array<{ trigger: string; action: string; rationale: string }>;
 }
 
-export interface TrainingHistorySession { id: string; name: string; startAt: string; timezone: string | null; domains: string[]; sport: string | null; durationMinutes: number; source: string; timePrecision: "exact" | "date_only"; sources: Array<{ source: string; externalId: string }>; plannedSessionId: string | null; planMatch: { plannedSessionId: string; method: "auto" | "manual" } | null; isPlanMatchExcluded: boolean; snapshotHash?: string }
+export interface TrainingHistorySession { id: string; name: string; startAt: string; timezone: string | null; domains: string[]; type: string | null; subtype: string | null; durationMinutes: number; source: string; timePrecision: "exact" | "date_only"; sources: Array<{ source: string; externalId: string }>; plannedSessionId: string | null; planMatch: { plannedSessionId: string; method: "auto" | "manual" } | null; isPlanMatchExcluded: boolean; snapshotHash?: string }
 export function formatTrainingSource(source: string): string {
   return ({ xunji: currentLanguage() === "zh-CN" ? "训记" : "SynFit", intervals: "Intervals.icu", hevy: "Hevy", manual: currentLanguage() === "zh-CN" ? "手动记录" : "Manual" } as Record<string, string>)[source] ?? source;
 }
@@ -138,7 +137,7 @@ export function filterAndSortTrainingHistory(sessions: TrainingHistorySession[],
   const filtered = term ? sessions.filter((session) => {
     const plannedSessionId = session.planMatch?.plannedSessionId ?? session.plannedSessionId;
     const sources = session.sources.length ? session.sources.map((source) => source.source) : [session.source];
-    return [session.name, session.sport ?? "", ...session.domains.map(friendlyLabel), ...sources.flatMap((source) => [source, formatTrainingSource(source)]), plannedSessionId ? plannedNames[plannedSessionId] ?? "" : ""]
+    return [session.name, session.type ?? "", session.subtype ?? "", ...session.domains.map(friendlyLabel), ...sources.flatMap((source) => [source, formatTrainingSource(source)]), plannedSessionId ? plannedNames[plannedSessionId] ?? "" : ""]
       .some((value) => value.toLocaleLowerCase().includes(term));
   }) : [...sessions];
   return filtered.sort((left, right) => (sort === "newest" ? Date.parse(right.startAt) - Date.parse(left.startAt) : Date.parse(left.startAt) - Date.parse(right.startAt)) || left.id.localeCompare(right.id));
@@ -174,7 +173,7 @@ export interface TaxonomyEntry { id: string; label: string; parentId: string | n
 export interface EquipmentItem { id: string; label: string }
 export interface EquipmentGroup { id: string; label: string; items: EquipmentItem[] }
 export interface EquipmentCategory { id: string; label: string; groups: EquipmentGroup[] }
-export interface TrainingTaxonomy { taxonomyVersion: string; templateCatalogVersion: string; equipmentCategories: EquipmentCategory[]; strength: { movementPatterns: TaxonomyEntry[]; muscleGroups: TaxonomyEntry[]; equipment: string[] }; templateVariables: Record<TemplateComponentDomain, string[]> }
+export interface TrainingTaxonomy { activityTypes?: Array<{ type: string; domain: TemplateComponentDomain; subtypes: string[] }>; taxonomyVersion: string; templateCatalogVersion: string; equipmentCategories: EquipmentCategory[]; strength: { movementPatterns: TaxonomyEntry[]; muscleGroups: TaxonomyEntry[]; equipment: string[] }; templateVariables: Record<TemplateComponentDomain, string[]> }
 // Optional Plan Target layer mirroring planTargetSchema (see UNIFIED_MULTISPORT_MESOCYCLE_DESIGN §5). Absent on legacy plans.
 export interface PlanTarget {
   primaryGoal?: { label: string; baseline?: string | null; testDate?: string | null };
@@ -190,6 +189,8 @@ export interface PlannedSession {
   weekNumber: number;
   name: string;
   intent: string;
+  domain?: TemplateComponentDomain | null; type?: string | null;
+  subtype?: string | null;
   scheduledDate: string;
   order: number;
   durationMinutes: number;
@@ -213,6 +214,9 @@ export interface PlannedSession {
 
 // Calendar entry returned by GET /api/plans/calendar (AthriaApplication.getCalendar).
 export interface CalendarSession {
+  domains?: TemplateComponentDomain[];
+  domain?: TemplateComponentDomain | null; type?: string | null;
+  subtype?: string | null;
   id: string;
   occurrenceId: string;
   revision: number;
@@ -310,7 +314,7 @@ const friendlyWords: Record<string, string> = {
   improve_endurance: "Improve endurance", fat_loss: "Fat loss", improve_competition_results: "Improve competition results",
   body_recomposition: "Body recomposition", improve_posture: "Improve posture", bodyweight: "Bodyweight",
   dumbbell: "Dumbbells", barbell: "Barbell", cable: "Cable Machine", machine: "Fixed Machines", trx: "TRX", ski_erg: "SkiErg", sled: "Sled / Prowler", mini_stability_ball: "Mini Stability Ball",
-  strength: "Strength", endurance: "Endurance", sport_skill: "Sport skill", mind_body: "Mind-body", recovery: "Recovery",
+  strength: "Strength", endurance: "Endurance", sport_skill: "Sport-skill", mind_body: "Mind-body", mobility: "Mobility", functional: "Functional",
 };
 
 export function friendlyLabel(value: string): string {
@@ -465,8 +469,9 @@ const adjustmentReasonMessages: Record<string, string> = {
   MESOCYCLE_DURATION_PREFERENCE_CHANGED: "Your preferred mesocycle length changed since the plan was built.",
 };
 
-export function adjustmentReasonMessage(reason: AdjustmentAssessment["reasons"][number]): string {
-  const message = adjustmentReasonMessages[reason.reasonCode];
+export function adjustmentReasonMessage(reason: AdjustmentAssessment["reasons"][number], previousWeek = false): string {
+  const original = adjustmentReasonMessages[reason.reasonCode];
+  const message = previousWeek ? original?.replaceAll("this week", "last week") : original;
   if (!message) return friendlyLabel(reason.reasonCode.toLowerCase());
   const language = currentLanguage();
   const domain = reason.affectedDomain ? `${friendlyLabel(reason.affectedDomain)}${language === "en" ? " " : ""}` : "";
@@ -524,7 +529,7 @@ export function profilePayload(current: AthleteProfile, edits: AthleteProfile = 
   };
 }
 
-export type TemplateComponentDomain = NonNullable<PlanComponent["domain"]["value"]>;
+export type TemplateComponentDomain = "strength" | "endurance" | "sport_skill" | "mind_body" | "mobility" | "functional";
 export interface CustomExerciseInput { name: string; movement: string; primaryMuscles: string[]; equipment: string[] }
 
 const taxonomyVersion = "strength-2.0";

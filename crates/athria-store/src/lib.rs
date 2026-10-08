@@ -23,3 +23,6 @@ pub use athria_application::{
 pub use athria_core::{AthriaError, AthriaErrorCode, DEFAULT_OWNER_ID, Result};
 pub use athria_vault::{EncryptedSecret, VaultBundle, VaultEnvelope};
 pub use store::{SUPPORTED_SCHEMA_VERSION, SqliteStore};
+
+mod migration_v30;
+mod migration_v31;

@@ -6,6 +6,7 @@ import { ConnectionAutoSyncSwitch } from "./connection-auto-sync";
 import { DailyTrainingSync, refreshTrainingViews, useTrainingSyncBusy, withTrainingSync } from "./training-sync";
 import type { DailyTrainingSyncResponse } from "./api";
 import { applyDatabaseVersion, type DatabaseVersion } from "./database-version";
+import { dismissWeeklyReview, loadScheduledReview, reviewWeek } from "./weekly-review";
 import { addCustomAgent, api, changeVaultPassword, createNewProfile, disconnectConnection, getAgentIntegrationsStatus, getIntervalsStatus, getMcpStatus, getStartupStatus, getVaultStatus, getXunjiStatus, importXunjiSkill, installAgentIntegration, openIntervalsWebsite, openSkillArchiveFolder, pickNewProfileDestination, pickRestoreFile, reconcileAgentSkills, removeAgentIntegration, requireVaultPassword, resetVaultPassword, resolveAgentSkillUpdate, restoreBackup, setupVault, syncIntervals, syncXunji, testIntervals, testXunjiSkill, unlockVault, type AgentIntegrationResult, type AgentIntegrationStatus, type AgentKind, type AgentSkillUpdate, type AgentSkillUpdateFailure, type OfficialAgentKind, type SkillArchiveView, type SkillUpdateResult, type StartupStatus } from "./api";
 import {
   cmToImperialHeight, connectionSources, dashboardPages, deviceTimezone, displayPreferredName, equipmentGroupState, filterAndSortTrainingHistory, formatDateTime, formatSyncDateTimeParts, formatDuration, formatPersonalHeight, formatPersonalWeight, formatRaceCountdown, formatRaceDateShort, formatTimezoneLabel, formatTrainingRhythm, formatTrainingSource, friendlyLabel, imperialHeightToCm, isUntouchedDefaultProfile, kgToPounds, nextRaceDay, poundsToKg,
@@ -119,6 +120,31 @@ function SettingsCardTitle({ title, description }: { title: string; description:
   return <span className="settings-card-title"><span className="settings-card-copy"><span className="settings-card-name">{title}</span><small>{description}</small></span></span>;
 }
 
+function useScheduledPlanReview() {
+  const database = useQuery({ queryKey: ["database-version"], queryFn: () => api<DatabaseVersion>("/api/system/database-version") });
+  const intervalsBusy = useTrainingSyncBusy(database.data?.databaseUuid ?? "", "intervals");
+  const xunjiBusy = useTrainingSyncBusy(database.data?.databaseUuid ?? "", "xunji");
+  const profile = useQuery({ queryKey: ["profile"], queryFn: () => api<AthleteProfile>("/api/profile") });
+  const timezone = profile.data?.timezone;
+  const [today, setToday] = useState<string | null>(null);
+  useEffect(() => {
+    if (!timezone) return;
+    const updateDay = () => setToday(localDateForTimezone(timezone));
+    updateDay();
+    const timer = window.setInterval(updateDay, 60_000);
+    window.addEventListener("focus", updateDay);
+    return () => { window.clearInterval(timer); window.removeEventListener("focus", updateDay); };
+  }, [timezone]);
+  const plan = useQuery({ queryKey: ["current-plan"], queryFn: () => api<CurrentPlan | null>("/api/plans/current") });
+  const wellness = useQuery({ queryKey: ["wellness", 42], queryFn: () => api<WellnessRecord[]>("/api/wellness?days=42") });
+  const calendar = useQuery({ queryKey: ["calendar", "overview-all"], queryFn: () => api<CalendarSession[]>("/api/plans/calendar") });
+  return useQuery({
+    queryKey: ["plan-adjustment-review", database.data?.databaseUuid, plan.data?.revision, today ? reviewWeek(today) : null, profile.dataUpdatedAt, calendar.dataUpdatedAt, wellness.dataUpdatedAt],
+    queryFn: () => loadScheduledReview(window.localStorage, database.data!.databaseUuid, today!, (reviewedWeek) => api<AdjustmentReminder>(`/api/plans/adjustment-review${reviewedWeek ? `?reviewedWeek=${reviewedWeek}` : ""}`)),
+    enabled: Boolean(today && database.data && plan.data && profile.data && calendar.data && wellness.data && !intervalsBusy && !xunjiBusy && !calendar.isFetching && !wellness.isFetching && !profile.isFetching && !plan.isFetching),
+  });
+}
+
 function Overview() {
   const profile = useQuery({ queryKey: ["profile"], queryFn: () => api<AthleteProfile>("/api/profile") });
   const today = profile.data ? localDateForTimezone(profile.data.timezone) : null;
@@ -127,20 +153,27 @@ function Overview() {
   // P0-5: Today/Next surfaces the next training day on Overview (§3, §19).
   const nextDay = useQuery({ queryKey: ["next-training-day", today], queryFn: () => api<NextTrainingDay>(`/api/plans/next-training-day?onOrAfterDate=${today}`), enabled: today !== null });
   const plan = useQuery({ queryKey: ["current-plan"], queryFn: () => api<CurrentPlan | null>("/api/plans/current") });
-  const adjustment = useQuery({
-    queryKey: ["plan-adjustment-review", plan.data?.revision],
-    queryFn: () => api<AdjustmentReminder>("/api/plans/adjustment-review"),
-    enabled: Boolean(plan.data),
-  });
   const wellness = useQuery({ queryKey: ["wellness", 42], queryFn: () => api<WellnessRecord[]>("/api/wellness?days=42") });
-  const history = useQuery({ queryKey: ["sessions", "overview-calendar"], queryFn: () => api<TrainingHistorySession[]>("/api/sessions?days=365") });
   const calendar = useQuery({ queryKey: ["calendar", "overview-all"], queryFn: () => api<CalendarSession[]>("/api/plans/calendar") });
+  const adjustment = useScheduledPlanReview();
+  const client = useQueryClient();
+  const dismissReview = () => {
+    const database = client.getQueryData<DatabaseVersion>(["database-version"]);
+    if (database && adjustment.data) {
+      dismissWeeklyReview(window.localStorage, database.databaseUuid, adjustment.data);
+      if (adjustment.data.assessment.trigger === "weekly_review") {
+        const context = adjustment.data.idempotencyContext;
+        client.setQueriesData<AdjustmentReminder>({ queryKey: ["plan-adjustment-review", database.databaseUuid] }, (value) => value?.idempotencyContext === context ? { ...value, showReminder: false } : value);
+      }
+    }
+  };
+  const history = useQuery({ queryKey: ["sessions", "overview-calendar"], queryFn: () => api<TrainingHistorySession[]>("/api/sessions?days=365") });
   if (query.isPending || profile.isPending || wellness.isPending || history.isPending || calendar.isPending) return <Loading/>;
   const error = query.error ?? profile.error ?? wellness.error ?? history.error ?? calendar.error;
   if (error || !query.data || !profile.data || !today) return <ErrorBanner error={error}/>;
   return <>
     <div className="overview-next-day" id="overview-next-day">{plan.data && !nextDay.isPending && nextDay.data ? <NextTrainingDayCard value={nextDay.data} plan={plan.data} /> : !plan.data ? <EmptyState title={tr("No current plan")} description="Plans are created by your connected AI Agent — build one to see your next training day here."/> : null}</div>
-    <OverviewDashboard summary={query.data} wellness={wellness.data ?? []} history={history.data ?? []} planned={calendar.data ?? []} today={today} timezone={profile.data.timezone} adjustment={adjustment.data?.showReminder ? adjustment.data.assessment : undefined}/>
+    <OverviewDashboard summary={query.data} wellness={wellness.data ?? []} history={history.data ?? []} planned={calendar.data ?? []} today={today} timezone={profile.data.timezone} adjustment={adjustment.data?.showReminder ? adjustment.data.assessment : undefined} onDismissReview={dismissReview}/>
   </>;
 }
 
@@ -503,12 +536,11 @@ function workoutLocalDate(item: TrainingHistorySession, fallbackTimezone: string
   return new Intl.DateTimeFormat("en-CA", { timeZone: item.timezone ?? fallbackTimezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(item.startAt));
 }
 
-type TrainingDisplayType = "strength" | "endurance" | "sport_skill" | "mind_body" | "recovery" | "unclassified";
-const trainingTypeOptions = ["strength", "endurance", "sport_skill", "mind_body", "recovery"] as const;
+type TrainingDisplayType = "strength" | "endurance" | "sport_skill" | "mind_body" | "mobility" | "functional" | "unclassified";
 
 function trainingDisplayType(item: TrainingHistorySession): { id: TrainingDisplayType; label: string } {
   const domain = item.domains[0];
-  if (domain === "strength" || domain === "endurance" || domain === "sport_skill" || domain === "mind_body" || domain === "recovery") return { id: domain, label: friendlyLabel(domain) };
+  if (domain === "strength" || domain === "endurance" || domain === "sport_skill" || domain === "mind_body" || domain === "mobility" || domain === "functional") return { id: domain, label: friendlyLabel(domain) };
   return { id: "unclassified", label: "Unclassified" };
 }
 
@@ -533,14 +565,13 @@ function trainingHistorySourceLabel(source: string): string {
 }
 
 function TimelineWorkout({ item, planned, revision, timezone, onMutated }: { item: TrainingHistorySession; planned: CalendarSession[]; revision: number; timezone: string; onMutated: () => Promise<void> }) {
-  const [busy, setBusy] = useState(false); const [error, setError] = useOperationError(); const [editing, setEditing] = useState(false); const [typeOpen, setTypeOpen] = useState(false); const rowRef = useRef<HTMLElement>(null); const menuRef = useOutsideDismissMenu();
+  const [busy, setBusy] = useState(false); const [error, setError] = useOperationError(); const [editing, setEditing] = useState(false); const rowRef = useRef<HTMLElement>(null); const menuRef = useOutsideDismissMenu();
   const editingSnapshotHash = useRef<string | undefined>(undefined);
   const [duration, setDuration] = useState(String(item.durationMinutes)); const [startAt, setStartAt] = useState("");
   const day = workoutLocalDate(item, timezone);
   const displayType = trainingDisplayType(item); const dateTime = workoutDateTime(item, timezone);
-  const compatible = (session: CalendarSession) => session.components.some((component) => component.domain.value !== null && item.domains.includes(component.domain.value));
+  const compatible = (session: CalendarSession) => Boolean(item.type && session.type === item.type);
   const eligible = planned.filter((session) => session.scheduledDate === day && session.status !== "skipped").sort((left, right) => Number(compatible(right)) - Number(compatible(left)) || Number(Boolean(left.completedTrainingSessionId)) - Number(Boolean(right.completedTrainingSessionId)));
-  useEffect(() => { if (!typeOpen) return; const close = (event: PointerEvent) => { if (!rowRef.current?.contains(event.target as Node)) setTypeOpen(false); }; document.addEventListener("pointerdown", close); return () => document.removeEventListener("pointerdown", close); }, [typeOpen]);
   useEffect(() => {
     if (editing && error && item.snapshotHash && item.snapshotHash !== editingSnapshotHash.current) editingSnapshotHash.current = item.snapshotHash;
   }, [editing, error, item.snapshotHash]);
@@ -551,7 +582,6 @@ function TimelineWorkout({ item, planned, revision, timezone, onMutated }: { ite
     if (target?.completedTrainingSessionId && target.completedTrainingSessionId !== item.id && !window.confirm(`${target.name} is linked to another workout. Replace that link?`)) return;
     return mutate(`/api/training-sessions/${encodeURIComponent(item.id)}/plan-match`, { method: "PATCH", body: JSON.stringify({ plannedSessionId: value, expectedRevision: revision, confirmed: true, expectedSnapshotHash: item.snapshotHash }) });
   };
-  const changeType = async (domain: Exclude<TrainingDisplayType, "unclassified">) => { if (domain === displayType.id) { setTypeOpen(false); return; } if (await mutate(`/api/training-sessions/${encodeURIComponent(item.id)}/type`, { method: "PATCH", body: JSON.stringify({ domain, confirmed: true, expectedSnapshotHash: item.snapshotHash }) })) setTypeOpen(false); };
   const resetManualDraft = () => { setDuration(String(item.durationMinutes)); setStartAt(""); };
   const beginManualEdit = () => { resetManualDraft(); editingSnapshotHash.current = item.snapshotHash; setEditing(true); };
   const cancelManualEdit = () => { resetManualDraft(); setEditing(false); };
@@ -564,16 +594,15 @@ function TimelineWorkout({ item, planned, revision, timezone, onMutated }: { ite
   const deleteRecord = () => { if (window.confirm("Delete this workout record and all of its source data? A synced workout may be imported again during a future sync.")) void mutate(`/api/training-sessions/${encodeURIComponent(item.id)}`, { method: "DELETE", body: JSON.stringify({ confirmed: true, expectedSnapshotHash: item.snapshotHash }) }); };
   const hasManual = item.sources.some((source) => source.source === "manual");
   const hasSynced = item.sources.some((source) => source.source !== "manual");
-  const subtitle = item.sport || (item.domains.length > 1 ? item.domains.map(friendlyLabel).join(" + ") : `${displayType.label} workout`);
+  const subtitle = [item.type, item.subtype].filter(Boolean).join(" · ") || tr("Unclassified");
   return <article className="training-row" key={item.id} ref={rowRef}>
     <div className="training-workout-cell"><span className={`training-type-icon ${displayType.id}`}><TrainingTypeIcon type={displayType.id}/></span><span><strong>{item.name}</strong><small>{subtitle}</small></span></div>
     <div className="training-date-cell"><strong>{dateTime.date}</strong><small>{dateTime.time}</small></div>
-    <div className="training-type-cell"><button type="button" className={`training-type-badge ${displayType.id}`} aria-expanded={typeOpen} aria-label={`Change type for ${item.name}`} disabled={busy} onClick={() => setTypeOpen((value) => !value)}>{displayType.label}</button></div>
+    <div className="training-type-cell"><span className={`training-type-badge ${displayType.id}`}>{displayType.label}</span></div>
     <div className="training-duration-cell"><AppIcon name="clock"/><span>{formatDuration(item.durationMinutes)}{item.timePrecision === "date_only" ? <small><T>{"Estimated"}</T></small> : null}</span></div>
     <div className="training-source-cell"><span>{trainingHistorySourceLabel(item.source)}</span></div>
     <div className="training-plan-cell"><span className={`training-plan-mark ${item.planMatch ? "matched" : ""}`} aria-label={item.planMatch ? `${item.name} is matched to a planned session` : `${item.name} is not matched to a planned session`} title={item.planMatch ? "Matched to a planned session" : undefined}>{item.planMatch ? "✓" : ""}</span></div>
-    <div className="training-actions-cell"><details className={editing ? "training-row-menu editing" : "training-row-menu"} ref={menuRef} onToggle={(event) => { if (!event.currentTarget.open && editing) cancelManualEdit(); }}><summary aria-label={`Actions for ${item.name}`}>•••</summary><div>{editing ? <div className="training-row-menu-editor"><label><T>{"Duration (minutes)"}</T><input type="number" min="1" max="1440" disabled={busy} value={duration} onChange={(event) => setDuration(event.target.value)}/></label><label><T>{"Actual start time"}</T><input type="datetime-local" disabled={busy} value={startAt} onChange={(event) => setStartAt(event.target.value)}/></label><div className="training-row-menu-editor-actions"><button type="button" className="secondary" disabled={busy} onClick={cancelManualEdit}><T>{"Cancel"}</T></button><button type="button" className="training-row-menu-save" disabled={busy || !Number.isInteger(Number(duration)) || Number(duration) < 1} onClick={() => void saveManual()}>{busy ? "Saving…" : "Save"}</button></div></div> : <><label className="training-row-menu-plan"><span><T>{"Planned session"}</T></span><select aria-label={`Planned session for ${item.name}`} disabled={busy} value={item.planMatch?.plannedSessionId ?? ""} onChange={(event) => void changeMatch(event.target.value)}><option value="" disabled>-</option>{eligible.map((session) => <option key={session.id} value={session.id}>{session.name}{!compatible(session) ? " · different domain" : ""}{session.completedTrainingSessionId && session.completedTrainingSessionId !== item.id ? " · linked" : ""}</option>)}{item.isPlanMatchExcluded && <option value="__automatic__"><T>{"Allow automatic matching"}</T></option>}</select>{item.planMatch && <small>{item.planMatch.method === "manual" ? "Linked by you" : "Matched automatically"}</small>}</label>{hasManual && <button type="button" disabled={busy} onClick={beginManualEdit}><T>{"Edit manual details"}</T></button>}{hasManual && hasSynced && <button type="button" className="danger-text" disabled={busy} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); removeManual(); }}><T>{"Remove manual source"}</T></button>}<button type="button" className="danger-text" disabled={busy} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); deleteRecord(); }}><T>{"Delete record"}</T></button></>}</div></details></div>
-    {typeOpen && <div className="training-type-options" role="group" aria-label={`Type options for ${item.name}`}>{trainingTypeOptions.map((domain) => <button type="button" key={domain} className={`training-type-option ${domain} ${displayType.id === domain ? "selected" : ""}`} aria-pressed={displayType.id === domain} disabled={busy} onClick={() => void changeType(domain)}>{friendlyLabel(domain)}</button>)}</div>}
+    <div className="training-actions-cell"><details className={editing ? "training-row-menu editing" : "training-row-menu"} ref={menuRef} onToggle={(event) => { if (!event.currentTarget.open && editing) cancelManualEdit(); }}><summary aria-label={`Actions for ${item.name}`}>•••</summary><div>{editing ? <div className="training-row-menu-editor"><label><T>{"Duration (minutes)"}</T><input type="number" min="1" max="1440" disabled={busy} value={duration} onChange={(event) => setDuration(event.target.value)}/></label><label><T>{"Actual start time"}</T><input type="datetime-local" disabled={busy} value={startAt} onChange={(event) => setStartAt(event.target.value)}/></label><div className="training-row-menu-editor-actions"><button type="button" className="secondary" disabled={busy} onClick={cancelManualEdit}><T>{"Cancel"}</T></button><button type="button" className="training-row-menu-save" disabled={busy || !Number.isInteger(Number(duration)) || Number(duration) < 1} onClick={() => void saveManual()}>{busy ? "Saving…" : "Save"}</button></div></div> : <><label className="training-row-menu-plan"><span><T>{"Planned session"}</T></span><select aria-label={`Planned session for ${item.name}`} disabled={busy} value={item.planMatch?.plannedSessionId ?? ""} onChange={(event) => void changeMatch(event.target.value)}><option value="" disabled>-</option>{eligible.map((session) => <option key={session.id} value={session.id}>{session.name}{!compatible(session) ? " · different type" : ""}{session.completedTrainingSessionId && session.completedTrainingSessionId !== item.id ? " · linked" : ""}</option>)}{item.isPlanMatchExcluded && <option value="__automatic__"><T>{"Allow automatic matching"}</T></option>}</select>{item.planMatch && <small>{item.planMatch.method === "manual" ? "Linked by you" : "Matched automatically"}</small>}</label>{hasManual && <button type="button" disabled={busy} onClick={beginManualEdit}><T>{"Edit manual details"}</T></button>}{hasManual && hasSynced && <button type="button" className="danger-text" disabled={busy} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); removeManual(); }}><T>{"Remove manual source"}</T></button>}<button type="button" className="danger-text" disabled={busy} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); deleteRecord(); }}><T>{"Delete record"}</T></button></>}</div></details></div>
 
   </article>;
 }
@@ -1145,7 +1174,7 @@ export function Help() {
       <div className="help-grid glossary-grid">
         <section><strong><T>{"Mesocycle"}</T></strong><span><T>{"A multi-week plan built around a training goal to organize training rhythm, phase progression and dynamic adjustments."}</T></span></section>
         <section><strong><T>{"Template"}</T></strong><span><T>{"A reusable abstract structure for a type of training that defines what the training should include without fixing specific exercises, sets or loads."}</T></span></section>
-        <section><strong><T>{"Training domain"}</T></strong><span><T>{"The five training types Athria plans around: strength, endurance, sport skill, mind-body and recovery."}</T></span></section>
+        <section><strong><T>{"Training domain"}</T></strong><span><T>{"The six training domains Athria plans around: strength, endurance, sport skill, mind-body, mobility and functional."}</T></span></section>
         <section><strong><T>{"RPE"}</T></strong><span><T>{"Rates how hard a set felt, usually 1–10. Drives load autoregulation."}</T></span></section>
         <section><strong><T>{"Zone (heart rate zone)"}</T></strong><span><T>{"A personal heart-rate range used to indicate effort level. Check your zone ranges in your watch or fitness app."}</T></span></section>
       </div>
@@ -1295,6 +1324,7 @@ export function App() {
 }
 
 function ReadyApp() {
+  useScheduledPlanReview();
   const t = useT();
   const [page, setPage] = useState<Page>("Overview"); const View = views[page];
   const client = useQueryClient();

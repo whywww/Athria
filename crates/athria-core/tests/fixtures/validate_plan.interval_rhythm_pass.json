@@ -66,7 +66,7 @@
         },
         "domainProgressions": [
           {
-            "domain": "recovery",
+            "domain": "mobility",
             "phases": [
               {
                 "id": "recovery-base",
@@ -100,13 +100,6 @@
                   {
                     "id": "flush",
                     "name": "Recovery",
-                    "domain": {
-                      "value": "recovery",
-                      "source": "user_confirmed",
-                      "confidence": 1,
-                      "evidence": "golden fixture",
-                      "taxonomyVersion": "strength-2.0"
-                    },
                     "prescription": {
                       "kind": "duration_only",
                       "notes": ""
@@ -115,7 +108,8 @@
                 ],
                 "progressionNote": null,
                 "schedulingRationale": null,
-                "legacySnapshot": false
+                "legacySnapshot": false,
+                "domain": "mobility"
               },
               {
                 "id": "w1-interval-2",
@@ -132,13 +126,6 @@
                   {
                     "id": "flush",
                     "name": "Recovery",
-                    "domain": {
-                      "value": "recovery",
-                      "source": "user_confirmed",
-                      "confidence": 1,
-                      "evidence": "golden fixture",
-                      "taxonomyVersion": "strength-2.0"
-                    },
                     "prescription": {
                       "kind": "duration_only",
                       "notes": ""
@@ -147,7 +134,8 @@
                 ],
                 "progressionNote": null,
                 "schedulingRationale": null,
-                "legacySnapshot": false
+                "legacySnapshot": false,
+                "domain": "mobility"
               },
               {
                 "id": "w1-interval-3",
@@ -164,13 +152,6 @@
                   {
                     "id": "flush",
                     "name": "Recovery",
-                    "domain": {
-                      "value": "recovery",
-                      "source": "user_confirmed",
-                      "confidence": 1,
-                      "evidence": "golden fixture",
-                      "taxonomyVersion": "strength-2.0"
-                    },
                     "prescription": {
                       "kind": "duration_only",
                       "notes": ""
@@ -179,7 +160,8 @@
                 ],
                 "progressionNote": null,
                 "schedulingRationale": null,
-                "legacySnapshot": false
+                "legacySnapshot": false,
+                "domain": "mobility"
               }
             ]
           },
@@ -202,13 +184,6 @@
                   {
                     "id": "flush",
                     "name": "Recovery",
-                    "domain": {
-                      "value": "recovery",
-                      "source": "user_confirmed",
-                      "confidence": 1,
-                      "evidence": "golden fixture",
-                      "taxonomyVersion": "strength-2.0"
-                    },
                     "prescription": {
                       "kind": "duration_only",
                       "notes": ""
@@ -217,7 +192,8 @@
                 ],
                 "progressionNote": null,
                 "schedulingRationale": null,
-                "legacySnapshot": false
+                "legacySnapshot": false,
+                "domain": "mobility"
               },
               {
                 "id": "w2-interval-5",
@@ -234,13 +210,6 @@
                   {
                     "id": "flush",
                     "name": "Recovery",
-                    "domain": {
-                      "value": "recovery",
-                      "source": "user_confirmed",
-                      "confidence": 1,
-                      "evidence": "golden fixture",
-                      "taxonomyVersion": "strength-2.0"
-                    },
                     "prescription": {
                       "kind": "duration_only",
                       "notes": ""
@@ -249,7 +218,8 @@
                 ],
                 "progressionNote": null,
                 "schedulingRationale": null,
-                "legacySnapshot": false
+                "legacySnapshot": false,
+                "domain": "mobility"
               }
             ]
           },
@@ -272,13 +242,6 @@
                   {
                     "id": "flush",
                     "name": "Recovery",
-                    "domain": {
-                      "value": "recovery",
-                      "source": "user_confirmed",
-                      "confidence": 1,
-                      "evidence": "golden fixture",
-                      "taxonomyVersion": "strength-2.0"
-                    },
                     "prescription": {
                       "kind": "duration_only",
                       "notes": ""
@@ -287,7 +250,8 @@
                 ],
                 "progressionNote": null,
                 "schedulingRationale": null,
-                "legacySnapshot": false
+                "legacySnapshot": false,
+                "domain": "mobility"
               },
               {
                 "id": "w3-interval-7",
@@ -304,13 +268,6 @@
                   {
                     "id": "flush",
                     "name": "Recovery",
-                    "domain": {
-                      "value": "recovery",
-                      "source": "user_confirmed",
-                      "confidence": 1,
-                      "evidence": "golden fixture",
-                      "taxonomyVersion": "strength-2.0"
-                    },
                     "prescription": {
                       "kind": "duration_only",
                       "notes": ""
@@ -319,7 +276,8 @@
                 ],
                 "progressionNote": null,
                 "schedulingRationale": null,
-                "legacySnapshot": false
+                "legacySnapshot": false,
+                "domain": "mobility"
               }
             ]
           }
@@ -421,11 +379,11 @@
         "evidence": {
           "durationWeeks": 3,
           "sessionDomains": [
-            "recovery"
+            "mobility"
           ],
           "progressions": [
             {
-              "domain": "recovery",
+              "domain": "mobility",
               "phases": [
                 {
                   "id": "recovery-base",
@@ -439,125 +397,6 @@
               ]
             }
           ]
-        },
-        "missingFacts": [],
-        "confidenceLimit": null
-      },
-      {
-        "enforcement": "blocker",
-        "reasonCode": "COMPONENT_PRESCRIPTION",
-        "status": "pass",
-        "rulePackId": "structure",
-        "ruleVersion": "0.3.0",
-        "subjectRefs": [
-          "w1-interval-1",
-          "flush"
-        ],
-        "evidence": {
-          "domain": "recovery",
-          "prescription": "duration_only"
-        },
-        "missingFacts": [],
-        "confidenceLimit": null
-      },
-      {
-        "enforcement": "blocker",
-        "reasonCode": "COMPONENT_PRESCRIPTION",
-        "status": "pass",
-        "rulePackId": "structure",
-        "ruleVersion": "0.3.0",
-        "subjectRefs": [
-          "w1-interval-2",
-          "flush"
-        ],
-        "evidence": {
-          "domain": "recovery",
-          "prescription": "duration_only"
-        },
-        "missingFacts": [],
-        "confidenceLimit": null
-      },
-      {
-        "enforcement": "blocker",
-        "reasonCode": "COMPONENT_PRESCRIPTION",
-        "status": "pass",
-        "rulePackId": "structure",
-        "ruleVersion": "0.3.0",
-        "subjectRefs": [
-          "w1-interval-3",
-          "flush"
-        ],
-        "evidence": {
-          "domain": "recovery",
-          "prescription": "duration_only"
-        },
-        "missingFacts": [],
-        "confidenceLimit": null
-      },
-      {
-        "enforcement": "blocker",
-        "reasonCode": "COMPONENT_PRESCRIPTION",
-        "status": "pass",
-        "rulePackId": "structure",
-        "ruleVersion": "0.3.0",
-        "subjectRefs": [
-          "w2-interval-4",
-          "flush"
-        ],
-        "evidence": {
-          "domain": "recovery",
-          "prescription": "duration_only"
-        },
-        "missingFacts": [],
-        "confidenceLimit": null
-      },
-      {
-        "enforcement": "blocker",
-        "reasonCode": "COMPONENT_PRESCRIPTION",
-        "status": "pass",
-        "rulePackId": "structure",
-        "ruleVersion": "0.3.0",
-        "subjectRefs": [
-          "w2-interval-5",
-          "flush"
-        ],
-        "evidence": {
-          "domain": "recovery",
-          "prescription": "duration_only"
-        },
-        "missingFacts": [],
-        "confidenceLimit": null
-      },
-      {
-        "enforcement": "blocker",
-        "reasonCode": "COMPONENT_PRESCRIPTION",
-        "status": "pass",
-        "rulePackId": "structure",
-        "ruleVersion": "0.3.0",
-        "subjectRefs": [
-          "w3-interval-6",
-          "flush"
-        ],
-        "evidence": {
-          "domain": "recovery",
-          "prescription": "duration_only"
-        },
-        "missingFacts": [],
-        "confidenceLimit": null
-      },
-      {
-        "enforcement": "blocker",
-        "reasonCode": "COMPONENT_PRESCRIPTION",
-        "status": "pass",
-        "rulePackId": "structure",
-        "ruleVersion": "0.3.0",
-        "subjectRefs": [
-          "w3-interval-7",
-          "flush"
-        ],
-        "evidence": {
-          "domain": "recovery",
-          "prescription": "duration_only"
         },
         "missingFacts": [],
         "confidenceLimit": null
@@ -638,10 +477,10 @@
     ],
     "dataGaps": [],
     "validatedAt": "2026-09-17T10:30:00.000Z",
-    "inputHash": "fnv1a-aeaf5d8f",
+    "inputHash": "fnv1a-06da7d65",
     "coverage": {
-      "hardChecksResolved": 12,
-      "hardChecksTotal": 12,
+      "hardChecksResolved": 5,
+      "hardChecksTotal": 5,
       "movementFactsResolved": 0,
       "movementFactsTotal": 0,
       "muscleFactsResolved": 0,

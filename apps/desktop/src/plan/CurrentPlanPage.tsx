@@ -129,9 +129,9 @@ function CurrentPlanView({ plan, templates, profile }: { plan: CurrentPlan; temp
   });
   const calendarSessions = calendarQuery.data ?? [];
   const currentWeek = position.weekNumber;
-  const currentPhaseNames = plan.mesocycle.domainProgressions.flatMap((progression) => {
+  const currentPhases = plan.mesocycle.domainProgressions.flatMap((progression) => {
     const phase = progression.phases.find((item) => currentWeek >= item.startWeek && currentWeek <= item.endWeek);
-    return phase ? [`${friendlyLabel(progression.domain)} · ${phase.name}`] : [];
+    return phase ? [{ domain: progression.domain, name: `${friendlyLabel(progression.domain)} · ${phase.name}` }] : [];
   });
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(() => sessionStorage.getItem(`${storageKey}:session`));
   const triggerRef = useRef<HTMLElement | null>(null);
@@ -151,7 +151,7 @@ function CurrentPlanView({ plan, templates, profile }: { plan: CurrentPlan; temp
   }, [storageKey, calendarQuery.isPending]);
   return <>
     {/* Layer 1 — Mesocycle Target (§5) */}
-    <MesocycleTarget plan={plan} today={today} currentWeek={currentWeek} currentPhaseNames={currentPhaseNames} status={position.state === "completed" ? "completed" : position.state === "future" ? "upcoming" : "current"} />
+    <MesocycleTarget plan={plan} today={today} currentWeek={currentWeek} currentPhases={currentPhases} status={position.state === "completed" ? "completed" : position.state === "future" ? "upcoming" : "current"} />
     {/* Layer 2 — domain timelines; selecting a phase scrolls the Weekly Plan, never filters it */}
     <ProgressionByDomain progressions={plan.mesocycle.domainProgressions} currentWeek={currentWeek} onSelectPhase={(_domain, _phaseId, startWeek) => requestWeek(startWeek)} />
     {/* Layer 3 — Weekly Plan (§7) */}
@@ -185,13 +185,13 @@ export function NextTrainingDayCard({ value, plan }: { value: NextTrainingDay | 
   if (!day) return <section className="success next-day-complete"><strong><T>{"Plan up to date"}</T></strong><span>{t(value?.reasonCode === "PLAN_ENDED" ? "There are no unfinished training sessions remaining in this mesocycle." : "No upcoming training day is currently available.")}</span></section>;
   const today = localDateForTimezone(day.timezone);
   const isToday = day.scheduledDate === today;
-  const phaseSummary = day.domainPhases.map((phase) => `${friendlyLabel(phase.domain)} ${phase.name}`).join(" / ");
+  const phaseSummary = day.domainPhases.map((phase) => phase.name).join(" / ");
   const planEnd = plan ? addDays(plan.effectiveStartDate, plan.mesocycle.durationWeeks * 7 - 1) : undefined;
   const moveOutsidePlan = Boolean(plan && moveDate && (moveDate < plan.effectiveStartDate || (planEnd && moveDate > planEnd)));
   return <section className="mesocycle-card next-training-day">
     <div className="proposal-heading"><div><div><h2>{t(isToday ? "Today" : "Next Training Day")}</h2><p>{localizedWeekdays()[day.dayOfWeek]} · {day.scheduledDate} · {currentLanguage() === "zh-CN" ? `第 ${day.weekNumber} 周` : `Week ${day.weekNumber}`}{phaseSummary ? ` · ${phaseSummary}` : ""}</p></div></div></div>
     <div className="session-list">{day.existingSessions.map((session) => <article className={`session-card ${session.status}`} key={session.id}>
-      {session.components.length > 0 ? <div className="next-prescriptions">{session.components.map((component) => <Prescription component={component} variant="detailed" fallbackNotes={session.intent} summary={session.intent} meta={formatDuration(session.durationMinutes)} key={component.id}/>)}</div> : <p className="next-prescription-empty"><T>{"No structured prescription is available for this session."}</T></p>}
+      {session.components.length > 0 ? <div className="next-prescriptions">{session.components.map((component) => <Prescription component={component} sessionDomain={session.domain} variant="detailed" fallbackNotes={session.intent} summary={session.intent} meta={formatDuration(session.durationMinutes)} key={component.id}/>)}</div> : <p className="next-prescription-empty"><T>{"No structured prescription is available for this session."}</T></p>}
       {session.status === "planned" && <><div className="actions"><button className="complete-training-button" disabled={busy || !isToday} title={day.scheduledDate > today ? t("This is a future workout. Move it to your planned date first.") : undefined} onClick={() => void act(session.id, { action: "complete" })}><T>{"Complete"}</T></button><button className="secondary" disabled={busy} onClick={() => void act(session.id, { action: "skip" })}><T>{"Skip"}</T></button><button className="secondary" disabled={busy} aria-expanded={postponeId === session.id} aria-controls={`postpone-panel-${session.id}`} onClick={() => { if (postponeId === session.id) { setPostponeId(null); return; } setMoveDate(day.scheduledDate); setPostponeId(session.id); }}><T>{"Move"}</T></button></div>{postponeId === session.id && <div className="postpone-panel" id={`postpone-panel-${session.id}`}><label><T>{"Move to date"}</T><input type="date" min={plan?.effectiveStartDate} max={planEnd} value={moveDate} onChange={(event) => setMoveDate(event.target.value)}/></label><button className="secondary" disabled={busy || moveOutsidePlan || !moveDate || moveDate === day.scheduledDate} onClick={() => void act(session.id, { action: "move_occurrence", scheduledDate: moveDate })}><T>{"Confirm"}</T></button>{moveOutsidePlan && <small role="alert"><T>{"The workout must stay within this mesocycle."}</T></small>}</div>}</>}
     </article>)}</div></section>;
 }

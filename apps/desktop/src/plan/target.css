@@ -41,11 +41,12 @@
   padding: 0 13px; border-radius: 999px; color: #1853a3; background: #edf4fd;
   font-size: 11px; font-weight: 500; line-height: 1.2; white-space: nowrap;
 }
-.mt-progress-phase:has(.mt-domain-strength) { color: var(--domain-strength-ink); background: var(--domain-strength-soft); }
-.mt-progress-phase:has(.mt-domain-endurance) { color: var(--domain-endurance-ink); background: var(--domain-endurance-soft); }
-.mt-progress-phase:has(.mt-domain-sport) { color: var(--domain-sport_skill-ink); background: var(--domain-sport_skill-soft); }
-.mt-progress-phase:has(.mt-domain-mind) { color: var(--domain-mind_body-ink); background: var(--domain-mind_body-soft); }
-.mt-progress-phase:has(.mt-domain-recovery) { color: var(--domain-recovery-ink); background: var(--domain-recovery-soft); }
+.mt-progress-phase[data-domain="strength"] { color: var(--domain-strength-ink); background: var(--domain-strength-soft); }
+.mt-progress-phase[data-domain="endurance"] { color: var(--domain-endurance-ink); background: var(--domain-endurance-soft); }
+.mt-progress-phase[data-domain="sport_skill"] { color: var(--domain-sport_skill-ink); background: var(--domain-sport_skill-soft); }
+.mt-progress-phase[data-domain="mind_body"] { color: var(--domain-mind_body-ink); background: var(--domain-mind_body-soft); }
+.mt-progress-phase[data-domain="mobility"] { color: var(--domain-mobility-ink); background: var(--domain-mobility-soft); }
+.mt-progress-phase[data-domain="functional"] { color: var(--domain-functional-ink); background: var(--domain-functional-soft); }
 .mt-domain-icon { width: 17px; height: 17px; display: grid; place-items: center; }
 .mt-domain-icon svg { width: 17px; height: 17px; }
 .mt-progress-asof { margin-left: auto; color: #68758a; font-size: 11px; white-space: nowrap; }

@@ -22,7 +22,7 @@ use crate::sessions::js_number_value;
 pub use athria_core::DEFAULT_OWNER_ID;
 
 /// Latest schema version this store opens and creates.
-pub const SUPPORTED_SCHEMA_VERSION: i64 = 29;
+pub const SUPPORTED_SCHEMA_VERSION: i64 = 31;
 
 /// Canonical Rust compatibility baseline. Future changes must add explicit
 /// Rust migrations from this schema rather than silently replacing it.
@@ -31,7 +31,7 @@ const VERSIONED_TABLES: &[&str] = &[
     "connection_credentials", "connection_secrets", "connection_sync_state",
     "current_mesocycles", "plan_drafts", "plan_draft_weeks", "import_batches",
     "plan_workout_matches", "planned_session_events", "profiles", "session_templates",
-    "template_dismissals", "training_session_sources", "training_session_type_overrides",
+    "template_dismissals", "training_session_sources",
     "training_sessions", "vault_meta", "wellness", "workout_plan_exclusions",
 ];
 const MIGRATION_V25_SQL: &str = "
@@ -79,6 +79,12 @@ INSERT INTO athria_migrations(version, applied_at) VALUES (28, CURRENT_TIMESTAMP
 const MIGRATION_V29_SQL: &str = "
 CREATE TABLE daily_sync_attempts (owner_id TEXT NOT NULL, source TEXT NOT NULL, local_date TEXT NOT NULL, attempted_at TEXT NOT NULL, PRIMARY KEY(owner_id, source, local_date));
 INSERT INTO athria_migrations(version, applied_at) VALUES (29, CURRENT_TIMESTAMP);
+";
+
+const MIGRATION_V30_SQL: &str = "
+ALTER TABLE training_sessions DROP COLUMN modality;
+DROP TABLE training_session_type_overrides;
+INSERT INTO athria_migrations(version, applied_at) VALUES (30, CURRENT_TIMESTAMP);
 ";
 
 pub(crate) fn database_error(error: rusqlite::Error) -> AthriaError {
@@ -526,7 +532,7 @@ impl SqliteStore {
         Ok(store)
     }
 
-    /// In-memory store used by unit tests; bootstraps a fresh v29 database.
+    /// In-memory store used by unit tests; bootstraps a fresh v31 database.
     pub fn open_in_memory() -> Result<Self> {
         Self::open_in_memory_with_clock(Arc::new(SystemClock))
     }
@@ -669,7 +675,8 @@ impl SqliteStore {
         }
         match self.schema_version()? {
             SUPPORTED_SCHEMA_VERSION => Ok(()),
-            28 | 27 | 26 | 25 | 24 => self.migrate_to_v29(),
+            30 => self.migrate_to_v31(),
+            29 | 28 | 27 | 26 | 25 | 24 => { self.migrate_to_v30()?; self.migrate_to_v31() },
             version if version < SUPPORTED_SCHEMA_VERSION => Err(AthriaError::new(
                 AthriaErrorCode::SchemaVersionUnsupported,
                 format!(
@@ -685,18 +692,26 @@ impl SqliteStore {
         }
     }
 
-    fn migrate_to_v29(&self) -> Result<()> {
+    fn migrate_to_v30(&self) -> Result<()> {
         self.connection.execute_batch("BEGIN IMMEDIATE").map_err(database_error)?;
         let migration = (|| {
             match self.schema_version()? {
-                28 => Ok(()),
+                29 | 28 => Ok(()),
                 27 => self.connection.execute_batch(MIGRATION_V28_SQL).map_err(database_error),
                 26 => self.connection.execute_batch(&format!("{MIGRATION_V27_SQL} {MIGRATION_V28_SQL}")).map_err(database_error),
                 25 => self.connection.execute_batch(&format!("{} {MIGRATION_V27_SQL} {MIGRATION_V28_SQL}", migration_v26_sql())).map_err(database_error),
                 24 => self.connection.execute_batch(&format!("{MIGRATION_V25_SQL} {} {MIGRATION_V27_SQL} {MIGRATION_V28_SQL}", migration_v26_sql())).map_err(database_error),
                 _ => Err(AthriaError::new(AthriaErrorCode::SchemaVersionUnsupported, "Database schema changed while opening.")),
             }?;
-            self.connection.execute_batch(MIGRATION_V29_SQL).map_err(database_error)
+            if self.schema_version()? < 29 { self.connection.execute_batch(MIGRATION_V29_SQL).map_err(database_error)?; }
+            self.convert_v30_data()?;
+            self.connection.execute_batch(MIGRATION_V30_SQL).map_err(database_error)?;
+            let owners: Vec<String> = {
+                let mut statement = self.connection.prepare("SELECT owner_id FROM current_mesocycles").map_err(database_error)?;
+                statement.query_map([], |row| row.get(0)).map_err(database_error)?.collect::<std::result::Result<_, _>>().map_err(database_error)?
+            };
+            for owner in owners { self.reconcile_plan_matches(&owner)?; }
+            Ok(())
         })();
         match migration {
             Ok(()) => self.connection.execute_batch("COMMIT").map_err(database_error),
@@ -741,6 +756,8 @@ impl SqliteStore {
         sql.push_str(MIGRATION_V27_SQL);
         sql.push_str(MIGRATION_V28_SQL);
         sql.push_str(MIGRATION_V29_SQL);
+        sql.push_str(MIGRATION_V30_SQL);
+        sql.push_str("INSERT INTO athria_migrations(version, applied_at) VALUES (31, CURRENT_TIMESTAMP);\n");
         sql.push_str("COMMIT;\n");
         self.connection.execute_batch(&sql).map_err(database_error)
     }
@@ -1436,11 +1453,10 @@ impl SqliteStore {
     /// Row counts for `AthriaRepository.counts()`; also used by the CLI and
     /// service doctor endpoints.
     pub fn counts(&self) -> Result<Value> {
-        const NAMES: [&str; 13] = [
+        const NAMES: [&str; 12] = [
             "profiles",
             "training_sessions",
             "training_session_sources",
-            "training_session_type_overrides",
             "plan_workout_matches",
             "workout_plan_exclusions",
             "planned_session_events",
@@ -1840,7 +1856,7 @@ mod tests {
                 "SELECT data, revision, updated_at FROM current_mesocycles WHERE owner_id='a'", [],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             ).unwrap();
-            assert_eq!(historical, (json!({"inputSnapshotHash": "original-hash"}).to_string(), 7, "original".to_owned()));
+            assert_eq!(historical, (json!({"inputSnapshotHash": "original-hash"}).to_string(), 9, "original".to_owned()));
             let data_version = store.data_version().unwrap();
             drop(store);
             let reopened = SqliteStore::open(&path).unwrap();
@@ -1858,7 +1874,7 @@ mod tests {
         {
             let store = SqliteStore::open(&path).unwrap();
             store.save_connection_sync_state(&before).unwrap();
-            store.connection.execute_batch("DROP TABLE daily_sync_attempts; DELETE FROM athria_migrations WHERE version=29;").unwrap();
+            store.connection.execute_batch("DROP TABLE daily_sync_attempts; ALTER TABLE training_sessions ADD COLUMN modality TEXT NOT NULL DEFAULT 'unknown'; CREATE TABLE training_session_type_overrides(owner_id TEXT, training_session_id TEXT, domain TEXT, updated_at TEXT); DELETE FROM athria_migrations WHERE version>=29;").unwrap();
         }
         let store = SqliteStore::open(&path).unwrap();
         assert_eq!(store.schema_version().unwrap(), SUPPORTED_SCHEMA_VERSION);
@@ -1912,7 +1928,7 @@ mod tests {
         let migrated = SqliteStore::open(&v24).unwrap();
         assert_eq!(migrated.schema_version().unwrap(), SUPPORTED_SCHEMA_VERSION);
         assert!(migrated.table_exists("plan_drafts").unwrap());
-        assert_eq!(migrated.data_version().unwrap(), 0);
+        assert_eq!(migrated.data_version().unwrap(), 2);
 
         let v25 = directory.path().join("v25.sqlite3");
         {
@@ -1922,7 +1938,7 @@ mod tests {
         }
         let migrated = SqliteStore::open(&v25).unwrap();
         assert_eq!(migrated.schema_version().unwrap(), SUPPORTED_SCHEMA_VERSION);
-        assert_eq!(migrated.data_version().unwrap(), 0);
+        assert_eq!(migrated.data_version().unwrap(), 3);
         assert_eq!(migrated.get_profile("default").unwrap().unwrap()["preferredName"], "Original");
 
         let v26 = directory.path().join("v26.sqlite3");
@@ -1939,7 +1955,7 @@ mod tests {
         let newer = directory.path().join("newer.sqlite3");
         {
             let store = SqliteStore::open(&newer).unwrap();
-            store.connection.execute("INSERT INTO athria_migrations(version, applied_at) VALUES (30, CURRENT_TIMESTAMP)", []).unwrap();
+            store.connection.execute("INSERT INTO athria_migrations(version, applied_at) VALUES (32, CURRENT_TIMESTAMP)", []).unwrap();
         }
         assert_eq!(
             SqliteStore::open(&newer).unwrap_err().code(),
@@ -2281,4 +2297,104 @@ mod tests {
         assert_eq!(counts["template_dismissals"], json!(1));
         assert_eq!(counts["training_sessions"], json!(0));
     }
+    #[test]
+    fn v30_classifies_history_from_every_supported_version_and_reopens_once() {
+        for version in 24..=29 {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("legacy.sqlite3");
+            {
+                let connection = Connection::open(&path).unwrap();
+                connection.execute_batch(SCHEMA_V25_SQL).unwrap();
+                if version == 24 { connection.execute_batch("DROP INDEX plan_drafts_owner_status; DROP TABLE plan_draft_weeks; DROP TABLE plan_drafts;").unwrap(); }
+                connection.execute("INSERT INTO athria_migrations VALUES (?1, 'original')", [version.min(25)]).unwrap();
+                connection.execute_batch("INSERT INTO vault_meta(id, database_uuid, format_version, updated_at) VALUES (1, 'legacy-uuid', 1, 'original');").unwrap();
+                if version >= 26 { connection.execute_batch(&migration_v26_sql()).unwrap(); }
+                if version >= 27 { connection.execute_batch(MIGRATION_V27_SQL).unwrap(); }
+                if version >= 28 { connection.execute_batch(MIGRATION_V28_SQL).unwrap(); }
+                if version >= 29 { connection.execute_batch(MIGRATION_V29_SQL).unwrap(); }
+                let record = json!({"id":"record-1","ownerId":"a","source":"intervals","externalId":"external-1","name":"Lunch Weight Training","sport":"WeightTraining","modality":"endurance","domains":["endurance"],"startAt":"2026-10-07T10:00:00Z","endAt":"2026-10-07T10:59:00Z","durationMinutes":59,"strengthSets":[],"endurance":{"averageHeartRate":130}});
+                connection.execute("INSERT INTO training_sessions VALUES ('record-1','a','intervals','external-1','endurance','2026-10-07T10:00:00Z',?1)", [record.to_string()]).unwrap();
+                connection.execute("INSERT INTO training_session_sources VALUES ('source-1','a','record-1','intervals','external-1','2026-10-07','2026-10-07T10:00:00Z',?1,'original','original')", [record.to_string()]).unwrap();
+                connection.execute_batch("INSERT INTO training_session_type_overrides VALUES ('a','record-1','endurance','original'); INSERT INTO workout_plan_exclusions VALUES ('a','record-1','original');").unwrap();
+                let planned = json!({"id":"planned-1","name":"Run","components":[],"scheduledDate":"2026-10-07","status":"planned","templateRef":{"id":"yoga-template","revision":3}});
+                let plan = json!({"revision":7,"mesocycle":{"weeks":[{"sessions":[planned.clone()]}]}});
+                connection.execute("INSERT INTO current_mesocycles VALUES ('a',?1,7,'original')", [plan.to_string()]).unwrap();
+                connection.execute_batch("INSERT INTO plan_workout_matches VALUES ('match-1','a','planned-1','record-1','manual',100,'legacy','{}','original');").unwrap();
+                let template = json!({"id":"yoga-template","name":"Yoga","intent":"practice","domain":"recovery","nodes":[{"role":"mobility","variables":["duration","movement"]}],"revision":3});
+                connection.execute("INSERT INTO session_templates VALUES ('yoga-template','a',?1,3,'original','original')", [template.to_string()]).unwrap();
+                if version >= 25 {
+                    connection.execute("INSERT INTO plan_drafts VALUES ('draft-1','a',?1,7,'snapshot',2,'active',NULL,'original','original')", [json!({"sessions":[planned.clone()]}).to_string()]).unwrap();
+                    connection.execute("INSERT INTO plan_draft_weeks VALUES ('draft-1',1,?1)", [json!({"sessions":[planned]}).to_string()]).unwrap();
+                }
+            }
+            let store = SqliteStore::open(&path).unwrap();
+            assert_eq!(store.schema_version().unwrap(), SUPPORTED_SCHEMA_VERSION);
+            assert!(!store.table_exists("training_session_type_overrides").unwrap());
+            let columns: Vec<String> = store.connection.prepare("PRAGMA table_info(training_sessions)").unwrap().query_map([], |row| row.get(1)).unwrap().collect::<std::result::Result<_, _>>().unwrap();
+            assert!(!columns.contains(&"modality".into()));
+            for table in ["training_sessions", "training_session_sources"] {
+                let raw: String = store.connection.query_row(&format!("SELECT data FROM {table}"), [], |row| row.get(0)).unwrap();
+                let value: Value = serde_json::from_str(&raw).unwrap();
+                assert_eq!(value["id"], "record-1");
+                assert_eq!(value["type"], "StrengthTraining");
+                assert_eq!(value["subtype"], Value::Null);
+                assert_eq!(value["domains"], json!(["strength"]));
+                assert!(value.get("sport").is_none() && value.get("modality").is_none());
+            }
+            let excluded: String = store.connection.query_row("SELECT training_session_id FROM workout_plan_exclusions", [], |row| row.get(0)).unwrap();
+            assert_eq!(excluded, "record-1");
+
+            let plan = store.get_current_plan("a").unwrap().unwrap();
+            assert_eq!(plan["revision"], 9);
+            let planned = &plan["mesocycle"]["weeks"][0]["sessions"][0];
+            assert_eq!(planned["type"], "StrengthTraining");
+            assert_eq!(planned["subtype"], Value::Null);
+            assert_eq!(planned["templateRef"]["revision"], 4);
+            assert_eq!(store.connection.query_row("SELECT method FROM plan_workout_matches", [], |row| row.get::<_,String>(0)).unwrap(), "manual");
+            let template: String = store.connection.query_row("SELECT data FROM session_templates", [], |row| row.get(0)).unwrap();
+            let template: Value = serde_json::from_str(&template).unwrap();
+            assert_eq!(template["domain"], "mind_body");
+            assert_eq!(template["revision"], 4);
+            athria_core::schema::parse_session_template(&template).unwrap();
+            if version >= 25 {
+                for table in ["plan_drafts", "plan_draft_weeks"] {
+                    let raw: String = store.connection.query_row(&format!("SELECT data FROM {table}"), [], |row| row.get(0)).unwrap();
+                    let draft: Value = serde_json::from_str(&raw).unwrap();
+                    assert_eq!(draft["sessions"][0]["type"], "StrengthTraining");
+                    assert_eq!(draft["sessions"][0]["templateRef"]["revision"], 4);
+                }
+                assert_eq!(store.connection.query_row("SELECT draft_revision FROM plan_drafts", [], |row| row.get::<_,i64>(0)).unwrap(), 4);
+            }
+            let revision = store.data_version().unwrap();
+            drop(store);
+            assert_eq!(SqliteStore::open(&path).unwrap().data_version().unwrap(), revision);
+        }
+    }
+
+    #[test]
+    fn v30_failure_rolls_back_documents_schema_and_data_version() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("broken.sqlite3");
+        {
+            let store = SqliteStore::open(&path).unwrap();
+            store.connection.execute_batch("ALTER TABLE training_sessions ADD COLUMN modality TEXT NOT NULL DEFAULT 'unknown'; CREATE TABLE training_session_type_overrides(owner_id TEXT, training_session_id TEXT, domain TEXT, updated_at TEXT); DELETE FROM athria_migrations WHERE version>=30; INSERT INTO profiles VALUES ('a','{invalid','original');").unwrap();
+            let record = json!({"id":"r","source":"manual","externalId":"e","name":"Weights","sport":"WeightTraining","startAt":"2026-10-07T10:00:00Z","endAt":"2026-10-07T11:00:00Z","durationMinutes":60});
+            store.connection.execute("INSERT INTO training_sessions(id,owner_id,source,external_id,start_at,data,modality) VALUES ('r','a','manual','e','2026-10-07T10:00:00Z',?1,'unknown')", [record.to_string()]).unwrap();
+        }
+        let before = Connection::open(&path).unwrap();
+        let revision: i64 = before.query_row("SELECT version FROM athria_data_version", [], |row| row.get(0)).unwrap();
+        drop(before);
+        assert!(SqliteStore::open(&path).is_err());
+        let after = Connection::open(&path).unwrap();
+        assert_eq!(after.query_row("SELECT MAX(version) FROM athria_migrations", [], |row| row.get::<_,i64>(0)).unwrap(), 29);
+        assert_eq!(after.query_row("SELECT version FROM athria_data_version", [], |row| row.get::<_,i64>(0)).unwrap(), revision);
+        assert_eq!(after.query_row("SELECT data FROM profiles", [], |row| row.get::<_,String>(0)).unwrap(), "{invalid");
+        let raw: String = after.query_row("SELECT data FROM training_sessions", [], |row| row.get(0)).unwrap();
+        let record: Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(record["sport"], "WeightTraining");
+        assert!(record.get("type").is_none());
+        assert!(after.prepare("SELECT modality FROM training_sessions").is_ok());
+        assert!(after.prepare("SELECT * FROM training_session_type_overrides").is_ok());
+    }
+
 }

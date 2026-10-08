@@ -90,7 +90,7 @@ pub fn builtin_session_templates() -> Vec<Value> {
         builtin(json!({
             "id": "builtin.mobility-reset", "name": "Mobility Reset",
             "intent": "Support recovery through low-load movement, mobility and down-regulation.",
-            "domain": "recovery",
+            "domain": "mobility",
             "nodes": [
                 { "role": "down_regulation", "variables": ["duration"] },
                 { "role": "mobility", "variables": ["body_region", "movement", "duration"] },

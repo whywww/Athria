@@ -9,7 +9,10 @@
         "source": "manual",
         "externalId": "m-1",
         "modality": "mixed",
-        "domains": [],
+        "domains": [
+          "strength",
+          "endurance"
+        ],
         "sport": null,
         "name": "m-1",
         "startAt": "2026-09-07T08:00:00Z",

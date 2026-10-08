@@ -1,7 +1,6 @@
 use std::path::Path;
 
 use athria_application::AthriaApplication;
-use athria_core::AdjustmentTrigger;
 use athria_store::SqliteStore;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
@@ -75,8 +74,8 @@ pub fn dispatch(
         ("POST", "/api/templates") => result(app.create_template(&input)),
         ("GET", "/api/plans/current") => result(app.get_current_plan()),
         ("GET", "/api/plans/adjustment-review") => {
-            result(app.review_current_plan_reminder(
-                AdjustmentTrigger::WeeklyReview,
+            result(app.review_scheduled_plan_reminder(
+                query(&url, "reviewedWeek").as_deref(),
                 query(&url, "acknowledgedContext").as_deref(),
             ))
         }
@@ -137,7 +136,6 @@ fn dispatch_resource(
     if matches!(segments,
         ["api", "training-sessions", _, "plan-match"]
         | ["api", "training-sessions", _, "automatic-match"]
-        | ["api", "training-sessions", _, "type"]
         | ["api", "training-sessions", _, "manual"]
         | ["api", "training-sessions", _]
     ) && method != "GET" && method != "PUT"
@@ -151,9 +149,6 @@ fn dispatch_resource(
         }
         ["api", "training-sessions", id, "automatic-match"] if method == "POST" => {
             result(app.clear_training_session_plan_exclusion(id, input))
-        }
-        ["api", "training-sessions", id, "type"] if method == "PATCH" => {
-            result(app.update_training_session_type(id, input))
         }
         ["api", "training-sessions", id, "manual"] if method == "PATCH" => {
             result(app.update_manual_training_session(id, input))

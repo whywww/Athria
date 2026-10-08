@@ -25,6 +25,7 @@ fn weekly_session_projection(session: &Value, status: &str) -> Value {
         "order": session["order"],
         "status": status,
         "templateRef": session["templateRef"],
+        "type": session["type"], "subtype": session["subtype"], "domain": session["domain"],
         "name": session["name"],
         "intent": session["intent"],
         "durationMinutes": session["durationMinutes"],
@@ -37,37 +38,19 @@ fn weekly_session_projection(session: &Value, status: &str) -> Value {
     })
 }
 
-/// `[...new Set(components.map(component => component.domain.value).filter(Boolean))]`
-fn component_domains(session: &Value) -> Vec<String> {
-    let mut domains: Vec<String> = Vec::new();
-    for component in array(session, "components") {
-        if let Some(domain) = component
-            .get("domain")
-            .and_then(|domain| domain.get("value"))
-            .and_then(Value::as_str)
-        {
-            if !domains.iter().any(|existing| existing == domain) {
-                domains.push(domain.to_string());
-            }
-        }
-    }
-    domains
-}
-
-/// `phaseRefs`: one reference per resolved component domain, resolved through
-/// the plan's domain progressions and the phase covering the week.
+/// Phase reference for the session's single resolved domain.
 fn phase_refs(plan: &Value, session: &Value, week_number: i64) -> Result<Value> {
     let progressions = plan
         .get("mesocycle")
         .and_then(|mesocycle| mesocycle.get("domainProgressions"))
         .and_then(Value::as_array);
     let mut refs = Vec::new();
-    for domain in component_domains(session) {
+    if let Some(domain) = athria_core::training_type::session_domain(session) {
         let progression = progressions
             .and_then(|items| {
                 items
                     .iter()
-                    .find(|item| text_or(item, "domain", "") == domain.as_str())
+                    .find(|item| text_or(item, "domain", "") == domain)
             })
             .ok_or_else(|| {
                 AthriaError::new(
@@ -158,6 +141,7 @@ fn project_session(
         "weekNumber": week_number,
         "phaseRefs": phase_refs(plan, session, week_number)?,
         "templateRef": session["templateRef"],
+        "type": session["type"], "subtype": session["subtype"], "domain": session["domain"],
         "name": session["name"],
         "intent": session["intent"],
         "recoveryDemand": session["recoveryDemand"],
@@ -458,10 +442,9 @@ mod tests {
     fn session(id: &str, scheduled_date: &str, order: i64, name: &str) -> Value {
         json!({
             "id": id, "scheduledDate": scheduled_date, "order": order, "status": "planned", "templateRef": null,
-            "name": name, "intent": "Aerobic base", "durationMinutes": 60, "recoveryDemand": "low", "keySession": false,
+            "name": name, "domain": "endurance", "intent": "Aerobic base", "durationMinutes": 60, "recoveryDemand": "low", "keySession": false,
             "components": [{
                 "id": format!("{id}-c1"), "name": "Run",
-                "domain": { "value": "endurance", "source": "user_confirmed", "confidence": 1, "evidence": "", "taxonomyVersion": "strength-2.0" },
                 "prescription": { "kind": "duration_only", "notes": "" },
             }],
             "progressionNote": null, "schedulingRationale": null, "legacySnapshot": false,
@@ -511,6 +494,9 @@ mod tests {
                 "weekNumber",
                 "phaseRefs",
                 "templateRef",
+                "type",
+                "subtype",
+                "domain",
                 "name",
                 "intent",
                 "recoveryDemand",

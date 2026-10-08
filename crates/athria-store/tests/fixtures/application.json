@@ -242,11 +242,9 @@
         "id": "compat-session",
         "externalId": "compat-session",
         "name": "Compat Run",
-        "modality": "endurance",
         "domains": [
           "endurance"
         ],
-        "sport": null,
         "startAt": "2026-09-15T22:00:00.000Z",
         "endAt": "2026-09-15T22:45:00.000Z",
         "durationMinutes": 45,
@@ -256,18 +254,20 @@
         "endurance": {
           "distanceMeters": 8000
         },
-        "missingFields": []
+        "missingFields": [],
+        "type": "Run",
+        "subtype": null
       },
       "expected": {
         "id": "compat-session",
         "ownerId": "local-user",
         "source": "manual",
         "externalId": "compat-session",
-        "modality": "endurance",
+        "type": "Run",
+        "subtype": null,
         "domains": [
           "endurance"
         ],
-        "sport": null,
         "name": "Compat Run",
         "startAt": "2026-09-15T22:00:00.000Z",
         "endAt": "2026-09-15T22:45:00.000Z",
@@ -307,14 +307,16 @@
           "endurance": 1,
           "sport_skill": 0,
           "mind_body": 0,
-          "recovery": 0
+          "mobility": 0,
+          "functional": 0
         },
         "durationMinutesByDomain": {
           "strength": 0,
           "endurance": 45,
           "sport_skill": 0,
           "mind_body": 0,
-          "recovery": 0
+          "mobility": 0,
+          "functional": 0
         },
         "sports": [],
         "metrics": {
@@ -662,13 +664,6 @@
                     {
                       "id": "run",
                       "name": "Run",
-                      "domain": {
-                        "value": "endurance",
-                        "source": "user_confirmed",
-                        "confidence": 1,
-                        "evidence": "compat fixture",
-                        "taxonomyVersion": "strength-2.0"
-                      },
                       "prescription": {
                         "kind": "duration_only",
                         "notes": ""
@@ -677,7 +672,10 @@
                   ],
                   "progressionNote": null,
                   "schedulingRationale": null,
-                  "legacySnapshot": false
+                  "legacySnapshot": false,
+                  "type": "Run",
+                  "subtype": null,
+                  "domain": "endurance"
                 }
               ]
             }
@@ -687,7 +685,7 @@
         "sourceAgent": "compat",
         "model": null,
         "skillVersion": "phase-5",
-        "inputSnapshotHash": "fnv1a-162736ac",
+        "inputSnapshotHash": "fnv1a-b123c445",
         "expectedRevision": 0
       },
       "expected": {
@@ -727,6 +725,9 @@
                 "focus": null,
                 "sessions": [
                   {
+                    "type": "Run",
+                    "domain": "endurance",
+                    "subtype": null,
                     "id": "compat-plan-session",
                     "scheduledDate": "2026-09-14",
                     "order": 0,
@@ -745,13 +746,6 @@
                       {
                         "id": "run",
                         "name": "Run",
-                        "domain": {
-                          "value": "endurance",
-                          "source": "user_confirmed",
-                          "confidence": 1,
-                          "evidence": "compat fixture",
-                          "taxonomyVersion": "strength-2.0"
-                        },
                         "prescription": {
                           "kind": "duration_only",
                           "notes": ""
@@ -771,7 +765,7 @@
           "sourceAgent": "compat",
           "model": null,
           "skillVersion": "phase-5",
-          "inputSnapshotHash": "fnv1a-162736ac",
+          "inputSnapshotHash": "fnv1a-b123c445",
           "updatedAt": "2026-09-17T04:00:00.000Z"
         },
         "validation": {
@@ -882,23 +876,6 @@
               "confidenceLimit": null
             },
             {
-              "enforcement": "blocker",
-              "reasonCode": "COMPONENT_PRESCRIPTION",
-              "status": "pass",
-              "rulePackId": "structure",
-              "ruleVersion": "0.3.0",
-              "subjectRefs": [
-                "compat-plan-session",
-                "run"
-              ],
-              "evidence": {
-                "domain": "endurance",
-                "prescription": "duration_only"
-              },
-              "missingFacts": [],
-              "confidenceLimit": null
-            },
-            {
               "enforcement": "info",
               "reasonCode": "STRENGTH_VOLUME_DISTRIBUTION",
               "status": "pass",
@@ -974,10 +951,10 @@
           ],
           "dataGaps": [],
           "validatedAt": "2026-09-17T04:00:00.000Z",
-          "inputHash": "fnv1a-a0b7d687",
+          "inputHash": "fnv1a-5e0c85ea",
           "coverage": {
-            "hardChecksResolved": 6,
-            "hardChecksTotal": 6,
+            "hardChecksResolved": 5,
+            "hardChecksTotal": 5,
             "movementFactsResolved": 0,
             "movementFactsTotal": 0,
             "muscleFactsResolved": 0,
@@ -1050,13 +1027,6 @@
                     {
                       "id": "run",
                       "name": "Run",
-                      "domain": {
-                        "value": "endurance",
-                        "source": "user_confirmed",
-                        "confidence": 1,
-                        "evidence": "compat fixture",
-                        "taxonomyVersion": "strength-2.0"
-                      },
                       "prescription": {
                         "kind": "duration_only",
                         "notes": ""
@@ -1065,7 +1035,10 @@
                   ],
                   "progressionNote": null,
                   "schedulingRationale": null,
-                  "legacySnapshot": false
+                  "legacySnapshot": false,
+                  "type": "Run",
+                  "subtype": null,
+                  "domain": "endurance"
                 }
               ]
             }
@@ -1075,7 +1048,7 @@
         "sourceAgent": "compat",
         "model": null,
         "skillVersion": "phase-5",
-        "inputSnapshotHash": "fnv1a-162736ac",
+        "inputSnapshotHash": "fnv1a-b123c445",
         "expectedRevision": 0
       },
       "error": {
@@ -1093,6 +1066,12 @@
       "expected": [
         {
           "id": "compat-plan-session",
+          "type": "Run",
+          "subtype": null,
+          "domain": "endurance",
+          "domains": [
+            "endurance"
+          ],
           "revision": 1,
           "scheduledDate": "2026-09-14",
           "order": 0,
@@ -1121,13 +1100,6 @@
             {
               "id": "run",
               "name": "Run",
-              "domain": {
-                "value": "endurance",
-                "source": "user_confirmed",
-                "confidence": 1,
-                "evidence": "compat fixture",
-                "taxonomyVersion": "strength-2.0"
-              },
               "prescription": {
                 "kind": "duration_only",
                 "notes": ""
@@ -1176,6 +1148,9 @@
               "id": "compat.tempo",
               "revision": 2
             },
+            "type": "Run",
+            "subtype": null,
+            "domain": "endurance",
             "name": "Easy Run",
             "intent": "Aerobic base",
             "recoveryDemand": "low",
@@ -1185,13 +1160,6 @@
               {
                 "id": "run",
                 "name": "Run",
-                "domain": {
-                  "value": "endurance",
-                  "source": "user_confirmed",
-                  "confidence": 1,
-                  "evidence": "compat fixture",
-                  "taxonomyVersion": "strength-2.0"
-                },
                 "prescription": {
                   "kind": "duration_only",
                   "notes": ""

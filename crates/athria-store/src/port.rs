@@ -87,14 +87,7 @@ impl AthriaStore for SqliteStore {
         SqliteStore::clear_training_session_plan_exclusion(self, owner_id, training_session_id)
     }
 
-    fn set_training_session_type_override(
-        &self,
-        owner_id: &str,
-        training_session_id: &str,
-        domain: &str,
-    ) -> Result<Value> {
-        SqliteStore::set_training_session_type_override(self, owner_id, training_session_id, domain)
-    }
+
 
     fn update_manual_training_session(
         &self,

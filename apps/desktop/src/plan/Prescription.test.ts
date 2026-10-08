@@ -20,7 +20,7 @@ const exercise: PlanExercise = {
 };
 
 const strength: PlanComponent = {
-  id: "strength", name: "Strength main block", domain: fact("strength"),
+  id: "strength", name: "Strength main block",
   prescription: { kind: "strength", exercises: [
     exercise,
     { ...exercise, id: "row", displayName: "Seated Row", targetRpe: null, referenceLoad: null, referenceLoadUnit: null, tempo: null, alternatives: [], notes: "", classification: { ...exercise.classification, primaryMovement: fact(null) } },
@@ -28,7 +28,7 @@ const strength: PlanComponent = {
 };
 
 const endurance: PlanComponent = {
-  id: "endurance", name: "Aerobic Intervals", domain: fact("endurance"),
+  id: "endurance", name: "Aerobic Intervals",
   prescription: { kind: "endurance", segments: [
     { type: "step", name: "Easy warm-up", role: "warm_up", durationSeconds: 600, distanceMeters: 1500, heartRateZone: "Zone 1–2", talkTest: "Full sentences" },
     { type: "repeat", name: "Controlled hard repeats", repetitions: 6, notes: "Stay smooth.",
@@ -39,7 +39,7 @@ const endurance: PlanComponent = {
 };
 
 const sport: PlanComponent = {
-  id: "sport", name: "Ball control session", domain: fact("sport_skill"),
+  id: "sport", name: "Ball control session",
   prescription: { kind: "sport_skill", sessionType: "practice", blocks: [
     { name: "Rondo 4v2", role: "technical", durationMinutes: 12, intensity: "Moderate", instructions: "Two-touch limit." },
     { name: "Small-sided games", role: "small_sided_game", durationMinutes: 20 },
@@ -47,14 +47,31 @@ const sport: PlanComponent = {
 };
 
 const recovery: PlanComponent = {
-  id: "recovery", name: "Down-regulation", domain: fact("recovery"),
-  prescription: { kind: "recovery", blocks: [{ name: "Box breathing", durationMinutes: 6, instructions: "Nasal breathing only." }] },
+  id: "recovery", name: "Down-regulation",
+  prescription: { kind: "mobility", blocks: [{ name: "Box breathing", durationMinutes: 6, instructions: "Nasal breathing only." }] },
 };
 
 describe("Prescription", () => {
+  it.each([strength, endurance, sport, recovery, { id: "duration", name: "Easy work", prescription: { kind: "duration_only", notes: "Stay easy" } } satisfies PlanComponent])("shows the session domain beside duration for $id content", (component) => {
+    const html = renderToStaticMarkup(createElement(Prescription, { component, sessionDomain: "functional", meta: "1 hr" }));
+    const aside = html.match(/<span class="rx-panel-aside">[\s\S]*?<span class="rx-panel-meta">1 hr<\/span><\/span>/)?.[0];
+
+    expect(html).toContain('class="rx-panel rx-panel-functional"');
+    expect(aside).toContain('data-domain-icon="functional"');
+    expect(aside).toContain(">Functional</span>");
+    expect(html).not.toContain(`data-domain-icon="${component.prescription.kind}"`);
+  });
+
+  it.each([null, undefined])("does not infer a domain from endurance content when the session domain is %s", (sessionDomain) => {
+    const html = renderToStaticMarkup(createElement(Prescription, { component: endurance, sessionDomain, meta: "1 hr" }));
+    expect(html).not.toContain('class="rx-domain"');
+    expect(html).not.toContain("data-domain-icon");
+    expect(html).toContain('class="rx-panel-meta">1 hr');
+  });
+
   it("renders the strength table with a rightmost notes column", () => {
     const html = render(strength);
-    for (const value of ["Strength main block", "2 exercises", 'data-domain-icon="strength"', "Sets × Reps", "Effort", "Romanian Deadlift", "Hinge", "3 × 8–10", "60 kg", "RPE 7", "2 min", "Tempo 3-1-1", "Alternatives: Good Morning", "Controlled", "rx-notes-cell"]) expect(html).toContain(value);
+    for (const value of ["Strength main block", "2 exercises", "Sets × Reps", "Effort", "Romanian Deadlift", "Hinge", "3 × 8–10", "60 kg", "RPE 7", "2 min", "Tempo 3-1-1", "Alternatives: Good Morning", "Controlled", "rx-notes-cell"]) expect(html).toContain(value);
     expect(html).not.toContain("rx-eyebrow");
     expect(html).toContain('role="columnheader">Notes</span>');
     expect(html).not.toContain("RIR");

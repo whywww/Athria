@@ -21,6 +21,7 @@ pub mod schedule;
 pub mod schema;
 pub mod scope_diff;
 pub mod tz;
+pub mod training_type;
 pub mod validation;
 pub mod vocab;
 

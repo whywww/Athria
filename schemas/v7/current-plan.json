@@ -125,7 +125,8 @@
                   "endurance",
                   "sport_skill",
                   "mind_body",
-                  "recovery"
+                  "mobility",
+                  "functional"
                 ]
               },
               "phases": {
@@ -353,92 +354,6 @@
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 100
-                          },
-                          "domain": {
-                            "type": "object",
-                            "properties": {
-                              "value": {
-                                "anyOf": [
-                                  {
-                                    "type": "string",
-                                    "enum": [
-                                      "strength",
-                                      "endurance",
-                                      "sport_skill",
-                                      "mind_body",
-                                      "recovery"
-                                    ]
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
-                              },
-                              "source": {
-                                "type": "string",
-                                "enum": [
-                                  "catalog",
-                                  "structured_source",
-                                  "exact_alias",
-                                  "ai_inferred",
-                                  "user_confirmed",
-                                  "migration"
-                                ]
-                              },
-                              "confidence": {
-                                "type": "number",
-                                "minimum": 0,
-                                "maximum": 1
-                              },
-                              "evidence": {
-                                "type": "string",
-                                "maxLength": 1000
-                              },
-                              "taxonomyVersion": {
-                                "type": "string",
-                                "const": "strength-2.0"
-                              },
-                              "conflicts": {
-                                "maxItems": 10,
-                                "type": "array",
-                                "items": {
-                                  "type": "object",
-                                  "properties": {
-                                    "source": {
-                                      "type": "string",
-                                      "enum": [
-                                        "catalog",
-                                        "structured_source",
-                                        "exact_alias",
-                                        "ai_inferred",
-                                        "user_confirmed",
-                                        "migration"
-                                      ]
-                                    },
-                                    "value": {},
-                                    "evidence": {
-                                      "type": "string",
-                                      "minLength": 1,
-                                      "maxLength": 1000
-                                    }
-                                  },
-                                  "required": [
-                                    "source",
-                                    "value",
-                                    "evidence"
-                                  ],
-                                  "additionalProperties": false
-                                }
-                              }
-                            },
-                            "required": [
-                              "value",
-                              "source",
-                              "confidence",
-                              "evidence",
-                              "taxonomyVersion"
-                            ],
-                            "additionalProperties": false
                           },
                           "prescription": {
                             "oneOf": [
@@ -1592,7 +1507,7 @@
                                 "properties": {
                                   "kind": {
                                     "type": "string",
-                                    "const": "recovery"
+                                    "const": "mobility"
                                   },
                                   "blocks": {
                                     "minItems": 1,
@@ -1689,6 +1604,48 @@
                                   "notes"
                                 ],
                                 "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "const": "functional"
+                                  },
+                                  "blocks": {
+                                    "minItems": 1,
+                                    "maxItems": 30,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "name": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 100
+                                        },
+                                        "durationMinutes": {
+                                          "type": "integer",
+                                          "exclusiveMinimum": 0,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "instructions": {
+                                          "type": "string",
+                                          "maxLength": 2000
+                                        }
+                                      },
+                                      "required": [
+                                        "name"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "blocks"
+                                ],
+                                "additionalProperties": false
                               }
                             ]
                           }
@@ -1696,7 +1653,6 @@
                         "required": [
                           "id",
                           "name",
-                          "domain",
                           "prescription"
                         ],
                         "additionalProperties": false
@@ -1729,6 +1685,34 @@
                     "legacySnapshot": {
                       "default": false,
                       "type": "boolean"
+                    },
+                    "type": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "subtype": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "domain": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "strength",
+                        "endurance",
+                        "sport_skill",
+                        "mind_body",
+                        "mobility",
+                        "functional",
+                        null
+                      ],
+                      "description": "Single whole-session domain. A recognized type determines it; otherwise an explicit domain may be supplied."
                     }
                   },
                   "required": [

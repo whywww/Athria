@@ -160,6 +160,7 @@ function DrawerPanel({ session, templates, plan, today, onClose, onMutated, retu
 
         <div className="sd-meta">
           <span className="sd-meta-item">Week {session.weekNumber}</span>
+          {session.type && <span className="sd-meta-item">{[session.type, session.subtype].filter(Boolean).join(" · ")}</span>}
           {phaseLabels.map((label) => <span className="sd-meta-item" key={label}>{label}</span>)}
         </div>
 
@@ -171,7 +172,7 @@ function DrawerPanel({ session, templates, plan, today, onClose, onMutated, retu
             {session.components.length > 0 ? (
               <div className="sd-prescriptions">
                 {session.components.map((component) => (
-                  <Prescription component={component} variant="detailed" fallbackNotes={session.intent} summary={session.intent} meta={formatDuration(session.durationMinutes)} key={component.id} />
+                  <Prescription component={component} sessionDomain={session.domain} variant="detailed" fallbackNotes={session.intent} summary={session.intent} meta={formatDuration(session.durationMinutes)} key={component.id} />
                 ))}
               </div>
             ) : (

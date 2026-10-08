@@ -267,7 +267,8 @@
 .rx-panel-endurance .rx-domain { color: var(--domain-endurance-ink); border-color: var(--domain-endurance-line); background: var(--domain-endurance-soft); }
 .rx-panel-sport_skill .rx-domain { color: var(--domain-sport_skill-ink); border-color: var(--domain-sport_skill-line); background: var(--domain-sport_skill-soft); }
 .rx-panel-mind_body .rx-domain { color: var(--domain-mind_body-ink); border-color: var(--domain-mind_body-line); background: var(--domain-mind_body-soft); }
-.rx-panel-recovery .rx-domain { color: var(--domain-recovery-ink); border-color: var(--domain-recovery-line); background: var(--domain-recovery-soft); }
+.rx-panel-mobility .rx-domain { color: var(--domain-mobility-ink); border-color: var(--domain-mobility-line); background: var(--domain-mobility-soft); }
+.rx-panel-functional .rx-domain { color: var(--domain-functional-ink); border-color: var(--domain-functional-line); background: var(--domain-functional-soft); }
 .rx-panel-chip { display: inline-flex; align-items: center; flex: 0 0 auto; padding: 2px 8px; border-radius: 999px; color: #284b78; background: #e9f0f8; font-size: 10px; font-weight: 650; white-space: nowrap; }
 .rx-domain-glyph { flex: 0 0 auto; width: 13px; height: 13px; }
 .rx-table { min-width: 0; }

@@ -1,17 +1,14 @@
 //! `trainingSessionSchema` and its nested shapes.
 //!
 //! Training-session schema parsing and normalization. A parsed session is
-//! a 21-key document in schema declaration order — the order every stored
+//! a 22-key document in schema declaration order — the order every stored
 //! `training_sessions.data` row and every session response serializes in.
 
 use serde_json::{Map, Value};
 
 use super::common::*;
 use crate::Result;
-use crate::vocab::DOMAIN_IDS;
 
-/// `modalitySchema`, kept only as source metadata on imported records.
-const MODALITIES: [&str; 5] = ["strength", "endurance", "recovery", "mixed", "unknown"];
 const TIME_PRECISIONS: [&str; 2] = ["exact", "date_only"];
 const WEIGHT_UNITS: [&str; 2] = ["kg", "lb"];
 
@@ -35,13 +32,10 @@ pub fn parse_training_session(value: &Value) -> Result<Value> {
         "externalId".into(),
         Value::String(required_text(value, "externalId", "session")?),
     );
-    let modality = enum_or(value, "modality", &MODALITIES, "");
-    if modality.is_empty() {
-        return Err(invalid("session.modality", "expected a modality"));
-    }
-    session.insert("modality".into(), Value::String(modality));
-    session.insert("domains".into(), domain_array(value, "domains"));
-    session.insert("sport".into(), text_or_null(value, "sport"));
+    let (kind, subtype) = crate::training_type::fields(value);
+    session.insert("type".into(), kind.clone());
+    session.insert("subtype".into(), subtype);
+    session.insert("domains".into(), crate::training_type::domains(kind.as_str()));
     session.insert(
         "name".into(),
         Value::String(required_text(value, "name", "session")?),
@@ -89,12 +83,6 @@ pub fn parse_training_session(value: &Value) -> Result<Value> {
     session.insert("endurance".into(), parse_endurance(value));
     session.insert("missingFields".into(), string_array(value, "missingFields"));
     Ok(Value::Object(session))
-}
-
-/// `z.array(domainSchema)`/`z.array(z.string())` as a reader: entries outside
-/// the vocabulary are dropped, like the other array readers in this module.
-fn domain_array(value: &Value, key: &str) -> Value {
-    enum_array_or(value, key, &DOMAIN_IDS, &[])
 }
 
 fn string_array(value: &Value, key: &str) -> Value {
@@ -221,9 +209,8 @@ mod tests {
 
     fn write_payload() -> Value {
         json!({
-            "modality": "strength",
+            "type": "StrengthTraining",
             "domains": ["strength"],
-            "sport": null,
             "name": "Lower Strength",
             "startAt": "2026-09-17T04:00:00.000Z",
             "endAt": "2026-09-17T05:00:00.000Z",
@@ -255,9 +242,9 @@ mod tests {
                 "ownerId",
                 "source",
                 "externalId",
-                "modality",
+                "type",
+                "subtype",
                 "domains",
-                "sport",
                 "name",
                 "startAt",
                 "endAt",
@@ -309,7 +296,6 @@ mod tests {
     #[test]
     fn missing_required_fields_are_rejected() {
         for key in [
-            "modality",
             "name",
             "startAt",
             "endAt",
@@ -326,4 +312,25 @@ mod tests {
             );
         }
     }
+    #[test]
+    fn classification_ignores_metrics_and_legacy_overrides_with_type_priority() {
+        let mut value = write_payload();
+        value["type"] = json!("WeightTraining");
+        value["sport"] = json!("Swim");
+        value["modality"] = json!("endurance");
+        value["domains"] = json!(["endurance"]);
+        value["subtype"] = json!("weighttraining");
+        value["strengthSets"] = json!([]);
+        value["endurance"] = json!({"averageHeartRate":130});
+        let session = parse_training_session(&value).unwrap();
+        assert_eq!(session["type"], "StrengthTraining");
+        assert_eq!(session["subtype"], Value::Null);
+        assert_eq!(session["domains"], json!(["strength"]));
+        assert!(session.get("modality").is_none() && session.get("sport").is_none());
+        value["type"] = Value::Null;
+        assert_eq!(parse_training_session(&value).unwrap()["type"], "Swim");
+        value["type"] = json!("Unknown");
+        assert_eq!(parse_training_session(&value).unwrap()["domains"], json!([]));
+    }
+
 }

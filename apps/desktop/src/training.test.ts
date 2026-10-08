@@ -7,10 +7,10 @@ import { Timeline } from "./App";
 import type { AthleteProfile, CalendarSession, TrainingHistorySession } from "./view-models";
 
 const profile: AthleteProfile = { ownerId: "local-user", preferredName: "Hailey", gender: null, heightCm: null, birthDate: null, timezone: "UTC", goals: [], preference: "", usualSessionMinutes: 60, trainingRhythm: { kind: "flexible_week", targetDaysPerWeek: 4, minDaysPerWeek: 3, maxDaysPerWeek: 5 }, equipment: [], injuries: [], constraintNotes: [], explicitRecoveryDays: null, mesocycleDurationWeeks: 8, unitSystem: "metric", raceDays: [] };
-const session: TrainingHistorySession = { id: "workout-1", name: "Morning Stretch", startAt: "2026-09-05T12:00:00Z", timezone: "UTC", domains: ["mind_body"], sport: "Yoga", durationMinutes: 15, source: "manual", timePrecision: "date_only", sources: [{ source: "manual", externalId: "manual-1" }], plannedSessionId: "plan-1", planMatch: { plannedSessionId: "plan-1", method: "manual" }, isPlanMatchExcluded: false };
-const unmatched: TrainingHistorySession = { ...session, id: "workout-2", name: "Easy Run", startAt: "2026-09-04T08:00:00Z", domains: ["endurance"], sport: "Running", source: "intervals", timePrecision: "exact", sources: [{ source: "intervals", externalId: "run-1" }], plannedSessionId: null, planMatch: null };
+const session: TrainingHistorySession = { id: "workout-1", name: "Morning Stretch", startAt: "2026-09-05T12:00:00Z", timezone: "UTC", domains: ["mind_body"], type: "Yoga", subtype: null, durationMinutes: 15, source: "manual", timePrecision: "date_only", sources: [{ source: "manual", externalId: "manual-1" }], plannedSessionId: "plan-1", planMatch: { plannedSessionId: "plan-1", method: "manual" }, isPlanMatchExcluded: false };
+const unmatched: TrainingHistorySession = { ...session, id: "workout-2", name: "Easy Run", startAt: "2026-09-04T08:00:00Z", domains: ["endurance"], type: "Running", subtype: null, source: "intervals", timePrecision: "exact", sources: [{ source: "intervals", externalId: "run-1" }], plannedSessionId: null, planMatch: null };
 const mixed: TrainingHistorySession = { ...session, id: "workout-3", name: "Mixed source workout", source: "intervals", sources: [{ source: "manual", externalId: "manual-3" }, { source: "intervals", externalId: "synced-3" }] };
-const planned = [{ id: "plan-1", scheduledDate: "2026-09-05", name: "Daily Mobility - v2", status: "completed", components: [{ domain: { value: "mind_body" } }], completedTrainingSessionId: "workout-1" }] as CalendarSession[];
+const planned = [{ id: "plan-1", scheduledDate: "2026-09-05", name: "Daily Mobility - v2", status: "completed", domain: "mind_body", components: [], completedTrainingSessionId: "workout-1" }] as unknown as CalendarSession[];
 
 function renderTimeline() {
   const client = new QueryClient();
@@ -37,8 +37,9 @@ describe("Training history", () => {
     expect(html).toContain('class="training-plan-mark matched"');
     expect(html).toContain('aria-label="Easy Run is not matched to a planned session"');
     expect(html).toContain(">-</option>");
-    expect(html).toContain('aria-label="Change type for Morning Stretch"');
-    expect(html).toContain('aria-label="Change type for Morning Stretch">Mind-body</button>');
+    expect(html).not.toContain('aria-label="Change type for Morning Stretch"');
+    expect(html).toContain('class="training-type-badge mind_body">Mind-body</span>');
+    expect(html).not.toContain("training-type-options");
     expect(html).toContain("Manual");
     expect(html.match(/<div class="training-source-cell"><span>Manual<\/span><\/div>/g)).toHaveLength(1);
     expect(html.match(/<div class="training-source-cell"><span>Intervals\.icu<\/span><\/div>/g)).toHaveLength(2);

@@ -84,7 +84,7 @@
             ]
           },
           {
-            "domain": "recovery",
+            "domain": "mobility",
             "phases": [
               {
                 "id": "recovery-base",
@@ -118,13 +118,6 @@
                   {
                     "id": "dup-component",
                     "name": "Strength",
-                    "domain": {
-                      "value": "strength",
-                      "source": "user_confirmed",
-                      "confidence": 1,
-                      "evidence": "golden fixture",
-                      "taxonomyVersion": "strength-2.0"
-                    },
                     "prescription": {
                       "kind": "strength",
                       "exercises": [
@@ -260,13 +253,6 @@
                   {
                     "id": "dup-component",
                     "name": "Recovery",
-                    "domain": {
-                      "value": "recovery",
-                      "source": "user_confirmed",
-                      "confidence": 1,
-                      "evidence": "golden fixture",
-                      "taxonomyVersion": "strength-2.0"
-                    },
                     "prescription": {
                       "kind": "duration_only",
                       "notes": ""
@@ -275,7 +261,8 @@
                 ],
                 "progressionNote": null,
                 "schedulingRationale": null,
-                "legacySnapshot": false
+                "legacySnapshot": false,
+                "domain": null
               }
             ]
           }
@@ -368,16 +355,13 @@
       {
         "enforcement": "blocker",
         "reasonCode": "DOMAIN_PROGRESSION",
-        "status": "pass",
+        "status": "fail",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
         "evidence": {
           "durationWeeks": 1,
-          "sessionDomains": [
-            "strength",
-            "recovery"
-          ],
+          "sessionDomains": [],
           "progressions": [
             {
               "domain": "strength",
@@ -394,7 +378,7 @@
               ]
             },
             {
-              "domain": "recovery",
+              "domain": "mobility",
               "phases": [
                 {
                   "id": "recovery-base",
@@ -413,20 +397,18 @@
         "confidenceLimit": null
       },
       {
-        "enforcement": "blocker",
-        "reasonCode": "COMPONENT_PRESCRIPTION",
-        "status": "pass",
+        "enforcement": "info",
+        "reasonCode": "SESSION_DOMAIN_MISSING",
+        "status": "unknown",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [
-          "mon-strength",
-          "dup-component"
+          "mon-strength"
         ],
-        "evidence": {
-          "domain": "strength",
-          "prescription": "strength"
-        },
-        "missingFacts": [],
+        "evidence": {},
+        "missingFacts": [
+          "domain"
+        ],
         "confidenceLimit": null
       },
       {
@@ -540,23 +522,6 @@
           "required": 0.9,
           "observed": 1
         }
-      },
-      {
-        "enforcement": "blocker",
-        "reasonCode": "COMPONENT_PRESCRIPTION",
-        "status": "pass",
-        "rulePackId": "structure",
-        "ruleVersion": "0.3.0",
-        "subjectRefs": [
-          "mon-strength",
-          "dup-component"
-        ],
-        "evidence": {
-          "domain": "recovery",
-          "prescription": "duration_only"
-        },
-        "missingFacts": [],
-        "confidenceLimit": null
       },
       {
         "enforcement": "info",
@@ -638,12 +603,21 @@
         "confidenceLimit": null
       }
     ],
-    "dataGaps": [],
+    "dataGaps": [
+      {
+        "code": "SESSION_DOMAIN_MISSING",
+        "subjectRef": "mon-strength",
+        "factPath": "domain",
+        "requiredByRuleCodes": [],
+        "blocking": false,
+        "resolution": "agent_infer"
+      }
+    ],
     "validatedAt": "2026-09-17T10:30:00.000Z",
-    "inputHash": "fnv1a-626db5e6",
+    "inputHash": "fnv1a-a44d4bdd",
     "coverage": {
-      "hardChecksResolved": 9,
-      "hardChecksTotal": 9,
+      "hardChecksResolved": 7,
+      "hardChecksTotal": 7,
       "movementFactsResolved": 2,
       "movementFactsTotal": 2,
       "muscleFactsResolved": 2,

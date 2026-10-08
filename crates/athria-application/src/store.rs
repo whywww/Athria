@@ -121,12 +121,6 @@ pub trait AthriaStore {
         owner_id: &str,
         training_session_id: &str,
     ) -> Result<Value>;
-    fn set_training_session_type_override(
-        &self,
-        owner_id: &str,
-        training_session_id: &str,
-        domain: &str,
-    ) -> Result<Value>;
     fn update_manual_training_session(
         &self,
         owner_id: &str,

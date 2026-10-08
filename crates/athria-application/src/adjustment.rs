@@ -19,6 +19,25 @@ use serde_json::{Value, json};
 use crate::{AthriaApplication, AthriaStore};
 
 impl<S: AthriaStore> AthriaApplication<S> {
+    /// Review the last completed week on the first opening of this local week.
+    /// Subsequent automatic requests still check fresh Profile/plan conflicts.
+    pub fn review_scheduled_plan_reminder(
+        &self,
+        reviewed_week: Option<&str>,
+        acknowledged_context: Option<&str>,
+    ) -> Result<athria_core::AdjustmentReminder> {
+        let profile = self.get_profile()?;
+        let state = self.get_training_state()?;
+        let today = tz::local_date(state["asOf"].as_str().unwrap_or(""), profile["timezone"].as_str().unwrap_or("UTC"))?;
+        let week_start = add_days(&today, -(monday_weekday(&today) as i64));
+        let trigger = if reviewed_week == Some(week_start.as_str()) {
+            AdjustmentTrigger::ProfileChange
+        } else {
+            AdjustmentTrigger::WeeklyReview
+        };
+        self.review_current_plan_reminder(trigger, acknowledged_context)
+    }
+
     /// Applies the pure reminder policy to a fresh assessment. Acknowledgement
     /// storage remains a caller concern and is not persisted as plan state.
     pub fn review_current_plan_reminder(
@@ -47,7 +66,12 @@ impl<S: AthriaStore> AthriaApplication<S> {
         let now = state["asOf"].as_str().unwrap_or("");
         let timezone = profile["timezone"].as_str().unwrap_or("UTC");
         let today = tz::local_date(now, timezone)?;
-        let calendar = self.get_calendar(None, Some(&today))?;
+        let review_end = if trigger == AdjustmentTrigger::WeeklyReview {
+            add_days(&today, -(monday_weekday(&today) as i64) - 1)
+        } else {
+            today.clone()
+        };
+        let calendar = self.get_calendar(None, Some(&review_end))?;
 
         let validation = validate_plan(
             &profile,
@@ -61,7 +85,7 @@ impl<S: AthriaStore> AthriaApplication<S> {
         let weekly_review = if trigger == AdjustmentTrigger::ProfileChange {
             None
         } else {
-            Some(self.weekly_review_facts(&profile, &today, &calendar)?)
+            Some(self.weekly_review_facts(&profile, &review_end, &calendar, trigger != AdjustmentTrigger::WeeklyReview)?)
         };
 
         Ok(assess_adjustment(&AdjustmentInput {
@@ -115,6 +139,7 @@ impl<S: AthriaStore> AthriaApplication<S> {
         profile: &Value,
         today: &str,
         calendar: &[Value],
+        exclude_pending_today: bool,
     ) -> Result<WeeklyReviewFacts> {
         let week_start = add_days(today, -(monday_weekday(today) as i64));
         let current: Vec<&Value> = calendar
@@ -123,6 +148,8 @@ impl<S: AthriaStore> AthriaApplication<S> {
                 session["scheduledDate"]
                     .as_str()
                     .is_some_and(|date| date >= week_start.as_str() && date <= today)
+                    && (!exclude_pending_today || session["scheduledDate"].as_str() != Some(today)
+                        || matches!(session["status"].as_str(), Some("completed" | "skipped")))
             })
             .collect();
         let sessions = current
@@ -272,12 +299,7 @@ fn profile_change_facts(profile: &Value, plan: &Value, results: &[Value]) -> Pro
 }
 
 fn session_domain(session: &Value) -> Option<String> {
-    session["components"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .find_map(|component| component["domain"]["value"].as_str())
-        .map(str::to_owned)
+    athria_core::training_type::session_domain(session).map(str::to_owned)
 }
 
 fn plan_modalities(plan: &Value) -> Vec<GoalModality> {
@@ -298,9 +320,10 @@ fn plan_modalities(plan: &Value) -> Vec<GoalModality> {
             Some("sport_skill") => {
                 modalities.insert(GoalModality::SportSkill);
             }
-            Some("recovery") => {
+            Some("mobility") => {
                 modalities.insert(GoalModality::Recovery);
             }
+            Some("functional") => { modalities.insert(GoalModality::GeneralFitness); }
             Some("mind_body") => {
                 modalities.insert(GoalModality::MindBody);
             }
@@ -336,6 +359,8 @@ fn normalize_modality(value: &str) -> GoalModality {
         || value.contains("triathlon")
     {
         GoalModality::Endurance
+    } else if value.contains("functional") || value.contains("hyrox") || value.contains("crossfit") || value.contains("hiit") {
+        GoalModality::GeneralFitness
     } else if value.contains("strength") || value.contains("powerlifting") {
         GoalModality::Strength
     } else if value.contains("recovery") || value.contains("mobility") {

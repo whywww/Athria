@@ -188,44 +188,16 @@ pub fn calculate_heart_rate_zones(max_heart_rate: f64) -> Result<MetricResult> {
     ))
 }
 
-/// Domain resolution mirrors the TypeScript helper: declared domains win, and
-/// a session with none is classified from its populated details.
+/// Domains are authoritative type classifications; metric payloads never infer them.
 fn session_domains(session: &Value) -> Vec<String> {
-    let declared: Vec<String> = session
-        .get("domains")
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(Value::as_str)
-                .map(str::to_string)
-                .collect()
-        })
-        .unwrap_or_default();
-    if !declared.is_empty() {
-        return declared;
-    }
-    let mut derived = Vec::new();
-    if session
-        .get("strengthSets")
-        .and_then(Value::as_array)
-        .is_some_and(|sets| !sets.is_empty())
-    {
-        derived.push("strength".to_string());
-    }
-    if !field(session, "endurance").is_null() {
-        derived.push("endurance".to_string());
-    }
-    derived
+    session.get("domains").and_then(Value::as_array).map(|items| items.iter().filter_map(Value::as_str).map(str::to_owned).collect()).unwrap_or_default()
 }
 
 pub fn calculate_training_metrics(sessions: &[Value]) -> TrainingMetrics {
     let strength_sessions: Vec<&Value> = sessions
         .iter()
         .filter(|session| {
-            session_domains(session)
-                .iter()
-                .any(|domain| domain == "strength")
+            !array_field(session, "strengthSets").is_empty()
         })
         .collect();
     let endurance_sessions: Vec<&Value> = sessions
@@ -234,7 +206,7 @@ pub fn calculate_training_metrics(sessions: &[Value]) -> TrainingMetrics {
             let domains = session_domains(session);
             domains
                 .iter()
-                .any(|domain| domain == "endurance" || domain == "recovery")
+                .any(|domain| domain == "endurance")
         })
         .collect();
 
@@ -418,7 +390,7 @@ mod tests {
     fn training_metrics_skip_warmups_and_join_zone_records() {
         let sessions = vec![json!({
             "source": "hevy", "startAt": "2026-09-07T08:00:00.000Z", "endAt": "2026-09-07T09:00:00.000Z",
-            "domains": [], "durationMinutes": 60,
+            "domains": ["strength"], "durationMinutes": 60,
             "strengthSets": [
                 { "setType": "warmup", "weight": 40, "reps": 10, "primaryMuscles": ["chest"], "secondaryMuscles": [] },
                 { "setType": "normal", "weight": 100, "reps": 5, "primaryMuscles": ["chest"], "secondaryMuscles": ["triceps"] }

@@ -158,32 +158,26 @@ pub fn normalize_xunji_training(record: &Value) -> Result<Value> {
         .and_then(Value::as_array)
         .map(|items| items.iter().filter_map(Value::as_object).collect())
         .unwrap_or_default();
-    let cardio: Vec<_> = movements
-        .iter()
-        .filter(|item| {
-            item.get("cardio") == Some(&Value::Bool(true))
-                || item.get("metrics").is_some_and(Value::is_object)
-        })
-        .copied()
-        .collect();
-    let strength: Vec<_> = movements
-        .iter()
-        .filter(|item| {
-            item.get("sets")
-                .and_then(Value::as_array)
-                .is_some_and(|sets| !sets.is_empty())
-                && item.get("cardio") != Some(&Value::Bool(true))
-        })
-        .copied()
-        .collect();
-    let modality = if !cardio.is_empty() && !strength.is_empty() {
-        "mixed"
-    } else if !cardio.is_empty() {
-        "endurance"
+    let is_cardio = |item: &Map<String, Value>| {
+        item.get("cardio") == Some(&Value::Bool(true)) || item.get("recordPreset")
+            .and_then(Value::as_str).or_else(|| item.get("name").and_then(Value::as_str))
+            .and_then(athria_core::training_type::classify).is_some_and(|(_, _, domain)| domain == "endurance")
+    };
+    let cardio: Vec<_> = movements.iter().filter(|item| is_cardio(item)).copied().collect();
+    let strength: Vec<_> = movements.iter().filter(|item| {
+        item.get("sets").and_then(Value::as_array).is_some_and(|sets| !sets.is_empty()) && !is_cardio(item)
+    }).copied().collect();
+    let kind = if !cardio.is_empty() && !strength.is_empty() {
+        Some("FunctionalTraining")
     } else if !strength.is_empty() {
-        "strength"
+        Some("StrengthTraining")
     } else {
-        "unknown"
+        let kinds: Vec<_> = cardio.iter().map(|movement| {
+            movement.get("recordPreset").and_then(Value::as_str).filter(|value| !value.trim().is_empty())
+                .or_else(|| movement.get("name").and_then(Value::as_str))
+                .and_then(|raw| athria_core::training_type::classify(raw).map(|(kind, _, _)| (raw, kind)))
+        }).collect();
+        kinds.first().copied().flatten().filter(|(_, kind)| kinds.iter().all(|candidate| candidate.is_some_and(|(_, candidate)| candidate == *kind))).map(|(raw, _)| raw)
     };
     let mut missing = Vec::new();
     let start_ms = finite(object.get("start"))
@@ -294,8 +288,7 @@ pub fn normalize_xunji_training(record: &Value) -> Result<Value> {
             ))
         });
     parse_training_session(
-        &json!({ "id": format!("xunji:{external}"), "source": "xunji", "externalId": external, "modality": modality,
-        "sport": cardio.first().map(|movement| movement.get("recordPreset").or_else(|| movement.get("name")).and_then(Value::as_str).unwrap_or("cardio")).map(Value::from).unwrap_or(Value::Null),
+        &json!({ "id": format!("xunji:{external}"), "source": "xunji", "externalId": external, "type": kind,
         "name": object.get("title").or_else(|| object.get("name")).and_then(Value::as_str).unwrap_or("Xunji workout"),
         "startAt": tz::iso_from_millis(start_ms), "endAt": tz::iso_from_millis(end_ms), "durationMinutes": ((end_ms - start_ms) as f64 / 60_000.0).round().max(0.0) as i64,
         "status": "completed", "timezone": null, "strengthSets": sets,

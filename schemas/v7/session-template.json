@@ -428,7 +428,7 @@
         },
         "domain": {
           "type": "string",
-          "const": "recovery"
+          "const": "mobility"
         },
         "nodes": {
           "minItems": 1,
@@ -569,6 +569,128 @@
                     "duration",
                     "intensity",
                     "instructions"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "role",
+              "variables"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "intent",
+        "domain",
+        "nodes"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "intent": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "domain": {
+          "type": "string",
+          "const": "functional"
+        },
+        "nodes": {
+          "minItems": 1,
+          "maxItems": 30,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "primary",
+                  "secondary",
+                  "accessory",
+                  "trunk",
+                  "warm_up",
+                  "steady",
+                  "repeat_work_recovery",
+                  "cool_down"
+                ]
+              },
+              "optional": {
+                "type": "boolean",
+                "const": true
+              },
+              "variables": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "exercise_selection",
+                    "sets",
+                    "load",
+                    "rest",
+                    "tempo",
+                    "alternatives",
+                    "repetitions",
+                    "duration",
+                    "distance",
+                    "pace",
+                    "heart_rate_zone",
+                    "power",
+                    "cadence",
+                    "rpe",
+                    "talk_test",
+                    "terrain",
+                    "strides",
+                    "recovery_mode"
+                  ]
+                }
+              },
+              "optionalVariables": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "exercise_selection",
+                    "sets",
+                    "load",
+                    "rest",
+                    "tempo",
+                    "alternatives",
+                    "repetitions",
+                    "duration",
+                    "distance",
+                    "pace",
+                    "heart_rate_zone",
+                    "power",
+                    "cadence",
+                    "rpe",
+                    "talk_test",
+                    "terrain",
+                    "strides",
+                    "recovery_mode"
                   ]
                 }
               }

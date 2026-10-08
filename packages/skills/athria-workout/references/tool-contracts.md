@@ -32,3 +32,5 @@ Immediately before any write, re-read the record or plan state that supplies its
 For `override_training_session_plan_match`, `allow_automatic_plan_match`, `update_manual_training_session`, and `remove_manual_training_source`, copy `snapshotHash` from the selected workout in `list_training_sessions` into `expectedSnapshotHash`. If Athria reports a conflict, list the workouts again before proposing another write.
 
 Every write is bounded to the exact workout action the user approved. If fulfilling the request needs changes to the complete cycle structure or progression, stop and hand off to the training planner.
+
+Planned sessions own one activity `type` and one scalar `domain`. Components contain `id`, `name`, and `prescription`, with no domain field. Classify the whole session; prescription kinds describe its content and do not change its domain.

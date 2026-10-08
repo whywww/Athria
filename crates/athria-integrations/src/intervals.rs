@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use athria_core::{Result, date, schema::parse_training_session, tz};
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use serde_json::{Map, Value, json};
@@ -14,44 +12,6 @@ fn finite(value: Option<&Value>) -> Option<f64> {
             text.parse().ok().filter(|value: &f64| value.is_finite())
         }
         _ => None,
-    }
-}
-
-pub fn interval_modality(value: Option<&Value>) -> &'static str {
-    let normalized: String = value
-        .filter(|value| !value.is_null())
-        .map(|value| {
-            value
-                .as_str()
-                .map(str::to_owned)
-                .unwrap_or_else(|| value.to_string())
-        })
-        .unwrap_or_default()
-        .to_ascii_lowercase()
-        .chars()
-        .filter(char::is_ascii_alphanumeric)
-        .collect();
-    let strength = HashSet::from(["strengthtraining", "weighttraining"]);
-    let endurance = HashSet::from(["hike", "ride", "rowing", "run", "swim", "walk"]);
-    let mixed = HashSet::from([
-        "crossfit",
-        "functionalstrengthtraining",
-        "functionaltraining",
-        "highintensityintervaltraining",
-        "hiit",
-        "hyrox",
-    ]);
-    let recovery = HashSet::from(["mobility", "pilates", "recovery", "stretching", "yoga"]);
-    if strength.contains(normalized.as_str()) {
-        "strength"
-    } else if endurance.contains(normalized.as_str()) {
-        "endurance"
-    } else if mixed.contains(normalized.as_str()) {
-        "mixed"
-    } else if recovery.contains(normalized.as_str()) {
-        "recovery"
-    } else {
-        "unknown"
     }
 }
 
@@ -85,7 +45,9 @@ pub fn normalize_intervals_activity(item: &Value, resource: &str, timezone: &str
     } else {
         0
     };
-    let kind = object.get("type").or_else(|| object.get("sport"));
+    let valid_type = |value: &&Value| value.as_str().is_some_and(|text| !text.trim().is_empty());
+    let kind = object.get("type").filter(valid_type)
+        .or_else(|| object.get("sport").filter(valid_type));
     let external = object
         .get("id")
         .or_else(|| object.get("external_id"))
@@ -116,10 +78,9 @@ pub fn normalize_intervals_activity(item: &Value, resource: &str, timezone: &str
         .or(kind)
         .map(text)
         .unwrap_or_else(|| "Intervals activity".into());
-    let sport = kind.map(text).map(Value::String).unwrap_or(Value::Null);
     parse_training_session(&json!({
         "id": format!("intervals:{resource}:{external}"), "source": "intervals", "externalId": format!("{resource}:{external}"),
-        "modality": interval_modality(kind), "sport": sport, "name": name,
+        "type": kind, "name": name,
         "startAt": tz::iso_from_millis(start_ms), "endAt": tz::iso_from_millis(start_ms + minutes * 60_000), "durationMinutes": minutes,
         "timezone": if local_timezone { json!(timezone) } else { Value::Null },
         "status": "completed", "missingFields": if duration_value.is_none() { json!(["duration"]) } else { json!([]) },

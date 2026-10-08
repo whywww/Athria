@@ -59,6 +59,8 @@ In short:
 1. **Install Athria**  
    Current development builds target Windows x64 and Apple Silicon macOS. If you want to build from source, see [Potential contributors](#potential-contributors).
 
+   Windows may display a SmartScreen warning because the application is not code-signed.
+
 2. **Add your basic information**  
    In Profile page, enter your training goals, schedule, equipment, and other information you want an AI to consider.
 
@@ -66,7 +68,7 @@ In short:
    In Connections page, connect one of the currently supported training data sources to import existing records, or ask your AI agents to import for you.
 
 4. **Connect your AI**  
-   Athria can connect to ChatGPT, Claude, and other compatible AI clients. Follow the connection guidance in the app. Technical details are available in [docs/MCP.md](docs/MCP.md).
+   Athria can connect to ChatGPT, Claude, and other compatible AI clients. Follow the connection guidance in the app. Technical details are available in the [MCP interface guide](docs/developer/mcp.md).
 
 5. **Start using it**  
    Your AI can now use Athria data and training tools within the access you allow.
@@ -114,7 +116,7 @@ See [Known limitations](docs/KNOWN_LIMITATIONS.md) for the complete current boun
 
 ### Help and feedback
 
-- [AI connection and MCP workflows](docs/MCP.md)
+- [AI connection and MCP workflows](docs/developer/mcp.md)
 - [Known limitations](docs/KNOWN_LIMITATIONS.md)
 - [GitHub Issues](https://github.com/whywww/Athria/issues) for bugs and feature requests
 
@@ -160,6 +162,8 @@ Athria 不绑定特定的 AI。你可以继续使用自己选择的 AI，Athria 
 1. **安装 Athria**  
    当前开发版本支持 Windows x64 和 Apple Silicon macOS。如果需要从源码运行，请查看下方的[潜在贡献者](#potential-contributors)部分。
 
+   由于应用尚未进行代码签名，Windows 可能会显示 SmartScreen 警告。
+
 2. **填写基本信息**  
    在档案页中，添加你的训练目标、时间安排、器材和其他希望 AI 在提供建议时考虑的信息。
 
@@ -167,7 +171,7 @@ Athria 不绑定特定的 AI。你可以继续使用自己选择的 AI，Athria 
    在连接页中，你可以连接目前支持的训练数据来源，导入已有记录，或者通过 AI 助手写入。
 
 4. **连接你的 AI**  
-   Athria 可以连接 ChatGPT、Claude 和其他兼容的 AI 客户端。按照应用内的连接说明完成设置即可。详细接口信息见 [docs/MCP.md](docs/MCP.md)。
+   Athria 可以连接 ChatGPT、Claude 和其他兼容的 AI 客户端。按照应用内的连接说明完成设置即可。详细接口信息见 [MCP 接口文档](docs/developer/mcp.md)。
 
 5. **开始使用**  
    之后就可以直接向 AI 询问与你训练相关的问题。
@@ -216,7 +220,7 @@ Athria 0.2.1-beta.2 是**仍在开发中的 Beta 预发布版本**。
 ### 帮助与反馈
 
 - [Athria 的数据如何保持更新](docs/DATA_SYNC.md)
-- [使用 AI 连接 Athria](docs/MCP.md)
+- [使用 AI 连接 Athria](docs/developer/mcp.md)
 - [已知限制](docs/KNOWN_LIMITATIONS.md)
 - [GitHub Issues](https://github.com/whywww/Athria/issues) 用于 Bug 和功能建议
 
@@ -227,6 +231,8 @@ Athria 0.2.1-beta.2 是**仍在开发中的 Beta 预发布版本**。
 <a id="potential-contributors"></a>
 
 # Potential contributors / 潜在贡献者
+
+[Developer knowledge base (English)](docs/developer/README.md): Athria data contracts, training taxonomy, Core rules, plan adjustment and write policies, and MCP interfaces.
 
 ## English
 
@@ -296,7 +302,7 @@ packages/
   skills/        Optional provider-neutral MCP workflows
 schemas/         Versioned JSON Schema contracts
 scripts/         Development and release tooling
-docs/            MCP, limitations, and runtime documentation
+docs/            Developer knowledge base, user guides, and release notes
 ~~~
 
 ### Contribution expectations

@@ -51,12 +51,13 @@ const SPORT_BLOCK_ROLES: [&str; 8] = [
     "cool_down",
 ];
 const SESSION_TYPES: [&str; 3] = ["practice", "match", "competition"];
-const PRESCRIPTION_KINDS: [&str; 6] = [
+const PRESCRIPTION_KINDS: [&str; 7] = [
     "strength",
     "endurance",
     "sport_skill",
-    "recovery",
+    "mobility",
     "mind_body",
+    "functional",
     "duration_only",
 ];
 const SESSION_STATUSES: [&str; 3] = ["planned", "completed", "skipped"];
@@ -128,6 +129,10 @@ pub fn parse_current_plan(value: &Value) -> Result<Value> {
 pub fn parse_planned_session(value: &Value) -> Result<Value> {
     object(value, "plannedSession")?;
     let mut session = Map::new();
+    let (kind, subtype) = crate::training_type::fields(value);
+    session.insert("type".into(), kind);
+    session.insert("domain".into(), crate::training_type::session_domain(value).map(|domain| json!(domain)).unwrap_or(Value::Null));
+    session.insert("subtype".into(), subtype);
     session.insert(
         "id".into(),
         Value::String(required_text(value, "id", "plannedSession")?),
@@ -521,16 +526,8 @@ fn validate_mesocycle(mesocycle: &Value, duration_weeks: i64, path: &str) -> Res
     let mut session_domains: Vec<String> = Vec::new();
     for week in &weeks {
         for session in week["sessions"].as_array().cloned().unwrap_or_default() {
-            for component in session["components"]
-                .as_array()
-                .cloned()
-                .unwrap_or_default()
-            {
-                if let Some(domain) = component["domain"]["value"].as_str() {
-                    if !session_domains.iter().any(|existing| existing == domain) {
-                        session_domains.push(domain.to_owned());
-                    }
-                }
+            if let Some(domain) = crate::training_type::session_domain(&session) {
+                if !session_domains.iter().any(|existing| existing == domain) { session_domains.push(domain.to_owned()); }
             }
         }
     }
@@ -613,6 +610,10 @@ fn parse_weeks(value: &Value, path: &str) -> Result<Value> {
 fn parse_weekly_session(value: &Value, path: &str) -> Result<Value> {
     object(value, path)?;
     let mut session = Map::new();
+    let (kind, subtype) = crate::training_type::fields(value);
+    session.insert("type".into(), kind);
+    session.insert("domain".into(), crate::training_type::session_domain(value).map(|domain| json!(domain)).unwrap_or(Value::Null));
+    session.insert("subtype".into(), subtype);
     session.insert(
         "id".into(),
         Value::String(required_text(value, "id", path)?),
@@ -689,6 +690,10 @@ fn parse_weekly_session(value: &Value, path: &str) -> Result<Value> {
 fn parse_planned_session_input(value: &Value, path: &str) -> Result<Value> {
     object(value, path)?;
     let mut session = Map::new();
+    let (kind, subtype) = crate::training_type::fields(value);
+    session.insert("type".into(), kind);
+    session.insert("domain".into(), crate::training_type::session_domain(value).map(|domain| json!(domain)).unwrap_or(Value::Null));
+    session.insert("subtype".into(), subtype);
     session.insert(
         "id".into(),
         Value::String(required_text(value, "id", path)?),
@@ -768,31 +773,8 @@ fn parse_component(value: &Value, path: &str) -> Result<Value> {
         "name".into(),
         Value::String(required_text(value, "name", path)?),
     );
-    component.insert(
-        "domain".into(),
-        parse_fact(
-            get(value, "domain"),
-            &format!("{path}.domain"),
-            nullable_domain_value,
-        )?,
-    );
     let prescription =
         parse_prescription(get(value, "prescription"), &format!("{path}.prescription"))?;
-    let kind = prescription["kind"].as_str().unwrap_or_default().to_owned();
-    let domain = component["domain"]["value"].as_str();
-    let mismatch = match kind.as_str() {
-        "strength" => domain != Some("strength"),
-        "duration_only" => domain == Some("strength"),
-        _ => domain != Some(kind.as_str()),
-    };
-    if mismatch {
-        let message = match kind.as_str() {
-            "strength" => "strength prescription requires strength domain".to_owned(),
-            "duration_only" => "strength domain requires strength prescription".to_owned(),
-            other => format!("{other} prescription requires matching domain"),
-        };
-        return Err(invalid(&format!("{path}.domain.value"), &message));
-    }
     component.insert("prescription".into(), prescription);
     Ok(Value::Object(component))
 }
@@ -1008,10 +990,6 @@ fn parse_fact(value: &Value, path: &str, read_value: fn(&Value) -> Value) -> Res
         fact.insert("conflicts".into(), Value::Array(parsed));
     }
     Ok(Value::Object(fact))
-}
-
-fn nullable_domain_value(fact: &Value) -> Value {
-    nullable_enum(fact, "value", &DOMAIN_IDS)
 }
 
 fn nullable_movement_value(fact: &Value) -> Value {
@@ -1365,20 +1343,9 @@ fn parse_plan_target(value: &Value, path: &str) -> Result<Value> {
 }
 
 /// `plannedSessionSchema`'s `superRefine`: phase references resolve exactly
-/// the session's component domains.
+/// the session's single domain.
 fn validate_phase_refs(session: &Value) -> Result<()> {
-    let mut component_domains: Vec<String> = Vec::new();
-    for component in session["components"]
-        .as_array()
-        .cloned()
-        .unwrap_or_default()
-    {
-        if let Some(domain) = component["domain"]["value"].as_str() {
-            if !component_domains.iter().any(|existing| existing == domain) {
-                component_domains.push(domain.to_owned());
-            }
-        }
-    }
+    let session_domains: Vec<String> = crate::training_type::session_domain(session).map(|domain| vec![domain.to_owned()]).unwrap_or_default();
     let ref_domains: Vec<String> = session["phaseRefs"]
         .as_array()
         .cloned()
@@ -1387,14 +1354,14 @@ fn validate_phase_refs(session: &Value) -> Result<()> {
         .filter_map(|reference| reference["domain"].as_str().map(str::to_owned))
         .collect();
     if !unique(&ref_domains)
-        || component_domains.len() != ref_domains.len()
+        || session_domains.len() != ref_domains.len()
         || ref_domains
             .iter()
-            .any(|domain| !component_domains.contains(domain))
+            .any(|domain| !session_domains.contains(domain))
     {
         return Err(invalid(
             "plannedSession.phaseRefs",
-            "phase references must exactly match resolved component domains",
+            "phase references must exactly match resolved session domain",
         ));
     }
     Ok(())
@@ -1412,15 +1379,10 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn domain_fact(domain: &str) -> Value {
-        json!({ "value": domain, "source": "catalog", "confidence": 1, "evidence": "built-in", "taxonomyVersion": "strength-2.0" })
-    }
-
     fn endurance_component() -> Value {
         json!({
             "id": "c1",
             "name": "Main set",
-            "domain": domain_fact("endurance"),
             "prescription": { "kind": "endurance", "segments": [{ "type": "step", "name": "Steady", "role": "steady", "durationSeconds": 1800 }] },
         })
     }
@@ -1430,7 +1392,7 @@ mod tests {
             "id": "s1",
             "scheduledDate": "2026-09-10",
             "order": 0,
-            "name": "Easy Run",
+            "name": "Easy Run", "domain": "endurance",
             "intent": "Aerobic base",
             "durationMinutes": 45,
             "components": [endurance_component()],
@@ -1519,6 +1481,9 @@ mod tests {
         assert_eq!(
             keys,
             [
+                "type",
+                "domain",
+                "subtype",
                 "id",
                 "scheduledDate",
                 "order",
@@ -1538,18 +1503,8 @@ mod tests {
         assert_eq!(session["status"], json!("planned"));
         assert_eq!(session["templateRef"], json!(null));
         assert_eq!(session["keySession"], json!(false));
-        let fact = &session["components"][0]["domain"];
-        let keys: Vec<&String> = fact.as_object().unwrap().keys().collect();
-        assert_eq!(
-            keys,
-            [
-                "value",
-                "source",
-                "confidence",
-                "evidence",
-                "taxonomyVersion"
-            ]
-        );
+        assert_eq!(session["domain"], "endurance");
+        assert!(session["components"][0].get("domain").is_none());
         assert_eq!(plan["mesocycle"]["weeks"][0]["focus"], json!(null));
         assert_eq!(plan["mesocycle"]["adjustmentRules"], json!([]));
         // The step keeps only the effort targets the source observation has.
@@ -1596,71 +1551,14 @@ mod tests {
     }
 
     #[test]
-    fn components_require_a_matching_prescription_kind() {
-        fn with_component(domain: &str, prescription: Value) -> Value {
-            let mut payload = plan_write();
-            let component = &mut payload["mesocycle"]["weeks"][0]["sessions"][0]["components"][0];
-            component["domain"] = domain_fact(domain);
-            component["prescription"] = prescription;
-            payload
-        }
-
-        let strength_prescription = json!({ "kind": "strength", "exercises": [{
-            "id": "e1", "displayName": "Back Squat",
-            "classification": {
-                "primaryMovement": { "value": "squat", "source": "catalog", "confidence": 1, "evidence": "built-in", "taxonomyVersion": "strength-2.0" },
-                "primaryMuscles": { "value": ["quadriceps"], "source": "catalog", "confidence": 1, "evidence": "built-in", "taxonomyVersion": "strength-2.0" },
-                "secondaryMuscles": { "value": [], "source": "catalog", "confidence": 1, "evidence": "built-in", "taxonomyVersion": "strength-2.0" },
-                "equipment": { "value": ["barbell"], "source": "catalog", "confidence": 1, "evidence": "built-in", "taxonomyVersion": "strength-2.0" },
-                "impact": { "value": "high", "source": "catalog", "confidence": 1, "evidence": "built-in", "taxonomyVersion": "strength-2.0" },
-                "laterality": { "value": "bilateral", "source": "catalog", "confidence": 1, "evidence": "built-in", "taxonomyVersion": "strength-2.0" },
-            },
-            "sets": 3, "repsMin": 5, "repsMax": 5,
-        }] });
-
-        let error = parse_current_plan_write(&with_component("endurance", strength_prescription))
-            .unwrap_err();
-        assert!(
-            error
-                .message()
-                .contains("strength prescription requires strength domain"),
-            "{}",
-            error.message()
-        );
-
-        let error = parse_current_plan_write(&with_component(
-            "strength",
-            json!({ "kind": "duration_only" }),
-        ))
-        .unwrap_err();
-        assert!(
-            error
-                .message()
-                .contains("strength domain requires strength prescription"),
-            "{}",
-            error.message()
-        );
-
-        let error = parse_current_plan_write(&with_component(
-            "mind_body",
-            endurance_component()["prescription"].clone(),
-        ))
-        .unwrap_err();
-        assert!(
-            error
-                .message()
-                .contains("endurance prescription requires matching domain"),
-            "{}",
-            error.message()
-        );
-
-        // `duration_only` is the general fallback: it is only rejected on a
-        // strength domain, so an endurance component with it stays valid.
-        parse_current_plan_write(&with_component(
-            "endurance",
-            json!({ "kind": "duration_only" }),
-        ))
-        .unwrap();
+    fn components_describe_content_without_classifying_the_session() {
+        let mut payload = plan_write();
+        payload["mesocycle"]["weeks"][0]["sessions"][0]["components"][0]["prescription"] = json!({"kind":"mobility","blocks":[{"name":"Cooldown"}]});
+        let parsed = parse_current_plan_write(&payload).unwrap();
+        let session = &parsed["mesocycle"]["weeks"][0]["sessions"][0];
+        assert_eq!(session["domain"], "endurance");
+        assert!(session["components"][0].get("domain").is_none());
+        assert_eq!(session["components"][0]["prescription"]["kind"], "mobility");
     }
 
     #[test]
@@ -1681,6 +1579,9 @@ mod tests {
         assert_eq!(
             keys,
             [
+                "type",
+                "domain",
+                "subtype",
                 "id",
                 "occurrenceId",
                 "ownerId",
@@ -1719,7 +1620,7 @@ mod tests {
     }
 
     #[test]
-    fn planned_sessions_reject_phase_refs_that_do_not_match_components() {
+    fn planned_sessions_reject_phase_refs_that_do_not_match_session_domain() {
         let mut session = json!({
             "id": "s1",
             "occurrenceId": "occurrence-1",
@@ -1728,7 +1629,7 @@ mod tests {
             "scheduledDate": "2026-09-10",
             "weekNumber": 1,
             "phaseRefs": [],
-            "name": "Easy Run",
+            "name": "Easy Run", "domain": "endurance",
             "intent": "Aerobic base",
             "recoveryDemand": "normal",
             "durationMinutes": 45,
@@ -1757,7 +1658,7 @@ mod tests {
             "scheduledDate": "2026-09-10",
             "expectedRevision": 0,
             "mode": "replace",
-            "sessions": [{ "id": "s1", "name": "Easy Run", "intent": "Aerobic base", "durationMinutes": 45, "components": [endurance_component()] }],
+            "sessions": [{ "id": "s1", "name": "Easy Run", "domain": "endurance", "intent": "Aerobic base", "durationMinutes": 45, "components": [endurance_component()] }],
         }))
         .unwrap();
         let keys: Vec<&String> = write.as_object().unwrap().keys().collect();
@@ -1776,6 +1677,9 @@ mod tests {
         assert_eq!(
             keys,
             [
+                "type",
+                "domain",
+                "subtype",
                 "id",
                 "status",
                 "templateRef",

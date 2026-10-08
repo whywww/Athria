@@ -12,7 +12,7 @@ use serde_json::Value;
 
 pub use hevy::{HEVY_PARSER_VERSION, HevyPreview, parse_hevy_csv};
 pub use intervals::{
-    SyncDateWindow, fetch_intervals, interval_modality, normalize_intervals_activity,
+    SyncDateWindow, fetch_intervals, normalize_intervals_activity,
     sync_date_window,
 };
 pub use xunji::{

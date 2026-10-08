@@ -146,18 +146,20 @@ interface WeekRowProps {
 function weekSummary(week: CalendarWeek): string {
   const zh = currentLanguage() === "zh-CN";
   const sessions = week.days.flatMap((day) => day.sessions);
-  let enduranceMeters = 0; let enduranceMinutes = 0; let strengthSets = 0; let sport = 0; let recovery = 0;
+  let enduranceMeters = 0; let enduranceMinutes = 0; let strengthSets = 0; let sport = 0; let mobility = 0; let mindBody = 0; let functionalMinutes = 0;
   for (const session of sessions) {
     const domains = sessionDomains(session);
     if (domains.includes("endurance")) enduranceMinutes += session.durationMinutes;
     if (domains.includes("sport_skill")) sport += 1;
-    if (domains.includes("recovery") || domains.includes("mind_body")) recovery += 1;
+    if (domains.includes("mobility")) mobility += 1;
+    if (domains.includes("mind_body")) mindBody += 1;
+    if (domains.includes("functional")) functionalMinutes += session.durationMinutes;
     for (const component of session.components) {
-      if (component.prescription.kind === "endurance") for (const segment of component.prescription.segments) enduranceMeters += segment.type === "repeat" ? segment.repetitions * (segment.work.distanceMeters ?? 0) + segment.repetitions * (segment.recovery?.distanceMeters ?? 0) : segment.distanceMeters ?? 0;
-      if (component.prescription.kind === "strength") strengthSets += component.prescription.exercises.reduce((sum, exercise) => sum + exercise.sets, 0);
+      if (domains.includes("endurance") && component.prescription.kind === "endurance") for (const segment of component.prescription.segments) enduranceMeters += segment.type === "repeat" ? segment.repetitions * (segment.work.distanceMeters ?? 0) + segment.repetitions * (segment.recovery?.distanceMeters ?? 0) : segment.distanceMeters ?? 0;
+      if (domains.includes("strength") && component.prescription.kind === "strength") strengthSets += component.prescription.exercises.reduce((sum, exercise) => sum + exercise.sets, 0);
     }
   }
-  return [enduranceMeters ? `${Math.round(enduranceMeters / 100) / 10} ${zh ? "公里" : "km"}` : enduranceMinutes ? `${enduranceMinutes} ${zh ? "分钟" : "min"}` : null, strengthSets ? `${strengthSets} ${zh ? "组" : "sets"}` : null, sport ? `${sport} ${zh ? "次运动技能训练" : "sport"}` : null, recovery ? `${recovery} ${zh ? "次恢复训练" : "recovery"}` : null].filter(Boolean).join(" · ");
+  return [enduranceMeters ? `${Math.round(enduranceMeters / 100) / 10} ${zh ? "公里" : "km"}` : enduranceMinutes ? `${enduranceMinutes} ${zh ? "分钟" : "min"}` : null, strengthSets ? `${strengthSets} ${zh ? "组" : "sets"}` : null, sport ? `${sport} ${zh ? "次运动技能训练" : "sport"}` : null, mobility ? `${mobility} ${zh ? "次活动度训练" : "mobility"}` : null, mindBody ? `${mindBody} ${zh ? "次身心训练" : "mind-body"}` : null, functionalMinutes ? `${functionalMinutes} ${zh ? "分钟功能训练" : "min functional"}` : null].filter(Boolean).join(" · ");
 }
 
 function compactWeekRange(startDate: string, endDate: string): string {

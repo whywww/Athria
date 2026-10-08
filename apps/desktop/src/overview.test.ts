@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { AdjustmentReviewNotice, OverviewDashboard, RecoveryHelpModal, calendarDays, formatWellnessDate, formatWellnessRange, loadAxisLabel, mesocycleProgress, overviewDateRange, recoveryRingTone, recoveryStatus, sparklineGeometry, twelveWeekConsistency, weeklyLoad, weeklyOverview, wellnessHighlights } from "./overview";
+import { AdjustmentReviewNotice, OverviewDashboard, RecoveryHelpModal, SummaryProgressRing, calendarDays, durationLabelBottom, formatWellnessDate, formatWellnessRange, loadAxisLabel, mesocycleProgress, overviewDateRange, recoveryRingTone, recoveryStatus, sparklineGeometry, twelveWeekConsistency, weeklyLoad, weeklyOverview, weeklyRingProgress, activityAxis, wellnessHighlights } from "./overview";
 import { LanguageProvider } from "./i18n";
 import type { AdjustmentAssessment, CalendarSession, TrainingHistorySession, TrainingSummary, WellnessRecord } from "./view-models";
 import { adjustmentReasonMessage } from "./view-models";
@@ -10,8 +10,8 @@ import { addDays } from "./plan/view";
 const quality = { completeness: 1, missingFields: [], anomalies: [] };
 const summary: TrainingSummary = {
   periodDays: 7, sessionCount: 3, totalDurationMinutes: 135,
-  byDomain: { strength: 1, endurance: 1, sport_skill: 1, mind_body: 0, recovery: 0 },
-  durationMinutesByDomain: { strength: 45, endurance: 30, sport_skill: 60, mind_body: 0, recovery: 0 },
+  byDomain: { strength: 1, endurance: 1, sport_skill: 1, mind_body: 0, mobility: 0, functional: 0 },
+  durationMinutesByDomain: { strength: 45, endurance: 30, sport_skill: 60, mind_body: 0, mobility: 0, functional: 0 },
   sports: [{ name: "Basketball", sessionCount: 1, durationMinutes: 60 }],
   metrics: { strength: { workingSets: { value: 8, unit: "sets", dataQuality: quality } }, endurance: { distanceMeters: { value: 5000, unit: "m", dataQuality: quality } } },
 };
@@ -23,6 +23,18 @@ const wellness: WellnessRecord[] = [
 ];
 
 describe("Overview", () => {
+  it("renders summary ring tracks, animated arcs, full rings and missing values", () => {
+    const render = (percent: number, entranceProgress = 1, tone = "plan", children = "50%") => renderToStaticMarkup(createElement(SummaryProgressRing, { percent, entranceProgress, tone, children }));
+    expect(render(0)).not.toContain('class="summary-ring-fill"');
+    expect(render(50, .5)).toContain('stroke-dasharray="25 100"');
+    expect(render(100)).toContain('class="summary-ring-fill"');
+    expect(render(100)).not.toContain("stroke-dasharray");
+    expect(render(0, 1, "empty", "-")).toContain("<b>-</b>");
+    expect(render(0, 1, "empty", "-")).not.toContain('class="summary-ring-fill"');
+    const rings = renderToStaticMarkup(createElement("div", null, createElement(SummaryProgressRing, { percent: 50, children: "50%" }), createElement(SummaryProgressRing, { percent: 75, children: "75" })));
+    const ids = [...rings.matchAll(/<linearGradient id="([^"]+)"/g)].map((match) => match[1]);
+    expect(new Set(ids).size).toBe(2);
+  });
   const reviewOf = (reviewStatus: AdjustmentAssessment["reviewStatus"], reasons: AdjustmentAssessment["reasons"], dataGaps: AdjustmentAssessment["dataGaps"] = []) => ({
     trigger: "weekly_review", reviewStatus, recommendedScope: "week", reasons, hardOverrides: [], dataGaps,
     currentPlanRevision: 4, inputSnapshotHash: "snapshot", profileHash: "profile", suggestedReadWindow: 3,
@@ -34,7 +46,7 @@ describe("Overview", () => {
       { reasonCode: "KEY_SESSION_MISSED", severity: "strong", evidenceRefs: ["session:s1"], affectedDomain: "endurance", affectedScope: "week" },
     ], [{ code: "WELLNESS_EVIDENCE_MISSING", evidenceRefs: [] }]);
     const html = renderToStaticMarkup(createElement(AdjustmentReviewNotice, { value: review }));
-    expect(html).toContain("Ask your agent to review the plan: You missed a key Endurance session this week.");
+    expect(html).toContain("Last week&#x27;s review — consider this week&#x27;s plan: You missed a key Endurance session last week.");
     expect(html).toContain("adjustment-notice-review_recommended");
     expect(html).not.toContain("You missed 1 of the 4 sessions");
     expect(html).not.toContain("Plan Review");
@@ -44,12 +56,19 @@ describe("Overview", () => {
 
   it("escalates the required tier and keeps the neutral copy for watch", () => {
     const required = renderToStaticMarkup(createElement(AdjustmentReviewNotice, { value: reviewOf("review_required", [{ reasonCode: "PROFILE_TRAINING_RHYTHM_CONFLICT", severity: "hard", evidenceRefs: [], affectedScope: "plan" }]) }));
-    expect(required).toContain("Plan review required — ask your agent: Your preferred weekly training rhythm differs from this plan.");
+    expect(required).toContain("Plan conditions changed: Your preferred weekly training rhythm differs from this plan.");
     expect(required).toContain("adjustment-notice-review_required");
 
     const watch = renderToStaticMarkup(createElement(AdjustmentReviewNotice, { value: reviewOf("watch", [{ reasonCode: "ADHERENCE_MINOR_DEVIATION", severity: "soft", evidenceRefs: [], affectedScope: "none" }]) }));
-    expect(watch).toContain("Weekly check: You missed 1 of the 4 sessions planned for this week.");
+    expect(watch).toContain("Last week&#x27;s review — consider this week&#x27;s plan: You missed 1 of the 4 sessions planned for last week.");
     expect(watch).toContain("adjustment-notice-watch");
+  });
+
+  it("labels soft profile conflicts as changed conditions even during a weekly review", () => {
+    const value = reviewOf("watch", [{ reasonCode: "PROFILE_TRAINING_RHYTHM_CONFLICT", severity: "soft", evidenceRefs: [], affectedScope: "none" }]);
+    const html = renderToStaticMarkup(createElement(AdjustmentReviewNotice, { value }));
+    expect(html).toContain("Plan conditions changed:");
+    expect(html).not.toContain("Weekly check:");
   });
 
   it("stays silent when only evidence is missing and no reason was found", () => {
@@ -73,7 +92,7 @@ describe("Overview", () => {
   });
 
   it("prioritizes completed markers and omits skipped plans", () => {
-    const history = [{ id: "done", name: "Run", startAt: "2026-09-10T16:30:00Z", timezone: null, domains: ["endurance"], sport: "Run", durationMinutes: 30 }] as TrainingHistorySession[];
+    const history = [{ id: "done", name: "Run", startAt: "2026-09-10T16:30:00Z", timezone: null, domains: ["endurance"], type: "Run", subtype: null, durationMinutes: 30 }] as TrainingHistorySession[];
     const planned = [{ scheduledDate: "2026-09-11", status: "planned" }, { scheduledDate: "2026-09-12", status: "skipped" }] as CalendarSession[];
     const days = calendarDays("2026-09-11", history, planned, "Asia/Hong_Kong");
     expect(days.find((item) => item.day === "2026-09-11")?.marker).toBe("completed");
@@ -150,6 +169,12 @@ describe("Overview", () => {
       expect(localized).toContain(">恢复表现不错</small>");
       expect(localized).toContain("评估日期: 2026年10月5日");
       expect(localized).toContain("个人基线: 30");
+      expect(localized).toContain("柱：频次");
+      expect(localized).toContain("线：时长");
+      expect(localized).toContain("未设置目标");
+      for (const label of ["力量", "耐力", "技能", "身心", "灵活", "功能"]) expect(localized).toContain(`<span>${label}</span>`);
+      expect(localized).toContain("activity-chart-axis-units");
+      expect(localized).toContain('aria-label="力量训练:');
     } finally {
       vi.stubGlobal("localStorage", { getItem: () => "en", setItem: () => {} });
       renderToStaticMarkup(createElement(LanguageProvider, null, createElement("span", null, "reset")));
@@ -259,6 +284,66 @@ describe("Overview", () => {
     expect(result).toMatchObject({ start: "2026-10-05", end: "2026-10-05" });
     expect(sparklineGeometry(result.values[0]!.series)?.points).toEqual([{ x: 50, y: 18.5 }]);
     expect(sparklineGeometry([null, null])).toBeNull();
+  });
+
+  it("calculates weekly targets including future sessions but excluding skipped and other weeks", () => {
+    const planned = [
+      { scheduledDate: "2026-09-07", status: "completed", durationMinutes: 40 },
+      { scheduledDate: "2026-09-13", status: "planned", durationMinutes: 60 },
+      { scheduledDate: "2026-09-11", status: "skipped", durationMinutes: 30 },
+      { scheduledDate: "2026-09-14", status: "planned", durationMinutes: 90 },
+      { scheduledDate: "2026-09-06", status: "completed", durationMinutes: 90 },
+    ] as CalendarSession[];
+    expect(weeklyOverview("2026-09-11", [], planned, "Asia/Hong_Kong")).toMatchObject({ planTotal: 2, planMinutes: 100 });
+    expect(weeklyOverview("2026-09-11", [], [], "UTC")).toMatchObject({ planTotal: 0, planMinutes: 0 });
+  });
+
+  it("preserves full laps and the remaining progress without capping the percentage", () => {
+    expect(weeklyRingProgress(20, 0)).toMatchObject({ ratio: 0, percent: 0 });
+    expect(weeklyRingProgress(0, 10)).toMatchObject({ remainder: 0, full: false });
+    expect(weeklyRingProgress(10, 10)).toMatchObject({ remainder: 1, full: true, percent: 100 });
+    expect(weeklyRingProgress(15, 10)).toMatchObject({ remainder: .5, full: true, percent: 150 });
+    expect(weeklyRingProgress(32, 10)).toMatchObject({ remainder: expect.closeTo(.2), percent: 320 });
+    expect(weeklyRingProgress(30, 10)).toMatchObject({ remainder: 1, percent: 300 });
+  });
+
+  it("keeps empty axes valid and frequency ticks integral", () => {
+    expect(activityAxis(0).ceiling).toBeGreaterThan(0);
+    expect(activityAxis(108).ceiling).toBeGreaterThanOrEqual(108);
+    expect(activityAxis(2, true).ticks).toEqual([0, 1, 2, 3]);
+  });
+
+  it("renders both charts and empty goal rings even with no recorded workouts", () => {
+    const html = renderToStaticMarkup(createElement(OverviewDashboard, { summary: { ...summary, sessionCount: 0, totalDurationMinutes: 0, byDomain: {}, durationMinutesByDomain: {} }, wellness: [], history: [], planned: [], today: "2026-09-11", timezone: "UTC" }));
+    expect(html).toContain('data-chart="weekly-combined"');
+    expect(html).toContain("activity-duration-line");
+    expect(html).not.toContain("weekly-ring-goals");
+    expect(html.match(/top:96.15384615384616%/g)).toHaveLength(6);
+    expect(html).toContain('style="bottom:0%"');
+    expect(html).toContain('r="86"');
+    expect(html.match(/activity-chart-bar zero/g)).toHaveLength(6);
+    expect(html).toContain("No target set");
+    expect(html).toContain("weekly-rings-center");
+    expect(html).toContain("No completed workouts yet this week.");
+  });
+
+  it("labels the duration curve at every domain without bar count labels", () => {
+    const html = renderToStaticMarkup(createElement(OverviewDashboard, { summary, wellness: [], history: [], planned: [], today: "2026-09-11", timezone: "Asia/Hong_Kong" }));
+    expect(html).toContain('<path d="M 8.333');
+    expect(html).not.toContain("<polyline");
+    expect(html.match(/class="zero"/g)).toHaveLength(3);
+    for (const value of [45, 30, 60]) expect(html).toContain(`>${value}</span>`);
+    expect(html).not.toContain("<b>1</b>");
+
+    const empty = renderToStaticMarkup(createElement(OverviewDashboard, { summary: { ...summary, sessionCount: 0, totalDurationMinutes: 0, byDomain: {}, durationMinutesByDomain: {} }, wellness: [], history: [], planned: [], today: "2026-09-11", timezone: "Asia/Hong_Kong" }));
+    expect(empty.match(/class="zero"/g)).toHaveLength(6);
+    expect(empty).not.toContain("<b>0</b>");
+  });
+
+  it("keeps a duration label above its marker without leaving the plot box", () => {
+    expect(durationLabelBottom(100)).toBe(10);
+    expect(durationLabelBottom(28)).toBe(10);
+    expect(durationLabelBottom(0)).toBe(-10);
   });
 
   it("compares the current week with the matching elapsed days last week", () => {
@@ -500,7 +585,7 @@ describe("Overview", () => {
     expect(stale.recovery).toContain("<strong>-</strong>");
     expect(stale.recovery).toContain("More wellness data needed.");
     expect(stale.recovery).toContain('class="progress-ring empty"');
-    expect(stale.recovery).toContain("<b>—</b>");
+    expect(stale.recovery).toContain("<b>-</b>");
     expect(stale.recovery).not.toContain("Assessment date");
     expect(stale.html).toContain('data-chart="wellness-trend"');
   });
@@ -555,13 +640,19 @@ describe("Overview", () => {
   });
 
   it("renders all dashboard sections, fixed domains, wellness trends, and calendar legend", () => {
-    const history = [{ id: "current", name: "Basketball", startAt: "2026-09-08T04:00:00Z", timezone: null, domains: ["sport_skill"], sport: "Basketball", durationMinutes: 60 }] as TrainingHistorySession[];
+    const history = [{ id: "current", name: "Basketball", startAt: "2026-09-08T04:00:00Z", timezone: null, domains: ["sport_skill"], type: "Basketball", subtype: null, durationMinutes: 60 }] as TrainingHistorySession[];
     const html = renderToStaticMarkup(createElement(OverviewDashboard, { summary, wellness, history, planned: [], today: "2026-09-11", timezone: "Asia/Hong_Kong" }));
-    expect(html).toContain("Basketball");
+    expect(html).toContain("Bars: frequency");
+    expect(html).toContain("Line: duration");
     expect(html).toContain("Sleep score");
     expect(html).toContain("<strong>-</strong>");
     expect(html).toContain("More wellness data needed.");
-    expect(html).toContain("How do we calculate?");
+    expect(html).toContain("How to calculate?");
+    const readinessTitle = html.match(/<span class="summary-card-title"><span>Readiness<\/span>[\s\S]*?<\/button><\/span>/)?.[0];
+    expect(readinessTitle).toContain('class="recovery-help"');
+    expect(readinessTitle).toContain('aria-haspopup="dialog"');
+    expect(readinessTitle).not.toContain("→");
+    expect(html.match(/class="recovery-help"/g)).toHaveLength(1);
     expect(html).not.toContain("recovery-modal");
     expect(html).toContain("HRV (ms)");
     expect(html).toContain("Resting HR (bpm)");
@@ -575,25 +666,25 @@ describe("Overview", () => {
     expect(html).toContain('class="activity-arrow"');
     expect(html).toContain('aria-label="Open Training"');
     expect(html).not.toContain("Completed Workouts");
-    expect(html).toContain('data-icon="target"');
-    expect(html).toContain('data-icon="recovery"');
+    expect(html).not.toContain('data-icon="target"');
+    expect(html).not.toContain('data-icon="recovery"');
     expect(html).not.toContain('data-chart="green-bars"');
     expect(html).toContain("Plan Progress");
     const leftColumn = html.slice(html.indexOf('class="overview-left-column"'), html.indexOf('class="overview-right-column"'));
     const rightColumn = html.slice(html.indexOf('class="overview-right-column"'));
     expect(leftColumn.indexOf("Plan Progress")).toBeLessThan(leftColumn.indexOf("Your workouts this week"));
-    expect(leftColumn.indexOf("Overall Readiness")).toBeLessThan(leftColumn.indexOf("Your workouts this week"));
+    expect(leftColumn.indexOf("Readiness")).toBeLessThan(leftColumn.indexOf("Your workouts this week"));
     expect(leftColumn.indexOf("Your workouts this week")).toBeLessThan(leftColumn.indexOf("Training Load"));
     expect(leftColumn).toContain("Consistency");
     expect(leftColumn).not.toContain("September 2026");
     expect(rightColumn.indexOf("September 2026")).toBeLessThan(rightColumn.indexOf("Wellness"));
-    expect(html).toContain("Overall Readiness");
-    expect(html).toContain("<b>—</b>");
-    expect(html).toContain("donut-segment domain-strength");
-    expect(html).toContain("donut-segment domain-endurance");
-    expect(html).toContain("donut-segment domain-sport_skill");
-    expect(html).toContain("donut-segment domain-mind_body");
-    expect(html).toContain("donut-segment domain-recovery");
+    expect(html).toContain("Readiness");
+    expect(html).toContain("<b>-</b>");
+    expect(html).toContain("activity-chart-column domain-strength");
+    expect(html).toContain("activity-chart-column domain-endurance");
+    expect(html).toContain("activity-chart-column domain-sport_skill");
+    expect(html).toContain("activity-chart-column domain-mind_body");
+    expect(html).toContain("activity-chart-column domain-mobility");
     expect(html).toContain("progress-ring");
     expect(html).toContain('class="progress-ring empty"');
     expect(html).toContain("this mesocycle");
@@ -613,7 +704,7 @@ describe("Overview", () => {
   });
 
   it("renders calendar markers in centered groups only on marked days", () => {
-    const history = [{ id: "done", name: "Run", startAt: "2026-09-08T04:00:00Z", timezone: null, domains: ["endurance"], sport: "Run", durationMinutes: 30 }] as TrainingHistorySession[];
+    const history = [{ id: "done", name: "Run", startAt: "2026-09-08T04:00:00Z", timezone: null, domains: ["endurance"], type: "Run", subtype: null, durationMinutes: 30 }] as TrainingHistorySession[];
     const planned = [
       { scheduledDate: "2026-09-08", status: "skipped" },
       { scheduledDate: "2026-09-09", status: "planned" },
@@ -632,7 +723,7 @@ describe("Overview", () => {
     expect(html).toContain("20 hr 50 min");
     expect(html).toContain("No prior data");
     expect(html).toContain("<strong>-</strong>");
-    expect(html).toContain("<b>—</b>");
+    expect(html).toContain("<b>-</b>");
     expect(html).toContain("0%");
   });
 });

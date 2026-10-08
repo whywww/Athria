@@ -1,7 +1,7 @@
 //! `sessionTemplateSchema` and its stored/builtin/create/update variants.
 //!
 //! Session-template schema parsing and normalization,
-//! 246-247. Templates are a five-way discriminated union on `domain`; the port
+//! 246-247. Templates are a six-way discriminated union on `domain`; the port
 //! rebuilds each variant in schema declaration order and enforces the node
 //! refinements the TypeScript `superRefine` hooks apply.
 
@@ -68,11 +68,14 @@ const RECOVERY_VARIABLES: [&str; 5] = [
 ];
 const MIND_BODY_VARIABLES: [&str; 4] = ["technique", "duration", "intensity", "instructions"];
 
-const DOMAINS: [&str; 5] = [
+const FUNCTIONAL_ROLES: [&str; 8] = ["primary", "secondary", "accessory", "trunk", "warm_up", "steady", "repeat_work_recovery", "cool_down"];
+const FUNCTIONAL_VARIABLES: [&str; 18] = ["exercise_selection", "sets", "repetitions", "duration", "load", "rpe", "rest", "tempo", "alternatives", "distance", "pace", "heart_rate_zone", "power", "cadence", "talk_test", "terrain", "strides", "recovery_mode"];
+
+const DOMAINS: [&str; 6] = [
     "strength",
     "endurance",
     "sport_skill",
-    "recovery",
+    "mobility", "functional",
     "mind_body",
 ];
 
@@ -128,7 +131,8 @@ pub fn template_variables() -> Value {
         "strength": STRENGTH_VARIABLES,
         "endurance": ENDURANCE_VARIABLES,
         "sport_skill": SPORT_VARIABLES,
-        "recovery": RECOVERY_VARIABLES,
+        "mobility": RECOVERY_VARIABLES,
+        "functional": FUNCTIONAL_VARIABLES,
         "mind_body": MIND_BODY_VARIABLES,
     })
 }
@@ -176,7 +180,8 @@ fn parse_node(node: &Value, domain: &str, path: &str) -> Result<Value> {
         "strength" => (&STRENGTH_ROLES, &STRENGTH_VARIABLES),
         "endurance" => (&ENDURANCE_ROLES, &ENDURANCE_VARIABLES),
         "sport_skill" => (&SPORT_ROLES, &SPORT_VARIABLES),
-        "recovery" => (&RECOVERY_ROLES, &RECOVERY_VARIABLES),
+        "mobility" => (&RECOVERY_ROLES, &RECOVERY_VARIABLES),
+        "functional" => (&FUNCTIONAL_ROLES, &FUNCTIONAL_VARIABLES),
         _ => (&MIND_BODY_ROLES, &MIND_BODY_VARIABLES),
     };
     let role = node

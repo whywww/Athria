@@ -81,13 +81,11 @@ fn application_contract_fixture_matches() {
                 "step {index} ({operation}) error differs"
             );
         } else {
-            assert_eq!(
-                normalize(result.unwrap()),
-                step["expected"],
-                "step {index} ({operation}) result differs"
-            );
+            let actual = normalize(result.unwrap_or_else(|e| panic!("step {index} ({operation}) failed: {e:?}")));
+            assert_eq!(actual, step["expected"], "step {index} ({operation}) result differs");
         }
     }
+
 
     // The replay must exercise writes through the store port, not a mock-only path.
     assert_eq!(
