@@ -44,7 +44,7 @@ function TemplateCard({ item, onEdit, onRemove }: {
     <div className="template-library-card-header">
       <TemplateDomainIcon domain={item.domain}/>
       <div className="template-library-heading">
-        <div className="template-library-badges"><span className={`template-library-origin${item.origin === "user" ? " mine" : ""}`}>{t(item.origin === "builtin" ? "Built-in" : "My template")}</span><span className="template-library-domain">{friendlyLabel(item.domain)}</span></div>
+        <div className="template-library-badges"><span className={`template-library-origin${item.origin === "user" ? " mine" : ""}`}>{t(item.origin === "builtin" ? "Built-in" : "My template")}</span><span className="template-library-domain" data-domain={item.domain}>{friendlyLabel(item.domain)}</span></div>
         <h2>{item.name}</h2>
         <p>{item.intent}</p>
       </div>

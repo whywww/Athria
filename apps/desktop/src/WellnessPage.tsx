@@ -6,7 +6,7 @@ import { currentLanguage, T, tr, useLanguage } from "./i18n";
 import { addDays } from "./plan/view";
 import type { WellnessRecord } from "./view-models";
 import { useWellnessSort } from "./wellness-sort";
-import { metricNumber, sleepCanReset, sleepDraft, sleepHasChanges, sleepPatch, wellnessMetrics, wellnessRanges, wellnessSeries, wellnessWindow, type SleepCleared, type SleepDraft, type WellnessMetric, type WellnessPoint, type WellnessRange } from "./wellness-view";
+import { sleepStorageDay, metricNumber, sleepCanReset, sleepDraft, sleepHasChanges, sleepPatch, wellnessMetrics, wellnessRanges, wellnessSeries, wellnessWindow, type SleepCleared, type SleepDraft, type WellnessMetric, type WellnessPoint, type WellnessRange } from "./wellness-view";
 
 function dateLabel(day: string, short = false) {
   return new Intl.DateTimeFormat(currentLanguage() === "zh-CN" ? "zh-CN" : "en-US", { year: short ? undefined : "numeric", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${day}T12:00:00Z`));
@@ -17,7 +17,8 @@ function numberLabel(value: number) {
 function sourceLabel(source: string, key: string) {
   if (key === "subjectiveSleepScore") return tr("Subjective sleep score");
   if (key === "manualSleepSeconds") return tr("Manual sleep duration");
-  return source === "intervals_icu" ? "Intervals.icu" : tr(source === "user" ? "Manual record" : "AI record");
+  const label = source === "intervals_icu" ? "Intervals.icu" : source === "user" ? tr("Manual record") : source === "ai" ? tr("AI record") : source;
+  return key === "hrvRmssdMs" ? `${label} RMSSD` : key === "hrvSdnnMs" ? `${label} SDNN` : label;
 }
 function pointLabel(point: WellnessPoint, unit: string) {
   return `${dateLabel(point.day)} · ${numberLabel(point.value)} ${tr(unit)} · ${sourceLabel(point.source, point.key)}`;
@@ -101,7 +102,7 @@ export function SleepSlider({ label, value, max, step, valueLabel, disabled, onC
   </div>;
 }
 export function HealthRecordModal({ today, databaseUuid, onClose }: { today: string; databaseUuid: string; onClose: () => void }) {
-  const [day, setDay] = useState(today);
+  const [day, setDay] = useState(addDays(today, -1));
   const [draft, setDraft] = useState<SleepDraft | null>(null);
   const [baseline, setBaseline] = useState<WellnessDay | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -112,7 +113,8 @@ export function HealthRecordModal({ today, databaseUuid, onClose }: { today: str
   useModalDismiss(() => { if (!saving) onClose(); });
   const client = useQueryClient();
   const validDay = /^\d{4}-\d{2}-\d{2}$/.test(day) && Number.isFinite(Date.parse(day)) && day <= today;
-  const query = useQuery({ queryKey: ["wellness", "day", databaseUuid, day], queryFn: () => api<WellnessDay>(`/api/wellness/${day}`), enabled: validDay });
+  const storageDay = validDay ? sleepStorageDay(day) : "";
+  const query = useQuery({ queryKey: ["wellness", "day", databaseUuid, storageDay], queryFn: () => api<WellnessDay>(`/api/wellness/${storageDay}`), enabled: validDay });
   useEffect(() => { if (query.data && draft === null) { setDraft(sleepDraft(query.data.record)); setCleared({}); setBaseline(query.data); } }, [query.data, draft]);
   const update = (key: keyof SleepDraft, value: string) => { setConfirmResetKey(null); setCleared((current) => ({ ...current, [key === "score" ? "score" : "duration"]: false })); setDraft((current) => ({ ...(current ?? sleepDraft()), [key]: value })); setError(null); };
   const hasChanges = !!draft && !!baseline && sleepHasChanges(draft, baseline.record, cleared);
@@ -131,7 +133,7 @@ export function HealthRecordModal({ today, databaseUuid, onClose }: { today: str
       const fields = sleepPatch(draft, baseline.record, cleared);
       if (!Object.keys(fields).length) return;
       setSaving(true); setError(null);
-      await api(`/api/wellness/${day}`, { method: "PATCH", body: JSON.stringify({ confirmed: true, source: "user", expectedSnapshotHash: baseline.snapshotHash, fields }) });
+      await api(`/api/wellness/${storageDay}`, { method: "PATCH", body: JSON.stringify({ confirmed: true, source: "user", expectedSnapshotHash: baseline.snapshotHash, fields }) });
       await Promise.all(["wellness", "state", "plan-adjustment-review"].map((key) => client.invalidateQueries({ queryKey: [key] })));
       onClose();
     } catch (value) {
@@ -140,10 +142,10 @@ export function HealthRecordModal({ today, databaseUuid, onClose }: { today: str
     } finally { setSaving(false); }
   };
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) onClose(); }}><section className="connection-modal sleep-record-modal" role="dialog" aria-modal="true" aria-labelledby="health-record-title" aria-describedby="health-record-description">
-    <header><div><h2 id="health-record-title"><T>{"Record health data"}</T></h2><p id="health-record-description"><T>{"Record your sleep experience and duration for the selected date."}</T></p></div><button type="button" className="modal-close" aria-label={tr("Close dialog")} disabled={saving} onClick={onClose}><svg className="app-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>
+    <header><div><h2 id="health-record-title"><T>{"Record health data"}</T></h2><p id="health-record-description"><T>{"Record your sleep experience and duration for the selected evening."}</T></p></div><button type="button" className="modal-close" aria-label={tr("Close dialog")} disabled={saving} onClick={onClose}><svg className="app-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>
     <form className="modal-body" onSubmit={(event) => { event.preventDefault(); void save(); }}>
       <div className="sleep-record-card sleep-date-card"><label><T>{"Record date"}</T><input type="date" value={day} max={today} required disabled={saving} onChange={(event) => { setConfirmResetKey(null); setCleared({}); setDay(event.target.value); setDraft(null); setBaseline(null); setError(null); setConflict(false); }}/></label>
-        <p className="sleep-record-note"><T>{"For sleep, this date is the date you woke up."}</T></p>
+        <p className="sleep-record-note"><T>{"Sleep belongs to the selected evening and ends the following day."}</T></p>
       </div>
       {!validDay ? <p role="alert"><T>{"Choose today or an earlier date."}</T></p> : query.isPending ? <Loading/> : query.error ? <><ErrorBanner error={query.error}/><button type="button" onClick={() => void query.refetch()}><T>{"Retry"}</T></button></> : draft && <>
         <div className="sleep-record-card sleep-score-card">
@@ -188,7 +190,7 @@ export function WellnessPage({ today, databaseUuid }: { today: string; databaseU
     motion.addEventListener("change", onMotionChange);
     return () => { clearTimeout(timer); motion.removeEventListener("change", onMotionChange); };
   }, [entranceReady]);
-  const records = (query.data ?? []).filter((record) => record.day <= today);
+  const records = (query.data ?? []).filter((record) => record.day <= sleepStorageDay(today));
   const labels = [currentLanguage() === "zh-CN" ? tr("Wellness week") : "Week", tr("Month"), tr("Six months"), tr("Year")];
   const visibleMetrics = wellnessMetrics.filter((metric) => metric.always || records.some((record) => metric.keys.some((key) => metricNumber(record, key) !== null)));
   const sort = useWellnessSort(databaseUuid, visibleMetrics.map((metric) => metric.id));

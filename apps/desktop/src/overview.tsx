@@ -5,7 +5,7 @@ import { adjustmentReasonMessage, formatDistance, formatDuration, friendlyLabel,
 import { addDays, weekdayIndex } from "./plan/view";
 import { domainIconPath } from "./domain-icons";
 import { useModalDismiss } from "./components";
-import { sleepDurationField } from "./wellness-view";
+import { eveningWellnessRecords, sleepDurationField } from "./wellness-view";
 
 const domainOrder = ["strength", "endurance", "sport_skill", "mind_body", "mobility", "functional"] as const;
 const weekdayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -93,7 +93,7 @@ function wellnessNumber(record: WellnessRecord, key: WellnessKey) {
 // The first four entries are the featured wellness trends; the next three backfill empty slots (steps, SDNN, sleep), then the remaining signals.
 const wellnessPriority: Array<{ key: WellnessAssessmentKey; label: string; format: (value: number) => string; tone: string }> = [
   { key: "sleepScore", label: "Sleep score", format: wellnessCompactNumber, tone: "purple" },
-  { key: "hrvRmssdMs", label: "HRV (ms)", format: wellnessCompactNumber, tone: "orange" },
+  { key: "hrvRmssdMs", label: "HRV RMSSD (ms)", format: wellnessCompactNumber, tone: "orange" },
   { key: "restingHeartRateBpm", label: "Resting HR (bpm)", format: wellnessCompactNumber, tone: "blue" },
   { key: "vo2maxMlKgMin", label: "VO2 max (ml/kg/min)", format: wellnessCompactNumber, tone: "green" },
   { key: "stepsCount", label: "Steps", format: (value) => String(Math.round(value)), tone: "green" },
@@ -111,6 +111,7 @@ const wellnessPriority: Array<{ key: WellnessAssessmentKey; label: string; forma
 
 // All selected metrics share the actual data range within seven days of the latest measurement.
 export function wellnessHighlights(records: WellnessRecord[], today: string) {
+  records = eveningWellnessRecords(records).filter((record) => record.day <= today);
   const available = records.filter((record) => record.day <= today && wellnessPriority.some((item) => wellnessNumber(record, item.key) !== null));
   const latestDay = available.map((record) => record.day).sort().at(-1);
   if (!latestDay) return null;
@@ -118,13 +119,13 @@ export function wellnessHighlights(records: WellnessRecord[], today: string) {
   const windowRecords = available.filter((record) => record.day >= windowStart && record.day <= latestDay).sort((left, right) => left.day.localeCompare(right.day));
   const chosen: typeof wellnessPriority = [];
   for (const item of wellnessPriority) {
-    if (windowRecords.some((record) => wellnessNumber(record, item.key) !== null)) chosen.push(item);
+    if (windowRecords.some((record) => record.day === latestDay && wellnessNumber(record, item.key) !== null)) chosen.push(item);
     if (chosen.length === 4) break;
   }
   if (!chosen.length) return null;
   const days = windowRecords.filter((record) => chosen.some((item) => wellnessNumber(record, item.key) !== null)).map((record) => record.day);
   const start = days[0]!; const end = days.at(-1)!;
-  const measurementDay = end >= addDays(today, -1) ? end : today;
+  const measurementDay = latestDay;
   const dayCount = Math.round((Date.parse(end) - Date.parse(start)) / 86400000) + 1;
   const values = chosen.map((item) => {
     const samples = windowRecords.flatMap((record) => { const value = wellnessNumber(record, item.key); return value === null ? [] : [{ value, day: record.day }]; });
@@ -182,7 +183,7 @@ export function recoverySleepScore(current: WellnessRecord): number | null {
   return null;
 }
 
-// HRV and resting HR are required; sleep contributes when available.
+// All three signals are required for an evening's readiness estimate.
 function recoveryScore(current: WellnessRecord, sleepRecord: WellnessRecord | undefined, records: WellnessRecord[]): number | null {
   const baseline = (key: "hrvRmssdMs" | "hrvSdnnMs" | "restingHeartRateBpm") => {
     const value = wellnessNumber(current, key);
@@ -208,29 +209,28 @@ function recoveryScore(current: WellnessRecord, sleepRecord: WellnessRecord | un
   const delta = wellnessNumber(current, "restingHeartRateBpm")! - usualHr;
   const heartScore = delta <= 0 ? 90 : delta <= 2 ? 75 : delta <= 4 ? 60 : delta <= 6 ? 45 : 30;
   const sleep = sleepRecord ? recoverySleepScore(sleepRecord) : null;
-  return Math.round(sleep === null ? (hrvScore + heartScore) / 2 : (hrvScore + heartScore + sleep) / 3);
+  if (sleep === null) return null;
+  return Math.round((hrvScore + heartScore + sleep) / 3);
 }
 
 export function recoveryStatus(records: WellnessRecord[], today: string) {
-  const heart = records.find((record) => record.day === addDays(today, -1));
+  records = eveningWellnessRecords(records).filter((record) => record.day <= today);
+  const day = addDays(today, -1);
+  const heart = records.find((record) => record.day === day);
   const empty = { label: "-", detail: "More wellness data needed.", value: null, day: null, signalCount: 0, series: [] as number[] };
   if (!heart) return empty;
-  const sleepFor = (day: string) => records.find((record) => record.day === day && record.ownerId === heart.ownerId);
-  const sleep = sleepFor(today);
-  const score = recoveryScore(heart, sleep, records);
+  const score = recoveryScore(heart, heart, records);
   if (score === null) return empty;
   const series: number[] = [];
-  const days = [...new Set(records.filter((record) => record.ownerId === heart.ownerId).map((record) => addDays(record.day, 1)))].filter((day) => day <= today).sort((left, right) => right.localeCompare(left));
-  for (const day of days) {
-    const previousHeart = records.find((record) => record.day === addDays(day, -1) && record.ownerId === heart.ownerId)!;
-    const value = recoveryScore(previousHeart, sleepFor(day), records);
+  for (const record of records.filter((record) => record.ownerId === heart.ownerId && record.day <= day).sort((a, b) => b.day.localeCompare(a.day))) {
+    const value = recoveryScore(record, record, records);
     if (value !== null) series.unshift(value);
     if (series.length === 5) break;
   }
-  const signalCount = sleep && recoverySleepScore(sleep) !== null ? 3 : 2;
-  if (score >= 70) return { label: "Ready", detail: "Ready to train", value: score, day: today, series, signalCount };
-  if (score >= 45) return { label: "Caution", detail: "Train with care", value: score, day: today, series, signalCount };
-  return { label: "Rest", detail: "Prioritize recovery", value: score, day: today, series, signalCount };
+  const signalCount = 3;
+  if (score >= 70) return { label: "Ready", detail: "Ready to train", value: score, day, series, signalCount };
+  if (score >= 45) return { label: "Caution", detail: "Train with care", value: score, day, series, signalCount };
+  return { label: "Rest", detail: "Prioritize recovery", value: score, day, series, signalCount };
 }
 
 // The readiness ring colour follows the verdict: green when ready, amber for caution, red for rest.
@@ -395,13 +395,13 @@ export function RecoveryHelpModal({ onClose }: { onClose: () => void }) {
           <li><strong><T>{"Resting heart rate"}</T></strong><span><T>{"Compared with your personal baseline; an elevated rate lowers the estimate."}</T></span></li>
           <li><strong><T>{"Sleep"}</T></strong><span><T>{"Device and subjective sleep scores are scored separately and averaged equally. Without a score, manual duration is preferred, then device duration."}</T></span></li>
         </ul>
-        <p className="recovery-help-lead"><T>{"HRV and resting heart rate scores are averaged with sleep when available; without sleep, the two heart signals are averaged:"}</T></p>
+        <p className="recovery-help-lead"><T>{"HRV, resting heart rate and sleep scores are averaged only when all three signals are available:"}</T></p>
         <ul className="recovery-help-verdicts">
           <li className="ready"><i/><div><strong><T>{"Ready · 70+"}</T></strong><span><T>{"Recovered. Train as planned."}</T></span></div></li>
           <li className="caution"><i/><div><strong><T>{"Caution · 45-69"}</T></strong><span><T>{"You can train, but keep it lighter."}</T></span></div></li>
           <li className="rest"><i/><div><strong><T>{"Rest · below 45"}</T></strong><span><T>{"Prioritize recovery today."}</T></span></div></li>
         </ul>
-        <p className="recovery-help-note"><T>{"Today's readiness uses yesterday's HRV and resting heart rate, with last night's sleep recorded on today's wake-up date. Each heart baseline requires at least 7 valid days from the same source in the 28 days before yesterday, excluding yesterday itself. If yesterday's heart data or baselines are insufficient, no estimate is shown; older readiness is not substituted. Missing sleep is skipped and labelled. Manual sleep scores describe how you felt; they are stored separately from device estimates. Training load and other subjective check-ins are not included. These are Athria's estimation rules, not a scientifically validated score or a reproduction of another product's algorithm."}</T></p>
+        <p className="recovery-help-note"><T>{"Readiness evaluates yesterday's HRV and resting heart rate together with yesterday evening's sleep ending today. Each heart baseline requires at least 7 valid days from the same source in the 28 days before yesterday, excluding yesterday itself. If sleep, heart data or baselines are insufficient, no estimate is shown; older readiness is not substituted. Manual sleep scores describe how you felt; they are stored separately from device estimates. Training load and other subjective check-ins are not included. These are Athria's estimation rules, not a scientifically validated score or a reproduction of another product's algorithm."}</T></p>
       </div>
     </section>
   </div>;
@@ -525,7 +525,7 @@ export function OverviewDashboard({ summary, wellness, history, planned, today, 
       <div className="overview-left-column">
         <section className="overview-summary-grid" aria-label={tr("This week so far")}>
           <SummaryCard title={tr("Plan Progress")} value={`${meso.completed} / ${meso.total}`} className="plan-summary" ring={<SummaryProgressRing percent={meso.percent} entranceProgress={entrance.progress}>{meso.percent}%</SummaryProgressRing>}><small>{tr("this mesocycle")}</small></SummaryCard>
-          <SummaryCard title={tr("Readiness")} titleAction={<button type="button" className="recovery-help" aria-haspopup="dialog" onClick={() => setHelpOpen(true)}>{currentLanguage() === "zh-CN" ? "（" : "("}<T>{"How to calculate?"}</T>{currentLanguage() === "zh-CN" ? "）" : ")"}</button>} value={tr(recovery.label)} className="recovery-summary" ring={<SummaryProgressRing percent={recovery.value ?? 0} tone={recoveryRingTone(recovery.label)} entranceProgress={entrance.progress}>{recovery.value ?? "-"}</SummaryProgressRing>}><small>{tr(recovery.signalCount === 3 ? recovery.detail : recovery.signalCount === 2 ? "Sleep not included" : "Insufficient data")}</small></SummaryCard>
+          <SummaryCard title={tr("Readiness")} titleAction={<button type="button" className="recovery-help" aria-haspopup="dialog" onClick={() => setHelpOpen(true)}>{currentLanguage() === "zh-CN" ? "（" : "("}<T>{"How to calculate?"}</T>{currentLanguage() === "zh-CN" ? "）" : ")"}</button>} value={tr(recovery.label)} className="recovery-summary" ring={<SummaryProgressRing percent={recovery.value ?? 0} tone={recoveryRingTone(recovery.label)} entranceProgress={entrance.progress}>{recovery.value ?? "-"}</SummaryProgressRing>}><small>{tr(recovery.signalCount === 3 ? recovery.detail : "Insufficient data")}</small></SummaryCard>
         </section>
 
         <section className="overview-panel overview-activity"><header><div><h2><T>{"Your workouts this week"}</T></h2></div><button type="button" className="wellness-open" aria-label={tr("Open Training")} title={tr("Open Training")} onClick={() => window.dispatchEvent(new CustomEvent("athria-open-training"))}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button></header>

@@ -7,13 +7,32 @@ vi.mock("react", async (importOriginal) => {
 });
 import { LanguageProvider, zh } from "./i18n";
 import { SleepDurationInput, SleepSlider, WellnessMetricRow } from "./WellnessPage";
-import { metricNumber, moveMetric, normalizeMetricOrder, readMetricOrder, saveMetricOrder, sleepCanReset, sleepDraft, sleepHasChanges, sleepPatch, wellnessMetrics, wellnessSeries, wellnessWindow } from "./wellness-view";
+import { eveningWellnessRecords, sleepStorageDay, metricNumber, moveMetric, normalizeMetricOrder, readMetricOrder, saveMetricOrder, sleepCanReset, sleepDraft, sleepHasChanges, sleepPatch, wellnessMetrics, wellnessSeries, wellnessWindow } from "./wellness-view";
 import type { WellnessRecord } from "./view-models";
 
 const record = (day: string, values: Partial<Record<keyof WellnessRecord["fields"], number | null>>): WellnessRecord => ({ ownerId: "local-user", day, fields: Object.fromEntries(Object.entries(values).map(([key, value]) => [key, { value, source: key === "subjectiveSleepScore" || key === "manualSleepSeconds" ? "user" : "intervals_icu", updatedAt: "2026-10-09T00:00:00Z" }])), updatedAt: "2026-10-09T00:00:00Z" });
 const scoreMetric = wellnessMetrics[0]!;
 
 describe("wellness trends", () => {
+  it("combines HRV on one scale with metric colors, gaps and accessible source labels", () => {
+    const metric = wellnessMetrics.find((item) => item.id === "hrv")!;
+    const records = [record("2026-10-01", { hrvRmssdMs: 0, hrvSdnnMs: 40 }), record("2026-10-03", { hrvRmssdMs: 50 })];
+    const chart = wellnessSeries(records, metric, "2026-10-01", "2026-10-07");
+    expect(chart.series.map(({ tone }) => tone)).toEqual(["device", "manual"]);
+    expect(chart.series[0]!.segments).toHaveLength(2);
+    expect(chart.series.flatMap(({ points }) => points).every(({ y }) => Number.isFinite(y))).toBe(true);
+    const render = (data: WellnessRecord[]) => renderToStaticMarkup(createElement(WellnessMetricRow, { metric, records: data, start: "2026-10-01", end: "2026-10-07" }));
+    const html = render(records);
+    expect(html).toContain("<h2>HRV</h2>");
+    expect(html).toContain("0 ms · Intervals.icu RMSSD");
+    expect(html).toContain("40 ms · Intervals.icu SDNN");
+    expect(render([record("2026-10-01", { hrvSdnnMs: 30 })])).not.toContain("Intervals.icu RMSSD");
+    records[0]!.fields.hrvRmssdMs!.source = "user";
+    expect(render(records)).toContain("Manual record RMSSD");
+    expect(zh["HRV"]).toBe("心率变异性");
+    expect(zh["VO2 max"]).toBe("最大摄氧量");
+    expect(zh["SpO2"]).toBe("血氧饱和度");
+  });
   it("uses seven actual weekday ticks across year and leap-day boundaries without changing chart dimensions", () => {
     const render = (start: string, end: string, weekly = true) => renderToStaticMarkup(createElement(WellnessMetricRow, { metric: scoreMetric, records: [], start, end, weekly }));
     const year = render("2025-12-27", "2026-01-02");
@@ -32,7 +51,7 @@ describe("wellness trends", () => {
     expect(wellnessWindow("2026-10-09", 183, 2).days).toBe(551);
   });
   it("keeps device and subjective sleep in independent series and does not join across missing days", () => {
-    const chart = wellnessSeries([record("2026-10-01", { sleepScore: 70, subjectiveSleepScore: 80 }), record("2026-10-02", { sleepScore: 75 }), record("2026-10-04", { sleepScore: 85 }), record("2026-10-05", { sleepScore: null }), record("2026-10-10", { sleepScore: 90 })], scoreMetric, "2026-10-01", "2026-10-07");
+    const chart = wellnessSeries([record("2026-10-02", { sleepScore: 70, subjectiveSleepScore: 80 }), record("2026-10-03", { sleepScore: 75 }), record("2026-10-05", { sleepScore: 85 }), record("2026-10-06", { sleepScore: null }), record("2026-10-10", { sleepScore: 90 })], scoreMetric, "2026-10-01", "2026-10-07");
     expect(chart.series).toHaveLength(2);
     const device = chart.series.find((series) => series.key === "sleepScore")!;
     expect(device.segments.map((segment) => segment.map((point) => point.day))).toEqual([["2026-10-01", "2026-10-02"], ["2026-10-04"]]);
@@ -43,7 +62,7 @@ describe("wellness trends", () => {
     const chart = wellnessSeries(records, scoreMetric, "2026-10-01", "2026-10-02");
     expect(chart.high).toBeGreaterThan(chart.low);
     expect(chart.series[0]!.points.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y))).toBe(true);
-    const duration = wellnessSeries([record("2026-10-01", { sleepSeconds: 27000, manualSleepSeconds: 25200 })], wellnessMetrics[1]!, "2026-10-01", "2026-10-01");
+    const duration = wellnessSeries([record("2026-10-02", { sleepSeconds: 27000, manualSleepSeconds: 25200 })], wellnessMetrics[1]!, "2026-10-01", "2026-10-01");
     expect(duration.series.map((series) => series.points[0]!.value)).toEqual([7.5, 7]);
   });
   it("excludes power metrics and notes and always keeps both sleep rows available", () => {
@@ -62,7 +81,7 @@ describe("wellness trends", () => {
     }
     expect(render([])).toContain("<h2>Sleep score</h2>");
     expect(render([])).not.toContain("Record sleep");
-    const html = render([record("2026-10-01", { sleepScore: 80, subjectiveSleepScore: 60 })]);
+    const html = render([record("2026-10-02", { sleepScore: 80, subjectiveSleepScore: 60 })]);
     expect(html).toContain('tabindex="0" role="img"');
     expect(html).toContain("80 points · Intervals.icu");
     expect(html).toContain("60 points · Subjective sleep score");
@@ -88,9 +107,13 @@ describe("wellness trends", () => {
 });
 
 describe("wellness metric order", () => {
+  it("merges legacy HRV IDs at their first saved position", () => {
+    expect(normalizeMetricOrder(["weight", "hrv-sdnn", "steps", "hrv-rmssd"]).slice(0, 3)).toEqual(["weight", "hrv", "steps"]);
+    expect(normalizeMetricOrder(["hrv-rmssd", "weight", "hrv-sdnn"]).slice(0, 2)).toEqual(["hrv", "weight"]);
+  });
   it("defaults to the requested order and places other metrics afterwards", () => {
     const order = readMetricOrder("new", { getItem: () => null });
-    expect(order.slice(0, 8)).toEqual(["hrv-rmssd", "resting-hr", "steps", "oxygen", "sleep-score", "sleep-duration", "vo2max", "weight"]);
+    expect(order.slice(0, 8)).toEqual(["hrv", "resting-hr", "steps", "oxygen", "sleep-score", "sleep-duration", "vo2max", "weight"]);
     expect(order.slice(8)).toEqual(wellnessMetrics.map((metric) => metric.id).filter((id) => !order.slice(0, 8).includes(id)));
   });
   it("ignores invalid and duplicate IDs and appends missing metrics", () => {
@@ -333,5 +356,28 @@ describe("sleep sliders", () => {
     onChange.mockClear();
     input.onKeyUp!({ key: "Tab", currentTarget: { value: "0" } } as Parameters<NonNullable<typeof input.onKeyUp>>[0]);
     expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("sleep evening dates", () => {
+  it.each([["2026-10-09", "2026-10-08"], ["2026-01-01", "2025-12-31"], ["2026-11-01", "2026-10-31"], ["2024-03-01", "2024-02-29"]])("projects %s sleep to %s without moving heart data", (wake, evening) => {
+    const raw = [record(wake, { sleepSeconds: 28800, manualSleepSeconds: 27000, sleepScore: 80, subjectiveSleepScore: 90, sleepQuality: 1, avgSleepingHeartRateBpm: 45, hrvRmssdMs: 60, restingHeartRateBpm: 50 })];
+    const before = structuredClone(raw);
+    const projected = eveningWellnessRecords(raw);
+    expect(projected.find((item) => item.day === evening)?.fields).toEqual(Object.fromEntries(Object.entries(raw[0]!.fields).filter(([key]) => key !== "hrvRmssdMs" && key !== "restingHeartRateBpm")));
+    expect(projected.find((item) => item.day === wake)?.fields).toEqual({ hrvRmssdMs: raw[0]!.fields.hrvRmssdMs, restingHeartRateBpm: raw[0]!.fields.restingHeartRateBpm });
+    expect(sleepStorageDay(evening)).toBe(wake);
+    expect(raw).toEqual(before);
+    expect(eveningWellnessRecords(raw)).toEqual(projected);
+  });
+  it("includes the next morning at the last evening in a chart window and excludes the prior night", () => {
+    const raw = [record("2026-10-03", { sleepScore: 10 }), record("2026-10-04", { sleepScore: 20 }), record("2026-10-10", { sleepScore: 30 })];
+    const chart = wellnessSeries(raw, scoreMetric, "2026-10-03", "2026-10-09");
+    expect(chart.series[0]!.points.map(({ day, value }) => [day, value])).toEqual([["2026-10-03", 20], ["2026-10-09", 30]]);
+  });
+  it("merges sleep with the evening's health data while isolating owners", () => {
+    const raw = [record("2026-10-08", { hrvRmssdMs: 60 }), record("2026-10-09", { sleepScore: 80 }), { ...record("2026-10-09", { sleepScore: 20 }), ownerId: "other" }];
+    expect(eveningWellnessRecords(raw).find((item) => item.day === "2026-10-08" && item.ownerId === "local-user")?.fields).toEqual({ hrvRmssdMs: raw[0]!.fields.hrvRmssdMs, sleepScore: raw[1]!.fields.sleepScore });
   });
 });

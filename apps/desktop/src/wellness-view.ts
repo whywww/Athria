@@ -2,14 +2,37 @@ import { addDays } from "./plan/view";
 import type { WellnessRecord } from "./view-models";
 
 export type WellnessKey = keyof WellnessRecord["fields"];
+
+const sleepKeys: WellnessKey[] = ["sleepSeconds", "manualSleepSeconds", "sleepScore", "subjectiveSleepScore", "sleepQuality", "avgSleepingHeartRateBpm"];
+export function sleepStorageDay(eveningDay: string): string { return addDays(eveningDay, 1); }
+
+// Input is always raw API data. This projection must never be saved or re-projected.
+export function eveningWellnessRecords(records: WellnessRecord[]): WellnessRecord[] {
+  const days = new Map<string, WellnessRecord>();
+  const target = (record: WellnessRecord, day: string) => {
+    const id = `${record.ownerId}:${day}`;
+    let value = days.get(id);
+    if (!value) { value = { ownerId: record.ownerId, day, fields: {}, updatedAt: record.updatedAt }; days.set(id, value); }
+    if (record.updatedAt > value.updatedAt) value.updatedAt = record.updatedAt;
+    return value;
+  };
+  for (const record of records) {
+    for (const key of Object.keys(record.fields) as WellnessKey[]) {
+      const day = sleepKeys.includes(key) ? addDays(record.day, -1) : record.day;
+      const field = record.fields[key];
+      if (field) target(record, day).fields[key] = { ...field };
+    }
+  }
+  return [...days.values()].sort((a, b) => a.day.localeCompare(b.day));
+}
+
 export const wellnessRanges = [7, 30, 183, 365] as const;
 export type WellnessRange = typeof wellnessRanges[number];
 export interface WellnessMetric { id: string; label: string; unit: string; keys: WellnessKey[]; always?: boolean }
 export const wellnessMetrics: WellnessMetric[] = [
   { id: "sleep-score", label: "Sleep score", unit: "points", keys: ["sleepScore", "subjectiveSleepScore"], always: true },
   { id: "sleep-duration", label: "Sleep time", unit: "hours", keys: ["sleepSeconds", "manualSleepSeconds"], always: true },
-  { id: "hrv-rmssd", label: "HRV RMSSD", unit: "ms", keys: ["hrvRmssdMs"] },
-  { id: "hrv-sdnn", label: "HRV SDNN", unit: "ms", keys: ["hrvSdnnMs"] },
+  { id: "hrv", label: "HRV", unit: "ms", keys: ["hrvRmssdMs", "hrvSdnnMs"] },
   { id: "resting-hr", label: "Resting heart rate", unit: "bpm", keys: ["restingHeartRateBpm"] },
   { id: "sleeping-hr", label: "Sleeping heart rate", unit: "bpm", keys: ["avgSleepingHeartRateBpm"] },
   { id: "weight", label: "Weight", unit: "kg", keys: ["weightKg"] },
@@ -29,9 +52,9 @@ export function wellnessWindow(today: string, range: WellnessRange, offset: numb
 }
 
 export function normalizeMetricOrder(value: unknown): string[] {
-  const preferred = ["hrv-rmssd", "resting-hr", "steps", "oxygen", "sleep-score", "sleep-duration", "vo2max", "weight"];
+  const preferred = ["hrv", "resting-hr", "steps", "oxygen", "sleep-score", "sleep-duration", "vo2max", "weight"];
   const ids = [...preferred, ...wellnessMetrics.map((metric) => metric.id).filter((id) => !preferred.includes(id))];
-  const saved = Array.isArray(value) ? value.filter((id): id is string => typeof id === "string" && ids.includes(id)) : [];
+  const saved = Array.isArray(value) ? value.map((id) => id === "hrv-rmssd" || id === "hrv-sdnn" ? "hrv" : id).filter((id): id is string => typeof id === "string" && ids.includes(id)) : [];
   return [...new Set([...saved, ...ids])];
 }
 export function readMetricOrder(databaseUuid: string, storage: Pick<Storage, "getItem"> | null = typeof localStorage === "undefined" ? null : localStorage): string[] {
@@ -55,6 +78,7 @@ export function metricNumber(record: WellnessRecord, key: WellnessKey): number |
 }
 export interface WellnessPoint { day: string; value: number; source: string; key: WellnessKey; x: number; y: number }
 export function wellnessSeries(records: WellnessRecord[], metric: WellnessMetric, start: string, end: string) {
+  records = eveningWellnessRecords(records);
   const span = Math.max(1, Math.round((Date.parse(end) - Date.parse(start)) / 86400000));
   const series = metric.keys.flatMap((key, keyIndex) => {
     const sources = new Set(records.filter((record) => record.day >= start && record.day <= end && metricNumber(record, key) !== null).map((record) => record.fields[key]!.source));
@@ -64,7 +88,7 @@ export function wellnessSeries(records: WellnessRecord[], metric: WellnessMetric
         day: record.day, value: metricNumber(record, key)! / (key === "sleepSeconds" || key === "manualSleepSeconds" ? 3600 : 1), source, key,
         x: 58 + (Date.parse(record.day) - Date.parse(start)) / 86400000 / span * 700, y: 0,
       }));
-      return { key, source, tone: keyIndex === 1 || source !== "intervals_icu" ? "manual" : "device", points };
+      return { key, source, tone: metric.id === "hrv" ? key === "hrvSdnnMs" ? "manual" : "device" : keyIndex === 1 || source !== "intervals_icu" ? "manual" : "device", points };
     });
   });
   const all = series.flatMap((item) => item.points);
