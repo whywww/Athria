@@ -1,7 +1,7 @@
 import { notify, notifyError, useOperationError } from "../toasts";
 import { captureMainScroll } from "../scroll-position";
 import { T } from "../i18n";
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useId, useRef, useState, type MouseEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import {
@@ -100,7 +100,7 @@ export function TemplateLibrary({ onBack, preferredName }: { onBack: () => void;
     catch (value) { notifyError(value); }
   };
   return <div className="plan-page template-library">
-    <PrimaryPageHeader preferredName={preferredName} subtitle="Reusable workout patterns you can create, edit or delete." actions={<div className="actions"><button type="button" className="secondary template-library-back" onClick={onBack}><TemplateBackIcon/><T>{"Back to plan"}</T></button><button type="button" className="template-library-create" onClick={() => begin(emptyTemplate(), "create")}><TemplatePlusIcon/><T>{"Create template"}</T></button></div>}/>
+    <PrimaryPageHeader preferredName={preferredName} title="Template Library" subtitle="Reusable workout patterns you can create, edit or delete." actions={<div className="actions"><button type="button" className="secondary template-library-back" onClick={onBack}><TemplateBackIcon/>{language === "zh-CN" ? "返回" : "Back"}</button><button type="button" className="template-library-create" onClick={() => begin(emptyTemplate(), "create")}><TemplatePlusIcon/><T>{"Create template"}</T></button></div>}/>
     <ErrorBanner error={query.error}/>
     {query.isPending ? <Loading/> : !query.data?.length ? <EmptyState title={t("No templates yet.")}/> : <div className="template-library-grid">{query.data.map((item: StoredSessionTemplate) => <TemplateCard key={item.id} item={displayBuiltinTemplate(item, language)} onEdit={(value) => begin(value, "edit")} onRemove={remove}/>)}</div>}
     {editing && <TemplateEditorModal value={{ template: editing.template, mode: editing.mode }} taxonomy={taxonomy.data} error={taxonomy.error} busy={saving} onChange={(template) => setEditing((current) => current ? { ...current, template } : current)} onClose={() => setEditing(null)} onSave={() => void save()}/>}
@@ -165,6 +165,15 @@ export function NextTrainingDayCard({ value, plan }: { value: NextTrainingDay | 
   const t = useT();
   const client = useQueryClient();
   const day = value?.nextTrainingDay;
+  const panelId = useId();
+  const [expanded, setExpanded] = useState(() => {
+    try { return localStorage.getItem("athria:overview:next-training-day:expanded") !== "false"; } catch { return true; }
+  });
+  const toggleExpanded = () => {
+    const next = !expanded;
+    setExpanded(next);
+    try { localStorage.setItem("athria:overview:next-training-day:expanded", String(next)); } catch { /* Keep the toggle usable when storage is unavailable. */ }
+  };
   const [, setError] = useOperationError(); const [busy, setBusy] = useState(false);
   const [moveDate, setMoveDate] = useState(day?.scheduledDate ?? "");
   const [postponeId, setPostponeId] = useState<string | null>(null);
@@ -189,11 +198,11 @@ export function NextTrainingDayCard({ value, plan }: { value: NextTrainingDay | 
   const planEnd = plan ? addDays(plan.effectiveStartDate, plan.mesocycle.durationWeeks * 7 - 1) : undefined;
   const moveOutsidePlan = Boolean(plan && moveDate && (moveDate < plan.effectiveStartDate || (planEnd && moveDate > planEnd)));
   return <section className="mesocycle-card next-training-day">
-    <div className="proposal-heading"><div><div><h2>{t(isToday ? "Today" : "Next Training Day")}</h2><p>{localizedWeekdays()[day.dayOfWeek]} · {day.scheduledDate} · {currentLanguage() === "zh-CN" ? `第 ${day.weekNumber} 周` : `Week ${day.weekNumber}`}{phaseSummary ? ` · ${phaseSummary}` : ""}</p></div></div></div>
-    <div className="session-list">{day.existingSessions.map((session) => <article className={`session-card ${session.status}`} key={session.id}>
+    <div className="proposal-heading"><h2 className="next-day-heading"><button type="button" className="next-day-toggle" aria-expanded={expanded} aria-controls={panelId} onClick={toggleExpanded}><span className="next-day-summary"><span className="next-day-title">{t(isToday ? "Today" : "Next Training Day")}</span><span className="next-day-meta">{localizedWeekdays()[day.dayOfWeek]} · {day.scheduledDate} · {currentLanguage() === "zh-CN" ? `第 ${day.weekNumber} 周` : `Week ${day.weekNumber}`}{phaseSummary ? ` · ${phaseSummary}` : ""}</span></span><svg className="next-day-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m7 9.5 5 5 5-5"/></svg></button></h2></div>
+    <div id={panelId} hidden={!expanded}><div className="session-list">{day.existingSessions.map((session) => <article className={`session-card ${session.status}`} key={session.id}>
       {session.components.length > 0 ? <div className="next-prescriptions">{session.components.map((component) => <Prescription component={component} sessionDomain={session.domain} variant="detailed" fallbackNotes={session.intent} summary={session.intent} meta={formatDuration(session.durationMinutes)} key={component.id}/>)}</div> : <p className="next-prescription-empty"><T>{"No structured prescription is available for this session."}</T></p>}
       {session.status === "planned" && <><div className="actions"><button className="complete-training-button" disabled={busy || !isToday} title={day.scheduledDate > today ? t("This is a future workout. Move it to your planned date first.") : undefined} onClick={() => void act(session.id, { action: "complete" })}><T>{"Complete"}</T></button><button className="secondary" disabled={busy} onClick={() => void act(session.id, { action: "skip" })}><T>{"Skip"}</T></button><button className="secondary" disabled={busy} aria-expanded={postponeId === session.id} aria-controls={`postpone-panel-${session.id}`} onClick={() => { if (postponeId === session.id) { setPostponeId(null); return; } setMoveDate(day.scheduledDate); setPostponeId(session.id); }}><T>{"Move"}</T></button></div>{postponeId === session.id && <div className="postpone-panel" id={`postpone-panel-${session.id}`}><label><T>{"Move to date"}</T><input type="date" min={plan?.effectiveStartDate} max={planEnd} value={moveDate} onChange={(event) => setMoveDate(event.target.value)}/></label><button className="secondary" disabled={busy || moveOutsidePlan || !moveDate || moveDate === day.scheduledDate} onClick={() => void act(session.id, { action: "move_occurrence", scheduledDate: moveDate })}><T>{"Confirm"}</T></button>{moveOutsidePlan && <small role="alert"><T>{"The workout must stay within this mesocycle."}</T></small>}</div>}</>}
-    </article>)}</div></section>;
+    </article>)}</div></div></section>;
 }
 
 export function PlanEmptyState() {

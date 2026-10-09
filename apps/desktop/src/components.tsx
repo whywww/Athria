@@ -21,11 +21,11 @@ export const ErrorBanner = ({ error }: { error: unknown }) => error ? <div class
 export const Loading = () => <p className="muted"><T>{"Loading…"}</T></p>;
 export const EmptyState = ({ title, description }: { title: string; description?: string }) => <div className="empty-state"><strong>{tr(title)}</strong>{description && <p>{tr(description)}</p>}</div>;
 
-export function PrimaryPageHeader({ preferredName, subtitle, actions }: { preferredName?: string | null | undefined; subtitle: string; actions?: React.ReactNode }) {
+export function PrimaryPageHeader({ preferredName, title, subtitle, actions, compact = false }: { preferredName?: string | null | undefined; title?: string | undefined; subtitle?: string | undefined; actions?: React.ReactNode; compact?: boolean }) {
   const { language } = useLanguage();
   const name = preferredName?.trim();
   const greeting = name ? language === "zh-CN" ? `你好，${name}！` : `Hi, ${name}!` : language === "zh-CN" ? "你好！" : "Hi!";
-  return <header className="primary-page-header"><div><h1>{greeting} <span aria-hidden="true">👋</span></h1><p>{tr(subtitle)}</p></div>{actions}</header>;
+  return <header className={`primary-page-header${compact ? " primary-page-header-compact" : ""}`}><div><h1>{title !== undefined ? <T>{title}</T> : <>{greeting} <span aria-hidden="true">👋</span></>}</h1>{subtitle && <p>{tr(subtitle)}</p>}</div>{actions}</header>;
 }
 
 export function ChoiceChip({ selected, onClick, children }: { selected: boolean; onClick: () => void; children: React.ReactNode }) {

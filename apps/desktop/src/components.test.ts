@@ -13,6 +13,12 @@ describe("EmptyState", () => {
 });
 
 describe("PrimaryPageHeader", () => {
+  it("allows compact greetings without a subtitle and preserves the default header", () => {
+    const markup = renderToStaticMarkup(createElement(PrimaryPageHeader, { preferredName: "Hailey", compact: true }));
+    expect(markup).toContain("primary-page-header-compact");
+    expect(markup).not.toContain("<p>");
+    expect(renderToStaticMarkup(createElement(PrimaryPageHeader, {}))).not.toContain("primary-page-header-compact");
+  });
   it("renders the preferred name and optional actions", () => {
     const markup = renderToStaticMarkup(createElement(PrimaryPageHeader, {
       preferredName: "Hailey",

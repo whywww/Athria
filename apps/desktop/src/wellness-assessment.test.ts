@@ -13,6 +13,12 @@ function data(key: WellnessAssessmentKey, baseline: number, current: number, cou
 }
 
 describe("personal wellness assessment", () => {
+  it("assesses effective manual sleep against matching manual history and falls back to API", () => {
+    const records = data("sleepSeconds", 28800, 28800).map((entry) => ({ ...entry, fields: { ...entry.fields, manualSleepSeconds: { value: entry.day === day ? 25200 : 27000, source: "user" as const, updatedAt: entry.updatedAt } } }));
+    expect(assessWellness(records, "sleepSeconds", day)).toMatchObject({ baseline: 27000, sampleCount: 7, change: -1800 });
+    const reverted = records.map((entry) => ({ ...entry, fields: { sleepSeconds: entry.fields.sleepSeconds! } }));
+    expect(assessWellness(reverted, "sleepSeconds", day)).toMatchObject({ baseline: 28800, sampleCount: 7, change: 0 });
+  });
   const cases: [WellnessAssessmentKey, number, number, number, string, string, string][] = [
     ["hrvRmssdMs", 30, 35, 25, "Recovery looks good", "Recovery is steady", "Recovery is slower; take it easy"],
     ["hrvSdnnMs", 30, 35, 25, "Recovery looks good", "Recovery is steady", "Recovery is slower; take it easy"],

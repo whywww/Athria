@@ -8,7 +8,7 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [{ "title": "Athria", "width": 1250, "height": 680, "minWidth": 1250, "minHeight": 680, "center": true }],
+    "windows": [{ "title": "Athria", "width": 1250, "height": 750, "minWidth": 1250, "minHeight": 750, "center": true }],
     "security": { "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:*; img-src 'self' asset: data:; style-src 'self' 'unsafe-inline'; script-src 'self'" }
   },
   "bundle": {

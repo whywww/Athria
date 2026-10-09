@@ -19,6 +19,8 @@ import { Card, EmptyState, ErrorBanner, Loading, PrimaryPageHeader, useModalDism
 import { CurrentPlanPage, NextTrainingDayCard, TemplateLibrary } from "./plan/CurrentPlanPage";
 import { localDateForTimezone } from "./plan/view";
 import { OverviewDashboard, overviewDateRange } from "./overview";
+import { HealthRecordModal, WellnessPage } from "./WellnessPage";
+import { captureMainScroll } from "./scroll-position";
 import { domainIconPath } from "./domain-icons";
 import { SkillUpdates, skillUpdateQueryKey } from "./skill-updates";
 import { checkSkillUpdates } from "./api";
@@ -146,6 +148,23 @@ function useScheduledPlanReview() {
 }
 
 function Overview() {
+  const database = useQuery<DatabaseVersion>({ queryKey: ["database-version"], enabled: false });
+  const databaseUuid = database.data?.databaseUuid ?? "";
+  const [wellnessView, setWellnessView] = useState<{ databaseUuid: string; open: boolean }>({ databaseUuid, open: false });
+  const wellnessOpen = wellnessView.open && wellnessView.databaseUuid === databaseUuid;
+  const [recordingHealth, setRecordingHealth] = useState(false);
+  useEffect(() => { setRecordingHealth(false); }, [databaseUuid]);
+  const restoreOverviewScroll = useRef<(() => void) | null>(null);
+  const openWellness = () => {
+    restoreOverviewScroll.current = captureMainScroll();
+    setWellnessView({ databaseUuid, open: true });
+    requestAnimationFrame(() => { const main = document.querySelector<HTMLElement>("main.primary-main"); if (main) main.scrollTop = 0; });
+  };
+  const closeWellness = () => {
+    setRecordingHealth(false);
+    setWellnessView({ databaseUuid, open: false });
+    restoreOverviewScroll.current?.();
+  };
   const profile = useQuery({ queryKey: ["profile"], queryFn: () => api<AthleteProfile>("/api/profile") });
   const today = profile.data ? localDateForTimezone(profile.data.timezone) : null;
   const range = today ? overviewDateRange(today) : null;
@@ -172,8 +191,13 @@ function Overview() {
   const error = query.error ?? profile.error ?? wellness.error ?? history.error ?? calendar.error;
   if (error || !query.data || !profile.data || !today) return <ErrorBanner error={error}/>;
   return <>
+    <PrimaryPageHeader compact={wellnessOpen} preferredName={profile.data.preferredName} subtitle={wellnessOpen ? undefined : "Let's keep the momentum going. Here's your overview for today."} actions={wellnessOpen ? <div className="actions"><button type="button" className="secondary template-library-back wellness-back" onClick={closeWellness}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg><span>{currentLanguage() === "zh-CN" ? tr("Wellness back") : "Back"}</span></button><button type="button" className="template-library-create" onClick={() => setRecordingHealth(true)}><AppIcon name="plus"/><T>{"Manual entry"}</T></button></div> : undefined}/>
+    {wellnessOpen && <WellnessPage key={`wellness:${databaseUuid}`} today={today} databaseUuid={databaseUuid}/>}
+    {wellnessOpen && recordingHealth && <HealthRecordModal key={databaseUuid} today={today} databaseUuid={databaseUuid} onClose={() => setRecordingHealth(false)}/>}
+    <div hidden={wellnessOpen} key={`overview:${databaseUuid}`}>
     <div className="overview-next-day" id="overview-next-day">{plan.data && !nextDay.isPending && nextDay.data ? <NextTrainingDayCard value={nextDay.data} plan={plan.data} /> : !plan.data ? <EmptyState title={tr("No current plan")} description="Plans are created by your connected AI Agent — build one to see your next training day here."/> : null}</div>
-    <OverviewDashboard summary={query.data} wellness={wellness.data ?? []} history={history.data ?? []} planned={calendar.data ?? []} today={today} timezone={profile.data.timezone} adjustment={adjustment.data?.showReminder ? adjustment.data.assessment : undefined} onDismissReview={dismissReview}/>
+    <OverviewDashboard summary={query.data} wellness={wellness.data ?? []} history={history.data ?? []} planned={calendar.data ?? []} today={today} timezone={profile.data.timezone} adjustment={adjustment.data?.showReminder ? adjustment.data.assessment : undefined} onDismissReview={dismissReview} onOpenWellness={openWellness}/>
+    </div>
   </>;
 }
 
@@ -1340,5 +1364,5 @@ function ReadyApp() {
   const navIcons: Record<Page, IconName> = { Overview: "overview", Training: "training", Profile: "profile", Plan: "plan", Connections: "devices", Settings: "settings", Help: "help" };
   const NavItems = ({ items }: { items: typeof dashboardPages[number][] }) => <>{items.map((item) => <button key={item.id} className={item.id === page ? "active" : ""} aria-current={item.id === page ? "page" : undefined} onClick={() => setPage(item.id)}><AppIcon name={navIcons[item.id]}/>{t(item.label)}</button>)}</>;
   const preferredName = profile.data?.preferredName;
-  return <><DatabaseGate/><DailyTrainingSync/><AgentSkillUpdateCoordinator/><div className="shell"><aside><div className="brand"><img src="/athria-logo.svg" alt="Athria" /></div><nav aria-label={t("Main navigation")}><NavItems items={primaryPages}/></nav><div className="sidebar-lower"><nav className="support-nav" aria-label={t("Support navigation")}><NavItems items={supportPages}/></nav></div></aside><main className="primary-main">{page !== "Plan" && page !== "Profile" && page !== "Settings" && <PrimaryPageHeader preferredName={preferredName} subtitle={t(page === "Overview" ? "Let's keep the momentum going. Here's your overview for today." : page === "Training" ? "All your training in one place — every domain, every workout." : page === "Connections" ? "Sync your data from the apps and devices you use. Keep everything in one place." : page === "Help" ? "Guides for plans, training data, backups and connecting your AI agent." : "Your AI fitness hub. Local-first. Data you own.")}/>}<View/></main></div></>;
+  return <><DatabaseGate/><DailyTrainingSync/><AgentSkillUpdateCoordinator/><div className="shell"><aside><div className="brand"><img src="/athria-logo.svg" alt="Athria" /></div><nav aria-label={t("Main navigation")}><NavItems items={primaryPages}/></nav><div className="sidebar-lower"><nav className="support-nav" aria-label={t("Support navigation")}><NavItems items={supportPages}/></nav></div></aside><main className="primary-main">{page !== "Overview" && page !== "Plan" && page !== "Profile" && page !== "Settings" && <PrimaryPageHeader preferredName={preferredName} subtitle={t(page === "Training" ? "All your training in one place — every domain, every workout." : page === "Connections" ? "Sync your data from the apps and devices you use. Keep everything in one place." : page === "Help" ? "Guides for plans, training data, backups and connecting your AI agent." : "Your AI fitness hub. Local-first. Data you own.")}/>}<View/></main></div></>;
 }

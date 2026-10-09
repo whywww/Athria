@@ -59,6 +59,31 @@ describe("NextTrainingDayCard", () => {
     render(strengthDay);
   });
 
+  it("defaults to an expanded keyboard-accessible header connected to its content", () => {
+    const html = render(strengthDay);
+    expect(html).toContain('type="button" class="next-day-toggle" aria-expanded="true"');
+    const panelId = html.match(/class="next-day-toggle"[^>]*aria-controls="([^"]+)"/)?.[1];
+    expect(panelId).toBeTruthy();
+    expect(html).toContain(`<div id="${panelId}"><div class="session-list">`);
+  });
+
+  it.each(["en", "zh-CN"])("restores a collapsed preference while keeping the summary and mounted details in %s", (language) => {
+    vi.stubGlobal("localStorage", { getItem: (key: string) => key === "athria:overview:next-training-day:expanded" ? "false" : language });
+    const html = render(strengthDay);
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain('hidden=""><div class="session-list">');
+    expect(html).toContain("2026-09-24");
+    expect(html).toContain(language === "zh-CN" ? "第 2 周" : "Week 2");
+    expect(html).toContain("Back Squat");
+    expect(render({ ...strengthDay, nextTrainingDay: { ...strengthDay.nextTrainingDay!, occurrenceId: "occ-2", scheduledDate: "2026-09-25" } })).toContain('aria-expanded="false"');
+  });
+
+  it("keeps the no-upcoming-day message without a toggle", () => {
+    const html = render({ nextTrainingDay: null, reasonCode: "PLAN_ENDED" });
+    expect(html).toContain("Plan up to date");
+    expect(html).not.toContain("next-day-toggle");
+  });
+
   it.each(["en", "zh-CN"])("shows the future tooltip only for future dates in %s and removes the permanent hint", (language) => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-24T12:00:00Z"));

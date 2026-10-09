@@ -149,7 +149,7 @@ export function paginateTrainingHistory<T>(items: T[], requestedPage: number, pa
   return { items: items.slice(offset, offset + pageSize), page, totalPages, start: items.length ? offset + 1 : 0, end: Math.min(offset + pageSize, items.length) };
 }
 export type WellnessFieldValue = { value: number | string | null; source: "intervals_icu" | "user" | "llm"; updatedAt: string };
-export interface WellnessRecord { ownerId: string; day: string; fields: Partial<Record<"restingHeartRateBpm" | "hrvRmssdMs" | "hrvSdnnMs" | "sleepSeconds" | "sleepScore" | "sleepQuality" | "avgSleepingHeartRateBpm" | "weightKg" | "bodyFatPercent" | "vo2maxMlKgMin" | "spo2Percent" | "stepsCount" | "respirationRpm" | "fatigue" | "soreness" | "stress" | "mood" | "motivation" | "readiness" | "injuryScore" | "eftpWatts" | "wPrimeJoules" | "pMaxWatts" | "notes", WellnessFieldValue>>; updatedAt: string }
+export interface WellnessRecord { ownerId: string; day: string; fields: Partial<Record<"restingHeartRateBpm" | "hrvRmssdMs" | "hrvSdnnMs" | "sleepSeconds" | "sleepScore" | "subjectiveSleepScore" | "manualSleepSeconds" | "sleepQuality" | "avgSleepingHeartRateBpm" | "weightKg" | "bodyFatPercent" | "vo2maxMlKgMin" | "spo2Percent" | "stepsCount" | "respirationRpm" | "fatigue" | "soreness" | "stress" | "mood" | "motivation" | "readiness" | "injuryScore" | "eftpWatts" | "wPrimeJoules" | "pMaxWatts" | "notes", WellnessFieldValue>>; updatedAt: string }
 
 export interface PersonalInformation {
   preferredName: string;

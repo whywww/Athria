@@ -273,12 +273,14 @@ const WELLNESS_ALIASES: [(&str, &[&str]); 23] = [
 
 /// Key order of `wellnessRecordSchema.fields`; stored records follow it
 /// regardless of merge order, matching Zod's parse output.
-const WELLNESS_FIELD_ORDER: [&str; 24] = [
+const WELLNESS_FIELD_ORDER: [&str; 26] = [
     "restingHeartRateBpm",
     "hrvRmssdMs",
     "hrvSdnnMs",
     "sleepSeconds",
     "sleepScore",
+    "subjectiveSleepScore",
+    "manualSleepSeconds",
     "sleepQuality",
     "avgSleepingHeartRateBpm",
     "weightKg",

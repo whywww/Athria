@@ -1,5 +1,6 @@
 import type { WellnessRecord } from "./view-models";
 import { addDays } from "./plan/view";
+import { sleepDurationField } from "./wellness-view";
 
 export type WellnessAssessmentKey = "hrvRmssdMs" | "hrvSdnnMs" | "restingHeartRateBpm" | "avgSleepingHeartRateBpm" | "stepsCount" | "sleepSeconds" | "sleepScore" | "vo2maxMlKgMin" | "spo2Percent" | "sleepQuality" | "fatigue" | "soreness" | "stress" | "mood" | "motivation";
 export interface WellnessAssessment {
@@ -33,14 +34,15 @@ const rules = {
 // These thresholds describe personal changes in the UI, not clinical cutoffs.
 export function assessWellness(records: WellnessRecord[], key: WellnessAssessmentKey, day: string): WellnessAssessment {
   const rule = rules[key];
-  const current = records.find((record) => record.day === day)?.fields[key];
+  const currentRecord = records.find((record) => record.day === day);
+  const current = key === "sleepSeconds" ? sleepDurationField(currentRecord) : currentRecord?.fields[key];
   const currentValue = current?.value;
   const result: WellnessAssessment = { level: "neutral", message: "No record for this day", day, baseline: null, sampleCount: 0, change: null, threshold: null, mode: rule.mode };
   if (!current || typeof currentValue !== "number" || !Number.isFinite(currentValue)) return result;
   const history = new Map<string, number>();
   const start = addDays(day, -28);
   for (const record of records) {
-    const field = record.fields[key];
+    const field = key === "sleepSeconds" ? sleepDurationField(record) : record.fields[key];
     if (record.day >= start && record.day < day && field?.source === current.source && typeof field.value === "number" && Number.isFinite(field.value)) history.set(record.day, field.value);
   }
   const values = [...history.values()].sort((a, b) => a - b);

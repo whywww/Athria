@@ -1,7 +1,7 @@
 //! `wellnessRecordSchema` normalization.
 //!
 //! Wellness schema parsing and normalization. `fields` is a
-//! strict partial object over the 24 wellness fields, so a parsed record keeps
+//! strict partial object over the 26 wellness fields, so a parsed record keeps
 //! exactly the present fields in schema declaration order — the order both the
 //! TypeScript store and the Rust store write into `wellness.data`.
 
@@ -11,12 +11,14 @@ use super::common::*;
 use crate::Result;
 
 /// The `wellnessFields` shape order.
-pub const WELLNESS_FIELD_ORDER: [&str; 24] = [
+pub const WELLNESS_FIELD_ORDER: [&str; 26] = [
     "restingHeartRateBpm",
     "hrvRmssdMs",
     "hrvSdnnMs",
     "sleepSeconds",
     "sleepScore",
+    "subjectiveSleepScore",
+    "manualSleepSeconds",
     "sleepQuality",
     "avgSleepingHeartRateBpm",
     "weightKg",
@@ -48,6 +50,7 @@ enum FieldValue {
     NonNegativeInteger,
     ZeroToOneHundred,
     Positive,
+    SleepDuration,
     Text(usize),
 }
 
@@ -57,6 +60,7 @@ fn accepts(rule: FieldValue, value: &Value) -> bool {
         FieldValue::Text(maximum) => value
             .as_str()
             .is_some_and(|text| text.encode_utf16().count() <= maximum),
+        FieldValue::SleepDuration => value.as_f64().is_some_and(|number| (0.0..=86400.0).contains(&number) && number.fract() == 0.0),
         FieldValue::NonNegative => value.as_f64().is_some_and(|number| number >= 0.0),
         FieldValue::NonNegativeInteger => value
             .as_f64()
@@ -73,7 +77,8 @@ fn rule_for(field: &str) -> FieldValue {
         "sleepSeconds" | "sleepQuality" | "stepsCount" | "injuryScore" => {
             FieldValue::NonNegativeInteger
         }
-        "sleepScore" | "bodyFatPercent" | "spo2Percent" => FieldValue::ZeroToOneHundred,
+        "manualSleepSeconds" => FieldValue::SleepDuration,
+        "sleepScore" | "subjectiveSleepScore" | "bodyFatPercent" | "spo2Percent" => FieldValue::ZeroToOneHundred,
         "weightKg" => FieldValue::Positive,
         "notes" => FieldValue::Text(2000),
         _ => FieldValue::NonNegative,
@@ -235,5 +240,24 @@ mod tests {
     fn invalid_days_are_rejected() {
         assert!(parse_wellness_record(&json!({ "day": "2026-9-17", "fields": {}, "updatedAt": "2026-09-17T04:00:00.000Z" })).is_err());
         assert!(parse_wellness_record(&json!({ "day": "2026-09-17T00:00:00Z", "fields": {}, "updatedAt": "2026-09-17T04:00:00.000Z" })).is_err());
+    }
+
+    #[test]
+    fn manual_sleep_ranges_and_missing_values_are_validated() {
+        for (key, values) in [
+            ("subjectiveSleepScore", vec![json!(0), json!(100), json!(85.5), json!(null)]),
+            ("manualSleepSeconds", vec![json!(0), json!(86400), json!(null)]),
+        ] {
+            for value in values {
+                let mut fields = serde_json::Map::new();
+                fields.insert(key.into(), json!({ "value": value, "source": "user", "updatedAt": "2026-09-17T04:00:00.000Z" }));
+                assert!(parse_wellness_record(&json!({ "day": "2026-09-17", "fields": fields, "updatedAt": "2026-09-17T04:00:00.000Z" })).is_ok());
+            }
+        }
+        for (key, value) in [("subjectiveSleepScore", json!(-1)), ("subjectiveSleepScore", json!(101)), ("manualSleepSeconds", json!(-1)), ("manualSleepSeconds", json!(86401)), ("manualSleepSeconds", json!(1.5))] {
+            let mut fields = serde_json::Map::new();
+            fields.insert(key.into(), json!({ "value": value, "source": "user", "updatedAt": "2026-09-17T04:00:00.000Z" }));
+            assert!(parse_wellness_record(&json!({ "day": "2026-09-17", "fields": fields, "updatedAt": "2026-09-17T04:00:00.000Z" })).is_err());
+        }
     }
 }

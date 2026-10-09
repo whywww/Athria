@@ -26,6 +26,36 @@ fn test_app() -> AthriaApplication<SqliteStore> {
 }
 
 #[test]
+fn manual_sleep_is_independent_of_sync_and_uses_snapshot_conflict_checks() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("sleep.sqlite3");
+    let clock = Arc::new(FixedClock::new(NOW));
+    let store = SqliteStore::open_with_clock(&path, clock.clone()).unwrap();
+    let app = AthriaApplication::with_clock(store, "local-user", clock.clone());
+    let day = "2026-09-17";
+    let initial = app.get_wellness_day(day).unwrap();
+    let saved = app.update_wellness(day, &json!({ "confirmed": true, "source": "user", "expectedSnapshotHash": initial["snapshotHash"], "fields": { "subjectiveSleepScore": 60, "manualSleepSeconds": 25200 } })).unwrap();
+    assert_eq!(saved["fields"]["subjectiveSleepScore"]["source"], "user");
+    app.store().upsert_wellness("local-user", &[json!({ "id": day, "sleepScore": 90, "sleepSecs": 28800, "restingHR": 50 })]).unwrap();
+    let stale = app.update_wellness(day, &json!({ "confirmed": true, "source": "user", "expectedSnapshotHash": initial["snapshotHash"], "fields": { "subjectiveSleepScore": 80 } })).unwrap_err();
+    assert_eq!(stale.code(), AthriaErrorCode::InputSnapshotChanged);
+    let after_sync = app.get_wellness_day(day).unwrap();
+    assert_eq!(after_sync["record"]["fields"]["subjectiveSleepScore"]["value"], 60);
+    assert_eq!(after_sync["record"]["fields"]["manualSleepSeconds"]["value"], 25200);
+    assert_eq!(after_sync["record"]["fields"]["sleepScore"]["value"], 90);
+    assert_eq!(after_sync["record"]["fields"]["sleepSeconds"]["value"], 28800);
+    drop(app);
+    let store = SqliteStore::open_with_clock(&path, clock.clone()).unwrap();
+    let app = AthriaApplication::with_clock(store, "local-user", clock);
+    assert_eq!(app.get_wellness_day(day).unwrap(), after_sync);
+    let cleared = app.update_wellness(day, &json!({ "confirmed": true, "source": "user", "expectedSnapshotHash": after_sync["snapshotHash"], "fields": { "subjectiveSleepScore": null, "manualSleepSeconds": null } })).unwrap();
+    assert!(cleared["fields"].get("subjectiveSleepScore").is_none());
+    assert!(cleared["fields"].get("manualSleepSeconds").is_none());
+    assert_eq!(cleared["fields"]["sleepScore"]["value"], 90);
+    assert_eq!(cleared["fields"]["restingHeartRateBpm"]["value"], 50);
+}
+
+#[test]
 fn profile_writes_accept_legacy_session_minutes_and_persist_only_the_new_key() {
     let app = test_app();
     let saved = app.save_profile(&json!({"maxSessionMinutes": 90})).unwrap();
