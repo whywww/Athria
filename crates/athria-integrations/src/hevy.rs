@@ -147,7 +147,6 @@ pub fn parse_hevy_csv(content: &[u8], file_name: &str) -> Result<HevyPreview> {
         name: String,
         start: String,
         start_ms: i64,
-        end: String,
         end_ms: i64,
         sets: Vec<Value>,
     }
@@ -196,13 +195,11 @@ pub fn parse_hevy_csv(content: &[u8], file_name: &str) -> Result<HevyPreview> {
                 name: title.into(),
                 start: start.clone(),
                 start_ms,
-                end: end.clone(),
                 end_ms,
                 sets: Vec::new(),
             });
             if end_ms > group.end_ms {
                 group.end_ms = end_ms;
-                group.end = end;
             }
             group.sets.push(set);
             Ok(())
@@ -215,7 +212,7 @@ pub fn parse_hevy_csv(content: &[u8], file_name: &str) -> Result<HevyPreview> {
     let mut sessions = Vec::new();
     for (external, group) in groups {
         sessions.push(parse_training_session(&json!({ "id": format!("hevy:{external}"), "source": "hevy", "externalId": external,
-        "type": "StrengthTraining", "name": group.name, "startAt": group.start, "endAt": group.end,
+        "type": "StrengthTraining", "name": group.name, "startAt": group.start,
         "durationMinutes": ((group.end_ms - group.start_ms) as f64 / 60_000.0).round().max(0.0) as i64, "strengthSets": group.sets }))?);
     }
     let used: HashSet<_> = fields.values().copied().collect();

@@ -1,19 +1,21 @@
 # Plan Adjustment
 
-Review evaluates whether the current plan needs attention. It does not edit the plan, and its result is not user approval.
+Agent adjustment has one conversational entry point: get_plan_adjustment_context supplies commit-to-today evidence boundaries and Profile changes, and the Agent evaluates the complete latest Profile, history, Wellness, and conversation.
+
+The deterministic policy below belongs to App reminder checks. It invites the user to review a plan with their Agent; it neither dispatches the Agent nor changes the plan or grants approval.
 
 ## Inputs and outputs
 
 | Field | Meaning |
 | --- | --- |
-| `trigger` | `weekly_review`, `profile_change`, or `user_request` |
+| `trigger` | Internal Core/App check kind; not an MCP or Skill choice |
 | `reasons` | Reason code, severity, evidence axis, references, and affected scope |
 | `hardOverrides` | Conditions forcing required review |
 | `dataGaps` | Unresolved evidence, not normal recovery/performance |
 | `reviewStatus` | Decision from the precedence table |
 | `recommendedScope` | `none`, `workout`, `week`, or `plan` |
 | `currentPlanRevision`, `inputSnapshotHash`, `profileHash` | Assessment freshness context |
-| `suggestedReadWindow` | 1 normally; 3 for strong evidence or targeted evidence needs |
+| `suggestedReadWindow` | Legacy auxiliary hint (1 or 3); not a date-query contract |
 | `targetedEvidenceNeeds` | Follow-up evidence to inspect instead of unrelated history |
 
 Evidence axes are adherence, key sessions, schedule feasibility, health/recovery, Profile mismatch, and performance per domain. Two performance domains are separate axes. Multiple reasons on one axis count once for soft-signal escalation.
@@ -71,7 +73,7 @@ General-fitness and other goals alone do not establish structural drift. Duratio
 | `week` | Target weeks, including focus; requires a nonempty week list |
 | `plan` | Future content and structure when justified |
 
-At all scopes, sessions before reviewDate and every non-planned session are protected: they cannot be added, removed, changed, or moved across weeks. Below plan scope, cycle duration, schedule, domain progression, adjustment rules, and plan metadata also remain unchanged.
+At all scopes, sessions before reviewDate and every non-planned session are protected: they cannot be added, removed, changed, or moved across weeks. Below plan scope, cycle duration, schedule, domain progression, and plan metadata also remain unchanged.
 
 Core scope validation reports violations such as `MISSING_SCOPE_TARGET`, `CHANGE_OUTSIDE_RECOMMENDED_SCOPE`, and `HISTORICAL_SESSION_CHANGED`. The combined application validator requires both plan and scope validation to pass.
 
@@ -81,13 +83,13 @@ Core scope validation reports violations such as `MISSING_SCOPE_TARGET`, `CHANGE
 
 The application adapter derives session outcomes, key-session persistence, unmatched workouts, and validator-backed Profile conflicts. It does not supply performance issues, explicit health limitations, interruption counts, or inferred next-week infeasibility.
 
-Next-week feasibility is currently supplied as feasible. Wellness present in the review window yields normal recovery status; absence yields unknown. This is record coverage, not physiological readiness. Former Profile preferences are not retained in saved plans, so preference-change detection is not reconstructed.
+Next-week feasibility is currently supplied as feasible. Wellness present in the review window yields normal recovery status; absence yields unknown. This is record coverage, not physiological readiness. Full former Profiles are not retained. The application now records net changes to plan-related Profile fields since the last formal plan commit and exposes them through `get_plan_adjustment_context.profileChanges`; the deterministic preference-change signal is still not inferred from these textual changes. The Agent compares the full latest Profile and plan, using changes as attention hints without reducing the weight of unchanged preferences.
 
 The full Core policy describes supported structured evidence; MCP review does not automatically detect every condition. Its current goal modalities also do not separately model the new mobility/functional domains; do not assume domain classification alone establishes goal drift.
 
 ## Applying a review
 
-On the first opening of each local Monday–Sunday week, the desktop reviews the previous complete Monday–Sunday week to assess whether this week's plan needs adjustment. A first opening on Tuesday or later still reviews that same previous week. Current-week training is excluded, and unresolved sessions on the previous Sunday count as unresolved evidence. Explicit MCP `weekly_review` uses the same completed-week window; `user_request` can inspect the current week and excludes pending sessions scheduled for today.
+On the first opening of each local Monday–Sunday week, the desktop reviews the previous complete Monday–Sunday week to assess whether this week's plan needs adjustment. A first opening on Tuesday or later still reviews that same previous week. Current-week training is excluded, and unresolved sessions on the previous Sunday count as unresolved evidence. These checks remain internal to the App; MCP exposes no review trigger. A reminder only asks the user to speak with their Agent, whose adjustment evidence period is always the formal-commit-to-today window unless the user specifies another period.
 
 The desktop waits for active training sync and queried data to settle, then stores the successful review, local week, and dismissal in browser local storage keyed by database UUID. Failed requests do not mark the week reviewed. Reopening or refreshing data in the same week checks fresh Profile/plan conflicts without repeating the weekly review; the initial weekly result remains available until dismissed or its plan/Profile context changes. A new local week starts a new review. This state is per device, not portable database state. Automatic checks run while the app is open, independent of the selected page. Profile-related notices use “Plan conditions changed”; weekly notices refer to last week's execution and this week's plan. Plan-write validation still runs on every write, and assessment never changes the plan automatically.
 
@@ -96,3 +98,11 @@ Inspect targeted evidence, propose the smallest supported change, validate, show
 Reminder identity includes reason codes, plan revision, Profile hash, and state snapshot hash. Acknowledgement suppresses unchanged soft context only. Changed context reopens it; hard overrides bypass acknowledgement. Acknowledgement never edits or approves the plan.
 
 Authority: [Core assessment](../../crates/athria-core/src/adjustment.rs), [scope validator](../../crates/athria-core/src/scope_diff.rs), [application evidence](../../crates/athria-application/src/adjustment.rs), and [reminders](../../crates/athria-core/src/reminder.rs).
+
+## Agent adjustment history and persisted diff
+
+Generic adjustment requests use the last successful `commit_plan_draft` date through today in the current Profile timezone, inclusive. The no-argument MCP `get_plan_adjustment_context` returns this evidence period and freshness hashes without a decision or trigger. App reminder cadence does not affect it. Explicit paired `from`/`to` queries align sessions, summary, and Wellness. Do not pool a multiweek history into the four-session weekly thresholds.
+
+Schema v32 adds database/owner-isolated `plan_review_context`, carrying only the formal commit anchor and net changes to goals, preference, regular session duration, rhythm, equipment, injuries, movement constraints, recovery spacing, cycle duration, and race dates. Shared Profile writes update the diff transactionally. Only successful formal plan commits reset it; replay, failure, draft saves, workout operations, and review reads do not. A→B→C retains A→C, while reverting to A removes that field.
+
+Existing databases have incomplete tracking until their first formal commit. No old Profile or commit timestamp is invented: read from the plan effective start as fallback, report the limitation, and return no execution history for future starts. Full current Profile remains authoritative. The Agent gives one recommendation based on full current facts, the diff, history, and conversation; no diff or new records does not reject a requested change. App reminder statuses do not decide adjustments. Every proposed change still requires outline approval, detailed approval, freshness checks, and atomic commit.

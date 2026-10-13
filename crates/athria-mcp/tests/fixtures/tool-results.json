@@ -54,8 +54,56 @@
   },
   "get_training_summary": {},
   "get_current_plan": null,
-  "list_session_templates": [],
-  "get_session_template": {},
+  "list_session_templates": [
+    {
+      "id": "user:example",
+      "name": "Mobility",
+      "intent": "Easy movement",
+      "domain": "mobility",
+      "nodes": [
+        {
+          "role": "mobility",
+          "variables": [
+            "movement"
+          ]
+        }
+      ],
+      "origin": "user",
+      "revision": 1
+    },
+    {
+      "id": "builtin:example",
+      "name": "Mobility",
+      "intent": "Easy movement",
+      "domain": "mobility",
+      "nodes": [
+        {
+          "role": "mobility",
+          "variables": [
+            "movement"
+          ]
+        }
+      ],
+      "origin": "builtin",
+      "catalogVersion": "1"
+    }
+  ],
+  "get_session_template": {
+    "id": "user:example",
+    "name": "Mobility",
+    "intent": "Easy movement",
+    "domain": "mobility",
+    "nodes": [
+      {
+        "role": "mobility",
+        "variables": [
+          "movement"
+        ]
+      }
+    ],
+    "origin": "user",
+    "revision": 1
+  },
   "get_training_taxonomy": {},
   "calculate_training_metrics": {},
   "estimate_1rm": {},
@@ -77,7 +125,6 @@
   "remove_manual_training_source": {},
   "update_wellness": {},
   "update_athlete_profile": {},
-  "get_plan_adjustment_review": {},
   "report_skill_version": {
     "recorded": true,
     "skill": "athria-coach"
@@ -87,7 +134,22 @@
   "get_plan_draft": {},
   "upsert_plan_draft_week": {},
   "validate_plan_draft": {},
-  "commit_plan_draft": {},
+  "commit_plan_draft": {
+    "revision": 1,
+    "sourceDraftId": "draft-1",
+    "impact": {
+      "affectedCount": 0,
+      "updatedCount": 2,
+      "deletedCount": 0,
+      "legacySkippedCount": 0
+    },
+    "blockerSummary": {
+      "valid": true,
+      "blockers": 0,
+      "advisories": 0,
+      "blockingDataGaps": 0
+    }
+  },
   "discard_plan_draft": {},
   "get_training_memory": {
     "ownerId": "local-user",
@@ -100,5 +162,27 @@
     "contentMarkdown": "Training experience: beginner.",
     "revision": 1,
     "updatedAt": "2026-09-17T04:00:00.000Z"
+  },
+  "get_plan_adjustment_context": {
+    "committedAt": "2026-09-01T00:00:00.000Z",
+    "committedPlanRevision": 1,
+    "trackingStartedAt": "2026-09-01T00:00:00.000Z",
+    "trackingComplete": true,
+    "timezone": "Asia/Hong_Kong",
+    "from": "2026-09-01",
+    "to": "2026-09-17",
+    "profileChanges": [
+      {
+        "field": "preference",
+        "before": "More running",
+        "after": "More strength",
+        "firstChangedAt": "2026-09-10T00:00:00.000Z",
+        "lastChangedAt": "2026-09-12T00:00:00.000Z"
+      }
+    ],
+    "hasExecutionWindow": true,
+    "currentPlanRevision": 1,
+    "profileHash": "profile",
+    "inputSnapshotHash": "snapshot"
   }
 }

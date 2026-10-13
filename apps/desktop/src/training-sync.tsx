@@ -1,6 +1,6 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { getVaultStatus, syncTrainingAppsDaily, type DailyTrainingSyncResponse, type VaultStatus } from "./api";
+import { getVaultStatus, syncTrainingAppsDaily, type DailyTrainingSyncResponse, type TrainingSyncResult, type VaultStatus } from "./api";
 import { notify, notifyError } from "./toasts";
 import { tr } from "./i18n";
 import type { ConnectionSource } from "./view-models";
@@ -51,14 +51,41 @@ export class DailyTrainingSyncCoordinator {
   }
 }
 
+export function syncFailureMessage(source: ConnectionSource, result?: TrainingSyncResult, error?: unknown): string {
+  const details: string[] = [];
+  const unknown = tr("Unknown date");
+  for (const { date, failures } of result?.failedDates ?? []) {
+    details.push(`${date} (${failures.map(({ activityId, reason }) => `${tr("Activity")} ${activityId}: ${tr(reason)}`).join("; ")})`);
+  }
+  for (const { activityId, reason } of result?.undatedFailures ?? []) {
+    details.push(`${unknown} (${tr("Activity")} ${activityId}: ${tr(reason)})`);
+  }
+  const range = result?.sync?.rangeStart && result.sync.rangeEnd ? `${result.sync.rangeStart} – ${result.sync.rangeEnd}` : unknown;
+  for (const [endpoint, reason] of Object.entries(result?.errors ?? {})) {
+    const requested = result?.errorRanges?.[endpoint];
+    details.push(`${requested ? `${requested.rangeStart} – ${requested.rangeEnd}` : range} (${endpoint}: ${tr(reason)})`);
+  }
+  for (const failure of result?.sync?.data?.errors ?? []) details.push(`${failure.datestr || unknown} (${tr(failure.message)})`);
+  if (error) details.push(`${unknown} (${tr(error instanceof Error ? error.message : String(error))})`);
+  return tr("{app} sync failed: {details}. No data or sync time was updated.")
+    .replace("{app}", source === "intervals" ? "Intervals.icu" : tr("SynFit"))
+    .replace("{details}", details.join("; ") || unknown);
+}
+
+export function notifyTrainingSync(source: ConnectionSource, result?: TrainingSyncResult, error?: unknown, automatic = false): void {
+  if (error || result?.sync?.status === "failed" || result?.sync?.status === "partial") {
+    notify(syncFailureMessage(source, result, error), "error");
+  } else if (!automatic && result) {
+    notify(source === "intervals"
+      ? `Sync ${result.sync?.status ?? "complete"}: activities ${result.added ?? 0} added, ${result.updated ?? 0} updated; wellness ${result.wellnessCount ?? 0} synced.`
+      : `Sync ${result.sync?.status ?? "complete"}: ${result.added ?? 0} added, ${result.updated ?? 0} updated.`, "success");
+  }
+}
+
 export async function applyDailyTrainingSync(client: QueryClient, response: DailyTrainingSyncResponse): Promise<void> {
   for (const entry of response.results) {
     client.setQueryData(["sync-feedback", entry.source], entry);
-    if (entry.error) {
-      notifyError(`${entry.source === "intervals" ? "Intervals.icu" : tr("SynFit")}: ${entry.error}`);
-    } else if (entry.result?.sync?.status !== "success") {
-      notify(tr("Automatic sync for {app} did not finish. Check Connections for details.").replace("{app}", entry.source === "intervals" ? "Intervals.icu" : tr("SynFit")), "warning");
-    }
+    notifyTrainingSync(entry.source, entry.result, entry.error, true);
   }
   if (response.results.length) await refreshTrainingViews(client);
 }

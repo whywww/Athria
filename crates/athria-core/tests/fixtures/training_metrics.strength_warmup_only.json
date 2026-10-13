@@ -15,7 +15,6 @@
         "sport": null,
         "name": "s-warmup",
         "startAt": "2026-09-07T08:00:00Z",
-        "endAt": "2026-09-07T08:20:00Z",
         "durationMinutes": 20,
         "status": "completed",
         "timezone": null,
@@ -70,7 +69,7 @@
         "formulaVersion": "0.2.0",
         "timeRange": {
           "start": "2026-09-07T08:00:00Z",
-          "end": "2026-09-07T08:20:00Z"
+          "end": "2026-09-07T08:20:00.000Z"
         },
         "dataQuality": {
           "completeness": 1,
@@ -91,7 +90,7 @@
         "formulaVersion": "0.2.0",
         "timeRange": {
           "start": "2026-09-07T08:00:00Z",
-          "end": "2026-09-07T08:20:00Z"
+          "end": "2026-09-07T08:20:00.000Z"
         },
         "dataQuality": {
           "completeness": 0,
@@ -114,7 +113,7 @@
         "formulaVersion": "0.2.0",
         "timeRange": {
           "start": "2026-09-07T08:00:00Z",
-          "end": "2026-09-07T08:20:00Z"
+          "end": "2026-09-07T08:20:00.000Z"
         },
         "dataQuality": {
           "completeness": 1,
@@ -133,7 +132,7 @@
         "formulaVersion": "0.2.0",
         "timeRange": {
           "start": "2026-09-07T08:00:00Z",
-          "end": "2026-09-07T08:20:00Z"
+          "end": "2026-09-07T08:20:00.000Z"
         },
         "dataQuality": {
           "completeness": 1,

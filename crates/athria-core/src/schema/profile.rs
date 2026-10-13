@@ -24,6 +24,46 @@ fn normalize_session_minutes(value: &Value) -> Value {
     normalized
 }
 
+/// Numeric write constraints; historical reads intentionally remain permissive.
+pub fn validate_profile_numbers(value: &Value) -> Result<()> {
+    let normalized = normalize_session_minutes(value);
+    let value = &normalized;
+    fn number(value: &Value, key: &str, path: &str, min: f64, max: f64, integer: bool, nullable: bool) -> Result<()> {
+        if let Some(input) = value.get(key) {
+            if nullable && input.is_null() { return Ok(()); }
+            let valid = input.as_f64().is_some_and(|n| n >= min && n <= max)
+                && (!integer || input.as_i64().is_some());
+            if !valid { return Err(invalid(path, &format!("expected {} in {min}..={max}", if integer { "integer" } else { "number" }))); }
+        }
+        Ok(())
+    }
+    number(value, "heightCm", "profile.heightCm", 50.0, 250.0, false, true)?;
+    number(value, "usualSessionMinutes", "profile.usualSessionMinutes", 15.0, 240.0, true, false)?;
+    number(value, "explicitRecoveryDays", "profile.explicitRecoveryDays", 1.0, 7.0, true, true)?;
+    number(value, "mesocycleDurationWeeks", "profile.mesocycleDurationWeeks", 1.0, 8.0, true, false)?;
+    if let Some(rhythm) = value.get("trainingRhythm") {
+        object(rhythm, "profile.trainingRhythm")?;
+        match text_or(rhythm, "kind", "flexible_week").as_str() {
+            "fixed_week" => {
+                if let Some(days) = rhythm.get("days") {
+                    let days = days.as_array().ok_or_else(|| invalid("profile.trainingRhythm.days", "expected array"))?;
+                    if days.is_empty() || days.len() > 7 { return Err(invalid("profile.trainingRhythm.days", "expected 1..=7 unique days")); }
+                    let mut seen = std::collections::HashSet::new();
+                    for day in days {
+                        let day = day.as_i64().filter(|day| (0..=6).contains(day)).ok_or_else(|| invalid("profile.trainingRhythm.days", "expected integer in 0..=6"))?;
+                        if !seen.insert(day) { return Err(invalid("profile.trainingRhythm.days", "duplicate day")); }
+                    }
+                }
+            }
+            "interval" => number(rhythm, "intervalDays", "profile.trainingRhythm.intervalDays", 1.0, 30.0, true, false)?,
+            _ => for key in ["targetDaysPerWeek", "minDaysPerWeek", "maxDaysPerWeek"] {
+                number(rhythm, key, &format!("profile.trainingRhythm.{key}"), 1.0, 7.0, true, false)?;
+            },
+        }
+    }
+    Ok(())
+}
+
 /// `athleteProfileSchema.parse(value)`.
 pub fn parse_profile(value: &Value) -> Result<Value> {
     let equipment_ids = equipment_type_ids();
@@ -220,6 +260,7 @@ pub fn merge_profile(profile: &Value, patch: &Value, owner_id: &str) -> Result<V
         }
         entries.insert("ownerId".into(), Value::String(owner_id.to_owned()));
     }
+    validate_profile_numbers(&merged)?;
     parse_profile(&merged)
 }
 
@@ -239,6 +280,7 @@ pub fn parse_profile_update(value: &Value) -> Result<ProfileUpdate> {
         .cloned()
         .unwrap_or_else(|| Value::Object(Map::new()));
     object(&patch, "profileUpdate.patch")?;
+    validate_profile_numbers(&patch)?;
     Ok(ProfileUpdate {
         patch: normalize_session_minutes(&patch),
         expected_profile_hash: required_text(value, "expectedProfileHash", "profileUpdate")?,
@@ -248,6 +290,7 @@ pub fn parse_profile_update(value: &Value) -> Result<ProfileUpdate> {
 /// `personalInformationWriteSchema.parse(value)`.
 pub fn parse_personal_information(value: &Value) -> Result<PersonalInformationWrite> {
     object(value, "personalInformation")?;
+    validate_profile_numbers(value)?;
     Ok(PersonalInformationWrite {
         preferred_name: required_trimmed(value, "preferredName", "personalInformation")?,
         gender: nullable_enum(value, "gender", &GENDERS),
@@ -305,5 +348,49 @@ mod tests {
             assert_eq!(merged["usualSessionMinutes"], 90);
             assert!(merged.get("maxSessionMinutes").is_none());
         }
+    }
+}
+
+#[cfg(test)]
+mod numeric_write_tests {
+    use super::*;
+
+    #[test]
+    fn numeric_boundaries_and_defaults_match_schema() {
+        for value in [json!({}), json!({"heightCm":null,"explicitRecoveryDays":null}),
+            json!({"heightCm":50,"usualSessionMinutes":15,"explicitRecoveryDays":1,"mesocycleDurationWeeks":1}),
+            json!({"heightCm":250,"usualSessionMinutes":240,"explicitRecoveryDays":7,"mesocycleDurationWeeks":8}),
+            json!({"trainingRhythm":{"kind":"fixed_week","days":[0,1,2,3,4,5,6]}}),
+            json!({"trainingRhythm":{"kind":"interval","intervalDays":30}}),
+            json!({"trainingRhythm":{"kind":"flexible_week","targetDaysPerWeek":1,"minDaysPerWeek":7,"maxDaysPerWeek":1}})] {
+            validate_profile_numbers(&value).unwrap();
+        }
+        for (key,min,max,nullable) in [("heightCm",50,250,true),("usualSessionMinutes",15,240,false),
+            ("explicitRecoveryDays",1,7,true),("mesocycleDurationWeeks",1,8,false)] {
+            for invalid_value in [json!(min-1),json!(max+1),json!("60"),json!(true)] {
+                let error=validate_profile_numbers(&json!({key:invalid_value})).unwrap_err();
+                assert_eq!(error.code(),crate::AthriaErrorCode::InvalidData);
+                assert!(error.to_string().contains(key));
+            }
+            if !nullable { assert!(validate_profile_numbers(&json!({key:null})).is_err()); }
+        }
+        for value in [json!({"usualSessionMinutes":60.5}),json!({"trainingRhythm":{"kind":"fixed_week","days":[]}}),
+            json!({"trainingRhythm":{"kind":"fixed_week","days":[1,1]}}),
+            json!({"trainingRhythm":{"kind":"fixed_week","days":[7]}}),
+            json!({"trainingRhythm":{"kind":"fixed_week","days":[1.5]}}),
+            json!({"trainingRhythm":{"kind":"interval","intervalDays":0}}),
+            json!({"trainingRhythm":{"kind":"flexible_week","targetDaysPerWeek":8}})] {
+            assert!(validate_profile_numbers(&value).is_err(),"{value}");
+        }
+    }
+
+    #[test]
+    fn legacy_reads_are_preserved_but_updates_require_correction() {
+        let old=parse_profile(&json!({"heightCm":-1})).unwrap();
+        assert_eq!(old["heightCm"],-1);
+        assert!(merge_profile(&old,&json!({"preference":"new"}),"a").is_err());
+        assert_eq!(merge_profile(&old,&json!({"heightCm":180}),"a").unwrap()["heightCm"],180);
+        assert!(parse_profile_update(&json!({"patch":{"usualSessionMinutes":"60"},"expectedProfileHash":"hash"})).is_err());
+        assert_eq!(merge_profile(&json!({}),&json!({"maxSessionMinutes":30}),"a").unwrap()["usualSessionMinutes"],30);
     }
 }

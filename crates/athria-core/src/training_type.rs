@@ -238,14 +238,14 @@ mod tests {
     #[test]
     fn legacy_content_domains_migrate_without_guessing_activity_identity() {
         let mut sessions = json!([
-            {"name":"周末轻松跑走","type":null,"components":[{"domain":{"value":"endurance"},"prescription":{"kind":"duration_only","notes":"Keep it easy"}}]},
+            {"name":"周末轻松跑走","type":null,"components":[{"domain":{"value":"endurance"},"prescription":{"blocks":[{"name":"Steady","notes":"Keep it easy"}]}}]},
             {"name":"Circuit","type":"FunctionalTraining","components":[{"domain":{"value":"strength"}},{"domain":{"value":"endurance"}}]},
             {"name":"Unknown","type":null,"components":[{"domain":{"value":"strength"}},{"domain":{"value":"endurance"}}]}
         ]);
         migrate_session_domains(&mut sessions);
         assert_eq!(sessions[0]["domain"], "endurance");
         assert_eq!(sessions[0]["type"], Value::Null);
-        assert_eq!(sessions[0]["components"][0]["prescription"]["notes"], "Keep it easy");
+        assert_eq!(sessions[0]["components"][0]["prescription"]["blocks"][0]["notes"], "Keep it easy");
         assert_eq!(sessions[1]["domain"], "functional");
         assert_eq!(sessions[2]["domain"], Value::Null);
         for session in sessions.as_array().unwrap() {

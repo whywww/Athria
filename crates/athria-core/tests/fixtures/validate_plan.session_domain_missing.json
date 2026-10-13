@@ -1,6 +1,6 @@
 {
   "kind": "validate_plan",
-  "name": "duration_only_strength_mutated_fail",
+  "name": "session_domain_missing",
   "input": {
     "profile": {
       "ownerId": "local-user",
@@ -68,84 +68,52 @@
             0
           ]
         },
-        "domainProgressions": [
-          {
-            "domain": "strength",
-            "phases": [
-              {
-                "id": "strength-base",
-                "phaseType": "foundation",
-                "name": "Base",
-                "startWeek": 1,
-                "endWeek": 1,
-                "focus": "Base",
-                "progression": []
-              }
-            ]
-          }
-        ],
+        "domainProgressions": [],
         "weeks": [
           {
             "weekNumber": 1,
             "focus": null,
             "sessions": [
               {
-                "id": "mon-strength",
+                "id": "mon-recovery",
                 "scheduledDate": "2026-09-07",
                 "order": 0,
                 "status": "planned",
                 "templateRef": null,
-                "name": "mon-strength session",
+                "name": "mon-recovery session",
                 "intent": "Golden fixture session",
-                "durationMinutes": 60,
+                "durationMinutes": 30,
                 "recoveryDemand": "normal",
                 "keySession": false,
-                "components": [
-                  {
-                    "id": "mon-lower",
-                    "name": "Strength",
-                    "prescription": {
-                      "kind": "duration_only",
-                      "notes": "mutated"
-                    }
-                  }
-                ],
                 "progressionNote": null,
                 "schedulingRationale": null,
                 "legacySnapshot": false,
-                "domain": "strength"
+                "domain": null,
+                "prescription": {
+                  "blocks": [
+                    {
+                      "name": "mon-recovery session",
+                      "durationMinutes": 30,
+                      "instructions": ""
+                    }
+                  ]
+                }
               }
             ]
           }
-        ],
-        "adjustmentRules": []
+        ]
       },
       "effectiveStartDate": "2026-09-07"
     },
     "now": "2026-09-17T10:30:00.000Z"
   },
   "expected": {
-    "valid": false,
+    "valid": true,
     "results": [
       {
-        "enforcement": "blocker",
-        "reasonCode": "COMPONENT_IDS",
         "status": "pass",
-        "rulePackId": "structure",
-        "ruleVersion": "0.3.0",
-        "subjectRefs": [],
-        "evidence": {
-          "componentIds": [
-            "mon-lower"
-          ]
-        },
-        "missingFacts": [],
-        "confidenceLimit": null
-      },
-      {
         "enforcement": "blocker",
         "reasonCode": "EXERCISE_IDS",
-        "status": "pass",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -156,9 +124,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "pass",
         "enforcement": "blocker",
         "reasonCode": "MESOCYCLE_SCHEDULE",
-        "status": "pass",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -173,9 +141,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "pass",
         "enforcement": "blocker",
         "reasonCode": "PROFILE_TRAINING_RHYTHM",
-        "status": "pass",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -200,56 +168,39 @@
         "confidenceLimit": null
       },
       {
+        "status": "pass",
         "enforcement": "blocker",
         "reasonCode": "DOMAIN_PROGRESSION",
-        "status": "pass",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
         "evidence": {
           "durationWeeks": 1,
-          "sessionDomains": [
-            "strength"
-          ],
-          "progressions": [
-            {
-              "domain": "strength",
-              "phases": [
-                {
-                  "id": "strength-base",
-                  "phaseType": "foundation",
-                  "name": "Base",
-                  "startWeek": 1,
-                  "endWeek": 1,
-                  "focus": "Base",
-                  "progression": []
-                }
-              ]
-            }
-          ]
+          "sessionDomains": [],
+          "progressions": []
         },
         "missingFacts": [],
         "confidenceLimit": null
       },
       {
-        "enforcement": "blocker",
-        "reasonCode": "SESSION_STRENGTH_PRESCRIPTION",
-        "status": "fail",
+        "status": "unknown",
+        "enforcement": "info",
+        "reasonCode": "SESSION_DOMAIN_MISSING",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [
-          "mon-strength"
+          "mon-recovery"
         ],
-        "evidence": {
-          "hasStrengthPrescription": false
-        },
-        "missingFacts": [],
+        "evidence": {},
+        "missingFacts": [
+          "domain"
+        ],
         "confidenceLimit": null
       },
       {
+        "status": "pass",
         "enforcement": "info",
         "reasonCode": "STRENGTH_VOLUME_DISTRIBUTION",
-        "status": "pass",
         "rulePackId": "strength",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -262,9 +213,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "not_applicable",
         "enforcement": "advisory",
         "reasonCode": "STRENGTH_PUSH_PULL_BALANCE",
-        "status": "not_applicable",
         "rulePackId": "strength",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -277,9 +228,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "not_applicable",
         "enforcement": "advisory",
         "reasonCode": "STRENGTH_KNEE_HINGE_BALANCE",
-        "status": "not_applicable",
         "rulePackId": "strength",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -292,9 +243,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "not_applicable",
         "enforcement": "advisory",
         "reasonCode": "STRENGTH_EFFORT_RPE",
-        "status": "not_applicable",
         "rulePackId": "strength",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -306,9 +257,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "not_applicable",
         "enforcement": "advisory",
         "reasonCode": "ENDURANCE_EFFORT_ZONE",
-        "status": "not_applicable",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -320,12 +271,21 @@
         "confidenceLimit": null
       }
     ],
-    "dataGaps": [],
+    "dataGaps": [
+      {
+        "code": "SESSION_DOMAIN_MISSING",
+        "subjectRef": "mon-recovery",
+        "factPath": "domain",
+        "requiredByRuleCodes": [],
+        "blocking": false,
+        "resolution": "agent_infer"
+      }
+    ],
     "validatedAt": "2026-09-17T10:30:00.000Z",
-    "inputHash": "fnv1a-308928ca",
+    "inputHash": "fnv1a-c295006c",
     "coverage": {
-      "hardChecksResolved": 6,
-      "hardChecksTotal": 6,
+      "hardChecksResolved": 4,
+      "hardChecksTotal": 4,
       "movementFactsResolved": 0,
       "movementFactsTotal": 0,
       "muscleFactsResolved": 0,

@@ -10,14 +10,6 @@
       "default": "local-user",
       "type": "string"
     },
-    "source": {
-      "type": "string",
-      "minLength": 1
-    },
-    "externalId": {
-      "type": "string",
-      "minLength": 1
-    },
     "domains": {
       "default": [],
       "type": "array",
@@ -39,11 +31,6 @@
       "minLength": 1
     },
     "startAt": {
-      "type": "string",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-    },
-    "endAt": {
       "type": "string",
       "format": "date-time",
       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
@@ -109,7 +96,8 @@
           "externalId"
         ],
         "additionalProperties": false
-      }
+      },
+      "description": "Source observations ordered by representative-selection priority: information score descending, observation row ID ascending for ties. The first entry supplies the base record; individual imported metrics may come from other entries."
     },
     "planMatch": {
       "default": null,
@@ -417,13 +405,6 @@
         }
       ]
     },
-    "missingFields": {
-      "default": [],
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
-    },
     "type": {
       "type": [
         "string",
@@ -435,17 +416,71 @@
         "string",
         "null"
       ]
+    },
+    "rpe": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 10,
+      "default": null
+    },
+    "sessionRpe": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "default": null
+    },
+    "trainingLoad": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "default": null
+    },
+    "powerLoad": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "default": null
+    },
+    "hrLoad": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "default": null
+    },
+    "paceLoad": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "default": null
+    },
+    "intensity": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "default": null
     }
   },
   "required": [
     "id",
     "ownerId",
-    "source",
-    "externalId",
     "domains",
     "name",
     "startAt",
-    "endAt",
     "durationMinutes",
     "status",
     "timezone",
@@ -456,7 +491,6 @@
     "isPlanMatchExcluded",
     "strengthSets",
     "endurance",
-    "missingFields",
     "type",
     "subtype"
   ],

@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import type { CalendarSession, CurrentPlan, PlanComponent, PlanExercise } from "../view-models";
+import type { CalendarSession, CurrentPlan, SessionPrescription, PlanExercise } from "../view-models";
 import { WeeklyCalendar } from "./WeeklyCalendar";
 
 const plan: CurrentPlan = {
@@ -15,13 +15,12 @@ const plan: CurrentPlan = {
     schedule: { kind: "fixed_week", days: [1] },
     domainProgressions: [],
     weeks: [],
-    adjustmentRules: [],
   },
   revision: 1,
   sourceAgent: null,
   model: null,
   skillVersion: null,
-  inputSnapshotHash: null,
+  inputSnapshotHash: null, sourceDraftId: null,
   updatedAt: "2026-09-07T00:00:00Z",
 };
 
@@ -43,18 +42,10 @@ function session(id: string, scheduledDate: string, overrides: Partial<CalendarS
     progressionNote: null,
     schedulingRationale: null,
     status: "planned",
-    components: [],
+    prescription: null,
     legacySnapshot: false,
     overrideReason: null,
     ...overrides,
-  };
-}
-
-function component(domain: import("../view-models").TemplateComponentDomain, prescription: PlanComponent["prescription"] = { kind: "duration_only", notes: "" }): PlanComponent {
-  return {
-    id: `component-${domain}`,
-    name: domain,
-    prescription,
   };
 }
 
@@ -86,8 +77,8 @@ describe("WeeklyCalendar", () => {
 
   it("uses domain icons, domain tone classes, and compact reliable week totals", () => {
     const html = render([
-      session("endurance", "2026-09-07", { durationMinutes: 40, domain: "endurance", components: [component("endurance")] }),
-      session("strength", "2026-09-08", { domain: "strength", components: [component("strength", { kind: "strength", exercises: [{ sets: 4 } as PlanExercise, { sets: 4 } as PlanExercise] })] }),
+      session("endurance", "2026-09-07", { durationMinutes: 40, domain: "endurance", prescription: { blocks: [] } }),
+      session("strength", "2026-09-08", { domain: "strength", prescription: { blocks: [{ sets: 4 } as PlanExercise, { sets: 4 } as PlanExercise] } }),
     ]);
 
     expect(sessionMarkup(html, "endurance")).toContain("tone-endurance");
@@ -123,7 +114,7 @@ describe("WeeklyCalendar", () => {
       name: "Long Easy Aerobic Session With An Unbroken Descriptive Name",
       durationMinutes: 65,
       displayState: "unrecorded",
-      domain: "endurance", components: [component("endurance"), component("strength")],
+      domain: "endurance", prescription: { blocks: [] },
     })]);
     const chip = sessionMarkup(html, "long");
 
@@ -154,7 +145,7 @@ describe("six-domain session classification", () => {
       type: null,
       domain: "endurance",
       domains: [],
-      components: [component("endurance"), component("endurance")],
+      prescription: { blocks: [] },
     })]);
     const chip = sessionMarkup(html, "run-walk");
 
@@ -171,8 +162,8 @@ describe("six-domain session classification", () => {
     expect(chip).not.toContain("data-domain-icon");
   });
 
-  it("shows only the Functional session domain for mixed prescription kinds", () => {
-    const html = render([session("hyrox", "2026-09-07", { type: "FunctionalTraining", subtype: "hyrox", domain: "functional", domains: ["functional"], components: [component("strength"), component("endurance")] })]);
+  it("shows only the Functional session domain for a strength prescription", () => {
+    const html = render([session("hyrox", "2026-09-07", { type: "FunctionalTraining", subtype: "hyrox", domain: "functional", domains: ["functional"], prescription: { blocks: [] } })]);
     const chip = sessionMarkup(html, "hyrox");
     expect(chip).toContain('data-domain-icon="functional"');
     expect(chip).not.toContain('data-domain-icon="endurance"');

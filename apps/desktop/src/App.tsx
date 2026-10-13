@@ -1,10 +1,11 @@
+import { createAdjustmentNotifications } from "./adjustment-notifications";
 import { notify, notifyError, useOperationError, useOperationMessage } from "./toasts";
 import { T, tr } from "./i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ConnectionAutoSyncSwitch } from "./connection-auto-sync";
-import { DailyTrainingSync, refreshTrainingViews, useTrainingSyncBusy, withTrainingSync } from "./training-sync";
-import type { DailyTrainingSyncResponse } from "./api";
+import { DailyTrainingSync, notifyTrainingSync, refreshTrainingViews, useTrainingSyncBusy, withTrainingSync } from "./training-sync";
+import type { TrainingSyncResult } from "./api";
 import { applyDatabaseVersion, type DatabaseVersion } from "./database-version";
 import { dismissWeeklyReview, loadScheduledReview, reviewWeek } from "./weekly-review";
 import { addCustomAgent, api, changeVaultPassword, createNewProfile, disconnectConnection, getAgentIntegrationsStatus, getIntervalsStatus, getMcpStatus, getStartupStatus, getVaultStatus, getXunjiStatus, importXunjiSkill, installAgentIntegration, openIntervalsWebsite, openSkillArchiveFolder, pickNewProfileDestination, pickRestoreFile, reconcileAgentSkills, removeAgentIntegration, requireVaultPassword, resetVaultPassword, resolveAgentSkillUpdate, restoreBackup, setupVault, syncIntervals, syncXunji, testIntervals, testXunjiSkill, unlockVault, type AgentIntegrationResult, type AgentIntegrationStatus, type AgentKind, type AgentSkillUpdate, type AgentSkillUpdateFailure, type OfficialAgentKind, type SkillArchiveView, type SkillUpdateResult, type StartupStatus } from "./api";
@@ -15,7 +16,7 @@ import {
   type AthleteProfile, type BackupPreview, type CurrentPlan, type DoctorResult, type HevyImportStatus, type ImportPreview,
   type AdjustmentReminder, type CalendarSession, type EquipmentCategory, type ImportResult, type NextTrainingDay, type PersonalInformation, type RaceDay, type SyncRange, type TrainingHistorySession, type TrainingHistorySort, type TrainingTaxonomy, type TrainingSummary, type UnitSystem, type WellnessRecord, type XunjiConnectionStatus,
 } from "./view-models";
-import { Card, EmptyState, ErrorBanner, Loading, PrimaryPageHeader, useModalDismiss, localizedWeekdays } from "./components";
+import { Card, EmptyState, ErrorBanner, Loading, PrimaryPageHeader, useModalDismiss, useOutsideDismissMenu, localizedWeekdays } from "./components";
 import { CurrentPlanPage, NextTrainingDayCard, TemplateLibrary } from "./plan/CurrentPlanPage";
 import { localDateForTimezone } from "./plan/view";
 import { OverviewDashboard, overviewDateRange } from "./overview";
@@ -140,11 +141,12 @@ function useScheduledPlanReview() {
   const plan = useQuery({ queryKey: ["current-plan"], queryFn: () => api<CurrentPlan | null>("/api/plans/current") });
   const wellness = useQuery({ queryKey: ["wellness", 42], queryFn: () => api<WellnessRecord[]>("/api/wellness?days=42") });
   const calendar = useQuery({ queryKey: ["calendar", "overview-all"], queryFn: () => api<CalendarSession[]>("/api/plans/calendar") });
-  return useQuery({
+  const review = useQuery({
     queryKey: ["plan-adjustment-review", database.data?.databaseUuid, plan.data?.revision, today ? reviewWeek(today) : null, profile.dataUpdatedAt, calendar.dataUpdatedAt, wellness.dataUpdatedAt],
     queryFn: () => loadScheduledReview(window.localStorage, database.data!.databaseUuid, today!, (reviewedWeek) => api<AdjustmentReminder>(`/api/plans/adjustment-review${reviewedWeek ? `?reviewedWeek=${reviewedWeek}` : ""}`)),
     enabled: Boolean(today && database.data && plan.data && profile.data && calendar.data && wellness.data && !intervalsBusy && !xunjiBusy && !calendar.isFetching && !wellness.isFetching && !profile.isFetching && !plan.isFetching),
   });
+  return { ...review, noCurrentPlan: plan.isSuccess && plan.data === null };
 }
 
 function Overview() {
@@ -174,18 +176,6 @@ function Overview() {
   const plan = useQuery({ queryKey: ["current-plan"], queryFn: () => api<CurrentPlan | null>("/api/plans/current") });
   const wellness = useQuery({ queryKey: ["wellness", 42], queryFn: () => api<WellnessRecord[]>("/api/wellness?days=42") });
   const calendar = useQuery({ queryKey: ["calendar", "overview-all"], queryFn: () => api<CalendarSession[]>("/api/plans/calendar") });
-  const adjustment = useScheduledPlanReview();
-  const client = useQueryClient();
-  const dismissReview = () => {
-    const database = client.getQueryData<DatabaseVersion>(["database-version"]);
-    if (database && adjustment.data) {
-      dismissWeeklyReview(window.localStorage, database.databaseUuid, adjustment.data);
-      if (adjustment.data.assessment.trigger === "weekly_review") {
-        const context = adjustment.data.idempotencyContext;
-        client.setQueriesData<AdjustmentReminder>({ queryKey: ["plan-adjustment-review", database.databaseUuid] }, (value) => value?.idempotencyContext === context ? { ...value, showReminder: false } : value);
-      }
-    }
-  };
   const history = useQuery({ queryKey: ["sessions", "overview-calendar"], queryFn: () => api<TrainingHistorySession[]>("/api/sessions?days=365") });
   if (query.isPending || profile.isPending || wellness.isPending || history.isPending || calendar.isPending) return <Loading/>;
   const error = query.error ?? profile.error ?? wellness.error ?? history.error ?? calendar.error;
@@ -196,7 +186,7 @@ function Overview() {
     {wellnessOpen && recordingHealth && <HealthRecordModal key={databaseUuid} today={today} databaseUuid={databaseUuid} onClose={() => setRecordingHealth(false)}/>}
     <div hidden={wellnessOpen} key={`overview:${databaseUuid}`}>
     <div className="overview-next-day" id="overview-next-day">{plan.data && !nextDay.isPending && nextDay.data ? <NextTrainingDayCard value={nextDay.data} plan={plan.data} /> : !plan.data ? <EmptyState title={tr("No current plan")} description="Plans are created by your connected AI Agent — build one to see your next training day here."/> : null}</div>
-    <OverviewDashboard summary={query.data} wellness={wellness.data ?? []} history={history.data ?? []} planned={calendar.data ?? []} today={today} timezone={profile.data.timezone} adjustment={adjustment.data?.showReminder ? adjustment.data.assessment : undefined} onDismissReview={dismissReview} onOpenWellness={openWellness}/>
+    <OverviewDashboard summary={query.data} wellness={wellness.data ?? []} history={history.data ?? []} planned={calendar.data ?? []} today={today} timezone={profile.data.timezone} onOpenWellness={openWellness}/>
     </div>
   </>;
 }
@@ -439,47 +429,14 @@ function ProviderLogo({ source }: { source: ConnectionSource }) {
   return <span className={`provider-logo ${source}-logo`} aria-hidden="true"><img src={providerLogos[source]} alt=""/></span>;
 }
 
-function useOutsideDismissMenu() {
-  const menu = useRef<HTMLDetailsElement>(null);
-  useEffect(() => {
-    const close = (event: PointerEvent) => {
-      if (menu.current?.open && !menu.current.contains(event.target as Node)) menu.current.open = false;
-    };
-    document.addEventListener("pointerdown", close);
-    return () => document.removeEventListener("pointerdown", close);
-  }, []);
-  return menu;
-}
 function SourceCard({ source, title, description, lastSyncLabel, lastSync, lastSyncAt, action, menuLabel, onMenuAction, feedback }: { source: ConnectionSource; title: string; description: string; lastSyncLabel: string; lastSync: string; lastSyncAt?: string | undefined; action: React.ReactNode; menuLabel: string; onMenuAction: () => void; feedback?: React.ReactNode }) {
   const menuRef = useOutsideDismissMenu();
-  return <article className="source-card"><div className="source-card-main"><ProviderLogo source={source}/><div className="source-title"><div><h2>{title}</h2></div><p>{tr(description)}</p></div><Metric icon="clock" label={lastSyncLabel} value={lastSync} timestamp={lastSyncAt}/></div>{feedback}<footer>{action}<details className="source-menu" ref={menuRef}><summary aria-label={`${tr("More options for")} ${title}`}>•••</summary><div><button type="button" onClick={onMenuAction}>{tr(menuLabel)}</button></div></details></footer></article>;
+  return <article className="source-card"><div className="source-card-main"><ProviderLogo source={source}/><div className="source-title"><div><h2>{title}</h2></div><p>{tr(description)}</p></div><Metric icon="clock" label={lastSyncLabel} value={lastSync} timestamp={lastSyncAt}/></div>{feedback}<footer>{action}<details className="source-menu" ref={menuRef}><summary aria-label={`${tr("More options for")} ${title}`}><AppIcon name="ellipsis"/></summary><div><button type="button" onClick={onMenuAction}>{tr(menuLabel)}</button></div></details></footer></article>;
 }
 
 function SyncRangeSelect({ label, value, options, onChange }: { label: string; value: SyncRange; options: typeof syncRangeOptions; onChange: (value: string) => void }) {
   const selectedLabel = tr(options.find((option) => option.value === value)?.label ?? "Sync range");
   return <div className="sync-range-control"><span aria-hidden="true">{selectedLabel}</span><select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>{options.map((option) => <option key={option.value} value={option.value}>{tr(option.label)}</option>)}</select></div>;
-}
-
-type IntervalsFailure = { activityId: string; reason: string };
-type IntervalsSyncResult = ImportResult & { sync?: { status?: string }; failedDates?: Array<{ date: string; failures: IntervalsFailure[] }>; undatedFailures?: IntervalsFailure[] };
-
-export function IntervalsSyncIssues({ report }: { report: IntervalsSyncResult }) {
-  const failedDates = report.failedDates ?? [];
-  const undated = report.undatedFailures ?? [];
-  const endpoints = Object.entries(report.errors ?? {});
-  if (!failedDates.length && !undated.length && !endpoints.length) return null;
-  return <div className="source-feedback warning-list" role="status"><strong>{tr("Some Intervals.icu data could not be imported")}</strong><ul className="sync-issue-list">
-    {failedDates.map(({ date, failures }) => <li key={date}><strong>{date}</strong>: {failures.map(({ activityId, reason }) => `${tr("Activity")} ${activityId}: ${tr(reason)}`).join("; ")}</li>)}
-    {undated.map(({ activityId, reason }, index) => <li key={`undated-${index}`}><strong>{tr("Unknown date")}</strong>: {tr("Activity")} {activityId}: {tr(reason)}</li>)}
-    {endpoints.map(([source, reason]) => <li key={source}><strong>{source}</strong>: {reason}</li>)}
-  </ul><small>{tr("Select a longer range to retry skipped dates.")}</small></div>;
-}
-
-export function XunjiSyncIssues({ sync }: { sync: XunjiConnectionStatus["sync"] }) {
-  if (!sync || sync.status === "success") return null;
-  const errors = sync.data.errors ?? [];
-  const reasons = [...new Set(errors.map((error) => error.message).filter(Boolean))];
-  return <div className="source-feedback warning-list" role="status"><strong>{tr("SynFit sync issues")}</strong><div>{tr("Failed days")}: {sync.data.failedDays ?? errors.length}</div>{reasons.length > 0 && <ul className="sync-issue-list">{reasons.slice(0, 3).map((reason) => <li key={reason}>{reason}</li>)}</ul>}</div>;
 }
 
 function Metric({ icon, label, value, timestamp }: { icon: "clock" | "database" | "upload"; label: string; value: string; timestamp?: string | undefined }) {
@@ -501,8 +458,6 @@ function Connections() {
   const databaseUuid = vault.data?.databaseUuid ?? "";
   const intervalsAutoBusy = useTrainingSyncBusy(databaseUuid, "intervals");
   const xunjiAutoBusy = useTrainingSyncBusy(databaseUuid, "xunji");
-  const intervalsFeedback = useQuery<DailyTrainingSyncResponse["results"][number] | null>({ queryKey: ["sync-feedback", "intervals"], queryFn: async () => null, enabled: false });
-  const xunjiFeedback = useQuery<DailyTrainingSyncResponse["results"][number] | null>({ queryKey: ["sync-feedback", "xunji"], queryFn: async () => null, enabled: false });
   const hevyStatus = useQuery({ queryKey: ["hevy-status"], queryFn: () => api<HevyImportStatus | null>("/api/imports/hevy/status") });
   const intervalsStatus = useQuery({ queryKey: ["intervals-status"], queryFn: getIntervalsStatus });
   const xunjiStatus = useQuery({ queryKey: ["xunji-status"], queryFn: () => getXunjiStatus<XunjiConnectionStatus>() });
@@ -510,7 +465,6 @@ function Connections() {
   const [preview, setPreview] = useState<ImportPreview>(); const [importResult, setImportResult] = useState<ImportResult>();
   const [hevyError, setHevyError] = useOperationError(); const [intervalsError, setIntervalsError] = useOperationError();
   const [intervalsMessage, setIntervalsMessage] = useOperationMessage(); const [intervalsBusy, setIntervalsBusy] = useState(false);
-  const [intervalsReport, setIntervalsReport] = useState<IntervalsSyncResult>();
   const [xunjiError, setXunjiError] = useOperationError(); const [xunjiMessage, setXunjiMessage] = useOperationMessage(); const [xunjiBusy, setXunjiBusy] = useState(false);
   const [intervalsRange, setIntervalsRange] = useState<SyncRange>("incremental"); const [xunjiRange, setXunjiRange] = useState<SyncRange>("incremental");
   const [xunjiImportRange, setXunjiImportRange] = useState<SyncRange>(90);
@@ -520,11 +474,11 @@ function Connections() {
   useModalDismiss(closeDialog, Boolean(dialog));
   const openIntervals = () => { setAthleteId(intervalsStatus.data?.athleteId ?? "0"); setIntervalsMessage(""); setDialog("intervals"); };
   const commit = async () => { if (!preview?.previewToken) return; try { setHevyError(undefined); setImportResult(await api<ImportResult>("/api/imports/hevy/commit", { method: "POST", body: JSON.stringify({ previewToken: preview.previewToken }) })); setPreview(undefined); setDialog(null); await client.invalidateQueries({ queryKey: ["hevy-status"] }); } catch (value) { setHevyError(value); } };
-  const saveIntervals = async () => { try { setIntervalsError(undefined); await testIntervals(key, athleteId); setIntervalsMessage("Connected. Your credentials were saved securely on this device."); setIntervalsReport(undefined); setKey(""); setDialog(null); await client.invalidateQueries({ queryKey: ["intervals-status"] }); } catch (value) { setIntervalsError(value); } };
-  const sync = async (range: SyncRange) => { try { setIntervalsBusy(true); setIntervalsError(undefined); setIntervalsMessage(""); setIntervalsReport(undefined); client.setQueryData(["sync-feedback", "intervals"], null); const result = await withTrainingSync(databaseUuid, ["intervals"], () => syncIntervals(range)) as IntervalsSyncResult; notify(`Sync ${result.sync?.status ?? "complete"}: activities ${result.added ?? 0} added, ${result.updated ?? 0} updated; wellness ${result.wellnessCount ?? 0} synced.`, result.sync?.status === "partial" || result.sync?.status === "failed" ? "warning" : "success"); setIntervalsReport(result); await refreshTrainingViews(client); } catch (value) { setIntervalsError(value); } finally { setIntervalsBusy(false); } };
+  const saveIntervals = async () => { try { setIntervalsError(undefined); await testIntervals(key, athleteId); setIntervalsMessage("Connected. Your credentials were saved securely on this device."); setKey(""); setDialog(null); await client.invalidateQueries({ queryKey: ["intervals-status"] }); } catch (value) { setIntervalsError(value); } };
+  const sync = async (range: SyncRange) => { try { setIntervalsBusy(true); setIntervalsError(undefined); setIntervalsMessage(""); client.setQueryData(["sync-feedback", "intervals"], null); const result = await withTrainingSync(databaseUuid, ["intervals"], () => syncIntervals(range)) as TrainingSyncResult; notifyTrainingSync("intervals", result); await refreshTrainingViews(client); } catch (value) { notifyTrainingSync("intervals", undefined, value); } finally { setIntervalsBusy(false); } };
   const refreshXunjiViews = () => refreshTrainingViews(client);
-  const connectXunji = async () => { try { setXunjiBusy(true); setXunjiError(undefined); if (xunji?.configured) { await testXunjiSkill(xunjiSkill); setXunjiMessage(tr("Connection updated. Your credentials were saved securely on this device.")); } else { const result = await withTrainingSync(databaseUuid, ["xunji"], () => importXunjiSkill(xunjiSkill, xunjiImportRange)) as ImportResult & { sync?: { status?: string } }; setXunjiRange("incremental"); notify(`Sync ${result.sync?.status ?? "complete"}: ${result.added ?? 0} added, ${result.updated ?? 0} updated.`, result.sync?.status === "partial" || result.sync?.status === "failed" ? "warning" : "success"); } setXunjiSkill(""); setDialog(null); await refreshXunjiViews(); } catch (value) { setXunjiError(value); } finally { setXunjiBusy(false); } };
-  const runXunjiSync = async (range: SyncRange) => { try { setXunjiBusy(true); setXunjiError(undefined); client.setQueryData(["sync-feedback", "xunji"], null); const result = await withTrainingSync(databaseUuid, ["xunji"], () => syncXunji(range)) as ImportResult & { sync?: { status?: string } }; notify(`Sync ${result.sync?.status ?? "complete"}: ${result.added ?? 0} added, ${result.updated ?? 0} updated.`, result.sync?.status === "partial" || result.sync?.status === "failed" ? "warning" : "success"); await refreshXunjiViews(); } catch (value) { setXunjiError(value); } finally { setXunjiBusy(false); } };
+  const connectXunji = async () => { try { setXunjiBusy(true); setXunjiError(undefined); if (xunji?.configured) { await testXunjiSkill(xunjiSkill); setXunjiMessage(tr("Connection updated. Your credentials were saved securely on this device.")); } else { const result = await withTrainingSync(databaseUuid, ["xunji"], () => importXunjiSkill(xunjiSkill, xunjiImportRange)) as TrainingSyncResult; setXunjiRange("incremental"); notifyTrainingSync("xunji", result); } setXunjiSkill(""); setDialog(null); await refreshXunjiViews(); } catch (value) { if (xunji?.configured) setXunjiError(value); else notifyTrainingSync("xunji", undefined, value); } finally { setXunjiBusy(false); } };
+  const runXunjiSync = async (range: SyncRange) => { try { setXunjiBusy(true); setXunjiError(undefined); client.setQueryData(["sync-feedback", "xunji"], null); const result = await withTrainingSync(databaseUuid, ["xunji"], () => syncXunji(range)) as TrainingSyncResult; notifyTrainingSync("xunji", result); await refreshXunjiViews(); } catch (value) { notifyTrainingSync("xunji", undefined, value); } finally { setXunjiBusy(false); } };
   const disconnect = async (source: "intervals" | "xunji") => {
     if (!window.confirm(`Disconnect ${source === "intervals" ? "Intervals.icu" : "SynFit"}? The encrypted API key will be removed.`)) return;
     try { await disconnectConnection(source); setDialog(null); await client.invalidateQueries({ queryKey: [source === "intervals" ? "intervals-status" : "xunji-status"] }); }
@@ -534,8 +488,8 @@ function Connections() {
   const sources = connectionSources(Boolean(intervals?.configured), Boolean(xunji?.configured));
   return <section className="connections-page">
     <section className="connections-section"><h2><T>{"Connected"}</T> ({sources.added.length})</h2><div className="connected-sources-grid">
-      {intervals?.configured && <SourceCard source="intervals" title="Intervals.icu" description="Endurance activities and wellness metrics." lastSyncLabel="Last synced" lastSync={intervals.sync?.lastSuccessAt ? formatDateTime(intervals.sync.lastSuccessAt) : "Not yet completed"} lastSyncAt={intervals.sync?.lastSuccessAt ?? undefined} feedback={<><ErrorBanner error={intervalsStatus.error}/><ErrorBanner error={intervalsFeedback.data?.error}/><IntervalsSyncIssues report={intervalsFeedback.data?.result ?? intervalsReport ?? intervals.sync?.data ?? {}}/></>} action={<div className="sync-controls"><SyncRangeSelect label={tr("Intervals.icu sync range")} value={intervalsRange} options={syncRangeOptions} onChange={(value) => setIntervalsRange(parseSyncRange(value))}/><button type="button" className="source-action primary" disabled={intervalsBusy || intervalsAutoBusy || intervals.locked} onClick={() => void sync(intervalsRange)}><AppIcon name="refresh"/>{tr(intervals.locked ? "Database locked" : (intervalsBusy || intervalsAutoBusy) ? "Syncing…" : "Sync now")}</button></div>} menuLabel="Edit connection" onMenuAction={openIntervals}/>}
-      {xunji?.configured && <SourceCard source="xunji" title={tr("SynFit")} description="Strength and training records" lastSyncLabel="Last synced" lastSync={xunji.sync?.lastSuccessAt ? formatDateTime(xunji.sync.lastSuccessAt) : "Not yet completed"} lastSyncAt={xunji.sync?.lastSuccessAt ?? undefined} feedback={<><ErrorBanner error={xunjiStatus.error}/><ErrorBanner error={xunjiFeedback.data?.error}/><XunjiSyncIssues sync={xunji.sync ?? null}/></>} action={<div className="sync-controls"><SyncRangeSelect label={tr("SynFit sync range")} value={xunjiRange} options={syncRangeOptions} onChange={(value) => setXunjiRange(parseSyncRange(value))}/><button type="button" className="source-action primary" disabled={xunjiBusy || xunjiAutoBusy || xunji.locked} onClick={() => void runXunjiSync(xunjiRange)}><AppIcon name="refresh"/>{tr(xunji.locked ? "Database locked" : (xunjiBusy || xunjiAutoBusy) ? "Syncing…" : "Sync now")}</button></div>} menuLabel="Edit connection" onMenuAction={() => setDialog("xunji")}/>}
+      {intervals?.configured && <SourceCard source="intervals" title="Intervals.icu" description="Endurance activities and wellness metrics." lastSyncLabel="Last synced" lastSync={intervals.sync?.lastSuccessAt ? formatDateTime(intervals.sync.lastSuccessAt) : "Not yet completed"} lastSyncAt={intervals.sync?.lastSuccessAt ?? undefined} feedback={<><ErrorBanner error={intervalsStatus.error}/></>} action={<div className="sync-controls"><SyncRangeSelect label={tr("Intervals.icu sync range")} value={intervalsRange} options={syncRangeOptions} onChange={(value) => setIntervalsRange(parseSyncRange(value))}/><button type="button" className="source-action primary" disabled={intervalsBusy || intervalsAutoBusy || intervals.locked} onClick={() => void sync(intervalsRange)}><AppIcon name="refresh"/>{tr(intervals.locked ? "Database locked" : (intervalsBusy || intervalsAutoBusy) ? "Syncing…" : "Sync now")}</button></div>} menuLabel="Edit connection" onMenuAction={openIntervals}/>}
+      {xunji?.configured && <SourceCard source="xunji" title={tr("SynFit")} description="Strength and training records" lastSyncLabel="Last synced" lastSync={xunji.sync?.lastSuccessAt ? formatDateTime(xunji.sync.lastSuccessAt) : "Not yet completed"} lastSyncAt={xunji.sync?.lastSuccessAt ?? undefined} feedback={<><ErrorBanner error={xunjiStatus.error}/></>} action={<div className="sync-controls"><SyncRangeSelect label={tr("SynFit sync range")} value={xunjiRange} options={syncRangeOptions} onChange={(value) => setXunjiRange(parseSyncRange(value))}/><button type="button" className="source-action primary" disabled={xunjiBusy || xunjiAutoBusy || xunji.locked} onClick={() => void runXunjiSync(xunjiRange)}><AppIcon name="refresh"/>{tr(xunji.locked ? "Database locked" : (xunjiBusy || xunjiAutoBusy) ? "Syncing…" : "Sync now")}</button></div>} menuLabel="Edit connection" onMenuAction={() => setDialog("xunji")}/>}
       {!intervalsStatus.isPending && !xunjiStatus.isPending && sources.added.length === 0 && <EmptyState title={tr("No connections yet")} description="Choose one of the available connections below to get started."/>}
     </div></section>
     <section className="connections-section available-connections"><h2><T>{"Available Connections"}</T></h2>{sources.available.length ? <div className="available-sources-grid">
@@ -620,13 +574,13 @@ function TimelineWorkout({ item, planned, revision, timezone, onMutated }: { ite
   const hasSynced = item.sources.some((source) => source.source !== "manual");
   const subtitle = [item.type, item.subtype].filter(Boolean).join(" · ") || tr("Unclassified");
   return <article className="training-row" key={item.id} ref={rowRef}>
-    <div className="training-workout-cell"><span className={`training-type-icon ${displayType.id}`}><TrainingTypeIcon type={displayType.id}/></span><span><strong>{item.name}</strong><small>{subtitle}</small></span></div>
+    <div className="training-workout-cell"><span className={`training-type-icon ${displayType.id}`}><TrainingTypeIcon type={displayType.id}/></span><span><strong>{item.name}</strong><small>{subtitle}{item.rpe != null ? ` · RPE ${item.rpe}` : ""}</small></span></div>
     <div className="training-date-cell"><strong>{dateTime.date}</strong><small>{dateTime.time}</small></div>
     <div className="training-type-cell"><span className={`training-type-badge ${displayType.id}`}>{displayType.label}</span></div>
     <div className="training-duration-cell"><AppIcon name="clock"/><span>{formatDuration(item.durationMinutes)}{item.timePrecision === "date_only" ? <small><T>{"Estimated"}</T></small> : null}</span></div>
-    <div className="training-source-cell"><span>{trainingHistorySourceLabel(item.source)}</span></div>
+    <div className="training-source-cell"><span>{item.sources.map((source) => trainingHistorySourceLabel(source.source)).join(" · ")}</span></div>
     <div className="training-plan-cell"><span className={`training-plan-mark ${item.planMatch ? "matched" : ""}`} aria-label={item.planMatch ? `${item.name} is matched to a planned session` : `${item.name} is not matched to a planned session`} title={item.planMatch ? "Matched to a planned session" : undefined}>{item.planMatch ? "✓" : ""}</span></div>
-    <div className="training-actions-cell"><details className={editing ? "training-row-menu editing" : "training-row-menu"} ref={menuRef} onToggle={(event) => { if (!event.currentTarget.open && editing) cancelManualEdit(); }}><summary aria-label={`Actions for ${item.name}`}>•••</summary><div>{editing ? <div className="training-row-menu-editor"><label><T>{"Duration (minutes)"}</T><input type="number" min="1" max="1440" disabled={busy} value={duration} onChange={(event) => setDuration(event.target.value)}/></label><label><T>{"Actual start time"}</T><input type="datetime-local" disabled={busy} value={startAt} onChange={(event) => setStartAt(event.target.value)}/></label><div className="training-row-menu-editor-actions"><button type="button" className="secondary" disabled={busy} onClick={cancelManualEdit}><T>{"Cancel"}</T></button><button type="button" className="training-row-menu-save" disabled={busy || !Number.isInteger(Number(duration)) || Number(duration) < 1} onClick={() => void saveManual()}>{tr(busy ? "Saving…" : "Save")}</button></div></div> : <><label className="training-row-menu-plan"><span><T>{"Planned session"}</T></span><select aria-label={`Planned session for ${item.name}`} disabled={busy} value={item.planMatch?.plannedSessionId ?? ""} onChange={(event) => void changeMatch(event.target.value)}><option value="" disabled>-</option>{eligible.map((session) => <option key={session.id} value={session.id}>{session.name}{!compatible(session) ? ` · ${tr("Different type")}` : ""}{session.completedTrainingSessionId && session.completedTrainingSessionId !== item.id ? ` · ${tr("Already linked")}` : ""}</option>)}{item.isPlanMatchExcluded && <option value="__automatic__"><T>{"Allow automatic matching"}</T></option>}</select>{item.planMatch && <small>{tr(item.planMatch.method === "manual" ? "Linked by you" : "Matched automatically")}</small>}</label>{hasManual && <button type="button" disabled={busy} onClick={beginManualEdit}><T>{"Edit manual details"}</T></button>}{hasManual && hasSynced && <button type="button" className="danger-text" disabled={busy} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); removeManual(); }}><T>{"Remove manual source"}</T></button>}<button type="button" className="danger-text" disabled={busy} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); deleteRecord(); }}><T>{"Delete record"}</T></button></>}</div></details></div>
+    <div className="training-actions-cell"><details className={editing ? "training-row-menu editing" : "training-row-menu"} ref={menuRef} onToggle={(event) => { if (!event.currentTarget.open && editing) cancelManualEdit(); }}><summary aria-label={`Actions for ${item.name}`}><AppIcon name="ellipsis"/></summary><div>{editing ? <div className="training-row-menu-editor"><label><T>{"Duration (minutes)"}</T><input type="number" min="1" max="1440" disabled={busy} value={duration} onChange={(event) => setDuration(event.target.value)}/></label><label><T>{"Actual start time"}</T><input type="datetime-local" disabled={busy} value={startAt} onChange={(event) => setStartAt(event.target.value)}/></label><div className="training-row-menu-editor-actions"><button type="button" className="secondary" disabled={busy} onClick={cancelManualEdit}><T>{"Cancel"}</T></button><button type="button" className="training-row-menu-save" disabled={busy || !Number.isInteger(Number(duration)) || Number(duration) < 1} onClick={() => void saveManual()}>{tr(busy ? "Saving…" : "Save")}</button></div></div> : <><label className="training-row-menu-plan"><span><T>{"Planned session"}</T></span><select aria-label={`Planned session for ${item.name}`} disabled={busy} value={item.planMatch?.plannedSessionId ?? ""} onChange={(event) => void changeMatch(event.target.value)}><option value="" disabled>-</option>{eligible.map((session) => <option key={session.id} value={session.id}>{session.name}{!compatible(session) ? ` · ${tr("Different type")}` : ""}{session.completedTrainingSessionId && session.completedTrainingSessionId !== item.id ? ` · ${tr("Already linked")}` : ""}</option>)}{item.isPlanMatchExcluded && <option value="__automatic__"><T>{"Allow automatic matching"}</T></option>}</select>{item.planMatch && <small>{tr(item.planMatch.method === "manual" ? "Linked by you" : "Matched automatically")}</small>}</label>{hasManual && <button type="button" disabled={busy} onClick={beginManualEdit}><T>{"Edit manual details"}</T></button>}{hasManual && hasSynced && <button type="button" className="danger-text" disabled={busy} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); removeManual(); }}><T>{"Remove manual source"}</T></button>}<button type="button" className="danger-text" disabled={busy} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); deleteRecord(); }}><T>{"Delete record"}</T></button></>}</div></details></div>
 
   </article>;
 }
@@ -1348,7 +1302,10 @@ export function App() {
 }
 
 function ReadyApp() {
-  useScheduledPlanReview();
+  const adjustment = useScheduledPlanReview();
+  const { language } = useLanguage();
+  const notifications = useRef<ReturnType<typeof createAdjustmentNotifications> | null>(null);
+  if (!notifications.current) notifications.current = createAdjustmentNotifications();
   const t = useT();
   const [page, setPage] = useState<Page>("Overview"); const View = views[page];
   const client = useQueryClient();
@@ -1358,6 +1315,17 @@ function ReadyApp() {
     if (databaseVersion.data) seenDatabaseVersion.current = applyDatabaseVersion(client, seenDatabaseVersion.current, databaseVersion.data);
   }, [client, databaseVersion.data]);
   const profile = useQuery({ queryKey: ["profile"], queryFn: () => api<AthleteProfile>("/api/profile") });
+  useEffect(() => {
+    const databaseUuid = databaseVersion.data?.databaseUuid;
+    const reminder = adjustment.data;
+    if (adjustment.noCurrentPlan) { notifications.current!.clear(); return; }
+    notifications.current!.sync(databaseUuid, reminder, () => {
+      if (!databaseUuid || !reminder) return;
+      dismissWeeklyReview(window.localStorage, databaseUuid, reminder);
+      client.setQueriesData<AdjustmentReminder>({ queryKey: ["plan-adjustment-review", databaseUuid] }, (value) => value?.idempotencyContext === reminder.idempotencyContext ? { ...value, showReminder: false } : value);
+    });
+  }, [databaseVersion.data?.databaseUuid, adjustment.data, adjustment.noCurrentPlan, language, client]);
+  useEffect(() => () => notifications.current!.clear(), []);
   const primaryPages = dashboardPages.filter((item) => item.group === "primary");
   const supportPages = dashboardPages.filter((item) => item.group === "support");
   useEffect(() => { const openTraining = () => setPage("Training"); const openConnections = () => setPage("Connections"); window.addEventListener("athria-open-training", openTraining); window.addEventListener("athria-open-connections", openConnections); return () => { window.removeEventListener("athria-open-training", openTraining); window.removeEventListener("athria-open-connections", openConnections); }; }, []);

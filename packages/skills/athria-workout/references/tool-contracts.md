@@ -33,4 +33,4 @@ For `override_training_session_plan_match`, `allow_automatic_plan_match`, `updat
 
 Every write is bounded to the exact workout action the user approved. If fulfilling the request needs changes to the complete cycle structure or progression, stop and hand off to the training planner.
 
-Planned sessions own one activity `type` and one scalar `domain`. Components contain `id`, `name`, and `prescription`, with no domain field. Classify the whole session; prescription kinds describe its content and do not change its domain.
+Planned sessions own one activity `type` and one scalar `domain`. Each session directly owns one complete non-null `prescription` with domain-specific `blocks[]`; never send `components`. Warm-up, main work, and cooldown belong inside that prescription. Classify the whole session; the session domain describes its content and does not change its domain. Migrated empty sessions may read as null.

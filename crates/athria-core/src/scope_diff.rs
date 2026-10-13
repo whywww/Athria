@@ -91,7 +91,6 @@ pub fn validate_adjustment_scope(
             "/mesocycle/durationWeeks",
             "/mesocycle/schedule",
             "/mesocycle/domainProgressions",
-            "/mesocycle/adjustmentRules",
         ] {
             if pointer(original, path) != pointer(proposed, path) {
                 violations.push(violation(
@@ -261,7 +260,6 @@ mod tests {
             "mesocycle": {
                 "durationWeeks": 2, "schedule": {"kind":"fixed_week","days":[0]},
                 "domainProgressions": [{"domain":"endurance","phases":[]}],
-                "adjustmentRules": [],
                 "weeks": [
                     {"weekNumber":1,"focus":null,"sessions":[{"id":"past","scheduledDate":"2026-09-14","status":"skipped","name":"Past"}]},
                     {"weekNumber":2,"focus":null,"sessions":[{"id":"future","scheduledDate":"2026-09-21","status":"planned","name":"Future"}]}

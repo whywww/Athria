@@ -1,12 +1,12 @@
 import { notify, useOperationError } from "../toasts";
 import { captureMainScroll } from "../scroll-position";
-import { T, tr, currentLanguage } from "../i18n";
+import { T, tr, currentLanguage, weekdayName } from "../i18n";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { formatDuration, type CalendarSession, type CurrentPlan, type StoredSessionTemplate } from "../view-models";
 import { api } from "../api";
 import { Prescription } from "./Prescription";
-import { addDays } from "./view";
-import { formatDayLabel, phaseLabelsForSession } from "./calendar-utils";
+import { addDays, weekdayIndex } from "./view";
+import { phaseLabelsForSession } from "./calendar-utils";
 import "./calendar.css";
 
 /**
@@ -148,8 +148,8 @@ function DrawerPanel({ session, templates, plan, today, onClose, onMutated, retu
       <div className="sd-sheet" role="dialog" aria-modal="true" aria-label={session.name} ref={panelRef} tabIndex={-1}>
         <header className="sd-header">
           <div className="sd-header-text">
-            <h2 className="sd-title">{session.name}</h2>
-            <p className="sd-date">{formatDayLabel(session.scheduledDate)}</p>
+            {session.legacySnapshot && <section className="sd-section sd-legacy"><h3 className="sd-eyebrow"><T>{"Needs structured review"}</T></h3><p><T>{"This legacy prescription is preserved as written and can be converted by a connected Agent."}</T></p></section>}
+            <p className="sd-date">{weekdayName(weekdayIndex(session.scheduledDate), currentLanguage())} · {session.scheduledDate} · {currentLanguage() === "zh-CN" ? `第 ${session.weekNumber} 周` : `Week ${session.weekNumber}`}{phaseLabels.length > 0 ? ` · ${phaseLabels.join(" / ")}` : ""}</p>
           </div>
           <button type="button" className="sd-close" aria-label={tr("Close session details")} onClick={onClose}>
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true" focusable="false">
@@ -158,26 +158,12 @@ function DrawerPanel({ session, templates, plan, today, onClose, onMutated, retu
           </button>
         </header>
 
-        <div className="sd-meta">
-          <span className="sd-meta-item">Week {session.weekNumber}</span>
-          {session.type && <span className="sd-meta-item">{[session.type, session.subtype].filter(Boolean).join(" · ")}</span>}
-          {phaseLabels.map((label) => <span className="sd-meta-item" key={label}>{label}</span>)}
-        </div>
-
         <div className="sd-body">
 
-          {session.legacySnapshot && <section className="sd-section sd-legacy"><h3 className="sd-eyebrow"><T>{"Needs structured review"}</T></h3><p><T>{"This legacy prescription is preserved as written and can be converted by a connected Agent."}</T></p></section>}
-
           <section className="sd-section sd-prescription-section">
-            {session.components.length > 0 ? (
-              <div className="sd-prescriptions">
-                {session.components.map((component) => (
-                  <Prescription component={component} sessionDomain={session.domain} variant="detailed" fallbackNotes={session.intent} summary={session.intent} meta={formatDuration(session.durationMinutes)} key={component.id} />
-                ))}
-              </div>
-            ) : (
-              <p className="sd-empty"><T>{"No structured prescription is available for this session."}</T></p>
-            )}
+            <div className="sd-prescriptions">
+              <Prescription prescription={session.prescription} name={session.name} sessionDomain={session.domain} keySession={session.keySession} variant="detailed" fallbackNotes={session.intent} summary={session.intent} meta={formatDuration(session.durationMinutes)} />
+            </div>
           </section>
 
           {/* Base template renders only when it resolves (§8.3) — never an empty block. */}

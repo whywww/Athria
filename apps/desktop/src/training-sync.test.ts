@@ -3,7 +3,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { syncTrainingAppsDaily, type VaultStatus } from "./api";
 import { applyDailyTrainingSync, DailyTrainingSyncCoordinator, isTrainingSyncBusy, withTrainingSync } from "./training-sync";
-import { notify, notifyError } from "./toasts";
+import { notify } from "./toasts";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("./toasts", () => ({ notify: vi.fn(), notifyError: vi.fn() }));
@@ -61,8 +61,8 @@ describe("daily training sync", () => {
     await applyDailyTrainingSync(client, { results: [{ source: "intervals", result }, { source: "xunji", error }] });
     expect(client.getQueryData(["sync-feedback", "intervals"])).toEqual({ source: "intervals", result });
     expect(client.getQueryData(["sync-feedback", "xunji"])).toEqual({ source: "xunji", error });
-    expect(notify).toHaveBeenCalledWith(expect.stringContaining("Intervals.icu"), "warning");
-    expect(notifyError).toHaveBeenCalledWith(expect.stringContaining(error));
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining("2026-10-07"), "error");
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining(error), "error");
     expect(invalidate.mock.calls.map(([filter]) => filter?.queryKey?.[0])).toEqual(["intervals-status", "xunji-status", "sessions", "summary", "state", "wellness", "calendar", "next-training-day"]);
     client.clear();
   });

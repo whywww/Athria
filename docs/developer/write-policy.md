@@ -71,7 +71,7 @@ A stale hash requires a fresh read and reconstructed diff. Do not attach a newer
 
 Revision values are illustrative. Profile-hash comparison and database-path approval are Agent duties, not extra commit arguments.
 
-Runtime commit checks draft/base revisions, references, and current plan validation, then saves atomically. Replaying a committed draft returns its recorded result. Discarding an open draft leaves Current Plan untouched. A changed base plan requires a fresh draft and rebase.
+Runtime commit checks draft/base revisions, references, and current plan validation, then saves atomically. Successful commit deletes the draft and its weeks in the same transaction and records `sourceDraftId` on Current Plan. Repeated submissions return `DRAFT_NOT_FOUND`; there is no commit replay. Discarding deletes the draft and its weeks and leaves Current Plan untouched. A changed base plan requires a fresh draft and rebase.
 
 Drafts persist work without changing Current Plan. Resuming across conversations repeats the planning checkpoints.
 

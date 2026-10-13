@@ -31,6 +31,14 @@ impl AthriaStore for SqliteStore {
         Ok(profile.clone())
     }
 
+    fn get_plan_review_context(&self, owner_id: &str) -> Result<Option<Value>> {
+        SqliteStore::get_plan_review_context(self, owner_id)
+    }
+
+    fn reset_plan_review_context(&self, owner_id: &str, committed_at: &str, revision: i64) -> Result<()> {
+        SqliteStore::reset_plan_review_context(self, owner_id, committed_at, revision)
+    }
+
     fn get_training_memory(&self, owner_id: &str) -> Result<Option<Value>> {
         SqliteStore::get_training_memory(self, owner_id)
     }
@@ -191,24 +199,13 @@ impl AthriaStore for SqliteStore {
     ) -> Result<Value> {
         SqliteStore::save_plan_draft_week(self, draft_id, owner_id, expected_revision, week)
     }
-    fn set_plan_draft_status(
+    fn delete_plan_draft(
         &self,
         draft_id: &str,
         owner_id: &str,
         expected_revision: i64,
-        status: &str,
-        committed_plan_revision: Option<i64>,
-        commit_result: Option<&Value>,
-    ) -> Result<Value> {
-        SqliteStore::set_plan_draft_status(
-            self,
-            draft_id,
-            owner_id,
-            expected_revision,
-            status,
-            committed_plan_revision,
-            commit_result,
-        )
+    ) -> Result<()> {
+        SqliteStore::delete_plan_draft(self, draft_id, owner_id, expected_revision)
     }
 
     /// The `deletedSessionIds` / `updatedSessions` arguments are ignored, like

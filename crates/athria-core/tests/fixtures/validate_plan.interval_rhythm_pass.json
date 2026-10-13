@@ -96,20 +96,19 @@
                 "durationMinutes": 60,
                 "recoveryDemand": "normal",
                 "keySession": false,
-                "components": [
-                  {
-                    "id": "flush",
-                    "name": "Recovery",
-                    "prescription": {
-                      "kind": "duration_only",
-                      "notes": ""
-                    }
-                  }
-                ],
                 "progressionNote": null,
                 "schedulingRationale": null,
                 "legacySnapshot": false,
-                "domain": "mobility"
+                "domain": "mobility",
+                "prescription": {
+                  "blocks": [
+                    {
+                      "name": "w1-interval-1 session",
+                      "durationMinutes": 60,
+                      "instructions": ""
+                    }
+                  ]
+                }
               },
               {
                 "id": "w1-interval-2",
@@ -122,20 +121,19 @@
                 "durationMinutes": 60,
                 "recoveryDemand": "normal",
                 "keySession": false,
-                "components": [
-                  {
-                    "id": "flush",
-                    "name": "Recovery",
-                    "prescription": {
-                      "kind": "duration_only",
-                      "notes": ""
-                    }
-                  }
-                ],
                 "progressionNote": null,
                 "schedulingRationale": null,
                 "legacySnapshot": false,
-                "domain": "mobility"
+                "domain": "mobility",
+                "prescription": {
+                  "blocks": [
+                    {
+                      "name": "w1-interval-2 session",
+                      "durationMinutes": 60,
+                      "instructions": ""
+                    }
+                  ]
+                }
               },
               {
                 "id": "w1-interval-3",
@@ -148,20 +146,19 @@
                 "durationMinutes": 60,
                 "recoveryDemand": "normal",
                 "keySession": false,
-                "components": [
-                  {
-                    "id": "flush",
-                    "name": "Recovery",
-                    "prescription": {
-                      "kind": "duration_only",
-                      "notes": ""
-                    }
-                  }
-                ],
                 "progressionNote": null,
                 "schedulingRationale": null,
                 "legacySnapshot": false,
-                "domain": "mobility"
+                "domain": "mobility",
+                "prescription": {
+                  "blocks": [
+                    {
+                      "name": "w1-interval-3 session",
+                      "durationMinutes": 60,
+                      "instructions": ""
+                    }
+                  ]
+                }
               }
             ]
           },
@@ -180,20 +177,19 @@
                 "durationMinutes": 60,
                 "recoveryDemand": "normal",
                 "keySession": false,
-                "components": [
-                  {
-                    "id": "flush",
-                    "name": "Recovery",
-                    "prescription": {
-                      "kind": "duration_only",
-                      "notes": ""
-                    }
-                  }
-                ],
                 "progressionNote": null,
                 "schedulingRationale": null,
                 "legacySnapshot": false,
-                "domain": "mobility"
+                "domain": "mobility",
+                "prescription": {
+                  "blocks": [
+                    {
+                      "name": "w2-interval-4 session",
+                      "durationMinutes": 60,
+                      "instructions": ""
+                    }
+                  ]
+                }
               },
               {
                 "id": "w2-interval-5",
@@ -206,20 +202,19 @@
                 "durationMinutes": 60,
                 "recoveryDemand": "normal",
                 "keySession": false,
-                "components": [
-                  {
-                    "id": "flush",
-                    "name": "Recovery",
-                    "prescription": {
-                      "kind": "duration_only",
-                      "notes": ""
-                    }
-                  }
-                ],
                 "progressionNote": null,
                 "schedulingRationale": null,
                 "legacySnapshot": false,
-                "domain": "mobility"
+                "domain": "mobility",
+                "prescription": {
+                  "blocks": [
+                    {
+                      "name": "w2-interval-5 session",
+                      "durationMinutes": 60,
+                      "instructions": ""
+                    }
+                  ]
+                }
               }
             ]
           },
@@ -238,20 +233,19 @@
                 "durationMinutes": 60,
                 "recoveryDemand": "normal",
                 "keySession": false,
-                "components": [
-                  {
-                    "id": "flush",
-                    "name": "Recovery",
-                    "prescription": {
-                      "kind": "duration_only",
-                      "notes": ""
-                    }
-                  }
-                ],
                 "progressionNote": null,
                 "schedulingRationale": null,
                 "legacySnapshot": false,
-                "domain": "mobility"
+                "domain": "mobility",
+                "prescription": {
+                  "blocks": [
+                    {
+                      "name": "w3-interval-6 session",
+                      "durationMinutes": 60,
+                      "instructions": ""
+                    }
+                  ]
+                }
               },
               {
                 "id": "w3-interval-7",
@@ -264,25 +258,23 @@
                 "durationMinutes": 60,
                 "recoveryDemand": "normal",
                 "keySession": false,
-                "components": [
-                  {
-                    "id": "flush",
-                    "name": "Recovery",
-                    "prescription": {
-                      "kind": "duration_only",
-                      "notes": ""
-                    }
-                  }
-                ],
                 "progressionNote": null,
                 "schedulingRationale": null,
                 "legacySnapshot": false,
-                "domain": "mobility"
+                "domain": "mobility",
+                "prescription": {
+                  "blocks": [
+                    {
+                      "name": "w3-interval-7 session",
+                      "durationMinutes": 60,
+                      "instructions": ""
+                    }
+                  ]
+                }
               }
             ]
           }
-        ],
-        "adjustmentRules": []
+        ]
       },
       "effectiveStartDate": "2026-09-07"
     },
@@ -292,30 +284,9 @@
     "valid": true,
     "results": [
       {
-        "enforcement": "blocker",
-        "reasonCode": "COMPONENT_IDS",
         "status": "pass",
-        "rulePackId": "structure",
-        "ruleVersion": "0.3.0",
-        "subjectRefs": [],
-        "evidence": {
-          "componentIds": [
-            "flush",
-            "flush",
-            "flush",
-            "flush",
-            "flush",
-            "flush",
-            "flush"
-          ]
-        },
-        "missingFacts": [],
-        "confidenceLimit": null
-      },
-      {
         "enforcement": "blocker",
         "reasonCode": "EXERCISE_IDS",
-        "status": "pass",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -326,9 +297,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "pass",
         "enforcement": "blocker",
         "reasonCode": "MESOCYCLE_SCHEDULE",
-        "status": "pass",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -341,9 +312,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "pass",
         "enforcement": "blocker",
         "reasonCode": "PROFILE_TRAINING_RHYTHM",
-        "status": "pass",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -370,9 +341,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "pass",
         "enforcement": "blocker",
         "reasonCode": "DOMAIN_PROGRESSION",
-        "status": "pass",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -402,9 +373,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "pass",
         "enforcement": "info",
         "reasonCode": "STRENGTH_VOLUME_DISTRIBUTION",
-        "status": "pass",
         "rulePackId": "strength",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -417,9 +388,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "not_applicable",
         "enforcement": "advisory",
         "reasonCode": "STRENGTH_PUSH_PULL_BALANCE",
-        "status": "not_applicable",
         "rulePackId": "strength",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -432,9 +403,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "not_applicable",
         "enforcement": "advisory",
         "reasonCode": "STRENGTH_KNEE_HINGE_BALANCE",
-        "status": "not_applicable",
         "rulePackId": "strength",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -447,9 +418,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "not_applicable",
         "enforcement": "advisory",
         "reasonCode": "STRENGTH_EFFORT_RPE",
-        "status": "not_applicable",
         "rulePackId": "strength",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -461,9 +432,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "not_applicable",
         "enforcement": "advisory",
         "reasonCode": "ENDURANCE_EFFORT_ZONE",
-        "status": "not_applicable",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -477,10 +448,10 @@
     ],
     "dataGaps": [],
     "validatedAt": "2026-09-17T10:30:00.000Z",
-    "inputHash": "fnv1a-06da7d65",
+    "inputHash": "fnv1a-c5939e3c",
     "coverage": {
-      "hardChecksResolved": 5,
-      "hardChecksTotal": 5,
+      "hardChecksResolved": 4,
+      "hardChecksTotal": 4,
       "movementFactsResolved": 0,
       "movementFactsTotal": 0,
       "muscleFactsResolved": 0,

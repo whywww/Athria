@@ -19,6 +19,8 @@ Use the user's requested language, or the language of their latest substantive m
 
 ## Planned workout actions
 
+Each new session owns one domain and one direct, non-null `prescription` with domain-specific `blocks[]`. Keep warm-up, main work, and cooldown inside it; never send `components`. Existing migrated sessions may have a null prescription.
+
 1. Identify the exact session and requested action. Do not turn a one-off change into a cycle redesign.
 2. Show the before/after date, status, or prescription and obtain explicit approval immediately before the write.
 3. Use `update_planned_session` for `skip`, `restore`, `move_occurrence`, or an explicitly requested completion. Re-read the current revision before writing and stop on a conflict.

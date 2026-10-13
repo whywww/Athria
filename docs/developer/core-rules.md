@@ -32,8 +32,7 @@ Resolve the fact named in the accompanying data gap. Do not clear an unknown by 
 
 | Reason code | Condition / result | Resolution |
 | --- | --- | --- |
-| `COMPONENT_IDS` | Blocker: IDs unique within each session | Rename duplicates in that session |
-| `EXERCISE_IDS` | Blocker: strength exercise IDs unique across all components of a session | Use distinct IDs across that session |
+| `EXERCISE_IDS` | Blocker: strength exercise IDs unique within a session prescription | Use distinct IDs across that session |
 | `MESOCYCLE_SCHEDULE` | Schedule evidence emitted as a blocker pass after schema parsing | Fix malformed schedules at the schema boundary |
 | `PROFILE_TRAINING_RHYTHM` | Blocker for invalid dates/frequency or fixed/interval parameter mismatch; flexible parameter-only mismatch is advisory | Align dates and schedule with Profile |
 | `SESSION_DOMAIN_MISSING` | Info unknown plus a nonblocking gap when the whole session has no domain | Supply the activity type or an explicit session domain |
@@ -77,7 +76,7 @@ Recovery checks run only with at least two distinct high-demand dates. Duration 
 
 ## Prescription support
 
-Components have no domain. Their prescription kind describes the content: `strength`, `endurance`, `sport_skill`, `mind_body`, `mobility`, `functional`, or `duration_only`. A session owns one domain, used for progression, calendar presentation, and session counts. Content blocks may have different prescription kinds, such as a mobility cooldown inside a strength session. Strength sessions require at least one strength prescription; exercise classification checks run on every strength prescription.
+A session owns one domain and one direct prescription. The session domain (`strength`, `endurance`, `sport_skill`, `mind_body`, `mobility`, or `functional`) determines the prescription's block structure and controls progression, calendar presentation, and session counts. All prescriptions use `blocks[]`; they have no `kind` or duplicate `domain`. Warm-up, main work, and cooldown belong inside the same prescription. Strength sessions require executable strength blocks, and exercise classification checks run on strength-session blocks. New writes require a non-null prescription; migrated empty sessions may read as null.
 
 Strength has a scientific rule pack; the other five domains have no separate scientific packs. Free-text injuries/constraints are context, not medical validation.
 

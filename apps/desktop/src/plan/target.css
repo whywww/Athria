@@ -98,8 +98,19 @@
   border: 1px solid var(--line, #e5e5ea); border-radius: 16px; background: var(--surface, #fff);
   box-shadow: 0 8px 28px rgba(35,57,91,.05);
 }
+.pdb-section[data-collapsed="true"] { padding-bottom: 16px; }
 .pdb-heading { margin: 0; color: #0f1d47; font-size: 20px; font-weight: 600; line-height: 1.15; letter-spacing: -.025em; }
-.pdb-subheading { margin: 0; color: #7188ad; font-size: 12px; line-height: 1.35; }
+.pdb-toggle {
+  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 0; border: 0; border-radius: 6px; background: none; color: inherit; font: inherit;
+  text-align: left; cursor: pointer;
+}
+.pdb-toggle:focus-visible { outline: 2px solid #567fb8; outline-offset: 4px; }
+.pdb-heading-text { min-width: 0; display: grid; gap: 12px; }
+/* The subheading renders inside the h3 toggle, so restore body weight and normal letter-spacing. */
+.pdb-subheading { margin: 0; color: #7188ad; font-size: 12px; font-weight: 400; line-height: 1.35; letter-spacing: normal; }
+.pdb-chevron { width: 20px; height: 20px; flex: 0 0 auto; color: #52627b; transition: transform .16s ease; }
+.pdb-chevron.is-open { transform: rotate(180deg); }
 .pdb-domains { display: grid; gap: 10px; }
 .pdb-domain {
   --pdb-color: #98a0ae; --pdb-soft: var(--surface-hover, #f2f2f7);

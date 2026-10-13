@@ -46,7 +46,7 @@ fn intervals_builds_authenticated_windows_and_isolates_failures() {
     );
     assert_eq!(
         result,
-        json!({ "activities": [], "wellness": "Intervals.icu returned HTTP 500", "events": [] })
+        json!({ "activities": [], "wellness": "Intervals.icu returned HTTP 500", "events": [], "errorRanges": { "wellness": { "rangeStart": "2026-09-04", "rangeEnd": "2026-09-11" } } })
     );
     let requests = client.requests.borrow();
     assert_eq!(
@@ -88,6 +88,7 @@ fn xunji_keeps_successful_days_and_never_returns_the_key() {
     ]);
     let result = fetch_xunji_training(&client, "xjllm_secret", 2, "2026-09-03T00:00:00Z").unwrap();
     assert_eq!(result["successfulDates"], json!(["2026-09-02"]));
+    assert_eq!(result["records"][0]["datestr"], "2026-09-02");
     assert_eq!(result["errors"][0]["datestr"], json!("2026-09-03"));
     assert!(!result.to_string().contains("xjllm_secret"));
     for request in client.requests.borrow().iter() {
@@ -102,6 +103,7 @@ fn xunji_authentication_is_typed_and_redacted() {
     let error = fetch_xunji_training(&client, "xjllm_should_not_leak", 1, "2026-09-03T00:00:00Z")
         .unwrap_err();
     assert_eq!(error.0, "apikey invalid");
+    assert_eq!(error.1, "2026-09-03");
     assert!(!error.0.contains("should_not_leak"));
 }
 
@@ -114,4 +116,13 @@ fn xunji_retries_non_json_rate_limit_response() {
     let result = fetch_xunji_training(&client, "xjllm_secret", 1, "2026-09-03T00:00:00Z").unwrap();
     assert_eq!(result["successfulDates"], json!(["2026-09-03"]));
     assert_eq!(client.requests.borrow().len(), 2);
+}
+
+#[test]
+fn xunji_invalid_records_fail_the_requested_date() {
+    let client = FakeClient::new(vec![response(200, json!({ "res": [null, { "localid": "good" }] }))]);
+    let result = fetch_xunji_training(&client, "secret", 1, "2026-09-03T00:00:00Z").unwrap();
+    assert_eq!(result["errors"][0]["datestr"], "2026-09-03");
+    assert_eq!(result["successfulDates"], json!([]));
+    assert_eq!(result["records"], json!([]));
 }

@@ -1,5 +1,5 @@
 import { T } from "./i18n";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { friendlyLabel, validationMessage, type PlanValidation } from "./view-models";
 import { currentLanguage, errorText, tr, weekdayName, useLanguage } from "./i18n";
 
@@ -14,6 +14,18 @@ export function useModalDismiss(onClose: () => void, enabled = true) {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onClose, enabled]);
+}
+
+export function useOutsideDismissMenu() {
+  const menu = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const close = (event: PointerEvent) => {
+      if (menu.current?.open && !menu.current.contains(event.target as Node)) menu.current.open = false;
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, []);
+  return menu;
 }
 
 export const Card = ({ title, children, className = "", action }: { title: React.ReactNode; children: React.ReactNode; className?: string; action?: React.ReactNode }) => <section className={`card ${className}`}><div className="card-heading"><h2>{title}</h2>{action}</div>{children}</section>;

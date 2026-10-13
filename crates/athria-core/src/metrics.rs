@@ -89,14 +89,17 @@ fn range_of(sessions: &[&Value]) -> TimeRange {
         .filter_map(|session| session.get("startAt").and_then(Value::as_str))
         .collect();
     starts.sort_unstable();
-    let mut ends: Vec<&str> = sessions
+    let mut ends: Vec<String> = sessions
         .iter()
-        .filter_map(|session| session.get("endAt").and_then(Value::as_str))
+        .filter_map(|session| {
+            let start = crate::tz::millis(session.get("startAt")?.as_str()?).ok()?;
+            Some(crate::tz::iso_from_millis(start + session.get("durationMinutes")?.as_i64()? * 60_000))
+        })
         .collect();
     ends.sort_unstable();
     TimeRange {
         start: starts.first().map(|value| value.to_string()),
-        end: ends.last().map(|value| value.to_string()),
+        end: ends.last().cloned(),
     }
 }
 
@@ -264,7 +267,13 @@ pub fn calculate_training_metrics(sessions: &[Value]) -> TrainingMetrics {
 
     let mut sources: Vec<String> = Vec::new();
     for session in sessions {
-        if let Some(source) = session.get("source").and_then(Value::as_str) {
+        let summaries = session.get("sources").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]);
+        let session_sources: Vec<&str> = if summaries.is_empty() {
+            session.get("source").and_then(Value::as_str).into_iter().collect()
+        } else {
+            summaries.iter().filter_map(|summary| summary.get("source").and_then(Value::as_str)).collect()
+        };
+        for source in session_sources {
             if !sources.iter().any(|existing| existing == source) {
                 sources.push(source.to_string());
             }

@@ -100,25 +100,23 @@
                 "durationMinutes": 30,
                 "recoveryDemand": "normal",
                 "keySession": false,
-                "components": [
-                  {
-                    "id": "mon-flush",
-                    "name": "Recovery",
-                    "prescription": {
-                      "kind": "duration_only",
-                      "notes": ""
-                    }
-                  }
-                ],
                 "progressionNote": null,
                 "schedulingRationale": null,
                 "legacySnapshot": false,
-                "domain": "mobility"
+                "domain": "mobility",
+                "prescription": {
+                  "blocks": [
+                    {
+                      "name": "mon-recovery session",
+                      "durationMinutes": 30,
+                      "instructions": ""
+                    }
+                  ]
+                }
               }
             ]
           }
-        ],
-        "adjustmentRules": []
+        ]
       }
     },
     "now": "2026-09-17T10:30:00.000Z"
@@ -127,24 +125,9 @@
     "valid": true,
     "results": [
       {
-        "enforcement": "blocker",
-        "reasonCode": "COMPONENT_IDS",
         "status": "pass",
-        "rulePackId": "structure",
-        "ruleVersion": "0.3.0",
-        "subjectRefs": [],
-        "evidence": {
-          "componentIds": [
-            "mon-flush"
-          ]
-        },
-        "missingFacts": [],
-        "confidenceLimit": null
-      },
-      {
         "enforcement": "blocker",
         "reasonCode": "EXERCISE_IDS",
-        "status": "pass",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -155,9 +138,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "pass",
         "enforcement": "blocker",
         "reasonCode": "MESOCYCLE_SCHEDULE",
-        "status": "pass",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -172,9 +155,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "pass",
         "enforcement": "blocker",
         "reasonCode": "PROFILE_TRAINING_RHYTHM",
-        "status": "pass",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -199,9 +182,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "pass",
         "enforcement": "blocker",
         "reasonCode": "DOMAIN_PROGRESSION",
-        "status": "pass",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -231,9 +214,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "pass",
         "enforcement": "info",
         "reasonCode": "STRENGTH_VOLUME_DISTRIBUTION",
-        "status": "pass",
         "rulePackId": "strength",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -246,9 +229,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "not_applicable",
         "enforcement": "advisory",
         "reasonCode": "STRENGTH_PUSH_PULL_BALANCE",
-        "status": "not_applicable",
         "rulePackId": "strength",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -261,9 +244,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "not_applicable",
         "enforcement": "advisory",
         "reasonCode": "STRENGTH_KNEE_HINGE_BALANCE",
-        "status": "not_applicable",
         "rulePackId": "strength",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -276,9 +259,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "not_applicable",
         "enforcement": "advisory",
         "reasonCode": "STRENGTH_EFFORT_RPE",
-        "status": "not_applicable",
         "rulePackId": "strength",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -290,9 +273,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "not_applicable",
         "enforcement": "advisory",
         "reasonCode": "ENDURANCE_EFFORT_ZONE",
-        "status": "not_applicable",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -306,10 +289,10 @@
     ],
     "dataGaps": [],
     "validatedAt": "2026-09-17T10:30:00.000Z",
-    "inputHash": "fnv1a-0510842c",
+    "inputHash": "fnv1a-7bfdbb10",
     "coverage": {
-      "hardChecksResolved": 5,
-      "hardChecksTotal": 5,
+      "hardChecksResolved": 4,
+      "hardChecksTotal": 4,
       "movementFactsResolved": 0,
       "movementFactsTotal": 0,
       "muscleFactsResolved": 0,

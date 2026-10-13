@@ -59,7 +59,7 @@ These tools do not write data.
 | Tool | Use |
 | --- | --- |
 | `get_current_plan` | Read the single editable mesocycle; may return null |
-| `get_plan_adjustment_review` | Read reasons, scope, overrides, gaps, and freshness without editing |
+| `get_plan_adjustment_context` | Read the formal commit anchor, commit-to-today dates, Profile changes, tracking coverage, and freshness; Agent evaluation has no trigger selection |
 | `create_plan_draft` | Start a metadata-only new draft or clone Current Plan |
 | `list_plan_drafts` | Locate persisted draft summaries |
 | `get_plan_draft` | Read a draft summary or one requested week |
@@ -115,3 +115,6 @@ Athria injects the handshake into exported Skills for clients such as Claude Des
 | Write busy | Retry after the competing write; refresh guards if state changed |
 
 Stable application error codes are defined in [Core errors](../../crates/athria-core/src/error.rs). Validation interpretation belongs to [Core rules](core-rules.md); a transport success or advisory pass is not proof of a successful save.
+
+
+After commit, the draft and its weeks are deleted; Current Plan retains the Athria-managed `sourceDraftId`. There is no commit replay or historical receipt. If a commit response is lost or times out, call `get_current_plan` first: a matching `sourceDraftId` confirms success. If the draft still exists, refresh the draft, plan revision, and training context before deciding whether to retry. If the draft is absent and the source ID does not match, the outcome is uncertain (a later formal commit may have replaced the marker); do not infer success or failure, or automatically recreate and submit a replacement. Reading or submitting a deleted draft returns `DRAFT_NOT_FOUND`.

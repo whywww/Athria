@@ -48,6 +48,19 @@ describe("global notifications", () => {
     dismissToast(id);
     expect(render()).not.toContain("dismiss me"); expect(render()).toContain("keep me");
   });
+  it("updates a keyed notification and cancels its timer when it becomes persistent", () => {
+    vi.useFakeTimers();
+    const onDismiss = vi.fn();
+    const id = notify("initial", "info", { key: "persistent-test" })!;
+    expect(notify("updated", "warning", { key: "persistent-test", persistent: true, onDismiss })).toBe(id);
+    vi.advanceTimersByTime(3000);
+    expect(render()).toContain("updated");
+    expect(render()).not.toContain("initial");
+    expect(render()).toContain("toast-warning toast-persistent");
+    dismissToast(id, true);
+    expect(onDismiss).toHaveBeenCalledOnce();
+    expect(render()).not.toContain("updated");
+  });
   it("translates messages and close controls", () => {
     vi.useFakeTimers(); vi.stubGlobal("localStorage", { getItem: () => "zh-CN" });
     notify("Connection updated. Your credentials were saved securely on this device.", "success");

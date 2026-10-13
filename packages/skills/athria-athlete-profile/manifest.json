@@ -1,6 +1,6 @@
 {
   "name": "athria-athlete-profile",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "purpose": "Start Athria with a read-only profile and plan check, then onboard an athlete or maintain confirmed profile and wellness facts.",
   "appliesWhen": [
     "The user explicitly asks to start Athria, including a translated equivalent of 'start Athria', without naming a more specific task.",
@@ -20,7 +20,7 @@
     "list_wellness",
     "update_athlete_profile",
     "update_wellness",
-    "get_plan_adjustment_review",
+    "get_plan_adjustment_context",
     "get_training_memory",
     "update_training_memory"
   ],

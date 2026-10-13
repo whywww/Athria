@@ -72,6 +72,7 @@ fn application_contract_fixture_matches() {
 
     for (index, step) in fixture["steps"].as_array().unwrap().iter().enumerate() {
         let operation = step["operation"].as_str().unwrap();
+        if operation == "save_current_plan" { eprintln!("Updated snapshot: {}", app.snapshot_hash().unwrap()); }
         let result = execute(&app, operation, step.get("input").unwrap_or(&Value::Null));
         if let Some(expected_error) = step.get("error") {
             let error = result.unwrap_err();

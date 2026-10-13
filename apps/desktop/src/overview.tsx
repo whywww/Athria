@@ -1,7 +1,7 @@
 import { assessWellness, type WellnessAssessment, type WellnessAssessmentKey } from "./wellness-assessment";
 import { T, tr, currentLanguage, weekdayName } from "./i18n";
 import { useId, useLayoutEffect, useState, type ReactNode } from "react";
-import { adjustmentReasonMessage, formatDistance, formatDuration, friendlyLabel, type AdjustmentAssessment, type CalendarSession, type TrainingHistorySession, type TrainingSummary, type WellnessRecord } from "./view-models";
+import { formatDistance, formatDuration, friendlyLabel, type CalendarSession, type TrainingHistorySession, type TrainingSummary, type WellnessRecord } from "./view-models";
 import { addDays, weekdayIndex } from "./plan/view";
 import { domainIconPath } from "./domain-icons";
 import { useModalDismiss } from "./components";
@@ -95,7 +95,7 @@ const wellnessPriority: Array<{ key: WellnessAssessmentKey; label: string; forma
   { key: "sleepScore", label: "Sleep score", format: wellnessCompactNumber, tone: "purple" },
   { key: "hrvRmssdMs", label: "HRV RMSSD (ms)", format: wellnessCompactNumber, tone: "orange" },
   { key: "restingHeartRateBpm", label: "Resting HR (bpm)", format: wellnessCompactNumber, tone: "blue" },
-  { key: "vo2maxMlKgMin", label: "VO2 max (ml/kg/min)", format: wellnessCompactNumber, tone: "green" },
+  { key: "vo2maxMlKgMin", label: "VO2 max", format: wellnessCompactNumber, tone: "green" },
   { key: "stepsCount", label: "Steps", format: (value) => String(Math.round(value)), tone: "green" },
   { key: "hrvSdnnMs", label: "HRV SDNN (ms)", format: wellnessCompactNumber, tone: "orange" },
   { key: "sleepSeconds", label: "Sleep time", format: wellnessSleepFormat, tone: "purple" },
@@ -485,26 +485,7 @@ function ActivityDomainChart({ summary }: { summary: TrainingSummary }) {
 
 function monthShift(month: string, amount: number) { const date = new Date(`${month}-01T12:00:00Z`); date.setUTCMonth(date.getUTCMonth() + amount); return date.toISOString().slice(0, 7); }
 
-const severityRank = { hard: 0, strong: 1, soft: 2, info: 3 } as const;
-
-const noticeCopy = {
-  watch: "Weekly check:",
-  review_recommended: "Ask your agent to review the plan:",
-  review_required: "Plan review required — ask your agent:",
-} as const;
-
-export function AdjustmentReviewNotice({ value, onDismiss }: { value: AdjustmentAssessment; onDismiss?: (() => void) | undefined }) {
-  const [dismissed, setDismissed] = useState(false);
-  const reason = [...value.reasons].sort((left, right) => severityRank[left.severity] - severityRank[right.severity])[0];
-  if (!reason || dismissed) return null;
-  const status = value.reviewStatus as keyof typeof noticeCopy;
-  const conditionChanged = reason.reasonCode.startsWith("PROFILE_") || ["GOAL_PLAN_INTENT_DRIFT", "RACE_TARGET_PLAN_INTENT_DRIFT", "PREFERENCE_CHANGED", "MESOCYCLE_DURATION_PREFERENCE_CHANGED"].includes(reason.reasonCode);
-  const prefix = conditionChanged ? "Plan conditions changed:" : value.trigger === "weekly_review" ? "Last week's review — consider this week's plan:" : noticeCopy[status];
-  const message = adjustmentReasonMessage(reason, value.trigger === "weekly_review");
-  return <div className={`adjustment-notice adjustment-notice-${status}`} role="status"><span>{tr(prefix)} {message}</span><button type="button" className="adjustment-notice-close" aria-label={tr("Dismiss message")} onClick={() => { setDismissed(true); onDismiss?.(); }}>×</button></div>;
-}
-
-export function OverviewDashboard({ summary, wellness, history, planned, today, timezone, adjustment, onDismissReview, onOpenWellness }: { summary: TrainingSummary; wellness: WellnessRecord[]; history: TrainingHistorySession[]; planned: CalendarSession[]; today: string; timezone: string; adjustment?: AdjustmentAssessment | undefined; onDismissReview?: (() => void) | undefined; onOpenWellness?: (() => void) | undefined }) {
+export function OverviewDashboard({ summary, wellness, history, planned, today, timezone, onOpenWellness }: { summary: TrainingSummary; wellness: WellnessRecord[]; history: TrainingHistorySession[]; planned: CalendarSession[]; today: string; timezone: string; onOpenWellness?: (() => void) | undefined }) {
   const entrance = useOverviewEntrance();
   const [visibleMonth, setVisibleMonth] = useState(today.slice(0, 7));
   const [helpOpen, setHelpOpen] = useState(false);
@@ -520,7 +501,6 @@ export function OverviewDashboard({ summary, wellness, history, planned, today, 
   const incomplete = summary.metrics.strength.workingSets.dataQuality.completeness < 1 || summary.metrics.endurance.distanceMeters.dataQuality.completeness < 1;
 
   return <div className="overview-dashboard" data-entering={entrance.playing ? "true" : undefined}>
-    {adjustment && <AdjustmentReviewNotice key={`${adjustment.currentPlanRevision}:${adjustment.profileHash}:${adjustment.inputSnapshotHash}`} value={adjustment} onDismiss={onDismissReview}/>}
     <div className="overview-layout">
       <div className="overview-left-column">
         <section className="overview-summary-grid" aria-label={tr("This week so far")}>
@@ -530,7 +510,6 @@ export function OverviewDashboard({ summary, wellness, history, planned, today, 
 
         <section className="overview-panel overview-activity"><header><div><h2><T>{"Your workouts this week"}</T></h2></div><button type="button" className="wellness-open" aria-label={tr("Open Training")} title={tr("Open Training")} onClick={() => window.dispatchEvent(new CustomEvent("athria-open-training"))}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button></header>
           <div className="activity-content"><WeeklyActivityRings summary={summary} minutesTarget={week.planMinutes} countTarget={week.planTotal} entranceProgress={entrance.progress}/><ActivityDomainChart summary={summary}/></div>
-          {!summary.sessionCount && <p className="overview-empty"><T>{"No completed workouts yet this week."}</T><br/>{tr("Connect to your ")}<button type="button" className="overview-empty-link" onClick={() => window.dispatchEvent(new CustomEvent("athria-open-connections"))}>{tr("training apps")}</button>{tr(" or check out your ")}<button type="button" className="overview-empty-link" onClick={() => document.getElementById("overview-next-day")?.scrollIntoView({ behavior: "smooth", block: "start" })}>{tr("next plan")}</button>{tr(".")}</p>}
           {summary.sessionCount > 0 && incomplete && <p className="overview-note"><T>{"Some workout details were unavailable, so sport-specific totals may be incomplete."}</T></p>}
         </section>
 

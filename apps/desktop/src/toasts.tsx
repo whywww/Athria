@@ -2,24 +2,37 @@ import { useCallback, useState, useSyncExternalStore, type ReactNode } from "rea
 import { errorText, tr, useLanguage } from "./i18n";
 
 export type ToastKind = "success" | "warning" | "info" | "error";
-interface Toast { id: number; message: string; kind: ToastKind }
+export interface ToastOptions { persistent?: boolean; key?: string; onDismiss?: () => void }
+interface Toast extends ToastOptions { id: number; message: string; kind: ToastKind }
 let entries: Toast[] = [];
 let nextId = 0;
 const listeners = new Set<() => void>();
 const timers = new Map<number, ReturnType<typeof setTimeout>>();
 const publish = () => listeners.forEach((listener) => listener());
-export function dismissToast(id: number) {
+export function dismissToast(id: number, userDismissed = false) {
+  const toast = entries.find((entry) => entry.id === id);
   clearTimeout(timers.get(id));
   timers.delete(id);
   entries = entries.filter((entry) => entry.id !== id);
   publish();
+  if (userDismissed) toast?.onDismiss?.();
 }
-export function notify(message: string, kind: ToastKind = "info") {
+export function notify(message: string, kind: ToastKind = "info", options: ToastOptions = {}) {
   if (!message) return;
-  if (entries.length === 3) dismissToast(entries[0]!.id);
+  const existing = options.key ? entries.find((entry) => entry.key === options.key) : undefined;
+  if (existing) {
+    clearTimeout(timers.get(existing.id));
+    timers.delete(existing.id);
+    entries = entries.map((entry) => entry.id === existing.id ? { id: entry.id, message, kind, ...options } : entry);
+    if (!options.persistent) timers.set(existing.id, setTimeout(() => dismissToast(existing.id), 3000));
+    publish();
+    return existing.id;
+  }
+  const transient = entries.filter((entry) => !entry.persistent);
+  if (!options.persistent && transient.length >= 3) dismissToast(transient[0]!.id);
   const id = ++nextId;
-  entries = [...entries, { id, message, kind }];
-  timers.set(id, setTimeout(() => dismissToast(id), 3000));
+  entries = [...entries, { id, message, kind, ...options }];
+  if (!options.persistent) timers.set(id, setTimeout(() => dismissToast(id), 3000));
   publish();
   return id;
 }
@@ -56,9 +69,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     () => entries,
   );
   return <>{children}<div className="toast-region" aria-label={tr("Notifications")}>
-    {toasts.map((toast) => <div key={toast.id} className={`toast toast-${toast.kind}`} role={toast.kind === "error" ? "alert" : "status"}>
+    {toasts.map((toast) => <div key={toast.id} className={`toast toast-${toast.kind}${toast.persistent ? " toast-persistent" : ""}`} role={toast.kind === "error" ? "alert" : "status"}>
       <span>{toast.kind === "error" ? errorText(new Error(toast.message), language) : messageText(toast.message)}</span>
-      <button type="button" aria-label={tr("Dismiss notification")} onClick={() => dismissToast(toast.id)}>×</button>
+      <button type="button" aria-label={tr("Dismiss notification")} onClick={() => dismissToast(toast.id, true)}>×</button>
     </div>)}
   </div></>;
 }

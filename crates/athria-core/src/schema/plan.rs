@@ -2,7 +2,7 @@
 //!
 //! Current-plan schema parsing and normalization, including the
 //! application-level action schemas the plan use cases parse. A parsed plan is
-//! the 12-key document the store writes into `current_mesocycles.data`; a
+//! the plan document the store writes into `current_mesocycles.data`; a
 //! parsed planned session is the 29-key document the store writes into
 //! `current_planned_sessions.data`. Both are rebuilt in schema declaration
 //! order — including the `superRefine` hooks the TypeScript schemas run — so
@@ -51,15 +51,6 @@ const SPORT_BLOCK_ROLES: [&str; 8] = [
     "cool_down",
 ];
 const SESSION_TYPES: [&str; 3] = ["practice", "match", "competition"];
-const PRESCRIPTION_KINDS: [&str; 7] = [
-    "strength",
-    "endurance",
-    "sport_skill",
-    "mobility",
-    "mind_body",
-    "functional",
-    "duration_only",
-];
 const SESSION_STATUSES: [&str; 3] = ["planned", "completed", "skipped"];
 const DISPLAY_STATES: [&str; 4] = ["scheduled", "completed", "unrecorded", "skipped"];
 const COMPLETION_SOURCES: [&str; 2] = ["manual", "import"];
@@ -91,6 +82,7 @@ const EFFORT_KEYS: [&str; 9] = [
 /// `currentPlanWriteSchema.parse(value)`: the plan a planner sends, without
 /// `revision`/`updatedAt` and with the expected revision appended.
 pub fn parse_current_plan_write(value: &Value) -> Result<Value> {
+    require_session_prescriptions(value, "plan")?;
     object(value, "plan")?;
     let mut plan = Map::new();
     insert_plan_head(&mut plan, value)?;
@@ -119,6 +111,7 @@ pub fn parse_current_plan(value: &Value) -> Result<Value> {
         "updatedAt".into(),
         Value::String(required_text(value, "updatedAt", "plan")?),
     );
+    plan.insert("sourceDraftId".into(), text_or_null(value, "sourceDraftId"));
     insert_plan_target(&mut plan, value)?;
     let plan = Value::Object(plan);
     validate_plan_sessions(&plan)?;
@@ -197,8 +190,8 @@ pub fn parse_planned_session(value: &Value) -> Result<Value> {
         ),
     );
     session.insert(
-        "components".into(),
-        parse_components(value, "plannedSession")?,
+        "prescription".into(),
+        parse_session_prescription(value, "plannedSession", true)?,
     );
     session.insert(
         "progressionNote".into(),
@@ -442,10 +435,6 @@ pub fn parse_mesocycle(value: &Value, path: &str) -> Result<Value> {
         parse_domain_progressions(value, path)?,
     );
     mesocycle.insert("weeks".into(), parse_weeks(value, path)?);
-    mesocycle.insert(
-        "adjustmentRules".into(),
-        parse_adjustment_rules(value, path)?,
-    );
     let mesocycle = Value::Object(mesocycle);
     validate_mesocycle(&mesocycle, duration_weeks, path)?;
     Ok(mesocycle)
@@ -546,6 +535,7 @@ fn validate_mesocycle(mesocycle: &Value, duration_weeks: i64, path: &str) -> Res
 
 /// `planWeekSchema.parse(value)`.
 pub fn parse_plan_week(value: &Value) -> Result<Value> {
+    require_session_prescriptions(value, "plan.mesocycle.week")?;
     parse_week(value, "plan.mesocycle.week")
 }
 
@@ -664,7 +654,7 @@ fn parse_weekly_session(value: &Value, path: &str) -> Result<Value> {
                 .unwrap_or(false),
         ),
     );
-    session.insert("components".into(), parse_components(value, path)?);
+    session.insert("prescription".into(), parse_session_prescription(value, path, true)?);
     session.insert(
         "progressionNote".into(),
         text_or_null(value, "progressionNote"),
@@ -736,7 +726,7 @@ fn parse_planned_session_input(value: &Value, path: &str) -> Result<Value> {
                 .unwrap_or(false),
         ),
     );
-    session.insert("components".into(), parse_components(value, path)?);
+    session.insert("prescription".into(), parse_session_prescription(value, path, false)?);
     session.insert(
         "progressionNote".into(),
         text_or_null(value, "progressionNote"),
@@ -762,81 +752,65 @@ fn parse_planned_session_input(value: &Value, path: &str) -> Result<Value> {
 }
 
 /// `trainingComponentSchema.parse(value)`.
-fn parse_component(value: &Value, path: &str) -> Result<Value> {
-    object(value, path)?;
-    let mut component = Map::new();
-    component.insert(
-        "id".into(),
-        Value::String(required_text(value, "id", path)?),
-    );
-    component.insert(
-        "name".into(),
-        Value::String(required_text(value, "name", path)?),
-    );
-    let prescription =
-        parse_prescription(get(value, "prescription"), &format!("{path}.prescription"))?;
-    component.insert("prescription".into(), prescription);
-    Ok(Value::Object(component))
-}
-
-fn parse_components(value: &Value, path: &str) -> Result<Value> {
-    let components = array(get(value, "components"), &format!("{path}.components"))?;
-    let mut parsed = Vec::with_capacity(components.len());
-    for (index, component) in components.iter().enumerate() {
-        parsed.push(parse_component(
-            component,
-            &format!("{path}.components.{index}"),
-        )?);
+fn parse_session_prescription(value: &Value, path: &str, allow_null: bool) -> Result<Value> {
+    if value.get("components").is_some() {
+        return Err(invalid(&format!("{path}.components"), "components is no longer supported; provide session.prescription"));
     }
-    Ok(Value::Array(parsed))
+    let prescription = value.get("prescription").ok_or_else(|| invalid(&format!("{path}.prescription"), "a session prescription is required"))?;
+    if allow_null && prescription.is_null() { return Ok(Value::Null); }
+    let domain = crate::training_type::session_domain(value).ok_or_else(|| invalid(&format!("{path}.domain"), "a session domain is required for a structured prescription"))?;
+    parse_prescription(prescription, &format!("{path}.prescription"), domain)
 }
 
-/// `prescription: z.discriminatedUnion("kind", ...)`.
-fn parse_prescription(value: &Value, path: &str) -> Result<Value> {
+fn require_session_prescriptions(value: &Value, path: &str) -> Result<()> {
+    match value {
+        Value::Object(object) => {
+            if object.contains_key("components") && object.contains_key("name") {
+                return Err(invalid(&format!("{path}.components"), "components is no longer supported; provide session.prescription"));
+            }
+            if object.contains_key("scheduledDate") && object.contains_key("name") {
+                parse_session_prescription(value, path, false)?;
+            }
+            for (key, child) in object { require_session_prescriptions(child, &format!("{path}.{key}"))?; }
+        }
+        Value::Array(items) => for (index, child) in items.iter().enumerate() {
+            require_session_prescriptions(child, &format!("{path}.{index}"))?;
+        },
+        _ => {},
+    }
+    Ok(())
+}
+
+/// Prescription structure is selected by its owning session's domain.
+fn parse_prescription(value: &Value, path: &str, domain: &str) -> Result<Value> {
     object(value, path)?;
-    let kind = required_enum(value, "kind", &PRESCRIPTION_KINDS, path)?;
+    for obsolete in ["kind", "domain", "exercises", "segments"] {
+        if value.get(obsolete).is_some() {
+            return Err(invalid(&format!("{path}.{obsolete}"), "use session.domain and prescription.blocks"));
+        }
+    }
+    for key in value.as_object().unwrap().keys() {
+        if key != "blocks" && !(domain == "sport_skill" && key == "sessionType") {
+            return Err(invalid(&format!("{path}.{key}"), "unexpected field for this session domain"));
+        }
+    }
     let mut prescription = Map::new();
-    prescription.insert("kind".into(), Value::String(kind.clone()));
-    match kind.as_str() {
-        "strength" => {
-            let exercises = array(get(value, "exercises"), &format!("{path}.exercises"))?;
-            let mut parsed = Vec::with_capacity(exercises.len());
-            for (index, exercise) in exercises.iter().enumerate() {
-                parsed.push(parse_plan_exercise(
-                    exercise,
-                    &format!("{path}.exercises.{index}"),
-                )?);
-            }
-            prescription.insert("exercises".into(), Value::Array(parsed));
-        }
-        "duration_only" => {
-            prescription.insert("notes".into(), Value::String(text_or(value, "notes", "")));
-        }
-        "endurance" => {
-            let segments = array(get(value, "segments"), &format!("{path}.segments"))?;
-            let mut parsed = Vec::with_capacity(segments.len());
-            for (index, segment) in segments.iter().enumerate() {
-                parsed.push(parse_segment(segment, &format!("{path}.segments.{index}"))?);
-            }
-            prescription.insert("segments".into(), Value::Array(parsed));
-        }
-        "sport_skill" => {
-            prescription.insert(
-                "sessionType".into(),
-                Value::String(required_enum(value, "sessionType", &SESSION_TYPES, path)?),
-            );
-            prescription.insert(
-                "blocks".into(),
-                parse_blocks(value, path, parse_sport_block)?,
-            );
-        }
-        _ => {
-            prescription.insert(
-                "blocks".into(),
-                parse_blocks(value, path, parse_recovery_block)?,
-            );
-        }
+    let blocks = array(get(value, "blocks"), &format!("{path}.blocks"))?;
+    let mut parsed = Vec::with_capacity(blocks.len());
+    for (index, block) in blocks.iter().enumerate() {
+        let block_path = format!("{path}.blocks.{index}");
+        parsed.push(match domain {
+            "strength" => parse_plan_exercise(block, &block_path)?,
+            "endurance" => parse_segment(block, &block_path)?,
+            "sport_skill" => parse_sport_block(block, &block_path)?,
+            "mobility" | "mind_body" | "functional" => parse_recovery_block(block, &block_path)?,
+            _ => return Err(invalid(path, "unsupported session domain")),
+        });
     }
+    if domain == "sport_skill" {
+        prescription.insert("sessionType".into(), Value::String(required_enum(value, "sessionType", &SESSION_TYPES, path)?));
+    }
+    prescription.insert("blocks".into(), Value::Array(parsed));
     Ok(Value::Object(prescription))
 }
 
@@ -1069,23 +1043,22 @@ fn parse_step(value: &Value, path: &str) -> Result<Value> {
     );
     for key in EFFORT_KEYS {
         if let Some(entry) = value.get(key) {
+            if key == "heartRateZone" {
+                let valid = entry.as_str().is_some_and(|zone| match zone.as_bytes() {
+                    [single] => (b'1'..=b'5').contains(single),
+                    [start, b'-', end] => (b'1'..=b'5').contains(start)
+                        && (b'1'..=b'5').contains(end) && start < end,
+                    _ => false,
+                });
+                if !valid {
+                    return Err(invalid(&format!("{path}.heartRateZone"),
+                        "expected a zone string from 1 to 5 or an ascending range such as 1-3"));
+                }
+            }
             step.insert(key.into(), entry.clone());
         }
     }
     Ok(Value::Object(step))
-}
-
-fn parse_blocks(
-    value: &Value,
-    path: &str,
-    parse_block: fn(&Value, &str) -> Result<Value>,
-) -> Result<Value> {
-    let blocks = array(get(value, "blocks"), &format!("{path}.blocks"))?;
-    let mut parsed = Vec::with_capacity(blocks.len());
-    for (index, block) in blocks.iter().enumerate() {
-        parsed.push(parse_block(block, &format!("{path}.blocks.{index}"))?);
-    }
-    Ok(Value::Array(parsed))
 }
 
 /// `sportBlockSchema.parse(value)`.
@@ -1111,6 +1084,11 @@ fn parse_sport_block(value: &Value, path: &str) -> Result<Value> {
 /// `recoveryBlockSchema.parse(value)`.
 fn parse_recovery_block(value: &Value, path: &str) -> Result<Value> {
     object(value, path)?;
+    for key in value.as_object().unwrap().keys() {
+        if !matches!(key.as_str(), "name" | "durationMinutes" | "instructions") {
+            return Err(invalid(&format!("{path}.{key}"), "unexpected field for a mobility, mind-body, or functional block"));
+        }
+    }
     let mut block = Map::new();
     block.insert(
         "name".into(),
@@ -1192,23 +1170,6 @@ fn parse_domain_phase(value: &Value, path: &str) -> Result<Value> {
         text_array_or(value, "progression", &[]),
     );
     Ok(Value::Object(phase))
-}
-
-fn parse_adjustment_rules(value: &Value, path: &str) -> Result<Value> {
-    let Some(rules) = value.get("adjustmentRules").and_then(Value::as_array) else {
-        return Ok(Value::Array(Vec::new()));
-    };
-    let mut parsed = Vec::with_capacity(rules.len());
-    for (index, rule) in rules.iter().enumerate() {
-        let rule_path = format!("{path}.adjustmentRules.{index}");
-        object(rule, &rule_path)?;
-        parsed.push(json!({
-            "trigger": required_text(rule, "trigger", &rule_path)?,
-            "action": required_text(rule, "action", &rule_path)?,
-            "rationale": required_text(rule, "rationale", &rule_path)?,
-        }));
-    }
-    Ok(Value::Array(parsed))
 }
 
 /// `templateRefSchema`, nullable.
@@ -1379,12 +1340,91 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn endurance_component() -> Value {
-        json!({
-            "id": "c1",
-            "name": "Main set",
-            "prescription": { "kind": "endurance", "segments": [{ "type": "step", "name": "Steady", "role": "steady", "durationSeconds": 1800 }] },
-        })
+    #[test]
+    fn endurance_zone_strings_are_canonical_in_steps_and_repeats() {
+        for zone in ["1", "2", "3", "4", "5", "1-2", "1-3", "1-4", "1-5", "2-3", "2-4", "2-5", "3-4", "3-5", "4-5"] {
+            let step = json!({"type":"step", "name":"Easy", "role":"steady", "heartRateZone":zone});
+            let repeat = json!({"type":"repeat", "name":"Intervals", "repetitions":2, "work":step, "recovery":step});
+            let prescription = json!({"blocks":[step, repeat]});
+            assert_eq!(parse_prescription(&prescription, "rx", "endurance").unwrap(), prescription);
+        }
+        let missing = json!({"type":"step", "name":"Easy", "role":"steady"});
+        assert_eq!(parse_step(&missing, "step").unwrap(), missing);
+    }
+
+    #[test]
+    fn endurance_zones_reject_noncanonical_values_at_every_step_path() {
+        for zone in [json!("Z2"), json!("Zone 2"), json!("Zone 1–3"), json!("1–3"),
+            json!("1—3"), json!(" 2"), json!("2 "), json!("1 - 3"), json!("0"), json!("6"),
+            json!("1-6"), json!("3-1"), json!("2-2"), json!("01"), json!(""), json!("2\n"),
+            json!(2), Value::Null, json!([])] {
+            let valid = json!({"type":"step", "name":"Easy", "role":"steady", "heartRateZone":"2"});
+            let mut invalid_step = valid.clone();
+            invalid_step["heartRateZone"] = zone;
+            for (block, expected_path) in [
+                (invalid_step.clone(), "rx.blocks.0.heartRateZone"),
+                (json!({"type":"repeat", "name":"Intervals", "repetitions":2, "work":invalid_step, "recovery":valid}), "rx.blocks.0.work.heartRateZone"),
+                (json!({"type":"repeat", "name":"Intervals", "repetitions":2, "work":valid, "recovery":invalid_step}), "rx.blocks.0.recovery.heartRateZone"),
+            ] {
+                let error = parse_prescription(&json!({"blocks":[block]}), "rx", "endurance").unwrap_err();
+                assert!(error.message().contains(expected_path), "{}", error.message());
+            }
+        }
+        // Other domains retain free-text intensity and instructions.
+        let sport = json!({"sessionType":"practice", "blocks":[{"name":"Drill", "role":"technical", "durationMinutes":10, "intensity":"Zone 1–3"}]});
+        assert_eq!(parse_prescription(&sport, "rx", "sport_skill").unwrap()["blocks"][0]["intensity"], "Zone 1–3");
+    }
+
+    #[test]
+    fn sessions_write_domain_owned_blocks_in_every_supported_format() {
+        for (domain, activity, prescription) in [
+            ("strength", "StrengthTraining", json!({"blocks":[]})),
+            ("endurance", "Run", json!({"blocks":[]})),
+            ("sport_skill", "Soccer", json!({"sessionType":"practice","blocks":[]})),
+            ("mobility", "Stretching", json!({"blocks":[]})),
+            ("mind_body", "Yoga", json!({"blocks":[]})),
+            ("functional", "FunctionalTraining", json!({"blocks":[]})),
+        ] {
+            let mut payload = plan_write();
+            let session = &mut payload["mesocycle"]["weeks"][0]["sessions"][0];
+            session["type"] = json!(activity);
+            session["domain"] = json!(domain);
+            session["prescription"] = prescription.clone();
+            payload["mesocycle"]["domainProgressions"][0]["domain"] = json!(domain);
+            let parsed = parse_current_plan_write(&payload).unwrap();
+            let session = &parsed["mesocycle"]["weeks"][0]["sessions"][0];
+            assert_eq!(session["prescription"], prescription);
+            assert_eq!(session["domain"], domain);
+            assert!(session["prescription"].get("kind").is_none());
+        }
+    }
+
+    #[test]
+    fn migrated_null_prescriptions_are_readable_but_cannot_be_written() {
+        let mut payload = plan_write();
+        payload["mesocycle"]["weeks"][0]["sessions"][0]["prescription"] = Value::Null;
+        assert!(parse_current_plan_write(&payload).unwrap_err().message().contains("prescription"));
+        let week = &payload["mesocycle"]["weeks"][0];
+        assert!(parse_plan_week(week).is_err());
+        payload["revision"] = json!(1);
+        payload["updatedAt"] = json!("2026-09-10T00:00:00Z");
+        assert!(parse_current_plan(&payload).unwrap()["mesocycle"]["weeks"][0]["sessions"][0]["prescription"].is_null());
+    }
+
+    #[test]
+    fn legacy_components_are_rejected_with_an_actionable_error() {
+        let mut payload = plan_write();
+        payload["mesocycle"]["weeks"][0]["sessions"][0]["components"] = json!([]);
+        let error = parse_current_plan_write(&payload).unwrap_err();
+        assert!(error.message().contains("components is no longer supported"));
+        assert!(error.message().contains("session.prescription"));
+        let mut session = weekly_session();
+        session.as_object_mut().unwrap().remove("prescription");
+        assert!(parse_weekly_session(&session, "session").unwrap_err().message().contains("prescription is required"));
+    }
+
+    fn endurance_prescription() -> Value {
+        json!({ "blocks": [{ "type": "step", "name": "Steady", "role": "steady", "durationSeconds": 1800 }] })
     }
 
     fn weekly_session() -> Value {
@@ -1395,7 +1435,7 @@ mod tests {
             "name": "Easy Run", "domain": "endurance",
             "intent": "Aerobic base",
             "durationMinutes": 45,
-            "components": [endurance_component()],
+            "prescription": endurance_prescription(),
         })
     }
 
@@ -1468,9 +1508,22 @@ mod tests {
                 "skillVersion",
                 "inputSnapshotHash",
                 "updatedAt",
+                "sourceDraftId",
                 "target"
             ]
         );
+    }
+
+    #[test]
+    fn source_draft_id_is_read_from_stored_plans_but_not_write_payloads() {
+        let mut payload = plan_write();
+        payload["sourceDraftId"] = json!("draft-1");
+        assert!(parse_current_plan_write(&payload).unwrap().get("sourceDraftId").is_none());
+        payload["revision"] = json!(1);
+        payload["updatedAt"] = json!("2026-09-07T04:00:00.000Z");
+        assert_eq!(parse_current_plan(&payload).unwrap()["sourceDraftId"], "draft-1");
+        payload.as_object_mut().unwrap().remove("sourceDraftId");
+        assert!(parse_current_plan(&payload).unwrap()["sourceDraftId"].is_null());
     }
 
     #[test]
@@ -1494,7 +1547,7 @@ mod tests {
                 "durationMinutes",
                 "recoveryDemand",
                 "keySession",
-                "components",
+                "prescription",
                 "progressionNote",
                 "schedulingRationale",
                 "legacySnapshot"
@@ -1504,12 +1557,11 @@ mod tests {
         assert_eq!(session["templateRef"], json!(null));
         assert_eq!(session["keySession"], json!(false));
         assert_eq!(session["domain"], "endurance");
-        assert!(session["components"][0].get("domain").is_none());
+        assert!(session["prescription"].get("domain").is_none());
         assert_eq!(plan["mesocycle"]["weeks"][0]["focus"], json!(null));
-        assert_eq!(plan["mesocycle"]["adjustmentRules"], json!([]));
         // The step keeps only the effort targets the source observation has.
         assert_eq!(
-            session["components"][0]["prescription"]["segments"][0],
+            session["prescription"]["blocks"][0],
             json!({ "type": "step", "name": "Steady", "role": "steady", "durationSeconds": 1800 })
         );
     }
@@ -1551,14 +1603,15 @@ mod tests {
     }
 
     #[test]
-    fn components_describe_content_without_classifying_the_session() {
+    fn prescriptions_are_validated_against_the_session_domain() {
         let mut payload = plan_write();
-        payload["mesocycle"]["weeks"][0]["sessions"][0]["components"][0]["prescription"] = json!({"kind":"mobility","blocks":[{"name":"Cooldown"}]});
-        let parsed = parse_current_plan_write(&payload).unwrap();
-        let session = &parsed["mesocycle"]["weeks"][0]["sessions"][0];
-        assert_eq!(session["domain"], "endurance");
-        assert!(session["components"][0].get("domain").is_none());
-        assert_eq!(session["components"][0]["prescription"]["kind"], "mobility");
+        payload["mesocycle"]["weeks"][0]["sessions"][0]["prescription"] = json!({"blocks":[{"name":"Cooldown"}]});
+        assert!(parse_current_plan_write(&payload).is_err());
+        for obsolete in ["kind", "domain", "exercises", "segments"] {
+            let mut payload = plan_write();
+            payload["mesocycle"]["weeks"][0]["sessions"][0]["prescription"][obsolete] = json!("endurance");
+            assert!(parse_current_plan_write(&payload).unwrap_err().message().contains(obsolete));
+        }
     }
 
     #[test]
@@ -1596,7 +1649,7 @@ mod tests {
                 "recoveryDemand",
                 "durationMinutes",
                 "keySession",
-                "components",
+                "prescription",
                 "progressionNote",
                 "schedulingRationale",
                 "exerciseOverrides",
@@ -1633,7 +1686,7 @@ mod tests {
             "intent": "Aerobic base",
             "recoveryDemand": "normal",
             "durationMinutes": 45,
-            "components": [endurance_component()],
+            "prescription": endurance_prescription(),
             "createdAt": "2026-09-07T04:00:00.000Z",
             "updatedAt": "2026-09-07T04:00:00.000Z",
         });
@@ -1658,7 +1711,7 @@ mod tests {
             "scheduledDate": "2026-09-10",
             "expectedRevision": 0,
             "mode": "replace",
-            "sessions": [{ "id": "s1", "name": "Easy Run", "domain": "endurance", "intent": "Aerobic base", "durationMinutes": 45, "components": [endurance_component()] }],
+            "sessions": [{ "id": "s1", "name": "Easy Run", "domain": "endurance", "intent": "Aerobic base", "durationMinutes": 45, "prescription": endurance_prescription() }],
         }))
         .unwrap();
         let keys: Vec<&String> = write.as_object().unwrap().keys().collect();
@@ -1688,7 +1741,7 @@ mod tests {
                 "durationMinutes",
                 "recoveryDemand",
                 "keySession",
-                "components",
+                "prescription",
                 "progressionNote",
                 "schedulingRationale",
                 "legacySnapshot",

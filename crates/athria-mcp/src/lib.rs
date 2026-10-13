@@ -2,7 +2,7 @@
 
 use athria_application::{AthriaApplication, AthriaStore};
 use athria_core::{
-    AdjustmentTrigger, RpeAutoregulationInput, calculate_heart_rate_zones,
+    RpeAutoregulationInput, calculate_heart_rate_zones,
     calculate_training_metrics, estimate_one_rep_max, evaluate_double_progression,
     evaluate_rpe_autoregulation,
 };
@@ -78,7 +78,7 @@ enum ToolKind {
     ValidatePlanDraft,
     CommitPlanDraft,
     DiscardPlanDraft,
-    GetPlanAdjustmentReview,
+    GetPlanAdjustmentContext,
     ListSessionTemplates,
     GetSessionTemplate,
     GetTrainingTaxonomy,
@@ -128,7 +128,7 @@ impl ToolKind {
             "validate_plan_draft" => Self::ValidatePlanDraft,
             "commit_plan_draft" => Self::CommitPlanDraft,
             "discard_plan_draft" => Self::DiscardPlanDraft,
-            "get_plan_adjustment_review" => Self::GetPlanAdjustmentReview,
+            "get_plan_adjustment_context" => Self::GetPlanAdjustmentContext,
             "list_session_templates" => Self::ListSessionTemplates,
             "get_session_template" => Self::GetSessionTemplate,
             "get_training_taxonomy" => Self::GetTrainingTaxonomy,
@@ -288,11 +288,11 @@ impl<S: AthriaStore> McpService<S> {
             ToolKind::GetTrainingMemory => application(app.get_training_memory()),
             ToolKind::GetTrainingState => application(app.get_training_state()),
             ToolKind::ListTrainingSessions => serialize(
-                app.list_sessions_with_snapshots(days(input, 30)?)
+                app.list_sessions_in_window(days(input, 30)?, optional_date(input, "from")?, optional_date(input, "to")?)
                     .map_err(ToolError::application)?,
             ),
             ToolKind::ListWellness => serialize(
-                app.list_wellness(days(input, 42)?)
+                app.list_wellness_in_window(days(input, 42)?, optional_date(input, "from")?, optional_date(input, "to")?)
                     .map_err(ToolError::application)?,
             ),
             ToolKind::GetWellnessDay => {
@@ -319,7 +319,7 @@ impl<S: AthriaStore> McpService<S> {
                 Ok(result)
             }
             ToolKind::GetTrainingSummary => {
-                application(app.get_training_summary(days(input, 7)?, None, None))
+                application(app.get_training_summary(days(input, 7)?, optional_date(input, "from")?, optional_date(input, "to")?))
             }
             ToolKind::GetCurrentPlan => {
                 serialize(app.get_current_plan().map_err(ToolError::application)?)
@@ -356,18 +356,7 @@ impl<S: AthriaStore> McpService<S> {
                 required_str(input, "draftId")?,
                 required_i64(input, "expectedDraftRevision")?,
             )),
-            ToolKind::GetPlanAdjustmentReview => {
-                let trigger = match required_str(input, "trigger")? {
-                    "weekly_review" => AdjustmentTrigger::WeeklyReview,
-                    "profile_change" => AdjustmentTrigger::ProfileChange,
-                    "user_request" => AdjustmentTrigger::UserRequest,
-                    _ => return Err(ToolError::invalid("trigger is not an allowed value")),
-                };
-                serialize(
-                    app.review_current_plan_for_adjustment(trigger)
-                        .map_err(ToolError::application)?,
-                )
-            }
+            ToolKind::GetPlanAdjustmentContext => application(app.get_plan_adjustment_context()),
             ToolKind::ListSessionTemplates => {
                 serialize(app.list_templates().map_err(ToolError::application)?)
             }
@@ -628,6 +617,13 @@ fn days(input: &Value, default: i64) -> std::result::Result<i64, ToolError> {
         Ok(value)
     } else {
         Err(ToolError::invalid("days must be an integer from 1 to 365"))
+    }
+}
+fn optional_date<'a>(input: &'a Value, name: &str) -> std::result::Result<Option<&'a str>, ToolError> {
+    match input.get(name) {
+        None => Ok(None),
+        Some(Value::String(value)) => Ok(Some(value)),
+        _ => Err(ToolError::invalid(format!("{name} must be a YYYY-MM-DD string"))),
     }
 }
 pub fn serve_stdio<S: AthriaStore + Send + 'static>(service: McpService<S>) -> std::io::Result<()> {
@@ -947,6 +943,26 @@ mod tests {
         );
     }
     #[test]
+    fn template_read_schema_and_mcp_contract_agree_on_metadata() {
+        let schema: Value=serde_json::from_str(include_str!("../../../schemas/v7/session-template-read.json")).unwrap();
+        let validator=jsonschema::options().with_draft(jsonschema::Draft::Draft202012).build(&schema).unwrap();
+        let fixtures: Value=serde_json::from_str(include_str!("../tests/fixtures/tool-results.json")).unwrap();
+        for template in fixtures["list_session_templates"].as_array().unwrap() {
+            assert!(validator.is_valid(template));
+            let mut bad=template.clone();
+            bad["origin"]=json!("unknown");
+            assert!(!validator.is_valid(&bad));
+            let mut bad=template.clone();
+            bad.as_object_mut().unwrap().remove(if template["origin"]=="user" {"revision"} else {"catalogVersion"});
+            assert!(!validator.is_valid(&bad));
+        }
+        let service=service();
+        let registered=service.registry.iter().zip(service.tools()).find(|(_,tool)|tool["name"]=="get_session_template").unwrap().0;
+        assert!(registered.output.is_valid(&json!({"result":fixtures["get_session_template"]})));
+        assert!(!registered.output.is_valid(&json!({"result":{}})));
+    }
+
+    #[test]
     fn every_tool_has_a_valid_contract_result_fixture() {
         let service = service();
         let fixtures: Value =
@@ -966,12 +982,37 @@ mod tests {
         }
     }
     #[test]
+    fn manual_mcp_records_reject_api_load_metrics() {
+        let service = service();
+        for field in athria_core::schema::session::API_SESSION_METRICS {
+            let mut input = json!({"type":"Run","name":"Manual run","startAt":"2026-09-16T09:00:00Z","durationMinutes":60});
+            input[field] = json!(10);
+            assert_eq!(service.call_result("record_training_session", &input)["isError"], true, "{field}");
+        }
+    }
+
+    #[test]
     fn keeps_machine_readable_errors() {
         let output = service().call_result("list_training_sessions", &json!({ "days": 0 }));
         assert_eq!(output["isError"], true);
         let error: Value =
             serde_json::from_str(output["content"][0]["text"].as_str().unwrap()).unwrap();
         assert_eq!(error["code"], "INVALID_INPUT");
+    }
+    #[test]
+    fn explicit_date_windows_are_dispatched_and_invalid_pairs_fail() {
+        let service = service();
+        for name in ["list_training_sessions", "get_training_summary", "list_wellness"] {
+            let output = service.call_result(name, &json!({"days":1,"from":"2026-09-01","to":"2026-09-30"}));
+            assert_ne!(output["isError"], true, "{name}: {output}");
+            for input in [json!({"from":"2026-09-01"}), json!({"to":"2026-09-30"}),
+                json!({"from":"2026-02-30","to":"2026-09-30"}),
+                json!({"from":"2026-09-30","to":"2026-09-01"}), json!({"from":null,"to":"2026-09-30"})] {
+                assert_eq!(service.call_result(name, &input)["isError"], true, "{name}: {input}");
+            }
+            let schema = service.tools().iter().find(|tool| tool["name"] == name).unwrap();
+            assert_eq!(schema["inputSchema"]["dependentRequired"]["from"], json!(["to"]));
+        }
     }
     #[test]
     fn training_memory_tools_read_write_and_enforce_revision_and_length() {
@@ -1110,27 +1151,57 @@ mod tests {
         );
     }
     #[test]
-    fn adjustment_review_is_read_only_and_keeps_application_errors() {
+    fn adjustment_context_is_read_only_has_no_trigger_and_keeps_application_errors() {
         let service = service();
         let tool = service
             .tools()
             .iter()
-            .find(|tool| tool["name"] == "get_plan_adjustment_review")
+            .find(|tool| tool["name"] == "get_plan_adjustment_context")
             .unwrap();
         assert_eq!(tool["annotations"]["readOnlyHint"], true);
-        assert_eq!(
-            tool["inputSchema"]["properties"]["trigger"]["enum"],
-            json!(["weekly_review", "profile_change", "user_request"])
-        );
+        assert_eq!(tool["inputSchema"]["properties"], json!({}));
+        assert!(!service.tools().iter().any(|tool| tool["name"] == "get_plan_adjustment_review"));
+        assert_eq!(service.call_result("get_plan_adjustment_context", &json!({"trigger":"weekly_review"}))["isError"], true);
 
         let output = service.call_result(
-            "get_plan_adjustment_review",
-            &json!({ "trigger": "weekly_review" }),
+            "get_plan_adjustment_context",
+            &json!({}),
         );
         assert_eq!(output["isError"], true);
         let error: Value =
             serde_json::from_str(output["content"][0]["text"].as_str().unwrap()).unwrap();
         assert_eq!(error["code"], "NO_CURRENT_PLAN");
+    }
+    #[test]
+    fn adjustment_context_returns_commit_window_changes_and_freshness_without_a_decision() {
+        let service = service();
+        service.application.store().save_current_plan(&json!({
+            "ownerId":"local-user", "effectiveStartDate":"2026-09-01",
+            "mesocycle":{"durationWeeks":1,"weeks":[]}, "revision":1, "updatedAt":"2026-09-02T23:00:00Z",
+        }), 0).unwrap();
+        service.application.store().reset_plan_review_context("local-user", "2026-09-02T23:00:00Z", 1).unwrap();
+        let original = service.application.store().get_plan_review_context("local-user").unwrap();
+        let result = service.call_result("get_plan_adjustment_context", &json!({}));
+        assert_ne!(result["isError"], true, "{result}");
+        let context = &result["structuredContent"]["result"];
+        assert_eq!(context["from"], "2026-09-03");
+        assert_eq!(context["profileChanges"], json!([]));
+        assert_eq!(context["currentPlanRevision"], 1);
+        assert_eq!(context["profileHash"], service.application.profile_hash().unwrap());
+        assert_eq!(context["inputSnapshotHash"], service.application.snapshot_hash().unwrap());
+        for field in ["trigger", "reviewStatus", "recommendedScope", "reasons", "suggestedReadWindow"] {
+            assert!(context.get(field).is_none(), "{field} must not choose an Agent review policy");
+        }
+        assert_eq!(service.application.store().get_plan_review_context("local-user").unwrap(), original);
+        service.application.update_profile(&json!({
+            "expectedProfileHash":service.application.profile_hash().unwrap(), "patch":{"preference":"More running"},
+        })).unwrap();
+        let result = service.call_result("get_plan_adjustment_context", &json!({}));
+        assert_ne!(result["isError"], true, "{result}");
+        let updated = &result["structuredContent"]["result"];
+        assert_eq!(updated["from"], context["from"]);
+        assert_eq!(updated["profileChanges"][0]["after"], "More running");
+        assert_ne!(updated["profileHash"], context["profileHash"]);
     }
     #[test]
     fn rmcp_server_advertises_only_the_wire_it_emits() {

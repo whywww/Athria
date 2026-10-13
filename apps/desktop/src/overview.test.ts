@@ -1,10 +1,9 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { AdjustmentReviewNotice, OverviewDashboard, RecoveryHelpModal, SummaryProgressRing, calendarDays, durationLabelBottom, formatWellnessDate, formatWellnessRange, loadAxisLabel, mesocycleProgress, overviewDateRange, recoveryRingTone, recoveryStatus, sparklineGeometry, twelveWeekConsistency, weeklyLoad, weeklyOverview, weeklyRingProgress, activityAxis, wellnessHighlights } from "./overview";
+import { OverviewDashboard, RecoveryHelpModal, SummaryProgressRing, calendarDays, durationLabelBottom, formatWellnessDate, formatWellnessRange, loadAxisLabel, mesocycleProgress, overviewDateRange, recoveryRingTone, recoveryStatus, sparklineGeometry, twelveWeekConsistency, weeklyLoad, weeklyOverview, weeklyRingProgress, activityAxis, wellnessHighlights } from "./overview";
 import { LanguageProvider } from "./i18n";
-import type { AdjustmentAssessment, CalendarSession, TrainingHistorySession, TrainingSummary, WellnessRecord } from "./view-models";
-import { adjustmentReasonMessage } from "./view-models";
+import type { CalendarSession, TrainingHistorySession, TrainingSummary, WellnessRecord } from "./view-models";
 import { addDays } from "./plan/view";
 
 const quality = { completeness: 1, missingFields: [], anomalies: [] };
@@ -35,58 +34,6 @@ describe("Overview", () => {
     const ids = [...rings.matchAll(/<linearGradient id="([^"]+)"/g)].map((match) => match[1]);
     expect(new Set(ids).size).toBe(2);
   });
-  const reviewOf = (reviewStatus: AdjustmentAssessment["reviewStatus"], reasons: AdjustmentAssessment["reasons"], dataGaps: AdjustmentAssessment["dataGaps"] = []) => ({
-    trigger: "weekly_review", reviewStatus, recommendedScope: "week", reasons, hardOverrides: [], dataGaps,
-    currentPlanRevision: 4, inputSnapshotHash: "snapshot", profileHash: "profile", suggestedReadWindow: 3,
-  } satisfies AdjustmentAssessment);
-
-  it("renders one tier-colored line naming the strongest review reason", () => {
-    const review = reviewOf("review_recommended", [
-      { reasonCode: "ADHERENCE_MINOR_DEVIATION", severity: "soft", evidenceRefs: [], affectedScope: "none" },
-      { reasonCode: "KEY_SESSION_MISSED", severity: "strong", evidenceRefs: ["session:s1"], affectedDomain: "endurance", affectedScope: "week" },
-    ], [{ code: "WELLNESS_EVIDENCE_MISSING", evidenceRefs: [] }]);
-    const html = renderToStaticMarkup(createElement(AdjustmentReviewNotice, { value: review }));
-    expect(html).toContain("Last week&#x27;s review — consider this week&#x27;s plan: You missed a key Endurance session last week.");
-    expect(html).toContain("adjustment-notice-review_recommended");
-    expect(html).not.toContain("You missed 1 of the 4 sessions");
-    expect(html).not.toContain("Plan Review");
-    expect(html).toContain('aria-label="Dismiss message"');
-    expect(html).not.toContain("Missing evidence");
-  });
-
-  it("escalates the required tier and keeps the neutral copy for watch", () => {
-    const required = renderToStaticMarkup(createElement(AdjustmentReviewNotice, { value: reviewOf("review_required", [{ reasonCode: "PROFILE_TRAINING_RHYTHM_CONFLICT", severity: "hard", evidenceRefs: [], affectedScope: "plan" }]) }));
-    expect(required).toContain("Plan conditions changed: Your preferred weekly training rhythm differs from this plan.");
-    expect(required).toContain("adjustment-notice-review_required");
-
-    const watch = renderToStaticMarkup(createElement(AdjustmentReviewNotice, { value: reviewOf("watch", [{ reasonCode: "ADHERENCE_MINOR_DEVIATION", severity: "soft", evidenceRefs: [], affectedScope: "none" }]) }));
-    expect(watch).toContain("Last week&#x27;s review — consider this week&#x27;s plan: You missed 1 of the 4 sessions planned for last week.");
-    expect(watch).toContain("adjustment-notice-watch");
-  });
-
-  it("labels soft profile conflicts as changed conditions even during a weekly review", () => {
-    const value = reviewOf("watch", [{ reasonCode: "PROFILE_TRAINING_RHYTHM_CONFLICT", severity: "soft", evidenceRefs: [], affectedScope: "none" }]);
-    const html = renderToStaticMarkup(createElement(AdjustmentReviewNotice, { value }));
-    expect(html).toContain("Plan conditions changed:");
-    expect(html).not.toContain("Weekly check:");
-  });
-
-  it("stays silent when only evidence is missing and no reason was found", () => {
-    const html = renderToStaticMarkup(createElement(AdjustmentReviewNotice, { value: reviewOf("watch", [], [{ code: "WELLNESS_EVIDENCE_MISSING", evidenceRefs: [] }]) }));
-    expect(html).toBe("");
-  });
-
-  it("falls back to a title-cased label for reason codes the mapping does not know", () => {
-    const html = renderToStaticMarkup(createElement(AdjustmentReviewNotice, { value: reviewOf("watch", [{ reasonCode: "SOME_NEW_SIGNAL", severity: "soft", evidenceRefs: [], affectedScope: "none" }]) }));
-    expect(html).toContain("Some New Signal");
-  });
-
-  it("omits the domain from review reasons that carry none", () => {
-    const reason = (value: Partial<AdjustmentAssessment["reasons"][number]>) => ({ reasonCode: "KEY_SESSION_MISSED", severity: "soft", evidenceRefs: [], affectedScope: "week", ...value }) as AdjustmentAssessment["reasons"][number];
-    expect(adjustmentReasonMessage(reason({}))).toBe("You missed a key session this week.");
-    expect(adjustmentReasonMessage(reason({ reasonCode: "PROFILE_EQUIPMENT_CONFLICT", affectedDomain: "strength" }))).toBe("Some planned exercises need equipment you no longer have.");
-  });
-
   it("derives Monday-to-today and leap-month bounds", () => {
     expect(overviewDateRange("2028-02-29")).toEqual({ weekStart: "2028-02-28", monthStart: "2028-02-01", monthEnd: "2028-02-29" });
   });
@@ -315,7 +262,7 @@ describe("Overview", () => {
     expect(html.match(/activity-chart-bar zero/g)).toHaveLength(6);
     expect(html).toContain("No target set");
     expect(html).toContain("weekly-rings-center");
-    expect(html).toContain("No completed workouts yet this week.");
+    expect(html).not.toContain("No completed workouts yet this week.");
   });
 
   it("labels the duration curve at every domain without bar count labels", () => {
@@ -400,13 +347,13 @@ describe("Overview", () => {
     expect(html).toContain("<span>0h</span>");
   });
 
-  it("links the empty activity state to connections and the next training day", () => {
+  it("omits the redundant empty activity message and links", () => {
     const html = renderToStaticMarkup(createElement(OverviewDashboard, { summary: { ...summary, sessionCount: 0 }, wellness: [], history: [], planned: [], today: "2026-09-11", timezone: "Asia/Hong_Kong" }));
-    expect(html).toContain("No completed workouts yet this week.");
-    expect(html).toContain(">training apps</button>");
-    expect(html).toContain(">next plan</button>.");
+    expect(html).not.toContain("No completed workouts yet this week.");
+    expect(html).not.toContain(">training apps</button>");
+    expect(html).not.toContain(">next plan</button>.");
     expect(html).not.toContain(">Connect to your training apps</button>");
-    expect(html.match(/overview-empty-link/g)).toHaveLength(2);
+    expect(html).not.toContain("overview-empty-link");
   });
 
   it("stacks the training load change into two right-aligned lines", () => {
@@ -695,7 +642,8 @@ describe("Overview", () => {
     ];
     const html = renderToStaticMarkup(createElement(OverviewDashboard, { summary, wellness: records, history: [], planned: [], today: "2026-09-11", timezone: "Asia/Hong_Kong" }));
     expect(html).not.toContain("<span>Sleep time</span>");
-    expect(html).toContain("VO2 max (ml/kg/min)");
+    expect(html).toContain("VO2 max");
+    expect(html).not.toContain("VO2 max (ml/kg/min)");
     expect(html).toContain('<strong title="51.2">51.2</strong>');
     expect(html).not.toContain("Weight (kg)");
   });

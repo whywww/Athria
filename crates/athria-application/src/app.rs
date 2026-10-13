@@ -166,12 +166,28 @@ fn parse_date_input(value: &str, path: &str) -> Result<String> {
     }
 }
 
+fn date_window(from: Option<&str>, to: Option<&str>) -> Result<Option<(String, String)>> {
+    match (from, to) {
+        (None, None) => Ok(None),
+        (Some(from), Some(to)) => {
+            let from = parse_date_input(from, "from")?;
+            let to = parse_date_input(to, "to")?;
+            // Shape validation alone accepts impossible dates such as February 30.
+            tz::millis(&format!("{from}T12:00:00Z"))?;
+            tz::millis(&format!("{to}T12:00:00Z"))?;
+            if from > to { return Err(AthriaError::new(AthriaErrorCode::InvalidSummaryWindow, "The summary start date must not be after the end date.")); }
+            Ok(Some((from, to)))
+        }
+        _ => Err(invalid_input("from and to must be supplied together")),
+    }
+}
+
 /// New planning writes must identify the activity; stored migrated plans may be unclassified.
 fn require_plan_types(value: &Value) -> Result<()> {
     match value {
         Value::Array(items) => for item in items { require_plan_types(item)?; },
         Value::Object(object) => {
-            if object.contains_key("components") && object.contains_key("name") && object.get("type").and_then(Value::as_str).and_then(athria_core::training_type::classify).is_none() {
+            if object.contains_key("prescription") && object.contains_key("name") && object.get("type").and_then(Value::as_str).and_then(athria_core::training_type::classify).is_none() {
                 return Err(invalid_input("session.type: expected a known activity type"));
             }
             for item in object.values() { require_plan_types(item)?; }
@@ -186,24 +202,12 @@ fn session_domains(session: &Value) -> Vec<Value> {
     session.get("domains").and_then(Value::as_array).cloned().unwrap_or_default()
 }
 
-/// `listSessions` mapping: fill in the derived domains and, when nothing could
-/// be derived, record `domains` as a missing field.
+/// `listSessions` mapping: fill in the derived domains.
 fn with_session_domains(session: &Value) -> Value {
     let mut updated = session.as_object().cloned().unwrap_or_default();
     let domains = session_domains(session);
-    let empty = domains.is_empty();
     updated.insert("domains".into(), Value::Array(domains));
-    if empty {
-        let mut missing = updated
-            .get("missingFields")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
-        if !missing.iter().any(|field| field == "domains") {
-            missing.push(Value::String("domains".into()));
-        }
-        updated.insert("missingFields".into(), Value::Array(missing));
-    }
+    updated.retain(|key, _| !matches!(key.as_str(), "source" | "externalId" | "missingFields"));
     Value::Object(updated)
 }
 
@@ -398,6 +402,7 @@ impl<S: AthriaStore> AthriaApplication<S> {
     }
 
     pub fn save_profile(&self, value: &Value) -> Result<Value> {
+        athria_core::schema::profile::validate_profile_numbers(value)?;
         let profile = parse_profile(value)?;
         self.store.save_profile(&profile)
     }
@@ -414,6 +419,7 @@ impl<S: AthriaStore> AthriaApplication<S> {
 
     pub fn save_profile_and_personal_information(&self, value: &Value) -> Result<Value> {
         let profile_value = value.get("profile").unwrap_or(&Value::Null);
+        athria_core::schema::profile::validate_profile_numbers(profile_value)?;
         let profile = parse_profile(profile_value)?;
         let personal_value = value.get("personalInformation").unwrap_or(&Value::Null);
         let personal = parse_personal_information(personal_value)?;
@@ -695,6 +701,24 @@ impl<S: AthriaStore> AthriaApplication<S> {
         }).collect())
     }
 
+    pub fn list_sessions_in_window(&self, days: i64, from: Option<&str>, to: Option<&str>) -> Result<Vec<Value>> {
+        let Some((from, to)) = date_window(from, to)? else { return self.list_sessions_with_snapshots(days); };
+        let profile = self.get_profile()?;
+        let timezone = string_field(&profile, "timezone");
+        // Stored instants can carry offsets. Use a conservative SQL lower bound,
+        // then apply the exact Profile-local date window below.
+        let since = format!("{}T00:00:00.000Z", add_days(&from, -2));
+        let mut result = Vec::new();
+        for session in self.store.list_sessions(&self.owner_id, Some(&since))? {
+            let day = tz::local_date(string_field(&session, "startAt"), timezone)?;
+            if day < from || day > to { continue; }
+            let mut session = with_session_domains(&session);
+            session["snapshotHash"] = stable_hash(&session).into();
+            result.push(session);
+        }
+        Ok(result)
+    }
+
     fn require_session_snapshot(&self, id: &str, input: &Value) -> Result<()> {
         let Some(expected) = input.get("expectedSnapshotHash").and_then(Value::as_str) else {
             return Ok(());
@@ -756,29 +780,21 @@ impl<S: AthriaStore> AthriaApplication<S> {
         from: Option<&str>,
         to: Option<&str>,
     ) -> Result<Value> {
-        let start = from
-            .map(|value| parse_date_input(value, "from"))
-            .transpose()?;
-        let end = to.map(|value| parse_date_input(value, "to")).transpose()?;
-        if let (Some(start), Some(end)) = (&start, &end) {
-            if start > end {
-                return Err(AthriaError::new(
-                    AthriaErrorCode::InvalidSummaryWindow,
-                    "The summary start date must not be after the end date.",
-                ));
-            }
-        }
+        let (start, end) = match date_window(from, to)? {
+            Some((start, end)) => (Some(start), Some(end)),
+            None => (None, None),
+        };
         let profile = self.get_profile()?;
         let profile_timezone = string_field(&profile, "timezone");
-        let lookback_days = match &start {
-            Some(start) => days.max(
-                day_difference(start, &tz::local_date(&self.now_iso(), profile_timezone)?) + 2,
-            ),
-            None => days,
+        let history = if start.is_some() {
+            self.list_sessions_in_window(days, from, to)?
+        } else {
+            self.list_sessions(days)?
         };
         let mut sessions = Vec::new();
-        for session in self.list_sessions(lookback_days)? {
-            let day = session_local_day(&session, profile_timezone)?;
+        for session in history {
+            let day = if start.is_some() { tz::local_date(string_field(&session, "startAt"), profile_timezone)? }
+                else { session_local_day(&session, profile_timezone)? };
             if start.as_ref().is_some_and(|start| &day < start)
                 || end.as_ref().is_some_and(|end| &day > end)
             {
@@ -870,6 +886,14 @@ impl<S: AthriaStore> AthriaApplication<S> {
     /// completed `manual` observation.
     pub fn record_training_session(&self, value: &Value) -> Result<Value> {
         object_input(value, "session")?;
+        for field in athria_core::schema::session::API_SESSION_METRICS {
+            if value.get(field).is_some() {
+                return Err(invalid_input(&format!("session.{field}: API import only")));
+            }
+        }
+        if value.get("sessionRpe").is_some() {
+            return Err(invalid_input("session.sessionRpe: API import only; provide rpe to calculate session load"));
+        }
         let id = match optional_text(value, "id", "session")? {
             Some(id) => id,
             None => Uuid::new_v4().to_string(),
@@ -901,7 +925,11 @@ impl<S: AthriaStore> AthriaApplication<S> {
             self.store.upsert_sessions(std::slice::from_ref(&session))?;
             Ok(())
         })?;
-        Ok(session)
+        self.store.list_sessions(&self.owner_id, None)?.into_iter().find(|current| {
+            current.get("sources").and_then(Value::as_array).is_some_and(|sources| sources.iter().any(|source| {
+                source["source"] == "manual" && source["externalId"] == session["externalId"]
+            }))
+        }).ok_or_else(|| failure(AthriaErrorCode::TrainingSessionNotFound, "The workout was not found after recording.", 404))
     }
 
     pub fn set_training_session_plan_match(&self, id: &str, value: &Value) -> Result<Value> {
@@ -1051,6 +1079,13 @@ impl<S: AthriaStore> AthriaApplication<S> {
                 Value::Object(value)
             })
             .collect())
+    }
+
+    pub fn list_wellness_in_window(&self, days: i64, from: Option<&str>, to: Option<&str>) -> Result<Vec<Value>> {
+        let Some((from, to)) = date_window(from, to)? else { return self.list_wellness(days); };
+        Ok(self.store.list_wellness(&self.owner_id, Some(&from))?.into_iter()
+            .filter(|record| record["day"].as_str().is_some_and(|day| day >= from.as_str() && day <= to.as_str()))
+            .map(|mut record| { record["snapshotHash"] = stable_hash(&record).into(); record }).collect())
     }
 
     /// `getWellnessDay(day)`: a missing day reports the hash `"new"` and omits
@@ -1223,6 +1258,13 @@ impl<S: AthriaStore> AthriaApplication<S> {
     }
 
     pub fn commit_intervals(&self, payload: &Value, context: &Value) -> Result<Value> {
+        match self.store.transaction(&mut || self.commit_intervals_batch(payload, context)) {
+            Ok(result) => Ok(result),
+            Err(error) => self.commit_intervals_batch(&json!({ "activities": error.message(), "wellness": "Batch write failed" }), context),
+        }
+    }
+
+    fn commit_intervals_batch(&self, payload: &Value, context: &Value) -> Result<Value> {
         let attempted_at = context
             .get("attemptedAt")
             .and_then(Value::as_str)
@@ -1277,69 +1319,46 @@ impl<S: AthriaStore> AthriaApplication<S> {
                 }
             }
         }
-        let replacement: Vec<Value> = sessions.into_iter()
-            .filter(|(date, _)| date.as_str() >= range_start && date.as_str() <= range_end && !failed_dates.contains_key(date))
-            .map(|(_, session)| session)
-            .collect();
-        let mut successful_dates = Vec::new();
-        if activities.is_some() && undated_failures.is_empty() {
-            for day in athria_core::date::epoch_day(range_start)..=athria_core::date::epoch_day(range_end) {
-                let date = athria_core::date::format_iso_date(day);
-                if !failed_dates.contains_key(&date) {
-                    successful_dates.push(date);
+        let mut errors = Map::new();
+        for name in ["activities", "events", "wellness"] {
+            if let Some(value) = payload.get(name) {
+                if !value.is_array() {
+                    errors.insert(name.into(), json!(value.as_str().unwrap_or("Response was not a list")));
+                }
+            } else if name != "events" {
+                errors.insert(name.into(), json!("Response was not a list"));
+            }
+        }
+        if let Some(records) = payload.get("wellness").and_then(Value::as_array) {
+            for record in records {
+                let day = ["id", "day", "date"].iter()
+                    .find_map(|key| record.get(*key).filter(|value| !value.is_null()))
+                    .map(|value| value.as_str().map(str::to_owned).unwrap_or_else(|| value.to_string()))
+                    .unwrap_or_default();
+                if !record.is_object() || !day.get(..10).is_some_and(athria_core::date::is_iso_date) {
+                    errors.insert("wellness".into(), json!("Wellness record has no valid date"));
                 }
             }
         }
-        let counts = if activities.is_none() || (successful_dates.is_empty() && undated_failures.is_empty()) {
-            crate::store::WriteCounts { added: 0, updated: 0 }
-        } else if !undated_failures.is_empty() {
-            let owned: Vec<Value> = replacement.into_iter().map(|mut session| {
-                session["ownerId"] = json!(self.owner_id);
-                session
-            }).collect();
-            if owned.is_empty() { crate::store::WriteCounts { added: 0, updated: 0 } }
-            else { self.store.upsert_sessions(&owned)? }
-        } else {
+        let status = if errors.is_empty() && failed_dates.is_empty() && undated_failures.is_empty() { "success" } else { "failed" };
+        let replacement: Vec<Value> = sessions.into_iter()
+            .filter(|(date, _)| date.as_str() >= range_start && date.as_str() <= range_end)
+            .map(|(_, session)| session).collect();
+        let counts = if status == "success" {
             self.store.replace_source_sessions(&ReplaceSourceSessionsInput {
-                owner_id: &self.owner_id,
-                source: "intervals",
-                sessions: &replacement,
-                dates: Some(&successful_dates),
-                local_dates: None,
-                range_start: None,
-                range_end: None,
+                owner_id: &self.owner_id, source: "intervals", sessions: &replacement,
+                dates: None, local_dates: None, range_start: Some(range_start), range_end: Some(range_end),
             })?
-        };
-        let wellness_count = match payload.get("wellness").and_then(Value::as_array) {
-            Some(records) => self.store.upsert_wellness(&self.owner_id, records)?,
-            None => 0,
-        };
-        let mut errors = Map::new();
-        for name in ["activities", "events", "wellness"] {
-            if let Some(Value::String(message)) = payload.get(name) {
-                errors.insert(name.into(), json!(message));
-            }
-        }
-        let activities_ok = activities.is_some() && failed_dates.is_empty() && undated_failures.is_empty();
-        let activities_progress = !successful_dates.is_empty() || (!undated_failures.is_empty() && counts.added + counts.updated > 0);
-        let wellness_ok = payload.get("wellness").is_some_and(Value::is_array);
-        let status = if activities_ok && wellness_ok {
-            "success"
-        } else if activities_progress || wellness_ok {
-            "partial"
-        } else {
-            "failed"
-        };
+        } else { crate::store::WriteCounts { added: 0, updated: 0 } };
+        let wellness_count = if status == "success" {
+            self.store.upsert_wellness(&self.owner_id, payload["wellness"].as_array().unwrap())?
+        } else { 0 };
         let previous = self.get_intervals_sync_status()?;
-        let last_success = if status != "failed" {
-            json!(attempted_at)
-        } else {
-            previous
-                .as_ref()
-                .map(|value| value["lastSuccessAt"].clone())
-                .unwrap_or(Value::Null)
+        let last_success = if status == "success" { json!(attempted_at) } else {
+            previous.as_ref().map(|value| value["lastSuccessAt"].clone()).unwrap_or(Value::Null)
         };
         let mut sync_data = json!({ "activities": counts.to_json(), "wellnessCount": wellness_count, "errors": errors });
+        if let Some(ranges) = payload.get("errorRanges") { sync_data["errorRanges"] = ranges.clone(); }
         if !failed_dates.is_empty() {
             sync_data["failedDates"] = json!(failed_dates.iter().map(|(date, failures)| json!({ "date": date, "failures": failures })).collect::<Vec<_>>());
         }
@@ -1348,6 +1367,7 @@ impl<S: AthriaStore> AthriaApplication<S> {
             "lastSuccessAt": last_success, "rangeStart": range_start, "rangeEnd": range_end, "status": status,
             "data": sync_data }))?;
         let mut result = json!({ "added": counts.added, "updated": counts.updated, "wellnessCount": wellness_count, "errors": errors, "sync": state });
+        if let Some(ranges) = payload.get("errorRanges") { result["errorRanges"] = ranges.clone(); }
         if !failed_dates.is_empty() {
             result["failedDates"] = json!(failed_dates.into_iter().map(|(date, failures)| json!({ "date": date, "failures": failures })).collect::<Vec<_>>());
         }
@@ -1383,26 +1403,34 @@ impl<S: AthriaStore> AthriaApplication<S> {
     }
 
     pub fn commit_xunji(&self, result: &Value, attempted_at: &str) -> Result<Value> {
+        match self.store.transaction(&mut || self.commit_xunji_batch(result, attempted_at)) {
+            Ok(result) => Ok(result),
+            Err(error) => self.commit_xunji_batch(&json!({ "rangeStart": result["rangeStart"], "rangeEnd": result["rangeEnd"],
+                "successfulDates": [], "records": [], "errors": [{ "code": "write_failed", "message": error.message() }] }), attempted_at),
+        }
+    }
+
+    fn commit_xunji_batch(&self, result: &Value, attempted_at: &str) -> Result<Value> {
         let mut normalized = Vec::new();
         let mut normalization_errors = Vec::new();
-        let mut failed_dates = HashSet::new();
         for record in result["records"]
             .as_array()
             .map(Vec::as_slice)
             .unwrap_or(&[])
         {
-            match normalize_xunji_training(record) {
+            let normalized_record = if !record["datestr"].as_str().is_some_and(athria_core::date::is_iso_date) {
+                Err(invalid_input("Xunji record has no valid date"))
+            } else if record.get("movements").is_some_and(|value| !value.is_null() && !value.as_array().is_some_and(|items| items.iter().all(Value::is_object))) {
+                Err(invalid_input("Xunji record has invalid movements"))
+            } else {
+                normalize_xunji_training(record)
+            };
+            match normalized_record {
                 Ok(session) => {
                     normalized.push((record["datestr"].as_str().unwrap_or("").to_owned(), session))
                 }
                 Err(error) => {
-                    if record["datestr"]
-                        .as_str()
-                        .is_some_and(athria_core::date::is_iso_date)
-                    {
-                        failed_dates.insert(record["datestr"].as_str().unwrap().to_owned());
-                    }
-                    normalization_errors.push(json!({ "code": "normalization_failed", "message": error.message().chars().take(500).collect::<String>() }));
+                    normalization_errors.push(json!({ "datestr": record["datestr"], "code": "normalization_failed", "message": error.message().chars().take(500).collect::<String>() }));
                 }
             }
         }
@@ -1411,7 +1439,6 @@ impl<S: AthriaStore> AthriaApplication<S> {
             .into_iter()
             .flatten()
             .filter_map(Value::as_str)
-            .filter(|date| !failed_dates.contains(*date))
             .map(str::to_owned)
             .collect();
         let replacement: Vec<Value> = normalized
@@ -1427,7 +1454,13 @@ impl<S: AthriaStore> AthriaApplication<S> {
                     (string_field(session, "externalId").to_owned(), json!(date))
                 }),
         );
-        let counts = if replace_dates.is_empty() {
+        let mut errors = result["errors"].as_array().cloned().unwrap_or_default();
+        errors.extend(normalization_errors.clone());
+        let status = if errors.is_empty() { "success" } else { "failed" };
+        let successful_days = if status == "success" { replace_dates.len() } else { 0 };
+        let failed_days = errors.iter().filter_map(|error| error["datestr"].as_str())
+            .collect::<HashSet<_>>().len();
+        let counts = if status == "failed" || replace_dates.is_empty() {
             crate::store::WriteCounts {
                 added: 0,
                 updated: 0,
@@ -1444,20 +1477,9 @@ impl<S: AthriaStore> AthriaApplication<S> {
                     range_end: None,
                 })?
         };
-        let mut errors = result["errors"].as_array().cloned().unwrap_or_default();
-        errors.extend(normalization_errors.clone());
-        let successful_days = result["successfulDates"].as_array().map_or(0, Vec::len);
-        let failed_days = result["errors"].as_array().map_or(0, Vec::len);
-        let status = if errors.is_empty() {
-            "success"
-        } else if successful_days > 0 {
-            "partial"
-        } else {
-            "failed"
-        };
         let previous = self.get_xunji_sync_status()?;
         let state = self.store.save_connection_sync_state(&json!({ "ownerId": self.owner_id, "source": "xunji", "lastAttemptAt": attempted_at,
-            "lastSuccessAt": if successful_days > 0 { json!(attempted_at) } else { previous.as_ref().map(|value| value["lastSuccessAt"].clone()).unwrap_or(Value::Null) },
+            "lastSuccessAt": if status == "success" { json!(attempted_at) } else { previous.as_ref().map(|value| value["lastSuccessAt"].clone()).unwrap_or(Value::Null) },
             "rangeStart": result["rangeStart"], "rangeEnd": result["rangeEnd"], "status": status,
             "data": { "successfulDays": successful_days, "failedDays": failed_days, "records": result["records"].as_array().map_or(0, Vec::len), "normalizationFailures": normalization_errors.len(), "errors": errors } }))?;
         let content_hash = stable_hash(
@@ -1512,6 +1534,7 @@ impl<S: AthriaStore> AthriaApplication<S> {
         object.remove("revision");
         object.remove("updatedAt");
         object.remove("expectedRevision");
+        object.remove("sourceDraftId");
         let weeks = object
             .get_mut("mesocycle")
             .and_then(Value::as_object_mut)
@@ -1521,7 +1544,7 @@ impl<S: AthriaStore> AthriaApplication<S> {
             return Err(invalid_input("new plan drafts must not include weeks"));
         }
         let timestamp = self.now_iso();
-        let draft = json!({"id":Uuid::new_v4().to_string(),"ownerId":self.owner_id,"data":data,"basePlanRevision":base_revision,"inputSnapshotHash":self.snapshot_hash()?,"draftRevision":0,"status":"open","createdAt":timestamp,"updatedAt":timestamp});
+        let draft = json!({"id":Uuid::new_v4().to_string(),"ownerId":self.owner_id,"data":data,"basePlanRevision":base_revision,"inputSnapshotHash":self.snapshot_hash()?,"draftRevision":0,"createdAt":timestamp,"updatedAt":timestamp});
         let created = self.store.create_plan_draft(&draft)?;
         for week in weeks.as_array().into_iter().flatten() {
             self.store.save_plan_draft_week(
@@ -1562,7 +1585,7 @@ impl<S: AthriaStore> AthriaApplication<S> {
             .filter(|week| !existing.contains(week))
             .collect();
         Ok(
-            json!({"draftId":draft["id"],"draftRevision":draft["draftRevision"],"basePlanRevision":draft["basePlanRevision"],"inputSnapshotHash":draft["inputSnapshotHash"],"status":draft["status"],"existingWeekNumbers":existing,"missingWeekNumbers":missing,"createdAt":draft["createdAt"],"updatedAt":draft["updatedAt"]}),
+            json!({"draftId":draft["id"],"draftRevision":draft["draftRevision"],"basePlanRevision":draft["basePlanRevision"],"inputSnapshotHash":draft["inputSnapshotHash"],"existingWeekNumbers":existing,"missingWeekNumbers":missing,"createdAt":draft["createdAt"],"updatedAt":draft["updatedAt"]}),
         )
     }
 
@@ -1611,13 +1634,6 @@ impl<S: AthriaStore> AthriaApplication<S> {
                     404,
                 )
             })?;
-        if draft["status"] != "open" {
-            return Err(failure(
-                AthriaErrorCode::DraftNotFound,
-                "The plan draft is no longer editable.",
-                404,
-            ));
-        }
         let week = parse_plan_week(week)?;
         require_plan_types(&week)?;
         let duration = draft["data"]["mesocycle"]["durationWeeks"]
@@ -1735,11 +1751,6 @@ impl<S: AthriaStore> AthriaApplication<S> {
                     404,
                 )
             })?;
-        if draft["status"] == "committed" {
-            let mut replay = draft["data"].clone();
-            replay["idempotentReplay"] = Value::Bool(true);
-            return Ok(replay);
-        }
         if draft["draftRevision"].as_i64() != Some(expected_draft_revision) {
             return Err(failure(
                 AthriaErrorCode::DraftRevisionConflict,
@@ -1761,7 +1772,7 @@ impl<S: AthriaStore> AthriaApplication<S> {
         let mut commit_result = None;
         self.store.transaction(&mut || {
             let saved = self
-                .save_current_plan(&plan)
+                .save_current_plan_from_draft(&plan, Some(draft_id))
                 .map_err(|error| match error.code() {
                     AthriaErrorCode::RevisionConflict => failure(
                         AthriaErrorCode::PlanRevisionConflict,
@@ -1770,15 +1781,9 @@ impl<S: AthriaStore> AthriaApplication<S> {
                     ),
                     _ => error,
                 })?;
-            let result = json!({"revision":saved["plan"]["revision"],"impact":saved["impact"],"blockerSummary":summary,"idempotentReplay":false});
-            self.store.set_plan_draft_status(
-                draft_id,
-                &self.owner_id,
-                expected_draft_revision,
-                "committed",
-                saved["plan"]["revision"].as_i64(),
-                Some(&result),
-            )?;
+            let result = json!({"revision":saved["plan"]["revision"],"impact":saved["impact"],"blockerSummary":summary,"sourceDraftId":draft_id});
+            self.store.reset_plan_review_context(&self.owner_id, &self.now_iso(), saved["plan"]["revision"].as_i64().expect("saved plan revision"))?;
+            self.store.delete_plan_draft(draft_id, &self.owner_id, expected_draft_revision)?;
             commit_result = Some(result);
             Ok(())
         })?;
@@ -1786,16 +1791,8 @@ impl<S: AthriaStore> AthriaApplication<S> {
     }
 
     pub fn discard_plan_draft(&self, draft_id: &str, expected_revision: i64) -> Result<Value> {
-        self.store
-            .set_plan_draft_status(
-                draft_id,
-                &self.owner_id,
-                expected_revision,
-                "discarded",
-                None,
-                None,
-            )
-            .map(|_| json!({"draftId":draft_id,"discarded":true}))
+        self.store.delete_plan_draft(draft_id, &self.owner_id, expected_revision)?;
+        Ok(json!({"draftId":draft_id,"discarded":true}))
     }
 
     /// `assertTemplateReferences`: every referenced session template must
@@ -1919,6 +1916,10 @@ impl<S: AthriaStore> AthriaApplication<S> {
     /// `saveCurrentPlan(value)`: validate, re-parse the stored document, diff
     /// the planned occurrences and write through the store.
     pub fn save_current_plan(&self, value: &Value) -> Result<Value> {
+        self.save_current_plan_from_draft(value, None)
+    }
+
+    fn save_current_plan_from_draft(&self, value: &Value, source_draft_id: Option<&str>) -> Result<Value> {
         let input = parse_current_plan_write(value)?;
         require_plan_types(&input)?;
         if input["ownerId"].as_str() != Some(self.owner_id.as_str()) {
@@ -1959,6 +1960,11 @@ impl<S: AthriaStore> AthriaApplication<S> {
         candidate.shift_remove("expectedRevision");
         candidate.insert("revision".into(), Value::from(expected_revision + 1));
         candidate.insert("updatedAt".into(), Value::String(self.now_iso()));
+        let source = match source_draft_id {
+            Some(id) => Value::String(id.to_owned()),
+            None => self.get_current_plan()?.and_then(|plan| plan.get("sourceDraftId").cloned()).unwrap_or(Value::Null),
+        };
+        candidate.insert("sourceDraftId".into(), source);
         let plan = parse_current_plan(&Value::Object(candidate))?;
         let existing = self
             .store
@@ -2182,7 +2188,7 @@ impl<S: AthriaStore> AthriaApplication<S> {
                     "schedulingRationale": session["schedulingRationale"],
                     "status": session["status"],
                     "displayState": display_state,
-                    "components": session["components"],
+                    "prescription": session["prescription"],
                     "legacySnapshot": session["legacySnapshot"],
                     "overrideReason": session["overrideReason"],
                     "completedTrainingSessionId": session["completedTrainingSessionId"],
@@ -2241,20 +2247,17 @@ impl<S: AthriaStore> AthriaApplication<S> {
             }
             let start_at = tz::local_noon(scheduled_date, &timezone)?;
             let duration_minutes = current["durationMinutes"].as_i64().unwrap_or(0);
-            let end_at = tz::iso_from_millis(tz::millis(&start_at)? + duration_minutes * 60_000);
             let session = self.record_training_session(&json!({
                 "name": current["name"],
                 "type": current["type"],
                 "subtype": current["subtype"],
                 "startAt": start_at,
-                "endAt": end_at,
                 "durationMinutes": duration_minutes,
                 "timezone": timezone,
                 "plannedSessionId": current["id"],
                 "timePrecision": "date_only",
                 "strengthSets": [],
                 "endurance": Value::Null,
-                "missingFields": ["actual start time", "exercise details"],
             }))?;
             let sessions: Vec<Value> = self
                 .store

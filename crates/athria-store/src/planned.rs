@@ -11,7 +11,7 @@ use std::collections::HashMap;
 
 use athria_application::{SaveCurrentPlannedSessionsInput, UpdateCurrentPlannedSessionsInput};
 use athria_core::{AthriaError, AthriaErrorCode, Result, js_locale_compare};
-use rusqlite::{OptionalExtension, params};
+use rusqlite::params;
 use serde_json::{Value, json};
 
 use crate::sessions::{array, integer, text_or};
@@ -31,7 +31,7 @@ fn weekly_session_projection(session: &Value, status: &str) -> Value {
         "durationMinutes": session["durationMinutes"],
         "recoveryDemand": session["recoveryDemand"],
         "keySession": session["keySession"],
-        "components": session["components"],
+        "prescription": session["prescription"],
         "progressionNote": session["progressionNote"],
         "schedulingRationale": session["schedulingRationale"],
         "legacySnapshot": session["legacySnapshot"],
@@ -119,7 +119,7 @@ fn project_session(
             };
             (
                 workout.get("id").cloned().unwrap_or(Value::Null),
-                workout.get("endAt").cloned().unwrap_or(Value::Null),
+                json!(crate::tz::iso_from_millis(crate::tz::millis(text_or(workout, "startAt", ""))? + workout["durationMinutes"].as_i64().unwrap_or(0) * 60_000)),
                 json!(source),
             )
         }
@@ -147,7 +147,7 @@ fn project_session(
         "recoveryDemand": session["recoveryDemand"],
         "durationMinutes": session["durationMinutes"],
         "keySession": session["keySession"],
-        "components": session["components"],
+        "prescription": session["prescription"],
         "progressionNote": session["progressionNote"],
         "schedulingRationale": session["schedulingRationale"],
         "exerciseOverrides": [],
@@ -180,34 +180,17 @@ impl SqliteStore {
         let plan_revision = integer(&plan, "revision");
         let mut completed: HashMap<String, (Value, String)> = HashMap::new();
         {
-            let mut statement = self
-                .sqlite()
-                .prepare("SELECT planned_session_id, training_session_id, method FROM plan_workout_matches WHERE owner_id = ?1")
-                .map_err(database_error)?;
-            let rows = statement
-                .query_map(params![owner_id], |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, String>(2)?,
-                    ))
-                })
-                .map_err(database_error)?;
+            let mut statement = self.sqlite().prepare(
+                "SELECT m.planned_session_id, s.data, m.method FROM plan_workout_matches m
+                 JOIN training_sessions s ON s.owner_id=m.owner_id AND s.id=m.training_session_id
+                 WHERE m.owner_id=?1"
+            ).map_err(database_error)?;
+            let rows = statement.query_map(params![owner_id], |row| Ok((
+                row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?
+            ))).map_err(database_error)?;
             for row in rows {
-                let (planned_session_id, training_session_id, method) =
-                    row.map_err(database_error)?;
-                let data: Option<String> = self
-                    .sqlite()
-                    .query_row(
-                        "SELECT data FROM training_sessions WHERE owner_id = ?1 AND id = ?2",
-                        params![owner_id, training_session_id],
-                        |row| row.get(0),
-                    )
-                    .optional()
-                    .map_err(database_error)?;
-                if let Some(data) = data {
-                    completed.insert(planned_session_id, (parse_json_column(&data)?, method));
-                }
+                let (planned_session_id, data, method) = row.map_err(database_error)?;
+                completed.insert(planned_session_id, (parse_json_column(&data)?, method));
             }
         }
         let sources = self.source_summaries(owner_id)?;
@@ -302,7 +285,7 @@ impl SqliteStore {
             plan["mesocycle"]["weeks"] = Value::Array(weeks);
             plan["revision"] = json!(revision + 1);
             plan["updatedAt"] = json!(updated_at);
-            self.write_current_plan(input.owner_id, &plan, revision + 1, &updated_at)?;
+            self.write_current_plan(input.owner_id, &plan)?;
             for session in input.sessions {
                 let session_id = text_or(session, "id", "");
                 let from_date = previous
@@ -405,20 +388,17 @@ impl SqliteStore {
         }))
     }
 
-    /// `AthriaRepository.saveCurrentPlan` writes the row with the plan's own
-    /// revision and timestamp columns.
+    /// Writes the complete plan JSON, including its revision and timestamp.
     pub(crate) fn write_current_plan(
         &self,
         owner_id: &str,
         plan: &Value,
-        revision: i64,
-        updated_at: &str,
     ) -> Result<()> {
         self.sqlite()
             .execute(
-                "INSERT INTO current_mesocycles(owner_id, data, revision, updated_at) VALUES (?1, ?2, ?3, ?4)
-                 ON CONFLICT(owner_id) DO UPDATE SET data = excluded.data, revision = excluded.revision, updated_at = excluded.updated_at",
-                params![owner_id, plan.to_string(), revision, updated_at],
+                "INSERT INTO current_mesocycles(owner_id, data) VALUES (?1, ?2)
+                 ON CONFLICT(owner_id) DO UPDATE SET data = excluded.data",
+                params![owner_id, plan.to_string()],
             )
             .map_err(database_error)?;
         Ok(())
@@ -443,10 +423,7 @@ mod tests {
         json!({
             "id": id, "scheduledDate": scheduled_date, "order": order, "status": "planned", "templateRef": null,
             "name": name, "domain": "endurance", "intent": "Aerobic base", "durationMinutes": 60, "recoveryDemand": "low", "keySession": false,
-            "components": [{
-                "id": format!("{id}-c1"), "name": "Run",
-                "prescription": { "kind": "duration_only", "notes": "" },
-            }],
+            "prescription": {"blocks":[]},
             "progressionNote": null, "schedulingRationale": null, "legacySnapshot": false,
         })
     }
@@ -470,6 +447,19 @@ mod tests {
                 ],
             },
         })
+    }
+
+    #[test]
+    fn missing_or_cross_owner_matches_do_not_complete_an_occurrence() {
+        let store=store();
+        store.save_current_plan(&plan(),0).unwrap();
+        store.sqlite().execute_batch("INSERT INTO training_sessions VALUES ('other','someone-else','2026-09-10T00:00:00Z','{}');
+            INSERT INTO plan_workout_matches VALUES ('m','local-user','s1','other','manual',100,'v1','{}','original');").unwrap();
+        let with_other=store.list_current_planned_sessions(DEFAULT_OWNER_ID,None).unwrap();
+        store.sqlite().execute("DELETE FROM training_sessions WHERE id='other'",[]).unwrap();
+        assert_eq!(store.list_current_planned_sessions(DEFAULT_OWNER_ID,None).unwrap(),with_other);
+        store.sqlite().execute("DELETE FROM plan_workout_matches",[]).unwrap();
+        assert_eq!(store.list_current_planned_sessions(DEFAULT_OWNER_ID,None).unwrap(),with_other);
     }
 
     #[test]
@@ -502,7 +492,7 @@ mod tests {
                 "recoveryDemand",
                 "durationMinutes",
                 "keySession",
-                "components",
+                "prescription",
                 "progressionNote",
                 "schedulingRationale",
                 "exerciseOverrides",

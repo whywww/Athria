@@ -74,7 +74,7 @@ A nonblank explicit subtype takes precedence over the derived subtype and uses t
 | Stored Planned Session | Retains type/subtype and the scalar domain from the occurrence snapshot. Phase references use only that domain |
 | Session Template | One explicit domain, without a type/subtype pair. Nodes describe structure, not executable dose |
 
-Both plan sessions and History records have at most one whole-session domain. A functional session can contain strength and endurance prescriptions without classifying its components separately. Unknown activity types on planned sessions may retain an explicitly supplied domain; History continues to derive classification from activity type.
+Both plan sessions and History records have at most one whole-session domain. Each planned session directly owns one prescription whose `blocks[]` structure is selected by the session domain. Unknown activity types on planned sessions may retain an explicitly supplied domain; History continues to derive classification from activity type.
 
 Template nodes use domain-specific roles/variables. Functional templates currently use endurance-style roles/variables; mobility uses down-regulation, mobility, and easy-movement roles. This does not establish a functional scientific rule pack.
 
@@ -99,6 +99,6 @@ Use taxonomy IDs, not translated labels. A familiar exercise name alone cannot c
 
 ## Legacy data
 
-The [v30 migration](../../crates/athria-store/src/migration_v30.rs) converts recovery domains/prescriptions to mobility and normalizes actual records. Legacy plan types come from matched actual records when available, otherwise from explicit name aliases. Ambiguous or unrecognized names remain unclassified; do not infer from broad domain alone.
+Current prescriptions use mobility instead of the legacy recovery domain. Schema 38 upgrades only the current schema 37 structure; historical taxonomy conversion files are no longer shipped. Ambiguous or unrecognized names remain unclassified; do not infer from broad domain alone.
 
 Migration preserves workout identities and increments affected plan/template/draft revisions. Refresh guards after migration. Runtime parsing is not a general free-text name classifier.

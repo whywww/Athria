@@ -65,9 +65,10 @@ export interface TrainingSyncResult {
   updated?: number;
   wellnessCount?: number;
   errors?: Record<string, string>;
+  errorRanges?: Record<string, { rangeStart: string; rangeEnd: string }>;
   failedDates?: Array<{ date: string; failures: Array<{ activityId: string; reason: string }> }>;
   undatedFailures?: Array<{ activityId: string; reason: string }>;
-  sync?: { status?: string };
+  sync?: { status?: string; rangeStart?: string; rangeEnd?: string; data?: { errors?: Array<{ datestr?: string | null; code?: string; message: string }> } };
 }
 export interface DailyTrainingSyncResponse {
   results: Array<{ source: "intervals" | "xunji"; result?: TrainingSyncResult; error?: string }>;

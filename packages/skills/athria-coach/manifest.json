@@ -1,6 +1,6 @@
 {
   "name": "athria-coach",
-  "version": "0.1.2",
+  "version": "0.1.4",
   "purpose": "Answer training questions and review evidence, routing meaningful experience-memory changes to the athlete-profile skill.",
   "appliesWhen": [
     "The user asks how training is going, why performance may have changed, what recent history suggests, or what to consider next without requesting a stored change."
@@ -20,7 +20,7 @@
     "get_wellness_day",
     "get_training_summary",
     "get_current_plan",
-    "get_plan_adjustment_review",
+    "get_plan_adjustment_context",
     "get_next_training_day",
     "list_planned_sessions",
     "get_training_taxonomy",

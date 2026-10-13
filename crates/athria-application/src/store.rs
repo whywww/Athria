@@ -94,6 +94,8 @@ pub trait AthriaStore {
 
     fn get_profile(&self, owner_id: &str) -> Result<Value>;
     fn save_profile(&self, profile: &Value) -> Result<Value>;
+    fn get_plan_review_context(&self, owner_id: &str) -> Result<Option<Value>>;
+    fn reset_plan_review_context(&self, owner_id: &str, committed_at: &str, revision: i64) -> Result<()>;
     fn get_training_memory(&self, owner_id: &str) -> Result<Option<Value>>;
     fn save_training_memory(&self, owner_id: &str, content_markdown: &str, expected_revision: i64) -> Result<Value>;
 
@@ -165,15 +167,12 @@ pub trait AthriaStore {
         expected_revision: i64,
         week: &Value,
     ) -> Result<Value>;
-    fn set_plan_draft_status(
+    fn delete_plan_draft(
         &self,
         draft_id: &str,
         owner_id: &str,
         expected_revision: i64,
-        status: &str,
-        committed_plan_revision: Option<i64>,
-        commit_result: Option<&Value>,
-    ) -> Result<Value>;
+    ) -> Result<()>;
     fn save_current_plan(
         &self,
         plan: &Value,

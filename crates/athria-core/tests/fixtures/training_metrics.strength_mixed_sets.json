@@ -15,7 +15,6 @@
         "sport": null,
         "name": "s-mixed-1",
         "startAt": "2026-09-07T08:00:00Z",
-        "endAt": "2026-09-07T09:00:00Z",
         "durationMinutes": 60,
         "status": "completed",
         "timezone": null,
@@ -106,7 +105,6 @@
         "sport": null,
         "name": "s-mixed-2",
         "startAt": "2026-09-08T18:00:00Z",
-        "endAt": "2026-09-08T19:30:00Z",
         "durationMinutes": 90,
         "status": "completed",
         "timezone": null,
@@ -167,7 +165,7 @@
         "formulaVersion": "0.2.0",
         "timeRange": {
           "start": "2026-09-07T08:00:00Z",
-          "end": "2026-09-08T19:30:00Z"
+          "end": "2026-09-08T19:30:00.000Z"
         },
         "dataQuality": {
           "completeness": 1,
@@ -189,7 +187,7 @@
         "formulaVersion": "0.2.0",
         "timeRange": {
           "start": "2026-09-07T08:00:00Z",
-          "end": "2026-09-08T19:30:00Z"
+          "end": "2026-09-08T19:30:00.000Z"
         },
         "dataQuality": {
           "completeness": 0,
@@ -217,7 +215,7 @@
         "formulaVersion": "0.2.0",
         "timeRange": {
           "start": "2026-09-07T08:00:00Z",
-          "end": "2026-09-08T19:30:00Z"
+          "end": "2026-09-08T19:30:00.000Z"
         },
         "dataQuality": {
           "completeness": 1,
@@ -241,7 +239,7 @@
         "formulaVersion": "0.2.0",
         "timeRange": {
           "start": "2026-09-07T08:00:00Z",
-          "end": "2026-09-08T19:30:00Z"
+          "end": "2026-09-08T19:30:00.000Z"
         },
         "dataQuality": {
           "completeness": 1,

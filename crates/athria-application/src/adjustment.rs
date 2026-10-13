@@ -98,6 +98,34 @@ impl<S: AthriaStore> AthriaApplication<S> {
         }))
     }
 
+    /// Agent entry point: one commit-to-today context, independent of app reminder cadence.
+    /// Returns evidence boundaries and freshness, never a recommendation or write approval.
+    pub fn get_plan_adjustment_context(&self) -> Result<Value> {
+        let plan = self.get_current_plan()?.ok_or_else(|| {
+            AthriaError::new(AthriaErrorCode::NoCurrentPlan, "There is no current plan.").with_status(409)
+        })?;
+        let profile = self.get_profile()?;
+        let state = self.get_training_state()?;
+        let timezone = profile["timezone"].as_str().unwrap_or("UTC");
+        let today = tz::local_date(state["asOf"].as_str().unwrap_or(""), timezone)?;
+        let mut context = self.store().get_plan_review_context(self.owner_id())?.unwrap_or_else(|| json!({
+            "committedAt": null, "committedPlanRevision": null, "trackingStartedAt": null,
+            "trackingComplete": false, "profileChanges": [],
+        }));
+        let start = match context["committedAt"].as_str() {
+            Some(instant) => tz::local_date(instant, timezone)?,
+            None => plan["effectiveStartDate"].as_str().unwrap_or(&today).to_owned(),
+        };
+        context["timezone"] = timezone.into();
+        context["from"] = start.clone().into();
+        context["to"] = today.clone().into();
+        context["hasExecutionWindow"] = (start <= today).into();
+        context["currentPlanRevision"] = plan["revision"].clone();
+        context["profileHash"] = self.profile_hash()?.into();
+        context["inputSnapshotHash"] = state["inputSnapshotHash"].clone();
+        Ok(context)
+    }
+
     /// Runs the authoritative plan validator and the minimum-change policy
     /// against the same fresh Current Plan. It never writes the proposal.
     pub fn validate_current_plan_adjustment(

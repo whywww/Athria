@@ -1,12 +1,15 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
-import type { PlanComponent, PlanExercise } from "../view-models";
+import { describe, expect, it, vi } from "vitest";
+import { LanguageProvider } from "../i18n";
+import type { SessionPrescription, PlanExercise, TemplateComponentDomain } from "../view-models";
 import { Prescription } from "./Prescription";
 
+type SessionFixture = { domain: TemplateComponentDomain; id: string; name: string; prescription: SessionPrescription };
+
 const fact = <T,>(value: T) => ({ value, source: "test", confidence: 1, evidence: "", taxonomyVersion: "1" });
-const render = (component: PlanComponent, variant: "detailed" | "compact" = "detailed") =>
-  renderToStaticMarkup(createElement(Prescription, { component, variant }));
+const render = (component: SessionFixture, variant: "detailed" | "compact" = "detailed") =>
+  renderToStaticMarkup(createElement(Prescription, { prescription: component.prescription, name: component.name, sessionDomain: component.domain, variant }));
 
 const exercise: PlanExercise = {
   id: "rdl", displayName: "Romanian Deadlift", canonicalKey: "romanian_deadlift",
@@ -19,51 +22,66 @@ const exercise: PlanExercise = {
   },
 };
 
-const strength: PlanComponent = {
+const strength: SessionFixture = { domain: "strength",
   id: "strength", name: "Strength main block",
-  prescription: { kind: "strength", exercises: [
+  prescription: { blocks: [
     exercise,
     { ...exercise, id: "row", displayName: "Seated Row", targetRpe: null, referenceLoad: null, referenceLoadUnit: null, tempo: null, alternatives: [], notes: "", classification: { ...exercise.classification, primaryMovement: fact(null) } },
   ] },
 };
 
-const endurance: PlanComponent = {
+const endurance: SessionFixture = { domain: "endurance",
   id: "endurance", name: "Aerobic Intervals",
-  prescription: { kind: "endurance", segments: [
-    { type: "step", name: "Easy warm-up", role: "warm_up", durationSeconds: 600, distanceMeters: 1500, heartRateZone: "Zone 1–2", talkTest: "Full sentences" },
+  prescription: { blocks: [
+    { type: "step", name: "Easy warm-up", role: "warm_up", durationSeconds: 600, distanceMeters: 1500, heartRateZone: "1-3", talkTest: "Full sentences" },
     { type: "repeat", name: "Controlled hard repeats", repetitions: 6, notes: "Stay smooth.",
-      work: { type: "step", name: "Controlled hard running", role: "work", durationSeconds: 180, rpe: "7–8", pace: "5:00/km", powerWatts: "280 W", cadence: "175 spm", notes: "Do not sprint." },
-      recovery: { type: "step", name: "Easy jog recovery", role: "recovery", durationSeconds: 120, heartRateZone: "Zone 1–2" } },
+      work: { type: "step", name: "Controlled hard running", role: "work", durationSeconds: 180, heartRateZone: "2", rpe: "7–8", pace: "5:00/km", powerWatts: "280 W", cadence: "175 spm", notes: "Do not sprint." },
+      recovery: { type: "step", name: "Easy jog recovery", role: "recovery", durationSeconds: 120, heartRateZone: "1-3" } },
     { type: "step", name: "Easy cooldown", role: "cool_down", durationSeconds: 600 },
   ] },
 };
 
-const sport: PlanComponent = {
+const sport: SessionFixture = { domain: "sport_skill",
   id: "sport", name: "Ball control session",
-  prescription: { kind: "sport_skill", sessionType: "practice", blocks: [
+  prescription: { sessionType: "practice", blocks: [
     { name: "Rondo 4v2", role: "technical", durationMinutes: 12, intensity: "Moderate", instructions: "Two-touch limit." },
     { name: "Small-sided games", role: "small_sided_game", durationMinutes: 20 },
   ] },
 };
 
-const recovery: PlanComponent = {
+const recovery: SessionFixture = { domain: "mobility",
   id: "recovery", name: "Down-regulation",
-  prescription: { kind: "mobility", blocks: [{ name: "Box breathing", durationMinutes: 6, instructions: "Nasal breathing only." }] },
+  prescription: { blocks: [{ name: "Box breathing", durationMinutes: 6, instructions: "Nasal breathing only." }] },
 };
 
 describe("Prescription", () => {
-  it.each([strength, endurance, sport, recovery, { id: "duration", name: "Easy work", prescription: { kind: "duration_only", notes: "Stay easy" } } satisfies PlanComponent])("shows the session domain beside duration for $id content", (component) => {
-    const html = renderToStaticMarkup(createElement(Prescription, { component, sessionDomain: "functional", meta: "1 hr" }));
-    const aside = html.match(/<span class="rx-panel-aside">[\s\S]*?<span class="rx-panel-meta">1 hr<\/span><\/span>/)?.[0];
-
-    expect(html).toContain('class="rx-panel rx-panel-functional"');
-    expect(aside).toContain('data-domain-icon="functional"');
-    expect(aside).toContain(">Functional</span>");
-    expect(html).not.toContain(`data-domain-icon="${component.prescription.kind}"`);
+  it.each(["en", "zh-CN"] as const)("formats endurance zones in both views in %s", (language) => {
+    vi.stubGlobal("localStorage", { getItem: () => language });
+    try {
+      for (const variant of ["detailed", "compact"] as const) {
+        const html = renderToStaticMarkup(createElement(LanguageProvider, null,
+          createElement(Prescription, { prescription: endurance.prescription, name: endurance.name, sessionDomain: endurance.domain, variant })));
+        expect(html.match(/Zone 1-3/g)).toHaveLength(2);
+        expect(html.match(/Zone 2/g)).toHaveLength(1);
+        expect(html).not.toContain("Zone Zone");
+        expect(html).not.toContain("Zone undefined");
+      }
+    } finally {
+      vi.stubGlobal("localStorage", { getItem: () => "en" });
+      renderToStaticMarkup(createElement(LanguageProvider));
+      vi.unstubAllGlobals();
+    }
   });
 
-  it.each([null, undefined])("does not infer a domain from endurance content when the session domain is %s", (sessionDomain) => {
-    const html = renderToStaticMarkup(createElement(Prescription, { component: endurance, sessionDomain, meta: "1 hr" }));
+  it.each([strength, endurance, sport, recovery])("renders $id blocks using the session domain", (component: SessionFixture) => {
+    const html = renderToStaticMarkup(createElement(Prescription, { prescription: component.prescription, name: component.name, sessionDomain: component.domain, meta: "1 hr" }));
+    expect(html).toContain(`class="rx-panel rx-panel-${component.domain}"`);
+    expect(html).toContain(`data-domain-icon="${component.domain}"`);
+    expect(html).toContain('class="rx-panel-meta">1 hr');
+  });
+
+  it.each([null, undefined])("does not infer a domain from endurance content when the session domain is %s", (sessionDomain: null | undefined) => {
+    const html = renderToStaticMarkup(createElement(Prescription, { prescription: endurance.prescription, name: endurance.name, sessionDomain, meta: "1 hr" }));
     expect(html).not.toContain('class="rx-domain"');
     expect(html).not.toContain("data-domain-icon");
     expect(html).toContain('class="rx-panel-meta">1 hr');
@@ -79,13 +97,13 @@ describe("Prescription", () => {
 
   it("renders endurance modules and nested work/recovery rows without losing targets", () => {
     const html = render(endurance);
-    for (const value of ["Aerobic Intervals", "3 modules", "Module", "Effort", "Warm Up", "Easy warm-up", "1.5 km", "Zone 1–2", "Controlled hard repeats", "×6", "6 repetitions", "Controlled hard running", "rx-repeat-step-name", "RPE 7–8", "Pace 5:00/km", "Power 280 W", "Cadence 175 spm", "Easy jog recovery", "Do not sprint.", "Easy cooldown"]) expect(html).toContain(value);
+    for (const value of ["Aerobic Intervals", "3 modules", "Module", "Effort", "Warm Up", "Easy warm-up", "1.5 km", "Zone 1-3", "Controlled hard repeats", "×6", "6 repetitions", "Controlled hard running", "rx-repeat-step-name", "RPE 7–8", "Pace 5:00/km", "Power 280 W", "Cadence 175 spm", "Easy jog recovery", "Do not sprint.", "Easy cooldown"]) expect(html).toContain(value);
     expect(html).not.toContain('role="columnheader">Zone</span>');
     expect(html).not.toContain("6 repeats");
   });
 
   it("renders a repeat module without inventing a recovery row", () => {
-    const noRecovery: PlanComponent = { ...endurance, prescription: { kind: "endurance", segments: [{ type: "repeat", name: "Tempo repeats", repetitions: 4, work: { type: "step", name: "Tempo running", role: "work", durationSeconds: 240 } }] } };
+    const noRecovery: SessionFixture = { ...endurance, prescription: { blocks: [{ type: "repeat", name: "Tempo repeats", repetitions: 4, work: { type: "step", name: "Tempo running", role: "work", durationSeconds: 240 } }] } };
     const html = render(noRecovery);
     expect(html).toContain("1 module");
     expect(html).toContain("Tempo running");

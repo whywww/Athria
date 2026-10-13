@@ -33,13 +33,10 @@ pub fn normalize_intervals_activity(item: &Value, resource: &str, timezone: &str
         return Ok(None);
     };
     let duration_value = object
-        .get("moving_time")
-        .or_else(|| object.get("elapsed_time"))
-        .or_else(|| object.get("duration"));
-    let mut seconds = finite(duration_value).unwrap_or(0.0);
-    if object.contains_key("duration") && seconds > 0.0 && seconds < 1000.0 {
-        seconds *= 60.0;
-    }
+        .get("elapsed_time")
+        .or_else(|| object.get("icu_recording_time"))
+        .or_else(|| object.get("moving_time"));
+    let seconds = finite(duration_value).unwrap_or(0.0);
     let minutes = if seconds > 0.0 {
         (seconds / 60.0).round().max(1.0) as i64
     } else {
@@ -81,9 +78,16 @@ pub fn normalize_intervals_activity(item: &Value, resource: &str, timezone: &str
     parse_training_session(&json!({
         "id": format!("intervals:{resource}:{external}"), "source": "intervals", "externalId": format!("{resource}:{external}"),
         "type": kind, "name": name,
-        "startAt": tz::iso_from_millis(start_ms), "endAt": tz::iso_from_millis(start_ms + minutes * 60_000), "durationMinutes": minutes,
+        "startAt": tz::iso_from_millis(start_ms), "durationMinutes": minutes,
+        "rpe": finite(object.get("icu_rpe")).filter(|value| (0.0..=10.0).contains(value)).map(athria_core::js_number),
+        "sessionRpe": finite(object.get("session_rpe")).filter(|value| *value >= 0.0).map(athria_core::js_number),
+        "trainingLoad": finite(object.get("icu_training_load")).filter(|value| *value >= 0.0).map(athria_core::js_number),
+        "powerLoad": finite(object.get("power_load")).filter(|value| *value >= 0.0).map(athria_core::js_number),
+        "hrLoad": finite(object.get("hr_load")).filter(|value| *value >= 0.0).map(athria_core::js_number),
+        "paceLoad": finite(object.get("pace_load")).filter(|value| *value >= 0.0).map(athria_core::js_number),
+        "intensity": finite(object.get("icu_intensity")).filter(|value| *value >= 0.0).map(athria_core::js_number),
         "timezone": if local_timezone { json!(timezone) } else { Value::Null },
-        "status": "completed", "missingFields": if duration_value.is_none() { json!(["duration"]) } else { json!([]) },
+        "status": "completed",
         "endurance": { "distanceMeters": metric("distance"), "averageHeartRate": metric("average_heartrate"), "maxHeartRate": metric("max_heartrate"),
           "averagePowerWatts": metric("average_watts"), "maxPowerWatts": metric("max_watts"),
           "heartRateZoneSeconds": object.get("time_in_zones").filter(|value| value.is_object()).cloned().unwrap_or_else(|| json!({})) },
@@ -163,6 +167,7 @@ pub fn fetch_intervals<C: HttpClient>(
     ];
     let authorization = format!("Basic {}", BASE64.encode(format!("API_KEY:{api_key}")));
     let mut output = Map::new();
+    let mut error_ranges = Map::new();
     for (name, path) in paths {
         let request = HttpRequest {
             method: "GET",
@@ -206,7 +211,13 @@ pub fn fetch_intervals<C: HttpClient>(
                 }
             }
         }
+        if result.is_string() {
+            let (_, window) = path.split_once("?oldest=").unwrap();
+            let (start, end) = window.split_once("&newest=").unwrap();
+            error_ranges.insert(name.into(), json!({ "rangeStart": start, "rangeEnd": end }));
+        }
         output.insert(name.into(), result);
     }
+    if !error_ranges.is_empty() { output.insert("errorRanges".into(), Value::Object(error_ranges)); }
     Value::Object(output)
 }

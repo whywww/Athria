@@ -108,25 +108,24 @@ export interface EnduranceRepeat { type: "repeat"; name: string; repetitions: nu
 export interface SportBlock { name: string; role: "preparation" | "technical" | "tactical" | "small_sided_game" | "match" | "competition" | "conditioning" | "cool_down"; durationMinutes?: number; intensity?: string; instructions?: string }
 export interface RecoveryBlock { name: string; durationMinutes?: number; instructions?: string }
 
-export interface PlanComponent {
-  id: string;
-  name: string;
-  prescription: { kind: "strength"; exercises: PlanExercise[] }
-    | { kind: "endurance"; segments: Array<EnduranceStep | EnduranceRepeat> }
-    | { kind: "sport_skill"; sessionType: "practice" | "match" | "competition"; blocks: SportBlock[] }
-    | { kind: "mobility" | "mind_body" | "functional"; blocks: RecoveryBlock[] }
-    | { kind: "duration_only"; notes: string };
+export interface PrescriptionByDomain {
+  strength: { blocks: PlanExercise[] };
+  endurance: { blocks: Array<EnduranceStep | EnduranceRepeat> };
+  sport_skill: { sessionType: "practice" | "match" | "competition"; blocks: SportBlock[] };
+  mobility: { blocks: RecoveryBlock[] };
+  mind_body: { blocks: RecoveryBlock[] };
+  functional: { blocks: RecoveryBlock[] };
 }
+export type SessionPrescription = PrescriptionByDomain[TemplateComponentDomain];
 
 export interface Mesocycle {
   durationWeeks: number;
   schedule: AthleteProfile["trainingRhythm"];
   domainProgressions: Array<{ domain: TemplateComponentDomain; phases: DomainPhase[] }>;
-  weeks: Array<{ weekNumber: number; focus: string | null; sessions: Array<{ id: string; scheduledDate: string; order: number; templateRef: TemplateRef | null; domain?: TemplateComponentDomain | null; type?: string | null; subtype?: string | null; name: string; intent: string; durationMinutes: number; recoveryDemand: "low" | "normal" | "high"; keySession: boolean; components: PlanComponent[]; progressionNote: string | null; schedulingRationale: string | null; legacySnapshot: boolean }> }>;
-  adjustmentRules: Array<{ trigger: string; action: string; rationale: string }>;
+  weeks: Array<{ weekNumber: number; focus: string | null; sessions: Array<{ id: string; scheduledDate: string; order: number; templateRef: TemplateRef | null; domain?: TemplateComponentDomain | null; type?: string | null; subtype?: string | null; name: string; intent: string; durationMinutes: number; recoveryDemand: "low" | "normal" | "high"; keySession: boolean; prescription: SessionPrescription | null; progressionNote: string | null; schedulingRationale: string | null; legacySnapshot: boolean }> }>;
 }
 
-export interface TrainingHistorySession { id: string; name: string; startAt: string; timezone: string | null; domains: string[]; type: string | null; subtype: string | null; durationMinutes: number; source: string; timePrecision: "exact" | "date_only"; sources: Array<{ source: string; externalId: string }>; plannedSessionId: string | null; planMatch: { plannedSessionId: string; method: "auto" | "manual" } | null; isPlanMatchExcluded: boolean; snapshotHash?: string }
+export interface TrainingHistorySession { trainingLoad?: number | null; powerLoad?: number | null; hrLoad?: number | null; paceLoad?: number | null; intensity?: number | null; rpe?: number | null; sessionRpe?: number | null; id: string; name: string; startAt: string; timezone: string | null; domains: string[]; type: string | null; subtype: string | null; durationMinutes: number; timePrecision: "exact" | "date_only"; sources: Array<{ source: string; externalId: string }>; plannedSessionId: string | null; planMatch: { plannedSessionId: string; method: "auto" | "manual" } | null; isPlanMatchExcluded: boolean; snapshotHash?: string }
 export function formatTrainingSource(source: string): string {
   return ({ xunji: currentLanguage() === "zh-CN" ? "训记" : "SynFit", intervals: "Intervals.icu", hevy: "Hevy", manual: currentLanguage() === "zh-CN" ? "手动记录" : "Manual" } as Record<string, string>)[source] ?? source;
 }
@@ -136,7 +135,7 @@ export function filterAndSortTrainingHistory(sessions: TrainingHistorySession[],
   const term = query.trim().toLocaleLowerCase();
   const filtered = term ? sessions.filter((session) => {
     const plannedSessionId = session.planMatch?.plannedSessionId ?? session.plannedSessionId;
-    const sources = session.sources.length ? session.sources.map((source) => source.source) : [session.source];
+    const sources = session.sources.map((source) => source.source);
     return [session.name, session.type ?? "", session.subtype ?? "", ...session.domains.map(friendlyLabel), ...sources.flatMap((source) => [source, formatTrainingSource(source)]), plannedSessionId ? plannedNames[plannedSessionId] ?? "" : ""]
       .some((value) => value.toLocaleLowerCase().includes(term));
   }) : [...sessions];
@@ -181,7 +180,7 @@ export interface PlanTarget {
   maintenance?: Array<{ label: string; detail?: string }>;
   coordinationStrategy?: string;
 }
-export interface CurrentPlan { planSchemaVersion: "7.0"; ownerId: string; title: string; summary: string; effectiveStartDate: string; mesocycle: Mesocycle; revision: number; sourceAgent: string | null; model: string | null; skillVersion: string | null; inputSnapshotHash: string | null; updatedAt: string; target?: PlanTarget }
+export interface CurrentPlan { planSchemaVersion: "7.0"; ownerId: string; title: string; summary: string; effectiveStartDate: string; mesocycle: Mesocycle; revision: number; sourceAgent: string | null; model: string | null; skillVersion: string | null; inputSnapshotHash: string | null; sourceDraftId: string | null; updatedAt: string; target?: PlanTarget }
 
 export interface PlannedSession {
   id: string;
@@ -206,7 +205,7 @@ export interface PlannedSession {
   completedAt?: string | null;
   completionSource?: "manual" | "import" | null;
   match?: { plannedSessionId: string; method: "auto" | "manual" } | null;
-  components: PlanComponent[];
+  prescription: SessionPrescription | null;
   notes: string;
   legacySnapshot: boolean;
   overrideReason: string | null;
@@ -238,7 +237,7 @@ export interface CalendarSession {
   completedAt?: string | null;
   completionSource?: "manual" | "import" | null;
   match?: { plannedSessionId: string; method: "auto" | "manual" } | null;
-  components: PlanComponent[];
+  prescription: SessionPrescription | null;
   legacySnapshot: boolean;
   overrideReason: string | null;
 }

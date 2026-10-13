@@ -572,10 +572,7 @@ fn plan_with_run() -> Value {
                 "sessions": [{
                     "id": "s1", "scheduledDate": "2026-09-10", "order": 0, "status": "planned", "templateRef": null,
                     "type": "Run", "subtype": null, "domain": "endurance", "name": "Easy Run", "intent": "Aerobic base", "durationMinutes": 60, "recoveryDemand": "low", "keySession": false,
-                    "components": [{
-                        "id": "c1", "name": "Run",
-                        "prescription": { "kind": "duration_only", "notes": "" },
-                    }],
+                    "prescription": {"blocks":[]},
                     "progressionNote": null, "schedulingRationale": null, "legacySnapshot": false,
                 }],
             }],
@@ -630,14 +627,29 @@ fn recorded_sessions_are_stored_as_completed_manual_observations() {
             "startAt": "2026-09-16T09:00:00.000Z",
             "endAt": "2026-09-16T10:00:00.000Z",
             "durationMinutes": 60,
+            "rpe": 3,
             "strengthSets": [{ "exerciseRaw": "Back Squat", "setIndex": 0, "weight": 100, "weightUnit": "kg", "reps": 5 }],
         }))
         .unwrap();
+    assert_eq!(recorded["rpe"], json!(3));
+    assert_eq!(recorded["sessionRpe"], json!(180));
+    let rejected = app.record_training_session(&json!({
+        "type": "Run", "name": "Rejected load", "startAt": "2026-09-16T09:00:00Z",
+        "endAt": "2026-09-16T10:00:00Z", "durationMinutes": 60, "rpe": 3, "sessionRpe": 999
+    })).unwrap_err();
+    assert_eq!(rejected.code(), AthriaErrorCode::InvalidData);
+    for field in athria_core::schema::session::API_SESSION_METRICS {
+        let mut input = json!({"type":"Run","name":"API-only metric","startAt":"2026-09-16T09:00:00Z","durationMinutes":60});
+        input[field] = json!(10);
+        assert_eq!(app.record_training_session(&input).unwrap_err().code(), AthriaErrorCode::InvalidData);
+    }
     let id = recorded["id"].as_str().expect("a generated id");
     assert_eq!(recorded["ownerId"], json!("local-user"));
-    assert_eq!(recorded["source"], json!("manual"));
+    assert_eq!(recorded["sources"][0]["source"], json!("manual"));
+    assert!(recorded.get("source").is_none());
     assert_eq!(recorded["status"], json!("completed"));
-    assert_eq!(recorded["externalId"], json!(id));
+    assert_eq!(recorded["sources"][0]["externalId"], json!(id));
+    assert!(recorded.get("externalId").is_none());
     assert_eq!(recorded["domains"], json!(["strength"]));
     assert_eq!(recorded["strengthSets"][0]["setType"], json!("normal"));
     // The response is the parsed schema document in declaration order.
@@ -651,15 +663,20 @@ fn recorded_sessions_are_stored_as_completed_manual_observations() {
         [
             "id",
             "ownerId",
-            "source",
-            "externalId",
             "type",
             "subtype",
             "domains",
             "name",
             "startAt",
-            "endAt",
+
             "durationMinutes",
+            "rpe",
+            "sessionRpe",
+                "trainingLoad",
+                "powerLoad",
+                "hrLoad",
+                "paceLoad",
+                "intensity",
             "status",
             "timezone",
             "plannedSessionId",
@@ -668,8 +685,7 @@ fn recorded_sessions_are_stored_as_completed_manual_observations() {
             "planMatch",
             "isPlanMatchExcluded",
             "strengthSets",
-            "endurance",
-            "missingFields"
+            "endurance"
         ]
     );
 
@@ -678,7 +694,7 @@ fn recorded_sessions_are_stored_as_completed_manual_observations() {
     assert_eq!(sessions.len(), 1);
     assert_eq!(sessions[0]["id"], json!(id));
     assert_eq!(sessions[0]["domains"], json!(["strength"]));
-    assert_eq!(sessions[0]["missingFields"], json!([]));
+    assert!(sessions[0].get("missingFields").is_none());
 
     // Explicit ids survive the manual write path.
     let explicit = app
@@ -690,7 +706,7 @@ fn recorded_sessions_are_stored_as_completed_manual_observations() {
         }))
         .unwrap();
     assert_eq!(explicit["id"], json!("manual-1"));
-    assert_eq!(explicit["externalId"], json!("manual-external-1"));
+    assert_eq!(explicit["sources"][0]["externalId"], json!("manual-external-1"));
 }
 
 #[test]
@@ -740,10 +756,10 @@ fn list_sessions_uses_type_domains_without_metric_inference() {
     let sessions = app.list_sessions(90).unwrap();
     let bare = listed(&sessions, &bare_id);
     assert_eq!(bare["domains"], json!(["endurance"]));
-    assert_eq!(bare["missingFields"], json!([]));
+    assert!(bare.get("missingFields").is_none());
     let detailed = listed(&sessions, &detailed_id);
     assert_eq!(detailed["domains"], json!(["endurance"]));
-    assert_eq!(detailed["missingFields"], json!([]));
+    assert!(detailed.get("missingFields").is_none());
 
     // The classification is also stored, not synthesized while reading.
     let stored = app.store().list_sessions("local-user", None).unwrap();
@@ -1126,16 +1142,16 @@ fn manual_sessions_can_be_retimed() {
         )
         .unwrap();
     assert_eq!(retimed["startAt"], json!("2026-09-16T02:30:00.000Z"));
-    assert_eq!(retimed["endAt"], json!("2026-09-16T03:30:00.000Z"));
+    assert!(retimed.get("endAt").is_none());
     assert_eq!(retimed["timePrecision"], json!("exact"));
-    assert_eq!(retimed["missingFields"], json!([]));
+    assert!(retimed.get("missingFields").is_none());
 
     // A duration update moves the end instead.
     let stretched = app
         .update_manual_training_session(&id, &json!({ "durationMinutes": 45, "confirmed": true }))
         .unwrap();
     assert_eq!(stretched["durationMinutes"], json!(45));
-    assert_eq!(stretched["endAt"], json!("2026-09-16T03:15:00.000Z"));
+    assert!(stretched.get("endAt").is_none());
 
     // Changing the local day is refused until the plan match moves.
     let moved = app
@@ -1467,7 +1483,7 @@ fn training_taxonomy_exposes_the_versioned_vocabularies() {
 fn plan_component(id: &str, name: &str, _domain: &str) -> Value {
     json!({
         "id": id, "name": name,
-        "prescription": { "kind": "duration_only", "notes": "" },
+        "prescription": {"blocks":[]},
     })
 }
 
@@ -1477,12 +1493,12 @@ fn plan_session(
     scheduled_date: &str,
     order: i64,
     recovery_demand: &str,
-    components: Value,
+    prescription: Value,
 ) -> Value {
     json!({
         "id": id, "scheduledDate": scheduled_date, "order": order, "status": "planned", "templateRef": null,
         "type": "Run", "subtype": null, "domain": "endurance", "name": "Easy Run", "intent": "Aerobic base", "durationMinutes": 45, "recoveryDemand": recovery_demand, "keySession": false,
-        "components": components,
+        "prescription": prescription,
         "progressionNote": null, "schedulingRationale": null, "legacySnapshot": false,
     })
 }
@@ -1525,7 +1541,7 @@ fn plan_write(
 ) -> Value {
     json!({
         "planSchemaVersion": "7.0", "ownerId": "local-user", "title": "Base Block", "summary": "", "effectiveStartDate": effective_start,
-        "mesocycle": { "durationWeeks": duration_weeks, "schedule": schedule, "domainProgressions": progressions, "weeks": weeks, "adjustmentRules": [] },
+        "mesocycle": { "durationWeeks": duration_weeks, "schedule": schedule, "domainProgressions": progressions, "weeks": weeks },
         "sourceAgent": "test", "model": null, "skillVersion": "0.6.0", "inputSnapshotHash": null,
         "expectedRevision": expected_revision,
     })
@@ -1547,7 +1563,7 @@ fn monday_plan_write(expected_revision: i64) -> Value {
                     "2026-09-14",
                     0,
                     "low",
-                    json!([plan_component("c1", "Run", "endurance")]),
+                    plan_component("c1", "Run", "endurance")["prescription"].clone(),
                 )],
             ),
             plan_week(
@@ -1557,7 +1573,7 @@ fn monday_plan_write(expected_revision: i64) -> Value {
                     "2026-09-21",
                     0,
                     "low",
-                    json!([plan_component("c2", "Run", "endurance")]),
+                    plan_component("c2", "Run", "endurance")["prescription"].clone(),
                 )],
             ),
         ],
@@ -1580,6 +1596,8 @@ fn plan_drafts_persist_weeks_validate_and_commit_atomically() {
         .create_plan_draft(&json!({ "mode": "new", "plan": metadata }))
         .unwrap();
     let id = created["draftId"].as_str().unwrap();
+    let other = app.create_plan_draft(&json!({ "mode": "new", "plan": metadata })).unwrap();
+    assert!(created.get("status").is_none());
     assert_eq!(created["missingWeekNumbers"], json!([1, 2]));
 
     let first = app.upsert_plan_draft_week(id, 0, &weeks[0]).unwrap();
@@ -1588,6 +1606,9 @@ fn plan_drafts_persist_weeks_validate_and_commit_atomically() {
     assert_eq!(stale.code(), AthriaErrorCode::DraftRevisionConflict);
     let incomplete = app.validate_plan_draft(id).unwrap_err();
     assert_eq!(incomplete.code(), AthriaErrorCode::DraftIncomplete);
+    assert_eq!(app.commit_plan_draft(id, 1, 0, &app.snapshot_hash().unwrap(), true).unwrap_err().code(), AthriaErrorCode::DraftIncomplete);
+    assert!(app.get_current_plan().unwrap().is_none());
+    assert_eq!(app.store().list_plan_draft_weeks(id).unwrap().len(), 1);
 
     let ready = app.upsert_plan_draft_week(id, 1, &weeks[1]).unwrap();
     assert_eq!(ready["missingWeekNumbers"], json!([]));
@@ -1595,6 +1616,13 @@ fn plan_drafts_persist_weeks_validate_and_commit_atomically() {
     let snapshot = app.snapshot_hash().unwrap();
     let committed = app.commit_plan_draft(id, 2, 0, &snapshot, true).unwrap();
     assert_eq!(committed["revision"], 1);
+    assert_eq!(committed["sourceDraftId"], id);
+    assert!(committed.get("idempotentReplay").is_none());
+    assert_eq!(app.get_current_plan().unwrap().unwrap()["sourceDraftId"], id);
+    assert!(app.store().get_plan_draft(id, "local-user").unwrap().is_none());
+    assert!(app.store().list_plan_draft_weeks(id).unwrap().is_empty());
+    assert_eq!(app.list_plan_drafts().unwrap(), vec![other]);
+    assert_eq!(app.get_plan_draft(id, None).unwrap_err().code(), AthriaErrorCode::DraftNotFound);
     assert_eq!(
         app.get_current_plan().unwrap().unwrap()["mesocycle"]["weeks"]
             .as_array()
@@ -1603,8 +1631,8 @@ fn plan_drafts_persist_weeks_validate_and_commit_atomically() {
         2
     );
     assert_eq!(
-        app.commit_plan_draft(id, 2, 0, &snapshot, true).unwrap()["idempotentReplay"],
-        true
+        app.commit_plan_draft(id, 2, 0, &snapshot, true).unwrap_err().code(),
+        AthriaErrorCode::DraftNotFound
     );
     assert_eq!(
         app.upsert_plan_draft_week(id, 2, &weeks[0])
@@ -1612,6 +1640,90 @@ fn plan_drafts_persist_weeks_validate_and_commit_atomically() {
             .code(),
         AthriaErrorCode::DraftNotFound
     );
+}
+
+#[test]
+fn draft_discard_checks_owner_and_revision_then_cascades() {
+    let app = test_app();
+    patch_profile(&app, json!({ "trainingRhythm": { "kind": "fixed_week", "days": [0] } }));
+    app.save_current_plan(&monday_plan_write(0)).unwrap();
+    let draft = app.create_plan_draft(&json!({"mode":"current_plan"})).unwrap();
+    let id = draft["draftId"].as_str().unwrap();
+    let plan = app.get_current_plan().unwrap();
+    assert_eq!(app.store().delete_plan_draft(id, "another-owner", 2).unwrap_err().code(), AthriaErrorCode::DraftNotFound);
+    assert_eq!(app.discard_plan_draft(id, 1).unwrap_err().code(), AthriaErrorCode::DraftRevisionConflict);
+    assert_eq!(app.get_plan_draft(id, None).unwrap(), draft);
+    assert_eq!(app.store().list_plan_draft_weeks(id).unwrap().len(), 2);
+    app.discard_plan_draft(id, 2).unwrap();
+    assert!(app.store().list_plan_draft_weeks(id).unwrap().is_empty());
+    assert!(app.list_plan_drafts().unwrap().is_empty());
+    assert_eq!(app.discard_plan_draft(id, 2).unwrap_err().code(), AthriaErrorCode::DraftNotFound);
+    assert_eq!(app.get_current_plan().unwrap(), plan);
+}
+
+#[test]
+fn failed_draft_commits_preserve_plan_context_and_weeks() {
+    let app = test_app();
+    commit_monday_plan(&app);
+    let draft = app.create_plan_draft(&json!({"mode":"current_plan"})).unwrap();
+    let id = draft["draftId"].as_str().unwrap();
+    let weeks = app.store().list_plan_draft_weeks(id).unwrap();
+    let plan = app.get_current_plan().unwrap();
+    let context = app.store().get_plan_review_context("local-user").unwrap();
+    let snapshot = app.snapshot_hash().unwrap();
+    for (draft_revision, plan_revision, hash, code) in [
+        (1, 1, snapshot.as_str(), AthriaErrorCode::DraftRevisionConflict),
+        (2, 0, snapshot.as_str(), AthriaErrorCode::PlanRevisionConflict),
+        (2, 1, "stale", AthriaErrorCode::InputSnapshotChanged),
+    ] {
+        assert_eq!(app.commit_plan_draft(id, draft_revision, plan_revision, hash, true).unwrap_err().code(), code);
+        assert_eq!(app.get_current_plan().unwrap(), plan);
+        assert_eq!(app.store().get_plan_review_context("local-user").unwrap(), context);
+        assert_eq!(app.get_plan_draft(id, None).unwrap(), draft);
+        assert_eq!(app.store().list_plan_draft_weeks(id).unwrap(), weeks);
+    }
+    // A real intervening plan write must also prevent the old draft's commit.
+    app.save_current_plan(&monday_plan_write(1)).unwrap();
+    let updated = app.get_current_plan().unwrap();
+    assert_eq!(app.commit_plan_draft(id, 2, 1, &app.snapshot_hash().unwrap(), true).unwrap_err().code(), AthriaErrorCode::PlanRevisionConflict);
+    assert_eq!(app.get_current_plan().unwrap(), updated);
+    assert_eq!(app.store().list_plan_draft_weeks(id).unwrap(), weeks);
+
+    let mut metadata = monday_plan_write(2);
+    metadata["mesocycle"]["weeks"] = json!([]);
+    metadata["mesocycle"]["schedule"]["days"] = json!([1]);
+    let invalid = app.create_plan_draft(&json!({"mode":"new","plan":metadata})).unwrap();
+    let invalid_id = invalid["draftId"].as_str().unwrap();
+    for (index, week) in weeks.iter().enumerate() {
+        app.upsert_plan_draft_week(invalid_id, index as i64, week).unwrap();
+    }
+    assert_eq!(app.commit_plan_draft(invalid_id, 2, 2, &app.snapshot_hash().unwrap(), true).unwrap_err().code(), AthriaErrorCode::PlanHasBlockers);
+    assert_eq!(app.get_current_plan().unwrap(), updated);
+    assert_eq!(app.store().get_plan_review_context("local-user").unwrap(), context);
+    assert_eq!(app.store().list_plan_draft_weeks(invalid_id).unwrap(), weeks);
+}
+
+#[test]
+fn source_draft_id_is_runtime_owned_and_survives_daily_operations() {
+    let app = test_app();
+    patch_profile(&app, json!({ "trainingRhythm": { "kind": "fixed_week", "days": [0] } }));
+    let mut write = monday_plan_write(0);
+    write["sourceDraftId"] = json!("forged");
+    assert!(app.save_current_plan(&write).unwrap()["plan"]["sourceDraftId"].is_null());
+    let draft = app.create_plan_draft(&json!({"mode":"current_plan"})).unwrap();
+    let id = draft["draftId"].as_str().unwrap();
+    app.commit_plan_draft(id, 2, 1, &app.snapshot_hash().unwrap(), true).unwrap();
+    assert_eq!(app.get_current_plan().unwrap().unwrap()["sourceDraftId"], id);
+    app.update_planned_session("s2", &json!({"action":"move_occurrence","expectedRevision":2,"scheduledDate":"2026-09-22"})).unwrap();
+    assert_eq!(app.get_current_plan().unwrap().unwrap()["sourceDraftId"], id);
+    let mut write = monday_plan_write(3);
+    write["sourceDraftId"] = json!("another-forged-id");
+    assert_eq!(app.save_current_plan(&write).unwrap()["plan"]["sourceDraftId"], id);
+    let next = app.create_plan_draft(&json!({"mode":"current_plan"})).unwrap();
+    let next_id = next["draftId"].as_str().unwrap();
+    assert!(app.store().get_plan_draft(next_id, "local-user").unwrap().unwrap()["data"].get("sourceDraftId").is_none());
+    app.commit_plan_draft(next_id, 2, 4, &app.snapshot_hash().unwrap(), true).unwrap();
+    assert_eq!(app.get_current_plan().unwrap().unwrap()["sourceDraftId"], next_id);
 }
 
 #[test]
@@ -1927,7 +2039,7 @@ fn next_day_session(id: &str) -> Value {
     json!({ "type": "Run", "subtype": null,
         "id": id, "status": "planned", "templateRef": null, "name": "Tempo Run", "intent": "Threshold",
         "durationMinutes": 50, "recoveryDemand": "normal", "keySession": false,
-        "components": [plan_component(&format!("{id}-c1"), "Run", "endurance")],
+        "prescription": plan_component(&format!("{id}-c1"), "Run", "endurance")["prescription"].clone(),
         "progressionNote": null, "schedulingRationale": null, "legacySnapshot": false,
     })
 }
@@ -1959,7 +2071,7 @@ fn saved_plans_materialize_weekly_occurrences_with_impact_and_revision() {
                     "2026-09-14",
                     0,
                     "low",
-                    json!([plan_component("c1", "Run", "endurance")]),
+                    plan_component("c1", "Run", "endurance")["prescription"].clone(),
                 )],
             ),
             plan_week(
@@ -1969,7 +2081,7 @@ fn saved_plans_materialize_weekly_occurrences_with_impact_and_revision() {
                     "2026-09-21",
                     0,
                     "low",
-                    json!([plan_component("c2", "Run", "endurance")]),
+                    plan_component("c2", "Run", "endurance")["prescription"].clone(),
                 )],
             ),
         ],
@@ -2033,7 +2145,8 @@ fn saved_plans_materialize_weekly_occurrences_with_impact_and_revision() {
             "model",
             "skillVersion",
             "inputSnapshotHash",
-            "updatedAt"
+            "updatedAt",
+            "sourceDraftId"
         ]
     );
     assert_eq!(
@@ -2061,7 +2174,7 @@ fn saved_plans_materialize_weekly_occurrences_with_impact_and_revision() {
             "durationMinutes",
             "recoveryDemand",
             "keySession",
-            "components",
+            "prescription",
             "progressionNote",
             "schedulingRationale",
             "legacySnapshot"
@@ -2102,7 +2215,7 @@ fn saved_plans_materialize_weekly_occurrences_with_impact_and_revision() {
             "schedulingRationale",
             "status",
             "displayState",
-            "components",
+            "prescription",
             "legacySnapshot",
             "overrideReason",
             "completedTrainingSessionId",
@@ -2358,7 +2471,7 @@ fn completing_a_planned_session_records_a_dated_manual_workout() {
         .unwrap();
     let workout = &completed["trainingSession"];
     assert_eq!(completed["revision"], json!(1));
-    assert_eq!(workout["source"], json!("manual"));
+    assert_eq!(workout["sources"][0]["source"], json!("manual"));
     assert_eq!(workout["status"], json!("completed"));
     assert_eq!(workout["type"], json!("Run"));
     assert_eq!(workout["domains"], json!(["endurance"]));
@@ -2367,15 +2480,12 @@ fn completing_a_planned_session_records_a_dated_manual_workout() {
     assert_eq!(workout["plannedSessionId"], json!("s1"));
     assert_eq!(workout["timePrecision"], json!("date_only"));
     assert_eq!(workout["startAt"], json!("2026-09-14T04:00:00.000Z"));
-    assert_eq!(workout["endAt"], json!("2026-09-14T04:45:00.000Z"));
+    assert!(workout.get("endAt").is_none());
     assert_eq!(workout["durationMinutes"], json!(45));
     assert_eq!(workout["timezone"], json!("Asia/Hong_Kong"));
     assert_eq!(workout["strengthSets"], json!([]));
     assert_eq!(workout["endurance"], json!(null));
-    assert_eq!(
-        workout["missingFields"],
-        json!(["actual start time", "exercise details"])
-    );
+    assert!(workout.get("missingFields").is_none());
 
     let resolved = &completed["sessions"][0];
     assert_eq!(resolved["id"], json!("s1"));
@@ -2466,10 +2576,10 @@ fn moving_an_occurrence_checks_the_rhythm_and_recomputes_the_week() {
     let flex = test_app();
     patch_profile(
         &flex,
-        json!({ "trainingRhythm": { "kind": "flexible_week", "targetDaysPerWeek": 2, "minDaysPerWeek": 0, "maxDaysPerWeek": 3 } }),
+        json!({ "trainingRhythm": { "kind": "flexible_week", "targetDaysPerWeek": 2, "minDaysPerWeek": 1, "maxDaysPerWeek": 3 } }),
     );
     let flex_plan = plan_write(
-        json!({ "kind": "flexible_week", "targetDaysPerWeek": 2, "minDaysPerWeek": 0, "maxDaysPerWeek": 3 }),
+        json!({ "kind": "flexible_week", "targetDaysPerWeek": 2, "minDaysPerWeek": 1, "maxDaysPerWeek": 3 }),
         2,
         "2026-09-14",
         endurance_progressions(2),
@@ -2481,7 +2591,7 @@ fn moving_an_occurrence_checks_the_rhythm_and_recomputes_the_week() {
                     "2026-09-14",
                     0,
                     "low",
-                    json!([plan_component("c1", "Run", "endurance")]),
+                    plan_component("c1", "Run", "endurance")["prescription"].clone(),
                 )],
             ),
             plan_week(
@@ -2491,7 +2601,7 @@ fn moving_an_occurrence_checks_the_rhythm_and_recomputes_the_week() {
                     "2026-09-21",
                     0,
                     "low",
-                    json!([plan_component("c2", "Run", "endurance")]),
+                    plan_component("c2", "Run", "endurance")["prescription"].clone(),
                 )],
             ),
         ],
@@ -2565,14 +2675,14 @@ fn moving_high_recovery_days_keeps_the_interval_advisory() {
                         "2026-09-14",
                         0,
                         "high",
-                        json!([plan_component("c1", "Run", "endurance")]),
+                        plan_component("c1", "Run", "endurance")["prescription"].clone(),
                     ),
                     plan_session(
                         "s2",
                         "2026-09-18",
                         1,
                         "low",
-                        json!([plan_component("c2", "Run", "endurance")]),
+                        plan_component("c2", "Run", "endurance")["prescription"].clone(),
                     ),
                 ],
             ),
@@ -2584,14 +2694,14 @@ fn moving_high_recovery_days_keeps_the_interval_advisory() {
                         "2026-09-21",
                         0,
                         "high",
-                        json!([plan_component("c3", "Run", "endurance")]),
+                        plan_component("c3", "Run", "endurance")["prescription"].clone(),
                     ),
                     plan_session(
                         "s4",
                         "2026-09-22",
                         1,
                         "low",
-                        json!([plan_component("c4", "Run", "endurance")]),
+                        plan_component("c4", "Run", "endurance")["prescription"].clone(),
                     ),
                 ],
             ),
@@ -2841,4 +2951,193 @@ fn new_manual_records_and_plans_require_a_known_type() {
     let mut plan = monday_plan_write(0);
     plan["mesocycle"]["weeks"][0]["sessions"][0]["type"] = Value::Null;
     assert_eq!(app.save_current_plan(&plan).unwrap_err().code(), AthriaErrorCode::InvalidData);
+}
+
+
+fn commit_monday_plan(app: &AthriaApplication<SqliteStore>) -> String {
+    patch_profile(app, json!({"trainingRhythm":{"kind":"fixed_week","days":[0]}}));
+    let mut plan = monday_plan_write(0);
+    let weeks = plan["mesocycle"]["weeks"].as_array().unwrap().clone();
+    plan["mesocycle"]["weeks"] = json!([]);
+    let draft = app.create_plan_draft(&json!({"mode":"new", "plan":plan})).unwrap();
+    let id = draft["draftId"].as_str().unwrap().to_owned();
+    for (index, week) in weeks.iter().enumerate() {
+        app.upsert_plan_draft_week(&id, index as i64, week).unwrap();
+    }
+    app.commit_plan_draft(&id, 2, 0, &app.snapshot_hash().unwrap(), true).unwrap();
+    id
+}
+
+#[test]
+fn review_diff_is_net_since_commit_and_profile_remains_authoritative() {
+    let app = test_app();
+    patch_profile(&app, json!({"goals":["endurance"], "preference":"A"}));
+    let draft_id = commit_monday_plan(&app);
+    let anchor = app.store().get_plan_review_context("local-user").unwrap().unwrap();
+    assert_eq!(anchor["committedAt"], NOW);
+    assert_eq!(anchor["committedPlanRevision"], 1);
+    assert_eq!(anchor["profileChanges"], json!([]));
+    // Full App saves and MCP-style patches pass through the same store path.
+    let mut profile = app.get_profile().unwrap();
+    profile["preference"] = "B".into();
+    app.save_profile(&profile).unwrap();
+    patch_profile(&app, json!({"preference":"C"}));
+    let review = app.review_current_plan_for_adjustment(AdjustmentTrigger::UserRequest).unwrap();
+    let context = app.get_plan_adjustment_context().unwrap();
+    assert_eq!(context["from"], "2026-09-17");
+    assert_eq!(context["to"], "2026-09-17");
+    assert_eq!(context["profileChanges"].as_array().unwrap().len(), 1);
+    assert_eq!(context["profileChanges"][0]["before"], "A");
+    assert_eq!(context["profileChanges"][0]["after"], "C");
+    assert_eq!(app.get_profile().unwrap()["goals"], json!(["endurance"]));
+    // The diff remains an Agent hint, not an invented deterministic signal.
+    assert!(!review.reasons.iter().any(|reason| format!("{:?}", reason.reason_code).contains("Preference")));
+    let before = app.store().get_plan_review_context("local-user").unwrap();
+    patch_profile(&app, json!({"preference":"C", "preferredName":"New name"}));
+    assert_eq!(app.store().get_plan_review_context("local-user").unwrap(), before);
+    assert!(app.update_profile(&json!({"expectedProfileHash":"stale", "patch":{"preference":"D"}})).is_err());
+    assert_eq!(app.store().get_plan_review_context("local-user").unwrap(), before);
+    // A repeated submission of a removed draft must not consume later changes.
+    assert_eq!(app.commit_plan_draft(&draft_id, 2, 0, "stale", true).unwrap_err().code(), AthriaErrorCode::DraftNotFound);
+    assert_eq!(app.store().get_plan_review_context("local-user").unwrap(), before);
+    patch_profile(&app, json!({"preference":"A"}));
+    assert_eq!(app.store().get_plan_review_context("local-user").unwrap().unwrap()["profileChanges"], json!([]));
+}
+
+#[test]
+fn review_anchor_survives_workout_operations_drafts_and_failed_commits() {
+    let app = test_app();
+    commit_monday_plan(&app);
+    patch_profile(&app, json!({"preference":"More easy running"}));
+    let before = app.store().get_plan_review_context("local-user").unwrap();
+    app.update_planned_session("s2", &json!({"action":"move_occurrence", "expectedRevision":1,"scheduledDate":"2026-09-22"})).unwrap();
+    app.update_planned_session("s2", &json!({"action":"skip", "expectedRevision":2})).unwrap();
+    let draft = app.create_plan_draft(&json!({"mode":"current_plan"})).unwrap();
+    let id = draft["draftId"].as_str().unwrap();
+    let revision = draft["basePlanRevision"].as_i64().unwrap();
+    let draft_revision = draft["draftRevision"].as_i64().unwrap();
+    assert!(app.commit_plan_draft(id, draft_revision, revision, "stale", true).is_err());
+    assert_eq!(app.store().get_plan_review_context("local-user").unwrap(), before);
+    app.discard_plan_draft(id, draft_revision).unwrap();
+    assert_eq!(app.store().get_plan_review_context("local-user").unwrap(), before);
+    app.review_current_plan_for_adjustment(AdjustmentTrigger::WeeklyReview).unwrap();
+    assert_eq!(app.store().get_plan_review_context("local-user").unwrap(), before);
+}
+
+#[test]
+fn review_window_uses_commit_date_in_current_profile_timezone_and_legacy_fallback() {
+    let app = test_app();
+    patch_profile(&app, json!({"trainingRhythm":{"kind":"fixed_week","days":[0]}}));
+    app.save_current_plan(&monday_plan_write(0)).unwrap();
+    let review = app.get_plan_adjustment_context().unwrap();
+    assert_eq!(review["trackingComplete"], false);
+    assert_eq!(review["from"], "2026-09-14");
+    assert!(review["committedAt"].is_null());
+    app.store().reset_plan_review_context("local-user", "2026-08-26T23:30:00Z", 1).unwrap();
+    let context = app.get_plan_adjustment_context().unwrap();
+    assert_eq!(context["from"], "2026-08-27");
+    assert_eq!(context["to"], "2026-09-17");
+    patch_profile(&app, json!({"timezone":"America/Los_Angeles"}));
+    let context = app.get_plan_adjustment_context().unwrap();
+    assert_eq!(context["from"], "2026-08-26");
+    assert_eq!(context["to"], "2026-09-16");
+    // Legacy plan with future effective start has no execution evidence.
+    let future = test_app();
+    patch_profile(&future, json!({"trainingRhythm":{"kind":"fixed_week","days":[0]}}));
+    let mut plan = monday_plan_write(0);
+    plan["effectiveStartDate"] = "2026-10-05".into();
+    plan["mesocycle"]["weeks"][0]["sessions"][0]["scheduledDate"] = "2026-10-05".into();
+    plan["mesocycle"]["weeks"][1]["sessions"][0]["scheduledDate"] = "2026-10-12".into();
+    future.save_current_plan(&plan).unwrap();
+    let context = future.get_plan_adjustment_context().unwrap();
+    assert_eq!(context["hasExecutionWindow"], false);
+    assert_eq!(context["from"], "2026-10-05");
+}
+
+#[test]
+fn explicit_history_windows_align_summary_sessions_and_wellness_in_profile_timezone() {
+    let app = test_app();
+    for instant in ["2026-08-26T15:59:59Z", "2026-08-26T16:00:00Z", "2026-08-26T09:01:00-07:00", "2026-09-17T15:59:59Z", "2026-09-17T16:00:00Z"] {
+        record(&app, json!({"type":"Running", "name":"Run", "timezone":"America/Los_Angeles", "startAt":instant,"endAt":athria_core::tz::iso_from_millis(athria_core::tz::millis(instant).unwrap() + 1_800_000),"durationMinutes":30}));
+    }
+    for day in ["2026-08-26", "2026-08-27", "2026-09-17", "2026-09-18"] {
+        app.store().upsert_wellness("local-user", &[json!({"id":day,"sleepScore":80})]).unwrap();
+    }
+    // Explicit dates override even a one-day rolling lookback.
+    let sessions = app.list_sessions_in_window(1, Some("2026-08-27"), Some("2026-09-17")).unwrap();
+    let summary = app.get_training_summary(1, Some("2026-08-27"), Some("2026-09-17")).unwrap();
+    let wellness = app.list_wellness_in_window(1, Some("2026-08-27"), Some("2026-09-17")).unwrap();
+    assert_eq!(sessions.len(), 3);
+    assert_eq!(summary["sessionCount"], 3);
+    assert_eq!(wellness.len(), 2);
+    assert_eq!(wellness[0]["day"], "2026-09-17");
+    assert!(sessions.iter().all(|session| session["snapshotHash"].is_string()));
+    assert_eq!(app.list_sessions_in_window(1, Some("2026-09-17"), Some("2026-09-17")).unwrap().len(), 1);
+    for (from, to) in [(Some("2026-09-17"), None), (None, Some("2026-09-17")), (Some("2026-02-30"), Some("2026-09-17")), (Some("2026-09-18"), Some("2026-09-17"))] {
+        assert!(app.list_sessions_in_window(7, from, to).is_err());
+        assert!(app.list_wellness_in_window(7, from, to).is_err());
+        assert!(app.get_training_summary(7, from, to).is_err());
+    }
+    assert_eq!(app.list_sessions_in_window(30, None, None).unwrap(), app.list_sessions_with_snapshots(30).unwrap());
+    assert_eq!(app.list_wellness_in_window(42, None, None).unwrap(), app.list_wellness(42).unwrap());
+}
+
+
+#[test]
+fn failed_anchor_reset_rolls_back_the_whole_plan_commit_and_success_consumes_diff() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("commit.sqlite3");
+    let clock = Arc::new(FixedClock::new(NOW));
+    let app = AthriaApplication::with_clock(SqliteStore::open_with_clock(&path, clock.clone()).unwrap(), "local-user", clock);
+    commit_monday_plan(&app);
+    patch_profile(&app, json!({"preference":"More easy running"}));
+    let original_context = app.store().get_plan_review_context("local-user").unwrap();
+    let original_plan = app.get_current_plan().unwrap();
+    let draft = app.create_plan_draft(&json!({"mode":"current_plan"})).unwrap();
+    let id = draft["draftId"].as_str().unwrap();
+    let revision = draft["draftRevision"].as_i64().unwrap();
+    let snapshot = app.snapshot_hash().unwrap();
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection.execute_batch("CREATE TRIGGER fail_context_reset BEFORE UPDATE ON plan_review_context BEGIN SELECT RAISE(ABORT, 'test reset failure'); END;").unwrap();
+    assert!(app.commit_plan_draft(id, revision, 1, &snapshot, true).is_err());
+    assert_eq!(app.get_current_plan().unwrap(), original_plan);
+    assert_eq!(app.store().get_plan_review_context("local-user").unwrap(), original_context);
+    assert_eq!(app.get_plan_draft(id, None).unwrap()["draftRevision"], revision);
+    connection.execute_batch("DROP TRIGGER fail_context_reset;").unwrap();
+    app.commit_plan_draft(id, revision, 1, &snapshot, true).unwrap();
+    let context = app.store().get_plan_review_context("local-user").unwrap().unwrap();
+    assert_eq!(context["committedPlanRevision"], 2);
+    assert_eq!(context["profileChanges"], json!([]));
+}
+
+
+#[test]
+fn draft_delete_failure_rolls_back_plan_review_context_and_cascade() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("draft-delete-rollback.sqlite3");
+    let clock = Arc::new(FixedClock::new(NOW));
+    let app = AthriaApplication::with_clock(SqliteStore::open_with_clock(&path, clock.clone()).unwrap(), "local-user", clock);
+    commit_monday_plan(&app);
+    patch_profile(&app, json!({"preference":"More easy running"}));
+    let original_context = app.store().get_plan_review_context("local-user").unwrap();
+    let original_plan = app.get_current_plan().unwrap();
+    let draft = app.create_plan_draft(&json!({"mode":"current_plan"})).unwrap();
+    let id = draft["draftId"].as_str().unwrap();
+    let original_weeks = app.store().list_plan_draft_weeks(id).unwrap();
+    let snapshot = app.snapshot_hash().unwrap();
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    // Fail after the delete (and foreign-key cascade) to exercise full rollback.
+    connection.execute_batch("CREATE TRIGGER fail_draft_delete AFTER DELETE ON plan_drafts BEGIN SELECT RAISE(ABORT, 'test draft delete failure'); END;").unwrap();
+    assert!(app.commit_plan_draft(id, 2, 1, &snapshot, true).is_err());
+    assert_eq!(app.get_current_plan().unwrap(), original_plan);
+    assert_eq!(app.store().get_plan_review_context("local-user").unwrap(), original_context);
+    assert_eq!(app.get_plan_draft(id, None).unwrap(), draft);
+    assert_eq!(app.store().list_plan_draft_weeks(id).unwrap(), original_weeks);
+    assert_eq!(app.snapshot_hash().unwrap(), snapshot);
+    connection.execute_batch("DROP TRIGGER fail_draft_delete;").unwrap();
+    app.commit_plan_draft(id, 2, 1, &snapshot, true).unwrap();
+    assert!(app.store().get_plan_draft(id, "local-user").unwrap().is_none());
+    assert!(app.store().list_plan_draft_weeks(id).unwrap().is_empty());
+    assert_eq!(app.get_current_plan().unwrap().unwrap()["sourceDraftId"], id);
+    assert_eq!(app.store().get_plan_review_context("local-user").unwrap().unwrap()["profileChanges"], json!([]));
 }

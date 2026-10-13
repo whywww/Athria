@@ -1,6 +1,6 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Mesocycle } from "../view-models";
 import { ProgressionByDomain } from "./ProgressionByDomain";
 
@@ -16,10 +16,17 @@ const progressions: Mesocycle["domainProgressions"] = [
 ];
 
 describe("ProgressionByDomain", () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
+
   it("renders one module with sorted domain tracks and independent current phases", () => {
     const html = renderToStaticMarkup(createElement(ProgressionByDomain, { currentWeek: 3, progressions }));
 
-    expect(html).toContain('<section class="pdb-section"><h3 class="pdb-heading">Progression by Domain</h3><p class="pdb-subheading">Training phases and focus for each domain</p>');
+    expect(html).toContain('<section class="pdb-section"><h3 class="pdb-heading"><button type="button" class="pdb-toggle" aria-expanded="true"');
+    const panelId = html.match(/class="pdb-toggle"[^>]*aria-controls="([^"]+)"/)?.[1];
+    expect(panelId).toBeTruthy();
+    expect(html).toContain("Progression by Domain");
+    expect(html).toContain("Training phases and focus for each domain");
+    expect(html).toContain(`<div class="pdb-domains" id="${panelId}">`);
     expect(html).toContain('data-domain="strength"');
     expect(html).toContain("Strength");
     expect(html).toContain("Endurance");
@@ -33,6 +40,20 @@ describe("ProgressionByDomain", () => {
     expect(html.indexOf("Foundation")).toBeLessThan(html.indexOf("Build"));
     expect(html.match(/pdb-phase-arrow/g)).toHaveLength(2);
     expect(html.match(/pdb-nav-spacer/g)).toHaveLength(2);
+  });
+
+  it("restores a collapsed preference while keeping the toggle header", () => {
+    vi.stubGlobal("localStorage", { getItem: (key: string) => key === "athria:plan:progression-by-domain:expanded" ? "false" : null });
+
+    const html = renderToStaticMarkup(createElement(ProgressionByDomain, { currentWeek: 3, progressions }));
+
+    expect(html).toContain('data-collapsed="true"');
+    expect(html).toContain('class="pdb-toggle" aria-expanded="false"');
+    expect(html).toContain("Progression by Domain");
+    expect(html).toContain("Training phases and focus for each domain");
+    expect(html).not.toContain("pdb-domains");
+    expect(html).not.toContain('data-domain="strength"');
+    expect(html).not.toContain("pdb-phase-marker");
   });
 
   it("supports a single phase and non-strength domains without inventing body copy", () => {

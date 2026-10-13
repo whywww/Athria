@@ -863,33 +863,30 @@ async fn import_xunji_skill(
         .store()
         .now();
     daily_sync::record_attempt(&state, generation, "xunji", &attempted_at, false)?;
+    let window = athria_integrations::sync_date_window(None, Some(range), &attempted_at)
+        .map_err(|error| error.message().to_owned())?;
     let fetched = fetch_xunji_training(
         &ReqwestHttpClient::default(),
         &api_key,
         range,
         &attempted_at,
     )
-    .map_err(|_| {
-        "Xunji rejected this API key. Export a new Skill from Xunji and try again.".to_string()
-    })?;
-    let result = {
-        let application = active_application(&state)?;
-        ensure_generation(&state, generation)?;
-        application.commit_xunji(&fetched, &attempted_at)
-            .map_err(|error| error.message().to_owned())?
-    };
-    let saved = save_connection_key(
-        &state,
-        generation,
-        "xunji",
-        json!({}),
-        &api_key,
-        vault_password.as_deref(),
-    )
-    .await;
-    vault::clear_string(&mut api_key);
-    saved?;
-    Ok(result)
+    .unwrap_or_else(|error| json!({ "rangeStart": window.range_start, "rangeEnd": window.range_end, "successfulDates": [], "records": [],
+        "errors": [{ "datestr": error.1, "code": "XUNJI_AUTHENTICATION_FAILED", "message": "Xunji rejected this API key. Export a new Skill from Xunji and try again." }] }));
+    // Credential persistence must succeed before committing training data.
+    if !fetched["errors"].as_array().is_some_and(|errors| errors.iter().any(|error| error["code"] == "XUNJI_AUTHENTICATION_FAILED")) {
+        let saved = save_connection_key(
+            &state, generation, "xunji", json!({}), &api_key, vault_password.as_deref(),
+        ).await;
+        vault::clear_string(&mut api_key);
+        saved?;
+    } else {
+        vault::clear_string(&mut api_key);
+    }
+    let application = active_application(&state)?;
+    ensure_generation(&state, generation)?;
+    application.commit_xunji(&fetched, &attempted_at)
+        .map_err(|error| error.message().to_owned())
 }
 
 #[tauri::command]
@@ -941,14 +938,13 @@ async fn run_xunji_sync(state: &RuntimeState, range: Option<Value>, automatic: b
             application.commit_xunji(&fetched, &attempted_at).map_err(|error| error.message().to_owned())
                 .map(Some)
         }
-        Err(_) => {
+        Err(error) => {
             let app = active_application(&state)?;
             ensure_generation(&state, generation)?;
-            app.record_xunji_failure(&json!({ "attemptedAt": attempted_at, "rangeStart": window.range_start, "rangeEnd": window.range_end, "code": "XUNJI_AUTHENTICATION_FAILED", "message": "Xunji rejected this API key. Export a new Skill from Xunji and try again." })).map_err(|error| error.message().to_owned())?;
-            Err(
-                "Xunji rejected this API key. Export a new Skill from Xunji and try again."
-                    .to_string(),
-            )
+            app.commit_xunji(&json!({ "rangeStart": window.range_start, "rangeEnd": window.range_end,
+                "successfulDates": [], "records": [], "errors": [{ "datestr": error.1, "code": "XUNJI_AUTHENTICATION_FAILED",
+                "message": "Xunji rejected this API key. Export a new Skill from Xunji and try again." }] }), &attempted_at)
+                .map(Some).map_err(|error| error.message().to_owned())
         }
     }
 }

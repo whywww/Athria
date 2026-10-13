@@ -114,160 +114,144 @@
                 "durationMinutes": 60,
                 "recoveryDemand": "normal",
                 "keySession": false,
-                "components": [
-                  {
-                    "id": "dup-component",
-                    "name": "Strength",
-                    "prescription": {
-                      "kind": "strength",
-                      "exercises": [
-                        {
-                          "id": "dup-exercise",
-                          "displayName": "dup-exercise",
-                          "canonicalKey": null,
-                          "classification": {
-                            "primaryMovement": {
-                              "value": "squat",
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            },
-                            "primaryMuscles": {
-                              "value": [
-                                "quadriceps"
-                              ],
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            },
-                            "secondaryMuscles": {
-                              "value": [
-                                "glutes"
-                              ],
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            },
-                            "equipment": {
-                              "value": [
-                                "barbell"
-                              ],
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            },
-                            "impact": {
-                              "value": "moderate",
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            },
-                            "laterality": {
-                              "value": "bilateral",
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            }
-                          },
-                          "sets": 4,
-                          "repsMin": 5,
-                          "repsMax": 8,
-                          "targetRpe": 8,
-                          "restSeconds": 150,
-                          "referenceLoad": 100,
-                          "referenceLoadUnit": "kg",
-                          "notes": ""
-                        },
-                        {
-                          "id": "dup-exercise",
-                          "displayName": "dup-exercise",
-                          "canonicalKey": null,
-                          "classification": {
-                            "primaryMovement": {
-                              "value": "squat",
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            },
-                            "primaryMuscles": {
-                              "value": [
-                                "quadriceps"
-                              ],
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            },
-                            "secondaryMuscles": {
-                              "value": [
-                                "glutes"
-                              ],
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            },
-                            "equipment": {
-                              "value": [
-                                "barbell"
-                              ],
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            },
-                            "impact": {
-                              "value": "moderate",
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            },
-                            "laterality": {
-                              "value": "bilateral",
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            }
-                          },
-                          "sets": 4,
-                          "repsMin": 5,
-                          "repsMax": 8,
-                          "targetRpe": 8,
-                          "restSeconds": 150,
-                          "referenceLoad": 100,
-                          "referenceLoadUnit": "kg",
-                          "notes": ""
-                        }
-                      ]
-                    }
-                  },
-                  {
-                    "id": "dup-component",
-                    "name": "Recovery",
-                    "prescription": {
-                      "kind": "duration_only",
-                      "notes": ""
-                    }
-                  }
-                ],
                 "progressionNote": null,
                 "schedulingRationale": null,
                 "legacySnapshot": false,
-                "domain": null
+                "domain": "strength",
+                "prescription": {
+                  "blocks": [
+                    {
+                      "id": "dup-exercise",
+                      "displayName": "dup-exercise",
+                      "canonicalKey": null,
+                      "classification": {
+                        "primaryMovement": {
+                          "value": "squat",
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        },
+                        "primaryMuscles": {
+                          "value": [
+                            "quadriceps"
+                          ],
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        },
+                        "secondaryMuscles": {
+                          "value": [
+                            "glutes"
+                          ],
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        },
+                        "equipment": {
+                          "value": [
+                            "barbell"
+                          ],
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        },
+                        "impact": {
+                          "value": "moderate",
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        },
+                        "laterality": {
+                          "value": "bilateral",
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        }
+                      },
+                      "sets": 4,
+                      "repsMin": 5,
+                      "repsMax": 8,
+                      "targetRpe": 8,
+                      "restSeconds": 150,
+                      "referenceLoad": 100,
+                      "referenceLoadUnit": "kg",
+                      "notes": ""
+                    },
+                    {
+                      "id": "dup-exercise",
+                      "displayName": "dup-exercise",
+                      "canonicalKey": null,
+                      "classification": {
+                        "primaryMovement": {
+                          "value": "squat",
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        },
+                        "primaryMuscles": {
+                          "value": [
+                            "quadriceps"
+                          ],
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        },
+                        "secondaryMuscles": {
+                          "value": [
+                            "glutes"
+                          ],
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        },
+                        "equipment": {
+                          "value": [
+                            "barbell"
+                          ],
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        },
+                        "impact": {
+                          "value": "moderate",
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        },
+                        "laterality": {
+                          "value": "bilateral",
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        }
+                      },
+                      "sets": 4,
+                      "repsMin": 5,
+                      "repsMax": 8,
+                      "targetRpe": 8,
+                      "restSeconds": 150,
+                      "referenceLoad": 100,
+                      "referenceLoadUnit": "kg",
+                      "notes": ""
+                    }
+                  ]
+                }
               }
             ]
           }
-        ],
-        "adjustmentRules": []
+        ]
       },
       "effectiveStartDate": "2026-09-07"
     },
@@ -277,25 +261,9 @@
     "valid": false,
     "results": [
       {
-        "enforcement": "blocker",
-        "reasonCode": "COMPONENT_IDS",
         "status": "fail",
-        "rulePackId": "structure",
-        "ruleVersion": "0.3.0",
-        "subjectRefs": [],
-        "evidence": {
-          "componentIds": [
-            "dup-component",
-            "dup-component"
-          ]
-        },
-        "missingFacts": [],
-        "confidenceLimit": null
-      },
-      {
         "enforcement": "blocker",
         "reasonCode": "EXERCISE_IDS",
-        "status": "fail",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -309,9 +277,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "pass",
         "enforcement": "blocker",
         "reasonCode": "MESOCYCLE_SCHEDULE",
-        "status": "pass",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -326,9 +294,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "pass",
         "enforcement": "blocker",
         "reasonCode": "PROFILE_TRAINING_RHYTHM",
-        "status": "pass",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -353,15 +321,17 @@
         "confidenceLimit": null
       },
       {
+        "status": "fail",
         "enforcement": "blocker",
         "reasonCode": "DOMAIN_PROGRESSION",
-        "status": "fail",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
         "evidence": {
           "durationWeeks": 1,
-          "sessionDomains": [],
+          "sessionDomains": [
+            "strength"
+          ],
           "progressions": [
             {
               "domain": "strength",
@@ -397,29 +367,28 @@
         "confidenceLimit": null
       },
       {
-        "enforcement": "info",
-        "reasonCode": "SESSION_DOMAIN_MISSING",
-        "status": "unknown",
+        "status": "pass",
+        "enforcement": "blocker",
+        "reasonCode": "SESSION_STRENGTH_PRESCRIPTION",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [
           "mon-strength"
         ],
-        "evidence": {},
-        "missingFacts": [
-          "domain"
-        ],
+        "evidence": {
+          "hasStrengthPrescription": true
+        },
+        "missingFacts": [],
         "confidenceLimit": null
       },
       {
+        "status": "pass",
         "enforcement": "blocker",
         "reasonCode": "EXERCISE_EQUIPMENT",
-        "status": "pass",
         "rulePackId": "constraints",
         "ruleVersion": "0.3.0",
         "subjectRefs": [
           "mon-strength",
-          "dup-component",
           "dup-exercise"
         ],
         "evidence": {
@@ -468,14 +437,13 @@
         }
       },
       {
+        "status": "pass",
         "enforcement": "blocker",
         "reasonCode": "EXERCISE_EQUIPMENT",
-        "status": "pass",
         "rulePackId": "constraints",
         "ruleVersion": "0.3.0",
         "subjectRefs": [
           "mon-strength",
-          "dup-component",
           "dup-exercise"
         ],
         "evidence": {
@@ -524,9 +492,9 @@
         }
       },
       {
+        "status": "pass",
         "enforcement": "info",
         "reasonCode": "STRENGTH_VOLUME_DISTRIBUTION",
-        "status": "pass",
         "rulePackId": "strength",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -545,9 +513,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "not_applicable",
         "enforcement": "advisory",
         "reasonCode": "STRENGTH_PUSH_PULL_BALANCE",
-        "status": "not_applicable",
         "rulePackId": "strength",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -560,9 +528,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "fail",
         "enforcement": "advisory",
         "reasonCode": "STRENGTH_KNEE_HINGE_BALANCE",
-        "status": "fail",
         "rulePackId": "strength",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -575,9 +543,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "pass",
         "enforcement": "advisory",
         "reasonCode": "STRENGTH_EFFORT_RPE",
-        "status": "pass",
         "rulePackId": "strength",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -589,9 +557,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "not_applicable",
         "enforcement": "advisory",
         "reasonCode": "ENDURANCE_EFFORT_ZONE",
-        "status": "not_applicable",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -603,18 +571,9 @@
         "confidenceLimit": null
       }
     ],
-    "dataGaps": [
-      {
-        "code": "SESSION_DOMAIN_MISSING",
-        "subjectRef": "mon-strength",
-        "factPath": "domain",
-        "requiredByRuleCodes": [],
-        "blocking": false,
-        "resolution": "agent_infer"
-      }
-    ],
+    "dataGaps": [],
     "validatedAt": "2026-09-17T10:30:00.000Z",
-    "inputHash": "fnv1a-a44d4bdd",
+    "inputHash": "fnv1a-d09de8cb",
     "coverage": {
       "hardChecksResolved": 7,
       "hardChecksTotal": 7,

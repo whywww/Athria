@@ -1,6 +1,6 @@
 import { T } from "../i18n";
 import type { ReactNode } from "react";
-import { friendlyLabel, type EnduranceStep, type PlanComponent, type TemplateComponentDomain } from "../view-models";
+import { friendlyLabel, type EnduranceStep, type SessionPrescription, type PrescriptionByDomain, type TemplateComponentDomain } from "../view-models";
 import { domainIconPath } from "../domain-icons";
 import { formatRest } from "../components";
 import { currentLanguage, exerciseName, useLanguage } from "../i18n";
@@ -23,32 +23,34 @@ function Values({ values, empty = "—" }: { values: Array<string | null | undef
 }
 
 function CompactEnduranceTargets({ step }: { step: EnduranceStep }) {
-  const values = [duration(step.durationSeconds), distance(step.distanceMeters), step.pace, step.heartRateZone, step.powerWatts, step.cadence, step.rpe ? `RPE ${step.rpe}` : null, step.talkTest].filter(Boolean);
+  const values = [duration(step.durationSeconds), distance(step.distanceMeters), step.pace, step.heartRateZone ? `Zone ${step.heartRateZone}` : null, step.powerWatts, step.cadence, step.rpe ? `RPE ${step.rpe}` : null, step.talkTest].filter(Boolean);
   return <>{values.length > 0 && <span className="rx-targets">{values.join(" · ")}</span>}{step.notes && <small>{step.notes}</small>}</>;
 }
 
-function PrescriptionPanel({ component, sessionDomain, summary, meta, chip, children }: { component: PlanComponent; sessionDomain?: TemplateComponentDomain | null | undefined; summary?: string | undefined; meta?: string | undefined; chip?: string | undefined; children: ReactNode }) {
+interface SessionPriorityProps { keySession?: boolean | undefined }
+
+function PrescriptionPanel({ name, showTitle, sessionDomain, summary, meta, chip, keySession, children }: { name: string; showTitle?: boolean | undefined; sessionDomain?: TemplateComponentDomain | null | undefined; summary?: string | undefined; meta?: string | undefined; chip?: string | undefined; children: ReactNode } & SessionPriorityProps) {
   return <article className={`rx-panel${sessionDomain ? ` rx-panel-${sessionDomain}` : ""}`}>
     <header className="rx-panel-header">
       <div className="rx-panel-title-row">
-        <div className="rx-panel-copy"><h4>{component.name}</h4>{summary && <span className="rx-panel-summary">{summary}</span>}</div>
-        {(sessionDomain || meta || chip) && <span className="rx-panel-aside">{chip && <span className="rx-panel-chip">{chip}</span>}{sessionDomain && <span className="rx-domain" title={friendlyLabel(sessionDomain)}><svg className="rx-domain-glyph" data-domain-icon={sessionDomain} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{domainIconPath(sessionDomain)}</svg><span>{friendlyLabel(sessionDomain)}</span></span>}{meta && <span className="rx-panel-meta">{meta}</span>}</span>}
+        <div className="rx-panel-copy">{showTitle !== false && <h4>{name}</h4>}{summary && <span className="rx-panel-summary">{summary}</span>}</div>
+        {(sessionDomain || meta || chip || keySession) && <span className="rx-panel-aside">{chip && <span className="rx-panel-chip">{chip}</span>}{keySession && <span className="rx-key-session"><T>{"Key Session"}</T></span>}{sessionDomain && <span className="rx-domain" title={friendlyLabel(sessionDomain)}><svg className="rx-domain-glyph" data-domain-icon={sessionDomain} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{domainIconPath(sessionDomain)}</svg><span>{friendlyLabel(sessionDomain)}</span></span>}{meta && <span className="rx-panel-meta">{meta}</span>}</span>}
       </div>
     </header>
     {children}
   </article>;
 }
 
-function StrengthPrescription({ component, sessionDomain, summary, meta }: { component: PlanComponent & { prescription: Extract<PlanComponent["prescription"], { kind: "strength" }> }; sessionDomain?: TemplateComponentDomain | null | undefined; summary?: string | undefined; meta?: string | undefined }) {
+function StrengthPrescription({ prescription, name, showTitle, sessionDomain, summary, meta, keySession }: { prescription: PrescriptionByDomain["strength"]; name: string; showTitle?: boolean | undefined; sessionDomain?: TemplateComponentDomain | null | undefined; summary?: string | undefined; meta?: string | undefined } & SessionPriorityProps) {
   const { language } = useLanguage();
-  const exerciseCount = component.prescription.exercises.length;
-  return <PrescriptionPanel component={component} sessionDomain={sessionDomain} summary={summary ?? (currentLanguage() === "zh-CN" ? `${exerciseCount} 个动作` : `${exerciseCount} ${exerciseCount === 1 ? "exercise" : "exercises"}`)} meta={meta}>
-    <div className="rx-table rx-strength-table" role="table" aria-label={`${component.name} exercises`}>
+  const exerciseCount = prescription.blocks.length;
+  return <PrescriptionPanel name={name} showTitle={showTitle} sessionDomain={sessionDomain} summary={summary ?? (currentLanguage() === "zh-CN" ? `${exerciseCount} 个动作` : `${exerciseCount} ${exerciseCount === 1 ? "exercise" : "exercises"}`)} meta={meta} keySession={keySession}>
+    <div className="rx-table rx-strength-table" role="table" aria-label={`${name} exercises`}>
       <div className="rx-table-row rx-table-header" role="row">
         <span role="columnheader">#</span><span role="columnheader"><T>{"Exercise"}</T></span><span role="columnheader"><T>{"Sets × Reps"}</T></span><span role="columnheader"><T>{"Effort"}</T></span><span role="columnheader"><T>{"Rest"}</T></span><span role="columnheader"><T>{"Notes"}</T></span>
       </div>
       <div role="rowgroup">
-        {component.prescription.exercises.map((exercise, index) => {
+        {prescription.blocks.map((exercise, index) => {
           const movement = exercise.classification.primaryMovement?.value;
           const reps = exercise.repsMin === exercise.repsMax ? exercise.repsMin : `${exercise.repsMin}–${exercise.repsMax}`;
           const load = exercise.referenceLoad == null ? null : `${exercise.referenceLoad}${exercise.referenceLoadUnit ? ` ${exercise.referenceLoadUnit}` : ""}`;
@@ -69,7 +71,7 @@ function StrengthPrescription({ component, sessionDomain, summary, meta }: { com
 }
 
 function EnduranceStepCells({ step, includePhase = false }: { step: EnduranceStep; includePhase?: boolean }) {
-  const targets = [step.heartRateZone, step.rpe ? `RPE ${step.rpe}` : null, step.pace ? `Pace ${step.pace}` : null, step.powerWatts ? `Power ${step.powerWatts}` : null, step.cadence ? `Cadence ${step.cadence}` : null];
+  const targets = [step.heartRateZone ? `Zone ${step.heartRateZone}` : null, step.rpe ? `RPE ${step.rpe}` : null, step.pace ? `Pace ${step.pace}` : null, step.powerWatts ? `Power ${step.powerWatts}` : null, step.cadence ? `Cadence ${step.cadence}` : null];
   const notes = [step.talkTest || null, step.notes || null];
   return <>
     {includePhase
@@ -81,15 +83,15 @@ function EnduranceStepCells({ step, includePhase = false }: { step: EnduranceSte
   </>;
 }
 
-function EndurancePrescription({ component, sessionDomain, summary, meta }: { component: PlanComponent & { prescription: Extract<PlanComponent["prescription"], { kind: "endurance" }> }; sessionDomain?: TemplateComponentDomain | null | undefined; summary?: string | undefined; meta?: string | undefined }) {
-  const moduleCount = component.prescription.segments.length;
-  return <PrescriptionPanel component={component} sessionDomain={sessionDomain} summary={summary ?? (currentLanguage() === "zh-CN" ? `${moduleCount} 个模块` : `${moduleCount} ${moduleCount === 1 ? "module" : "modules"}`)} meta={meta}>
-    <div className="rx-table rx-endurance-table" role="table" aria-label={`${component.name} modules`}>
+function EndurancePrescription({ prescription, name, showTitle, sessionDomain, summary, meta, keySession }: { prescription: PrescriptionByDomain["endurance"]; name: string; showTitle?: boolean | undefined; sessionDomain?: TemplateComponentDomain | null | undefined; summary?: string | undefined; meta?: string | undefined } & SessionPriorityProps) {
+  const moduleCount = prescription.blocks.length;
+  return <PrescriptionPanel name={name} showTitle={showTitle} sessionDomain={sessionDomain} summary={summary ?? (currentLanguage() === "zh-CN" ? `${moduleCount} 个模块` : `${moduleCount} ${moduleCount === 1 ? "module" : "modules"}`)} meta={meta} keySession={keySession}>
+    <div className="rx-table rx-endurance-table" role="table" aria-label={`${name} modules`}>
       <div className="rx-table-row rx-table-header" role="row">
         <span role="columnheader"><T>{"Module"}</T></span><span role="columnheader"><T>{"Prescription"}</T></span><span role="columnheader"><T>{"Duration"}</T></span><span role="columnheader"><T>{"Effort"}</T></span><span role="columnheader"><T>{"Notes"}</T></span>
       </div>
       <div role="rowgroup">
-        {component.prescription.segments.map((segment, index) => segment.type === "repeat"
+        {prescription.blocks.map((segment, index) => segment.type === "repeat"
           ? <div className="rx-repeat-group" key={`${segment.name}-${index}`}>
             <div className="rx-table-row rx-endurance-row rx-repeat-summary" role="row">
               <span className="rx-index" data-label="Module" role="cell">{index + 1}</span>
@@ -113,19 +115,20 @@ function EndurancePrescription({ component, sessionDomain, summary, meta }: { co
 
 const blockColumns = { sport_skill: { column: "Drill", noun: "drill" }, mind_body: { column: "Technique", noun: "technique" }, mobility: { column: "Movement", noun: "movement" }, functional: { column: "Movement", noun: "movement" } } as const;
 
-function BlockList({ prescription }: { prescription: Extract<PlanComponent["prescription"], { kind: "sport_skill" | "mobility" | "mind_body" | "functional" }> }) {
-  if (prescription.kind === "sport_skill") return <div className="rx-blocks"><strong>{friendlyLabel(prescription.sessionType)}</strong>{prescription.blocks.map((block, index) => <div className="rx-block" key={`${block.name}-${index}`}><b>{friendlyLabel(block.role)} · {block.name}</b><span>{[block.durationMinutes ? `${block.durationMinutes} min` : null, block.intensity].filter(Boolean).join(" · ")}</span>{block.instructions && <small>{block.instructions}</small>}</div>)}</div>;
+function BlockList({ prescription, sessionDomain }: { sessionDomain?: TemplateComponentDomain | null | undefined; prescription: PrescriptionByDomain["sport_skill" | "mobility" | "mind_body" | "functional"] }) {
+  const sport = prescription as PrescriptionByDomain["sport_skill"];
+  if (sessionDomain === "sport_skill") return <div className="rx-blocks"><strong>{friendlyLabel(sport.sessionType)}</strong>{sport.blocks.map((block, index) => <div className="rx-block" key={`${block.name}-${index}`}><b>{friendlyLabel(block.role)} · {block.name}</b><span>{[block.durationMinutes ? `${block.durationMinutes} min` : null, block.intensity].filter(Boolean).join(" · ")}</span>{block.instructions && <small>{block.instructions}</small>}</div>)}</div>;
   return <div className="rx-blocks">{prescription.blocks.map((block, index) => <div className="rx-block" key={`${block.name}-${index}`}><b>{block.name}</b>{block.durationMinutes && <span>{block.durationMinutes} min</span>}{block.instructions && <small>{block.instructions}</small>}</div>)}</div>;
 }
 
-function BlocksPrescription({ component, sessionDomain, summary, meta }: { component: PlanComponent & { prescription: Extract<PlanComponent["prescription"], { kind: "sport_skill" | "mobility" | "mind_body" | "functional" }> }; sessionDomain?: TemplateComponentDomain | null | undefined; summary?: string | undefined; meta?: string | undefined }) {
-  const prescription = component.prescription;
-  const isSport = prescription.kind === "sport_skill";
+function BlocksPrescription({ prescription, name, showTitle, sessionDomain, summary, meta, keySession }: { prescription: PrescriptionByDomain["sport_skill" | "mobility" | "mind_body" | "functional"]; name: string; showTitle?: boolean | undefined; sessionDomain?: TemplateComponentDomain | null | undefined; summary?: string | undefined; meta?: string | undefined } & SessionPriorityProps) {
+  const isSport = sessionDomain === "sport_skill";
+  const sport = prescription as PrescriptionByDomain["sport_skill"];
   const blocks = prescription.blocks;
   const count = blocks.length;
-  const { column, noun } = blockColumns[prescription.kind];
-  return <PrescriptionPanel component={component} sessionDomain={sessionDomain} summary={summary ?? `${count} ${count === 1 ? noun : `${noun}s`}`} meta={meta} chip={isSport ? friendlyLabel(prescription.sessionType) : undefined}>
-    <div className={`rx-table rx-blocks-table${isSport ? "" : " rx-blocks-table-plain"}`} role="table" aria-label={`${component.name} blocks`}>
+  const { column, noun } = blockColumns[sessionDomain === "sport_skill" || sessionDomain === "mind_body" || sessionDomain === "mobility" ? sessionDomain : "functional"];
+  return <PrescriptionPanel name={name} showTitle={showTitle} sessionDomain={sessionDomain} summary={summary ?? `${count} ${count === 1 ? noun : `${noun}s`}`} meta={meta} chip={isSport ? friendlyLabel(sport.sessionType) : undefined} keySession={keySession}>
+    <div className={`rx-table rx-blocks-table${isSport ? "" : " rx-blocks-table-plain"}`} role="table" aria-label={`${name} blocks`}>
       <div className="rx-table-row rx-table-header" role="row">
         <span role="columnheader">#</span><span role="columnheader">{column}</span><span role="columnheader"><T>{"Duration"}</T></span>{isSport && <span role="columnheader"><T>{"Intensity"}</T></span>}<span role="columnheader"><T>{"Notes"}</T></span>
       </div>
@@ -142,22 +145,28 @@ function BlocksPrescription({ component, sessionDomain, summary, meta }: { compo
   </PrescriptionPanel>;
 }
 
-export function Prescription({ component, sessionDomain, variant = "detailed", fallbackNotes, summary, meta }: { component: PlanComponent; sessionDomain?: TemplateComponentDomain | null | undefined; variant?: "detailed" | "compact"; fallbackNotes?: string | undefined; summary?: string | undefined; meta?: string | undefined }) {
-  const prescription = component.prescription;
-  if (prescription.kind === "strength") {
-    if (variant === "compact") return <><strong>{component.name}</strong><ul>{prescription.exercises.map((exercise) => <li key={exercise.id}>{exerciseName(exercise.canonicalKey, exercise.displayName, currentLanguage())}<span>{exercise.sets} × {exercise.repsMin === exercise.repsMax ? exercise.repsMin : `${exercise.repsMin}–${exercise.repsMax}`}</span></li>)}</ul></>;
-    return <StrengthPrescription component={component as PlanComponent & { prescription: typeof prescription }} sessionDomain={sessionDomain} summary={summary} meta={meta}/>;
+export function Prescription({ prescription, name, showTitle, sessionDomain, variant = "detailed", fallbackNotes, summary, meta, keySession }: { prescription: SessionPrescription | null; name: string; showTitle?: boolean | undefined; sessionDomain?: TemplateComponentDomain | null | undefined; variant?: "detailed" | "compact"; fallbackNotes?: string | undefined; summary?: string | undefined; meta?: string | undefined } & SessionPriorityProps) {
+  if (prescription === null) {
+    const empty = <p className="rx-empty"><T>{"No structured prescription is available for this session."}</T></p>;
+    return variant === "detailed" ? <PrescriptionPanel name={name} showTitle={showTitle} sessionDomain={sessionDomain} summary={summary} meta={meta} keySession={keySession}><div className="rx-simple-content">{empty}</div></PrescriptionPanel> : empty;
   }
-  if (prescription.kind === "endurance") {
-    if (variant === "detailed") return <EndurancePrescription component={component as PlanComponent & { prescription: typeof prescription }} sessionDomain={sessionDomain} summary={summary} meta={meta}/>;
-    return <ol className="rx-segments compact">{prescription.segments.map((segment, index) => segment.type === "repeat"
+  if (sessionDomain === "strength") {
+    const strength = prescription as PrescriptionByDomain["strength"];
+    if (variant === "compact") return <>{showTitle !== false && <strong>{name}</strong>}<ul>{strength.blocks.map((exercise) => <li key={exercise.id}>{exerciseName(exercise.canonicalKey, exercise.displayName, currentLanguage())}<span>{exercise.sets} × {exercise.repsMin === exercise.repsMax ? exercise.repsMin : `${exercise.repsMin}–${exercise.repsMax}`}</span></li>)}</ul></>;
+    return <StrengthPrescription prescription={strength} name={name} showTitle={showTitle} sessionDomain={sessionDomain} summary={summary} meta={meta} keySession={keySession}/>;
+  }
+  if (sessionDomain === "endurance") {
+    const endurance = prescription as PrescriptionByDomain["endurance"];
+    if (variant === "detailed") return <EndurancePrescription prescription={endurance} name={name} showTitle={showTitle} sessionDomain={sessionDomain} summary={summary} meta={meta} keySession={keySession}/>;
+    return <ol className="rx-segments compact">{endurance.blocks.map((segment, index) => segment.type === "repeat"
       ? <li className="rx-repeat" key={`${segment.name}-${index}`}><strong>{segment.repetitions} × {segment.name}</strong><div><span>Work · {segment.work.name}</span><CompactEnduranceTargets step={segment.work}/>{segment.recovery && <><span>Recovery · {segment.recovery.name}</span><CompactEnduranceTargets step={segment.recovery}/></>}</div>{segment.notes && <small>{segment.notes}</small>}</li>
       : <li key={`${segment.name}-${index}`}><strong>{friendlyLabel(segment.role)} · {segment.name}</strong><CompactEnduranceTargets step={segment}/></li>)}</ol>;
   }
-  if ("blocks" in prescription) {
-    if (variant === "detailed") return <BlocksPrescription component={component as PlanComponent & { prescription: typeof prescription }} sessionDomain={sessionDomain} summary={summary} meta={meta}/>;
-    return <BlockList prescription={prescription}/>;
+  if (sessionDomain === "sport_skill" || sessionDomain === "mobility" || sessionDomain === "mind_body" || sessionDomain === "functional") {
+    const blocks = prescription as PrescriptionByDomain["sport_skill" | "mobility" | "mind_body" | "functional"];
+    if (variant === "detailed") return <BlocksPrescription prescription={blocks} name={name} showTitle={showTitle} sessionDomain={sessionDomain} summary={summary} meta={meta} keySession={keySession}/>;
+    return <BlockList prescription={blocks} sessionDomain={sessionDomain}/>;
   }
-  const legacy = <p className="rx-legacy">{prescription.notes || fallbackNotes || "No structured prescription is available."}</p>;
-  return variant === "detailed" ? <PrescriptionPanel component={component} sessionDomain={sessionDomain} summary={summary} meta={meta}><div className="rx-simple-content">{legacy}</div></PrescriptionPanel> : legacy;
+  const unavailable = <p className="rx-empty">{fallbackNotes || "No structured prescription is available for this session."}</p>;
+  return variant === "detailed" ? <PrescriptionPanel name={name} showTitle={showTitle} sessionDomain={sessionDomain} summary={summary} meta={meta} keySession={keySession}>{unavailable}</PrescriptionPanel> : unavailable;
 }

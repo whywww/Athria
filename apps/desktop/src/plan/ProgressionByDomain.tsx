@@ -1,5 +1,5 @@
 import { T, tr } from "../i18n";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { friendlyLabel, type Mesocycle } from "../view-models";
 import { domainIconPath } from "../domain-icons";
 import "./target.css";
@@ -8,6 +8,7 @@ type Domain = Mesocycle["domainProgressions"][number]["domain"];
 type Phases = Mesocycle["domainProgressions"][number]["phases"];
 
 const VISIBLE_PHASES = 3;
+const EXPANDED_STORAGE_KEY = "athria:plan:progression-by-domain:expanded";
 
 export interface ProgressionByDomainProps {
   progressions: Mesocycle["domainProgressions"];
@@ -29,6 +30,10 @@ function DomainIcon({ domain }: { domain: Domain }) {
 
 function ArrowIcon({ className = "" }: { className?: string }) {
   return <LineIcon className={className}><path d="m9 6 6 6-6 6"/></LineIcon>;
+}
+
+function Chevron({ open }: { open: boolean }) {
+  return <LineIcon className={`pdb-chevron${open ? " is-open" : ""}`}><path d="m7 9.5 5 5 5-5"/></LineIcon>;
 }
 
 function DomainTrack({ domain, phases, currentWeek, onSelectPhase }: {
@@ -95,16 +100,32 @@ function DomainTrack({ domain, phases, currentWeek, onSelectPhase }: {
 }
 
 export function ProgressionByDomain({ progressions, currentWeek, onSelectPhase }: ProgressionByDomainProps) {
+  const panelId = useId();
+  const [open, setOpen] = useState(() => {
+    try { return localStorage.getItem(EXPANDED_STORAGE_KEY) !== "false"; } catch { return true; }
+  });
+  const toggleOpen = () => {
+    const next = !open;
+    setOpen(next);
+    try { localStorage.setItem(EXPANDED_STORAGE_KEY, String(next)); } catch { /* Keep the toggle usable when storage is unavailable. */ }
+  };
   return (
-    <section className="pdb-section">
-      <h3 className="pdb-heading"><T>{"Progression by Domain"}</T></h3>
-      <p className="pdb-subheading"><T>{"Training phases and focus for each domain"}</T></p>
-      <div className="pdb-domains">
+    <section className="pdb-section" data-collapsed={open ? undefined : "true"}>
+      <h3 className="pdb-heading">
+        <button type="button" className="pdb-toggle" aria-expanded={open} aria-controls={panelId} onClick={toggleOpen}>
+          <span className="pdb-heading-text">
+            <span className="pdb-heading-title"><T>{"Progression by Domain"}</T></span>
+            <span className="pdb-subheading"><T>{"Training phases and focus for each domain"}</T></span>
+          </span>
+          <Chevron open={open}/>
+        </button>
+      </h3>
+      {open && <div className="pdb-domains" id={panelId}>
         {progressions.map((progression) => {
           const phases = [...progression.phases].sort((left, right) => left.startWeek - right.startWeek);
           return <DomainTrack key={progression.domain} domain={progression.domain} phases={phases} currentWeek={currentWeek} onSelectPhase={onSelectPhase}/>;
         })}
-      </div>
+      </div>}
     </section>
   );
 }

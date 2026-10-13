@@ -1,0 +1,1547 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "intent": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "domain": {
+          "type": "string",
+          "const": "strength"
+        },
+        "nodes": {
+          "minItems": 1,
+          "maxItems": 30,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "primary",
+                  "secondary",
+                  "accessory",
+                  "trunk"
+                ]
+              },
+              "optional": {
+                "type": "boolean",
+                "const": true
+              },
+              "variables": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "exercise_selection",
+                    "sets",
+                    "repetitions",
+                    "duration",
+                    "load",
+                    "rpe",
+                    "rest",
+                    "tempo",
+                    "alternatives"
+                  ]
+                }
+              },
+              "optionalVariables": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "exercise_selection",
+                    "sets",
+                    "repetitions",
+                    "duration",
+                    "load",
+                    "rpe",
+                    "rest",
+                    "tempo",
+                    "alternatives"
+                  ]
+                }
+              },
+              "movementPatternIds": {
+                "minItems": 1,
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "squat",
+                    "hinge",
+                    "lunge",
+                    "step",
+                    "bridge_hip_thrust",
+                    "horizontal_push",
+                    "vertical_push",
+                    "horizontal_pull",
+                    "vertical_pull",
+                    "shoulder_abduction",
+                    "shoulder_external_rotation",
+                    "elbow_flexion",
+                    "elbow_extension",
+                    "knee_extension",
+                    "knee_flexion",
+                    "hip_abduction",
+                    "hip_adduction",
+                    "calf_raise",
+                    "dorsiflexion",
+                    "carry",
+                    "rotation",
+                    "anti_rotation",
+                    "trunk_flexion",
+                    "trunk_extension",
+                    "lateral_flexion",
+                    "anti_extension",
+                    "anti_lateral_flexion",
+                    "jump",
+                    "throw",
+                    "locomotion",
+                    "olympic_lift",
+                    "isolation",
+                    "other"
+                  ]
+                }
+              },
+              "targetMuscleIds": {
+                "minItems": 1,
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "chest",
+                    "upper_back",
+                    "back",
+                    "lats",
+                    "shoulders",
+                    "arms",
+                    "biceps",
+                    "triceps",
+                    "forearms",
+                    "quadriceps",
+                    "hamstrings",
+                    "thighs",
+                    "hips",
+                    "glutes",
+                    "calves",
+                    "lower_legs",
+                    "core",
+                    "spinal_erectors",
+                    "hip_flexors",
+                    "adductors",
+                    "abductors",
+                    "full_body",
+                    "other",
+                    "pectoralis_major_clavicular",
+                    "pectoralis_major_sternal",
+                    "latissimus_dorsi",
+                    "trapezius_upper",
+                    "trapezius_middle_lower",
+                    "rhomboids",
+                    "anterior_deltoid",
+                    "lateral_deltoid",
+                    "posterior_deltoid",
+                    "rotator_cuff",
+                    "biceps_brachii",
+                    "brachialis",
+                    "triceps_brachii",
+                    "forearm_flexors",
+                    "forearm_extensors",
+                    "gluteus_maximus",
+                    "gluteus_medius",
+                    "gluteus_minimus",
+                    "gastrocnemius",
+                    "soleus",
+                    "tibialis_anterior",
+                    "rectus_abdominis",
+                    "obliques",
+                    "transverse_abdominis"
+                  ]
+                }
+              },
+              "matchPolicy": {
+                "type": "string",
+                "const": "all"
+              }
+            },
+            "required": [
+              "role",
+              "variables"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "origin": {
+          "type": "string",
+          "const": "user"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "intent",
+        "domain",
+        "nodes",
+        "origin",
+        "revision"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "intent": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "domain": {
+          "type": "string",
+          "const": "endurance"
+        },
+        "nodes": {
+          "minItems": 1,
+          "maxItems": 30,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "warm_up",
+                  "steady",
+                  "repeat_work_recovery",
+                  "cool_down"
+                ]
+              },
+              "optional": {
+                "type": "boolean",
+                "const": true
+              },
+              "variables": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "repetitions",
+                    "duration",
+                    "distance",
+                    "pace",
+                    "heart_rate_zone",
+                    "power",
+                    "cadence",
+                    "rpe",
+                    "talk_test",
+                    "terrain",
+                    "strides",
+                    "recovery_mode"
+                  ]
+                }
+              },
+              "optionalVariables": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "repetitions",
+                    "duration",
+                    "distance",
+                    "pace",
+                    "heart_rate_zone",
+                    "power",
+                    "cadence",
+                    "rpe",
+                    "talk_test",
+                    "terrain",
+                    "strides",
+                    "recovery_mode"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "role",
+              "variables"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "origin": {
+          "type": "string",
+          "const": "user"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "intent",
+        "domain",
+        "nodes",
+        "origin",
+        "revision"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "intent": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "domain": {
+          "type": "string",
+          "const": "sport_skill"
+        },
+        "nodes": {
+          "minItems": 1,
+          "maxItems": 30,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "preparation",
+                  "technical",
+                  "tactical",
+                  "small_sided_game",
+                  "match",
+                  "competition",
+                  "conditioning",
+                  "cool_down"
+                ]
+              },
+              "optional": {
+                "type": "boolean",
+                "const": true
+              },
+              "variables": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "drill",
+                    "participants",
+                    "position",
+                    "duration",
+                    "intensity",
+                    "instructions"
+                  ]
+                }
+              },
+              "optionalVariables": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "drill",
+                    "participants",
+                    "position",
+                    "duration",
+                    "intensity",
+                    "instructions"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "role",
+              "variables"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "origin": {
+          "type": "string",
+          "const": "user"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "intent",
+        "domain",
+        "nodes",
+        "origin",
+        "revision"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "intent": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "domain": {
+          "type": "string",
+          "const": "mobility"
+        },
+        "nodes": {
+          "minItems": 1,
+          "maxItems": 30,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "down_regulation",
+                  "mobility",
+                  "easy_movement"
+                ]
+              },
+              "optional": {
+                "type": "boolean",
+                "const": true
+              },
+              "variables": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "body_region",
+                    "movement",
+                    "duration",
+                    "intensity",
+                    "instructions"
+                  ]
+                }
+              },
+              "optionalVariables": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "body_region",
+                    "movement",
+                    "duration",
+                    "intensity",
+                    "instructions"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "role",
+              "variables"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "origin": {
+          "type": "string",
+          "const": "user"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "intent",
+        "domain",
+        "nodes",
+        "origin",
+        "revision"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "intent": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "domain": {
+          "type": "string",
+          "const": "mind_body"
+        },
+        "nodes": {
+          "minItems": 1,
+          "maxItems": 30,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "centering",
+                  "practice_flow",
+                  "breathing",
+                  "down_regulation"
+                ]
+              },
+              "optional": {
+                "type": "boolean",
+                "const": true
+              },
+              "variables": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "technique",
+                    "duration",
+                    "intensity",
+                    "instructions"
+                  ]
+                }
+              },
+              "optionalVariables": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "technique",
+                    "duration",
+                    "intensity",
+                    "instructions"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "role",
+              "variables"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "origin": {
+          "type": "string",
+          "const": "user"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "intent",
+        "domain",
+        "nodes",
+        "origin",
+        "revision"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "intent": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "domain": {
+          "type": "string",
+          "const": "functional"
+        },
+        "nodes": {
+          "minItems": 1,
+          "maxItems": 30,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "primary",
+                  "secondary",
+                  "accessory",
+                  "trunk",
+                  "warm_up",
+                  "steady",
+                  "repeat_work_recovery",
+                  "cool_down"
+                ]
+              },
+              "optional": {
+                "type": "boolean",
+                "const": true
+              },
+              "variables": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "exercise_selection",
+                    "sets",
+                    "load",
+                    "rest",
+                    "tempo",
+                    "alternatives",
+                    "repetitions",
+                    "duration",
+                    "distance",
+                    "pace",
+                    "heart_rate_zone",
+                    "power",
+                    "cadence",
+                    "rpe",
+                    "talk_test",
+                    "terrain",
+                    "strides",
+                    "recovery_mode"
+                  ]
+                }
+              },
+              "optionalVariables": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "exercise_selection",
+                    "sets",
+                    "load",
+                    "rest",
+                    "tempo",
+                    "alternatives",
+                    "repetitions",
+                    "duration",
+                    "distance",
+                    "pace",
+                    "heart_rate_zone",
+                    "power",
+                    "cadence",
+                    "rpe",
+                    "talk_test",
+                    "terrain",
+                    "strides",
+                    "recovery_mode"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "role",
+              "variables"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "origin": {
+          "type": "string",
+          "const": "user"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "intent",
+        "domain",
+        "nodes",
+        "origin",
+        "revision"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "intent": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "domain": {
+          "type": "string",
+          "const": "strength"
+        },
+        "nodes": {
+          "minItems": 1,
+          "maxItems": 30,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "primary",
+                  "secondary",
+                  "accessory",
+                  "trunk"
+                ]
+              },
+              "optional": {
+                "type": "boolean",
+                "const": true
+              },
+              "variables": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "exercise_selection",
+                    "sets",
+                    "repetitions",
+                    "duration",
+                    "load",
+                    "rpe",
+                    "rest",
+                    "tempo",
+                    "alternatives"
+                  ]
+                }
+              },
+              "optionalVariables": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "exercise_selection",
+                    "sets",
+                    "repetitions",
+                    "duration",
+                    "load",
+                    "rpe",
+                    "rest",
+                    "tempo",
+                    "alternatives"
+                  ]
+                }
+              },
+              "movementPatternIds": {
+                "minItems": 1,
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "squat",
+                    "hinge",
+                    "lunge",
+                    "step",
+                    "bridge_hip_thrust",
+                    "horizontal_push",
+                    "vertical_push",
+                    "horizontal_pull",
+                    "vertical_pull",
+                    "shoulder_abduction",
+                    "shoulder_external_rotation",
+                    "elbow_flexion",
+                    "elbow_extension",
+                    "knee_extension",
+                    "knee_flexion",
+                    "hip_abduction",
+                    "hip_adduction",
+                    "calf_raise",
+                    "dorsiflexion",
+                    "carry",
+                    "rotation",
+                    "anti_rotation",
+                    "trunk_flexion",
+                    "trunk_extension",
+                    "lateral_flexion",
+                    "anti_extension",
+                    "anti_lateral_flexion",
+                    "jump",
+                    "throw",
+                    "locomotion",
+                    "olympic_lift",
+                    "isolation",
+                    "other"
+                  ]
+                }
+              },
+              "targetMuscleIds": {
+                "minItems": 1,
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "chest",
+                    "upper_back",
+                    "back",
+                    "lats",
+                    "shoulders",
+                    "arms",
+                    "biceps",
+                    "triceps",
+                    "forearms",
+                    "quadriceps",
+                    "hamstrings",
+                    "thighs",
+                    "hips",
+                    "glutes",
+                    "calves",
+                    "lower_legs",
+                    "core",
+                    "spinal_erectors",
+                    "hip_flexors",
+                    "adductors",
+                    "abductors",
+                    "full_body",
+                    "other",
+                    "pectoralis_major_clavicular",
+                    "pectoralis_major_sternal",
+                    "latissimus_dorsi",
+                    "trapezius_upper",
+                    "trapezius_middle_lower",
+                    "rhomboids",
+                    "anterior_deltoid",
+                    "lateral_deltoid",
+                    "posterior_deltoid",
+                    "rotator_cuff",
+                    "biceps_brachii",
+                    "brachialis",
+                    "triceps_brachii",
+                    "forearm_flexors",
+                    "forearm_extensors",
+                    "gluteus_maximus",
+                    "gluteus_medius",
+                    "gluteus_minimus",
+                    "gastrocnemius",
+                    "soleus",
+                    "tibialis_anterior",
+                    "rectus_abdominis",
+                    "obliques",
+                    "transverse_abdominis"
+                  ]
+                }
+              },
+              "matchPolicy": {
+                "type": "string",
+                "const": "all"
+              }
+            },
+            "required": [
+              "role",
+              "variables"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "origin": {
+          "type": "string",
+          "const": "builtin"
+        },
+        "catalogVersion": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "intent",
+        "domain",
+        "nodes",
+        "origin",
+        "catalogVersion"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "intent": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "domain": {
+          "type": "string",
+          "const": "endurance"
+        },
+        "nodes": {
+          "minItems": 1,
+          "maxItems": 30,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "warm_up",
+                  "steady",
+                  "repeat_work_recovery",
+                  "cool_down"
+                ]
+              },
+              "optional": {
+                "type": "boolean",
+                "const": true
+              },
+              "variables": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "repetitions",
+                    "duration",
+                    "distance",
+                    "pace",
+                    "heart_rate_zone",
+                    "power",
+                    "cadence",
+                    "rpe",
+                    "talk_test",
+                    "terrain",
+                    "strides",
+                    "recovery_mode"
+                  ]
+                }
+              },
+              "optionalVariables": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "repetitions",
+                    "duration",
+                    "distance",
+                    "pace",
+                    "heart_rate_zone",
+                    "power",
+                    "cadence",
+                    "rpe",
+                    "talk_test",
+                    "terrain",
+                    "strides",
+                    "recovery_mode"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "role",
+              "variables"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "origin": {
+          "type": "string",
+          "const": "builtin"
+        },
+        "catalogVersion": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "intent",
+        "domain",
+        "nodes",
+        "origin",
+        "catalogVersion"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "intent": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "domain": {
+          "type": "string",
+          "const": "sport_skill"
+        },
+        "nodes": {
+          "minItems": 1,
+          "maxItems": 30,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "preparation",
+                  "technical",
+                  "tactical",
+                  "small_sided_game",
+                  "match",
+                  "competition",
+                  "conditioning",
+                  "cool_down"
+                ]
+              },
+              "optional": {
+                "type": "boolean",
+                "const": true
+              },
+              "variables": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "drill",
+                    "participants",
+                    "position",
+                    "duration",
+                    "intensity",
+                    "instructions"
+                  ]
+                }
+              },
+              "optionalVariables": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "drill",
+                    "participants",
+                    "position",
+                    "duration",
+                    "intensity",
+                    "instructions"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "role",
+              "variables"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "origin": {
+          "type": "string",
+          "const": "builtin"
+        },
+        "catalogVersion": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "intent",
+        "domain",
+        "nodes",
+        "origin",
+        "catalogVersion"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "intent": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "domain": {
+          "type": "string",
+          "const": "mobility"
+        },
+        "nodes": {
+          "minItems": 1,
+          "maxItems": 30,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "down_regulation",
+                  "mobility",
+                  "easy_movement"
+                ]
+              },
+              "optional": {
+                "type": "boolean",
+                "const": true
+              },
+              "variables": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "body_region",
+                    "movement",
+                    "duration",
+                    "intensity",
+                    "instructions"
+                  ]
+                }
+              },
+              "optionalVariables": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "body_region",
+                    "movement",
+                    "duration",
+                    "intensity",
+                    "instructions"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "role",
+              "variables"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "origin": {
+          "type": "string",
+          "const": "builtin"
+        },
+        "catalogVersion": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "intent",
+        "domain",
+        "nodes",
+        "origin",
+        "catalogVersion"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "intent": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "domain": {
+          "type": "string",
+          "const": "mind_body"
+        },
+        "nodes": {
+          "minItems": 1,
+          "maxItems": 30,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "centering",
+                  "practice_flow",
+                  "breathing",
+                  "down_regulation"
+                ]
+              },
+              "optional": {
+                "type": "boolean",
+                "const": true
+              },
+              "variables": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "technique",
+                    "duration",
+                    "intensity",
+                    "instructions"
+                  ]
+                }
+              },
+              "optionalVariables": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "technique",
+                    "duration",
+                    "intensity",
+                    "instructions"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "role",
+              "variables"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "origin": {
+          "type": "string",
+          "const": "builtin"
+        },
+        "catalogVersion": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "intent",
+        "domain",
+        "nodes",
+        "origin",
+        "catalogVersion"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "intent": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "domain": {
+          "type": "string",
+          "const": "functional"
+        },
+        "nodes": {
+          "minItems": 1,
+          "maxItems": 30,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "primary",
+                  "secondary",
+                  "accessory",
+                  "trunk",
+                  "warm_up",
+                  "steady",
+                  "repeat_work_recovery",
+                  "cool_down"
+                ]
+              },
+              "optional": {
+                "type": "boolean",
+                "const": true
+              },
+              "variables": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "exercise_selection",
+                    "sets",
+                    "load",
+                    "rest",
+                    "tempo",
+                    "alternatives",
+                    "repetitions",
+                    "duration",
+                    "distance",
+                    "pace",
+                    "heart_rate_zone",
+                    "power",
+                    "cadence",
+                    "rpe",
+                    "talk_test",
+                    "terrain",
+                    "strides",
+                    "recovery_mode"
+                  ]
+                }
+              },
+              "optionalVariables": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "exercise_selection",
+                    "sets",
+                    "load",
+                    "rest",
+                    "tempo",
+                    "alternatives",
+                    "repetitions",
+                    "duration",
+                    "distance",
+                    "pace",
+                    "heart_rate_zone",
+                    "power",
+                    "cadence",
+                    "rpe",
+                    "talk_test",
+                    "terrain",
+                    "strides",
+                    "recovery_mode"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "role",
+              "variables"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "origin": {
+          "type": "string",
+          "const": "builtin"
+        },
+        "catalogVersion": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "intent",
+        "domain",
+        "nodes",
+        "origin",
+        "catalogVersion"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

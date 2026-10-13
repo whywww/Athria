@@ -36,16 +36,13 @@ const strengthDay: NextTrainingDay = { reasonCode: null, nextTrainingDay: {
     scheduledDate: "2026-09-24", order: 0, durationMinutes: 45, templateRef: null, phaseRefs: [], recoveryDemand: "normal",
     keySession: false, status: "planned", notes: "", legacySnapshot: false, overrideReason: null,
     domain: "strength",
-    components: [{
-      id: "component-1", name: "Main lifts",
-      prescription: { kind: "strength", exercises: [squat] },
-    }],
+    prescription: { blocks: [squat] },
   }],
 } };
 
 const emptyDay: NextTrainingDay = { reasonCode: null, nextTrainingDay: {
   ...strengthDay.nextTrainingDay!,
-  existingSessions: [{ ...strengthDay.nextTrainingDay!.existingSessions[0]!, id: "session-2", name: "Recovery walk", components: [] }],
+  existingSessions: [{ ...strengthDay.nextTrainingDay!.existingSessions[0]!, id: "session-2", name: "Recovery walk", prescription: null }],
 } };
 
 function render(value: NextTrainingDay) {
@@ -53,6 +50,20 @@ function render(value: NextTrainingDay) {
 }
 
 describe("NextTrainingDayCard", () => {
+  it.each(["en", "zh-CN"])("shows key priority beside each prescription domain in %s", (language) => {
+    vi.stubGlobal("localStorage", { getItem: () => language });
+    const day = strengthDay.nextTrainingDay!;
+    const html = render({ ...strengthDay, nextTrainingDay: { ...day,
+      domainPhases: [{ domain: "strength", phaseId: "base", phaseType: "foundation", name: "Restart" }],
+      existingSessions: [{ ...day.existingSessions[0]!, keySession: true, phaseRefs: [{ domain: "strength", phaseId: "base" }] }],
+    } });
+    const keyLabel = language === "zh-CN" ? "关键训练" : "Key Session";
+    expect(html.split(keyLabel)).toHaveLength(2);
+    expect(html.indexOf(keyLabel)).toBeLessThan(html.indexOf('class="rx-domain"'));
+    expect(html).not.toContain("next-session-labels");
+    expect(render(strengthDay)).not.toContain("rx-key-session");
+    expect(render(strengthDay)).not.toContain(language === "zh-CN" ? "普通训练" : "Regular Session");
+  });
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
@@ -101,7 +112,9 @@ describe("NextTrainingDayCard", () => {
   it("renders the full prescription inline instead of an open-details drawer", () => {
     const html = render(strengthDay);
     expect(html).not.toContain("session-heading");
-    expect(html).toContain("Main lifts");
+    expect(html).toContain("Lower Strength A");
+    expect(html).not.toContain("Main lifts");
+    expect(html.match(/<h4>Lower Strength A<\/h4>/g)).toHaveLength(1);
     expect(html).toContain("Strength");
     expect(html).toContain("Back Squat");
     expect(html).toContain("4 × 5");
@@ -116,19 +129,23 @@ describe("NextTrainingDayCard", () => {
     expect(html).not.toContain("Open details");
   });
 
-  it("passes the same session domain to all prescription kinds", () => {
+  it("renders functional blocks using the session domain", () => {
     const session = strengthDay.nextTrainingDay!.existingSessions[0]!;
     const html = render({ ...strengthDay, nextTrainingDay: { ...strengthDay.nextTrainingDay!, existingSessions: [{
-      ...session, domain: "functional", components: [...session.components, { id: "run", name: "Easy run", prescription: { kind: "endurance", segments: [] } }],
+      ...session, domain: "functional", prescription: { blocks: [] },
     }] } });
-    expect(html.match(/data-domain-icon="functional"/g)).toHaveLength(2);
+    expect(html.match(/data-domain-icon="functional"/g)).toHaveLength(1);
     expect(html).not.toContain('data-domain-icon="strength"');
     expect(html).not.toContain('data-domain-icon="endurance"');
     expect(html).not.toContain('class="component-domain"');
   });
 
-  it("keeps an explicit empty state when a session has no structured components", () => {
+  it("keeps an explicit empty state when a session has no structured prescription", () => {
     const html = render(emptyDay);
+    expect(html).toContain("<h4>Recovery walk</h4>");
+    expect(html).toContain("Maintain squat strength.");
+    expect(html).toContain('data-domain-icon="strength"');
+    expect(html).toContain('class="rx-panel-meta">45 min');
     expect(html).toContain("No structured prescription is available for this session.");
     expect(html).not.toContain("Open details");
   });

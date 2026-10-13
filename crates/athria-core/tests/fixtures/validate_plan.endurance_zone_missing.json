@@ -100,54 +100,46 @@
                 "durationMinutes": 60,
                 "recoveryDemand": "normal",
                 "keySession": false,
-                "components": [
-                  {
-                    "id": "mon-run",
-                    "name": "Endurance",
-                    "prescription": {
-                      "kind": "endurance",
-                      "segments": [
-                        {
-                          "type": "step",
-                          "name": "warm up",
-                          "role": "warm_up",
-                          "heartRateZone": "Zone 1"
-                        },
-                        {
-                          "type": "repeat",
-                          "name": "main set",
-                          "repetitions": 4,
-                          "work": {
-                            "type": "step",
-                            "name": "work interval",
-                            "role": "work",
-                            "heartRateZone": "Zone 4"
-                          },
-                          "recovery": {
-                            "type": "step",
-                            "name": "recover jog",
-                            "role": "recovery"
-                          }
-                        },
-                        {
-                          "type": "step",
-                          "name": "cool down",
-                          "role": "cool_down",
-                          "heartRateZone": "Zone 1"
-                        }
-                      ]
-                    }
-                  }
-                ],
                 "progressionNote": null,
                 "schedulingRationale": null,
                 "legacySnapshot": false,
-                "domain": "endurance"
+                "domain": "endurance",
+                "prescription": {
+                  "blocks": [
+                    {
+                      "type": "step",
+                      "name": "warm up",
+                      "role": "warm_up",
+                      "heartRateZone": "1"
+                    },
+                    {
+                      "type": "repeat",
+                      "name": "main set",
+                      "repetitions": 4,
+                      "work": {
+                        "type": "step",
+                        "name": "work interval",
+                        "role": "work",
+                        "heartRateZone": "4"
+                      },
+                      "recovery": {
+                        "type": "step",
+                        "name": "recover jog",
+                        "role": "recovery"
+                      }
+                    },
+                    {
+                      "type": "step",
+                      "name": "cool down",
+                      "role": "cool_down",
+                      "heartRateZone": "1"
+                    }
+                  ]
+                }
               }
             ]
           }
-        ],
-        "adjustmentRules": []
+        ]
       },
       "effectiveStartDate": "2026-09-07"
     },
@@ -157,24 +149,9 @@
     "valid": true,
     "results": [
       {
-        "enforcement": "blocker",
-        "reasonCode": "COMPONENT_IDS",
         "status": "pass",
-        "rulePackId": "structure",
-        "ruleVersion": "0.3.0",
-        "subjectRefs": [],
-        "evidence": {
-          "componentIds": [
-            "mon-run"
-          ]
-        },
-        "missingFacts": [],
-        "confidenceLimit": null
-      },
-      {
         "enforcement": "blocker",
         "reasonCode": "EXERCISE_IDS",
-        "status": "pass",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -185,9 +162,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "pass",
         "enforcement": "blocker",
         "reasonCode": "MESOCYCLE_SCHEDULE",
-        "status": "pass",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -202,9 +179,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "pass",
         "enforcement": "blocker",
         "reasonCode": "PROFILE_TRAINING_RHYTHM",
-        "status": "pass",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -229,9 +206,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "pass",
         "enforcement": "blocker",
         "reasonCode": "DOMAIN_PROGRESSION",
-        "status": "pass",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -261,9 +238,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "pass",
         "enforcement": "info",
         "reasonCode": "STRENGTH_VOLUME_DISTRIBUTION",
-        "status": "pass",
         "rulePackId": "strength",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -276,9 +253,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "not_applicable",
         "enforcement": "advisory",
         "reasonCode": "STRENGTH_PUSH_PULL_BALANCE",
-        "status": "not_applicable",
         "rulePackId": "strength",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -291,9 +268,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "not_applicable",
         "enforcement": "advisory",
         "reasonCode": "STRENGTH_KNEE_HINGE_BALANCE",
-        "status": "not_applicable",
         "rulePackId": "strength",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -306,9 +283,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "not_applicable",
         "enforcement": "advisory",
         "reasonCode": "STRENGTH_EFFORT_RPE",
-        "status": "not_applicable",
         "rulePackId": "strength",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -320,9 +297,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "fail",
         "enforcement": "advisory",
         "reasonCode": "ENDURANCE_EFFORT_ZONE",
-        "status": "fail",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -338,10 +315,10 @@
     ],
     "dataGaps": [],
     "validatedAt": "2026-09-17T10:30:00.000Z",
-    "inputHash": "fnv1a-ab441874",
+    "inputHash": "fnv1a-bc96c01e",
     "coverage": {
-      "hardChecksResolved": 5,
-      "hardChecksTotal": 5,
+      "hardChecksResolved": 4,
+      "hardChecksTotal": 4,
       "movementFactsResolved": 0,
       "movementFactsTotal": 0,
       "muscleFactsResolved": 0,

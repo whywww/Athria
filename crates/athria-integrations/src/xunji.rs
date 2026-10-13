@@ -7,8 +7,9 @@ use crate::{HttpClient, HttpRequest, invalid};
 pub const XUNJI_PARSER_VERSION: &str = "0.1.0";
 pub const XUNJI_SYNC_DAYS: i64 = 90;
 
+/// Authentication failure message and the requested local date.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct XunjiAuthenticationError(pub String);
+pub struct XunjiAuthenticationError(pub String, pub String);
 
 fn safe_message(value: &Value, fallback: String) -> String {
     value
@@ -86,7 +87,7 @@ pub fn fetch_xunji_training<C: HttpClient>(
                         format!("Xunji returned HTTP {}", response.status),
                     );
                     if auth_failure(response.status, &message) {
-                        return Err(XunjiAuthenticationError(message));
+                        return Err(XunjiAuthenticationError(message, datestr.clone()));
                     }
                     if (response.status == 429
                         || message.to_ascii_lowercase().contains("too frequent")
@@ -107,7 +108,14 @@ pub fn fetch_xunji_training<C: HttpClient>(
                             .and_then(Value::as_array)
                     });
                     if let Some(items) = trains {
-                        records.extend(items.iter().filter(|item| item.is_object()).cloned());
+                        if items.iter().any(|item| !item.is_object() || item.get("datestr").is_some_and(|day| !day.is_null() && !day.as_str().is_some_and(date::is_iso_date))) {
+                            last_message = "Xunji returned an invalid record".into();
+                            break;
+                        }
+                        records.extend(items.iter().cloned().map(|mut item| {
+                            if item.get("datestr").is_none_or(Value::is_null) { item["datestr"] = json!(datestr); }
+                            item
+                        }));
                         successful_dates.push(json!(datestr));
                         completed = true;
                     } else {
@@ -179,7 +187,6 @@ pub fn normalize_xunji_training(record: &Value) -> Result<Value> {
         }).collect();
         kinds.first().copied().flatten().filter(|(_, kind)| kinds.iter().all(|candidate| candidate.is_some_and(|(_, candidate)| candidate == *kind))).map(|(raw, _)| raw)
     };
-    let mut missing = Vec::new();
     let start_ms = finite(object.get("start"))
         .map(|value| {
             if value < 10_000_000_000.0 {
@@ -196,7 +203,6 @@ pub fn normalize_xunji_training(record: &Value) -> Result<Value> {
                 .and_then(|value| tz::millis(value).ok())
         })
         .unwrap_or_else(|| {
-            missing.push(json!("startAt"));
             object
                 .get("datestr")
                 .and_then(Value::as_str)
@@ -214,12 +220,10 @@ pub fn normalize_xunji_training(record: &Value) -> Result<Value> {
         })
         .map(|value| value as i64)
         .unwrap_or_else(|| {
-            missing.push(json!("endAt"));
             start_ms
         });
     if end_ms < start_ms {
         end_ms = start_ms;
-        missing.push(json!("duration"));
     }
     let mut sets = Vec::new();
     for movement in strength {
@@ -290,10 +294,10 @@ pub fn normalize_xunji_training(record: &Value) -> Result<Value> {
     parse_training_session(
         &json!({ "id": format!("xunji:{external}"), "source": "xunji", "externalId": external, "type": kind,
         "name": object.get("title").or_else(|| object.get("name")).and_then(Value::as_str).unwrap_or("Xunji workout"),
-        "startAt": tz::iso_from_millis(start_ms), "endAt": tz::iso_from_millis(end_ms), "durationMinutes": ((end_ms - start_ms) as f64 / 60_000.0).round().max(0.0) as i64,
+        "startAt": tz::iso_from_millis(start_ms), "durationMinutes": ((end_ms - start_ms) as f64 / 60_000.0).round().max(0.0) as i64,
         "status": "completed", "timezone": null, "strengthSets": sets,
         "endurance": if cardio.is_empty() { Value::Null } else { json!({ "distanceMeters": number(distance), "averageHeartRate": number(metric(&["avgHeartRate", "averageHeartRate", "bpm"])),
             "maxHeartRate": number(metric(&["maxHeartRate"])), "averagePowerWatts": number(metric(&["averagePowerWatts", "avgPower"])), "maxPowerWatts": number(metric(&["maxPowerWatts", "maxPower"])), "heartRateZoneSeconds": {} }) },
-        "missingFields": missing }),
+        }),
     )
 }

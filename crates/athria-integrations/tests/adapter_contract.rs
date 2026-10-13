@@ -47,6 +47,59 @@ fn integration_adapter_fixture_matches() {
 }
 
 #[test]
+fn intervals_imports_independent_loads_and_unscaled_intensity() {
+    let mut activity = json!({"id":"loads","start_date":"2026-10-12T11:04:00Z","elapsed_time":3169,
+        "icu_training_load":10,"power_load":0,"hr_load":10.5,"pace_load":5,"icu_intensity":133.70999});
+    let session = normalize_intervals_activity(&activity, "activities", "Asia/Hong_Kong").unwrap().unwrap();
+    for (field, expected) in [("trainingLoad",10.0),("powerLoad",0.0),("hrLoad",10.5),("paceLoad",5.0),("intensity",133.70999)] {
+        assert_eq!(session[field].as_f64(), Some(expected));
+    }
+    activity["icu_training_load"] = Value::Null;
+    activity["power_load"] = json!(-1);
+    activity["hr_load"] = json!("bad");
+    activity.as_object_mut().unwrap().remove("pace_load");
+    activity["icu_intensity"] = json!(-1);
+    let session = normalize_intervals_activity(&activity, "activities", "Asia/Hong_Kong").unwrap().unwrap();
+    for field in athria_core::schema::session::API_SESSION_METRICS { assert_eq!(session[field], Value::Null); }
+}
+
+#[test]
+fn intervals_imports_rpe_and_prefers_reported_session_load() {
+    for (rpe, load, expected_rpe, expected_load) in [
+        (json!(3), json!(118), json!(3), json!(118)),
+        (json!(3), Value::Null, json!(3), json!(159)),
+        (json!(2.5), json!(-1), json!(2.5), json!(132.5)),
+        (json!(0), json!(0), json!(0), json!(0)),
+        (json!(11), json!("bad"), Value::Null, Value::Null),
+        (Value::Null, Value::Null, Value::Null, Value::Null),
+    ] {
+        let activity = json!({ "id": "swim-rpe", "type": "OpenWaterSwim", "start_date": "2026-10-12T11:04:00Z", "elapsed_time": 3169, "icu_rpe": rpe, "session_rpe": load });
+        let session = normalize_intervals_activity(&activity, "activities", "Asia/Hong_Kong").unwrap().unwrap();
+        assert_eq!(session["rpe"], expected_rpe);
+        assert_eq!(session["sessionRpe"], expected_load);
+    }
+}
+
+#[test]
+fn intervals_uses_elapsed_time_for_training_duration() {
+    let activity = json!({ "id": "i196655523", "type": "OpenWaterSwim", "start_date": "2026-10-12T11:04:00Z", "elapsed_time": 3169, "moving_time": 2372, "icu_recording_time": 3168 });
+    let session = normalize_intervals_activity(&activity, "activities", "Asia/Hong_Kong").unwrap().unwrap();
+    assert_eq!(session["durationMinutes"], 53);
+    assert!(session.get("endAt").is_none());
+    for (times, expected) in [
+        (json!({ "elapsed_time": 1800, "icu_recording_time": 1200, "moving_time": 600 }), 30),
+        (json!({ "icu_recording_time": 1200, "moving_time": 600 }), 20),
+        (json!({ "moving_time": 600 }), 10),
+        (json!({ "duration": 45 }), 0),
+    ] {
+        let mut activity = json!({ "id": "duration-priority", "start_date": "2026-10-12T11:04:00Z" });
+        activity.as_object_mut().unwrap().extend(times.as_object().unwrap().clone());
+        let session = normalize_intervals_activity(&activity, "activities", "Asia/Hong_Kong").unwrap().unwrap();
+        assert_eq!(session["durationMinutes"], expected);
+    }
+}
+
+#[test]
 fn intervals_uses_valid_utc_time_then_hong_kong_local_fallback() {
     let cases = [
         ("2026-08-15T17:26:49", "2026-08-15T09:26:49.000Z"),

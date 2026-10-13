@@ -1,6 +1,6 @@
 import { T, tr, currentLanguage } from "../i18n";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { formatDuration, friendlyLabel, type CalendarSession, type CurrentPlan, type StoredSessionTemplate } from "../view-models";
+import { formatDuration, friendlyLabel, type PrescriptionByDomain, type CalendarSession, type CurrentPlan, type StoredSessionTemplate } from "../view-models";
 import { domainIconPath } from "../domain-icons";
 import { currentWeekNumber, formatShortDate, groupSessionsByWeek, type CalendarDay, type CalendarWeek } from "./view";
 import { localizedWeekdayShort, sessionDomains, sessionStatusLabel, sessionTone, type DomainValue } from "./calendar-utils";
@@ -154,9 +154,10 @@ function weekSummary(week: CalendarWeek): string {
     if (domains.includes("mobility")) mobility += 1;
     if (domains.includes("mind_body")) mindBody += 1;
     if (domains.includes("functional")) functionalMinutes += session.durationMinutes;
-    for (const component of session.components) {
-      if (domains.includes("endurance") && component.prescription.kind === "endurance") for (const segment of component.prescription.segments) enduranceMeters += segment.type === "repeat" ? segment.repetitions * (segment.work.distanceMeters ?? 0) + segment.repetitions * (segment.recovery?.distanceMeters ?? 0) : segment.distanceMeters ?? 0;
-      if (domains.includes("strength") && component.prescription.kind === "strength") strengthSets += component.prescription.exercises.reduce((sum, exercise) => sum + exercise.sets, 0);
+    const prescription = session.prescription;
+    if (prescription) {
+      if (domains.includes("endurance")) for (const segment of (prescription as PrescriptionByDomain["endurance"]).blocks) enduranceMeters += segment.type === "repeat" ? segment.repetitions * (segment.work.distanceMeters ?? 0) + segment.repetitions * (segment.recovery?.distanceMeters ?? 0) : segment.distanceMeters ?? 0;
+      if (domains.includes("strength")) strengthSets += (prescription as PrescriptionByDomain["strength"]).blocks.reduce((sum, exercise) => sum + exercise.sets, 0);
     }
   }
   return [enduranceMeters ? `${Math.round(enduranceMeters / 100) / 10} ${zh ? "公里" : "km"}` : enduranceMinutes ? `${enduranceMinutes} ${zh ? "分钟" : "min"}` : null, strengthSets ? `${strengthSets} ${zh ? "组" : "sets"}` : null, sport ? `${sport} ${zh ? "次运动技能训练" : "sport"}` : null, mobility ? `${mobility} ${zh ? "次活动度训练" : "mobility"}` : null, mindBody ? `${mindBody} ${zh ? "次身心训练" : "mind-body"}` : null, functionalMinutes ? `${functionalMinutes} ${zh ? "分钟功能训练" : "min functional"}` : null].filter(Boolean).join(" · ");

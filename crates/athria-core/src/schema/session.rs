@@ -1,8 +1,8 @@
 //! `trainingSessionSchema` and its nested shapes.
 //!
-//! Training-session schema parsing and normalization. A parsed session is
-//! a 22-key document in schema declaration order — the order every stored
-//! `training_sessions.data` row and every session response serializes in.
+//! Source-observation parsing and normalization. Observations retain singular
+//! source identities for importing. Canonical history replaces those identities
+//! with priority-ordered `sources` during reconciliation.
 
 use serde_json::{Map, Value};
 
@@ -11,6 +11,7 @@ use crate::Result;
 
 const TIME_PRECISIONS: [&str; 2] = ["exact", "date_only"];
 const WEIGHT_UNITS: [&str; 2] = ["kg", "lb"];
+pub const API_SESSION_METRICS: [&str; 5] = ["trainingLoad", "powerLoad", "hrLoad", "paceLoad", "intensity"];
 
 /// `trainingSessionSchema.parse(value)`.
 pub fn parse_training_session(value: &Value) -> Result<Value> {
@@ -45,13 +46,22 @@ pub fn parse_training_session(value: &Value) -> Result<Value> {
         Value::String(required_text(value, "startAt", "session")?),
     );
     session.insert(
-        "endAt".into(),
-        Value::String(required_text(value, "endAt", "session")?),
-    );
-    session.insert(
         "durationMinutes".into(),
         Value::from(required_int(value, "durationMinutes", "session")?),
     );
+    let rpe = session_metric(value, "rpe", Some(10.0))?;
+    let supplied_load = if matches!(session["source"].as_str(), Some("intervals" | "xunji")) {
+        session_metric(value, "sessionRpe", None)?
+    } else { None };
+    let load = supplied_load.or_else(|| rpe.map(|rpe| rpe * session["durationMinutes"].as_i64().unwrap() as f64));
+    session.insert("rpe".into(), rpe.map(crate::js_number).unwrap_or(Value::Null));
+    session.insert("sessionRpe".into(), load.map(crate::js_number).unwrap_or(Value::Null));
+    for key in API_SESSION_METRICS {
+        let metric = if matches!(session["source"].as_str(), Some("intervals" | "xunji")) {
+            session_metric(value, key, None)?
+        } else { None };
+        session.insert(key.into(), metric.map(crate::js_number).unwrap_or(Value::Null));
+    }
     session.insert(
         "status".into(),
         Value::String(enum_or(value, "status", &["completed"], "completed")),
@@ -81,8 +91,14 @@ pub fn parse_training_session(value: &Value) -> Result<Value> {
     );
     session.insert("strengthSets".into(), parse_strength_sets(value));
     session.insert("endurance".into(), parse_endurance(value));
-    session.insert("missingFields".into(), string_array(value, "missingFields"));
     Ok(Value::Object(session))
+}
+
+fn session_metric(value: &Value, key: &str, maximum: Option<f64>) -> Result<Option<f64>> {
+    let Some(value) = value.get(key).filter(|value| !value.is_null()) else { return Ok(None); };
+    let number = value.as_f64().filter(|number| number.is_finite() && *number >= 0.0 && maximum.is_none_or(|max| *number <= max))
+        .ok_or_else(|| invalid(&format!("session.{key}"), "expected a finite number in the allowed range"))?;
+    Ok(Some(number))
 }
 
 fn string_array(value: &Value, key: &str) -> Value {
@@ -228,6 +244,34 @@ mod tests {
     }
 
     #[test]
+    fn session_rpe_validates_and_calculates_without_using_set_rpe() {
+        for (rpe, supplied, expected) in [
+            (serde_json::json!(3), serde_json::json!(118), serde_json::json!(118)),
+            (serde_json::json!(3), Value::Null, serde_json::json!(180)),
+            (serde_json::json!(0), Value::Null, serde_json::json!(0)),
+            (serde_json::json!(2.5), Value::Null, serde_json::json!(150)),
+            (Value::Null, Value::Null, Value::Null),
+            (Value::Null, serde_json::json!(0), serde_json::json!(0)),
+        ] {
+            let mut input = write_payload();
+            input["source"] = serde_json::json!("intervals");
+            input["rpe"] = rpe.clone();
+            input["sessionRpe"] = supplied;
+            let parsed = parse_training_session(&input).unwrap();
+            assert_eq!(parsed["rpe"], rpe);
+            assert_eq!(parsed["sessionRpe"], expected);
+        }
+        for (field, value) in [("rpe", serde_json::json!(11)), ("rpe", serde_json::json!(-1)), ("rpe", serde_json::json!("bad")), ("sessionRpe", serde_json::json!(-1))] {
+            let mut input = write_payload(); input["source"] = serde_json::json!("intervals"); input[field] = value;
+            assert!(parse_training_session(&input).is_err());
+        }
+        let mut manual = write_payload();
+        manual["rpe"] = serde_json::json!(3);
+        manual["sessionRpe"] = serde_json::json!(999);
+        assert_eq!(parse_training_session(&manual).unwrap()["sessionRpe"], serde_json::json!(180));
+    }
+
+    #[test]
     fn sessions_are_rebuilt_in_schema_order() {
         let session = parse_training_session(&write_payload()).unwrap();
         assert_eq!(
@@ -247,8 +291,15 @@ mod tests {
                 "domains",
                 "name",
                 "startAt",
-                "endAt",
+
                 "durationMinutes",
+                "rpe",
+                "sessionRpe",
+                "trainingLoad",
+                "powerLoad",
+                "hrLoad",
+                "paceLoad",
+                "intensity",
                 "status",
                 "timezone",
                 "plannedSessionId",
@@ -257,8 +308,7 @@ mod tests {
                 "planMatch",
                 "isPlanMatchExcluded",
                 "strengthSets",
-                "endurance",
-                "missingFields"
+                "endurance"
             ]
         );
         assert_eq!(session["ownerId"], json!(crate::DEFAULT_OWNER_ID));
@@ -298,7 +348,7 @@ mod tests {
         for key in [
             "name",
             "startAt",
-            "endAt",
+
             "durationMinutes",
             "id",
         ] {

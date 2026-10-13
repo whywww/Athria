@@ -116,147 +116,140 @@
                 "durationMinutes": 60,
                 "recoveryDemand": "normal",
                 "keySession": false,
-                "components": [
-                  {
-                    "id": "mon-lower",
-                    "name": "Strength",
-                    "prescription": {
-                      "kind": "strength",
-                      "exercises": [
-                        {
-                          "id": "back-squat",
-                          "displayName": "back-squat",
-                          "canonicalKey": null,
-                          "classification": {
-                            "primaryMovement": {
-                              "value": "squat",
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            },
-                            "primaryMuscles": {
-                              "value": [
-                                "quadriceps"
-                              ],
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            },
-                            "secondaryMuscles": {
-                              "value": [
-                                "glutes"
-                              ],
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            },
-                            "equipment": {
-                              "value": [
-                                "barbell"
-                              ],
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            },
-                            "impact": {
-                              "value": "moderate",
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            },
-                            "laterality": {
-                              "value": "bilateral",
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            }
-                          },
-                          "sets": 4,
-                          "repsMin": 5,
-                          "repsMax": 8,
-                          "targetRpe": 8,
-                          "restSeconds": 150,
-                          "referenceLoad": 100,
-                          "referenceLoadUnit": "kg",
-                          "notes": ""
-                        },
-                        {
-                          "id": "romanian-deadlift",
-                          "displayName": "romanian-deadlift",
-                          "canonicalKey": null,
-                          "classification": {
-                            "primaryMovement": {
-                              "value": "hinge",
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            },
-                            "primaryMuscles": {
-                              "value": [
-                                "hamstrings"
-                              ],
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            },
-                            "secondaryMuscles": {
-                              "value": [
-                                "glutes"
-                              ],
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            },
-                            "equipment": {
-                              "value": [
-                                "barbell"
-                              ],
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            },
-                            "impact": {
-                              "value": "moderate",
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            },
-                            "laterality": {
-                              "value": "bilateral",
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            }
-                          },
-                          "sets": 4,
-                          "repsMin": 5,
-                          "repsMax": 8,
-                          "targetRpe": 8,
-                          "restSeconds": 150,
-                          "referenceLoad": 100,
-                          "referenceLoadUnit": "kg",
-                          "notes": ""
-                        }
-                      ]
-                    }
-                  }
-                ],
                 "progressionNote": null,
                 "schedulingRationale": null,
                 "legacySnapshot": false,
-                "domain": "strength"
+                "domain": "strength",
+                "prescription": {
+                  "blocks": [
+                    {
+                      "id": "back-squat",
+                      "displayName": "back-squat",
+                      "canonicalKey": null,
+                      "classification": {
+                        "primaryMovement": {
+                          "value": "squat",
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        },
+                        "primaryMuscles": {
+                          "value": [
+                            "quadriceps"
+                          ],
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        },
+                        "secondaryMuscles": {
+                          "value": [
+                            "glutes"
+                          ],
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        },
+                        "equipment": {
+                          "value": [
+                            "barbell"
+                          ],
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        },
+                        "impact": {
+                          "value": "moderate",
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        },
+                        "laterality": {
+                          "value": "bilateral",
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        }
+                      },
+                      "sets": 4,
+                      "repsMin": 5,
+                      "repsMax": 8,
+                      "targetRpe": 8,
+                      "restSeconds": 150,
+                      "referenceLoad": 100,
+                      "referenceLoadUnit": "kg",
+                      "notes": ""
+                    },
+                    {
+                      "id": "romanian-deadlift",
+                      "displayName": "romanian-deadlift",
+                      "canonicalKey": null,
+                      "classification": {
+                        "primaryMovement": {
+                          "value": "hinge",
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        },
+                        "primaryMuscles": {
+                          "value": [
+                            "hamstrings"
+                          ],
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        },
+                        "secondaryMuscles": {
+                          "value": [
+                            "glutes"
+                          ],
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        },
+                        "equipment": {
+                          "value": [
+                            "barbell"
+                          ],
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        },
+                        "impact": {
+                          "value": "moderate",
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        },
+                        "laterality": {
+                          "value": "bilateral",
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        }
+                      },
+                      "sets": 4,
+                      "repsMin": 5,
+                      "repsMax": 8,
+                      "targetRpe": 8,
+                      "restSeconds": 150,
+                      "referenceLoad": 100,
+                      "referenceLoadUnit": "kg",
+                      "notes": ""
+                    }
+                  ]
+                }
               },
               {
                 "id": "fri-strength",
@@ -269,152 +262,144 @@
                 "durationMinutes": 60,
                 "recoveryDemand": "normal",
                 "keySession": false,
-                "components": [
-                  {
-                    "id": "fri-upper",
-                    "name": "Strength",
-                    "prescription": {
-                      "kind": "strength",
-                      "exercises": [
-                        {
-                          "id": "bench-press",
-                          "displayName": "bench-press",
-                          "canonicalKey": null,
-                          "classification": {
-                            "primaryMovement": {
-                              "value": "horizontal_push",
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            },
-                            "primaryMuscles": {
-                              "value": [
-                                "chest"
-                              ],
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            },
-                            "secondaryMuscles": {
-                              "value": [
-                                "triceps"
-                              ],
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            },
-                            "equipment": {
-                              "value": [
-                                "barbell"
-                              ],
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            },
-                            "impact": {
-                              "value": "moderate",
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            },
-                            "laterality": {
-                              "value": "bilateral",
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            }
-                          },
-                          "sets": 4,
-                          "repsMin": 5,
-                          "repsMax": 8,
-                          "targetRpe": 8,
-                          "restSeconds": 150,
-                          "referenceLoad": 100,
-                          "referenceLoadUnit": "kg",
-                          "notes": ""
-                        },
-                        {
-                          "id": "barbell-row",
-                          "displayName": "barbell-row",
-                          "canonicalKey": null,
-                          "classification": {
-                            "primaryMovement": {
-                              "value": "horizontal_pull",
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            },
-                            "primaryMuscles": {
-                              "value": [
-                                "upper_back"
-                              ],
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            },
-                            "secondaryMuscles": {
-                              "value": [
-                                "biceps"
-                              ],
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            },
-                            "equipment": {
-                              "value": [
-                                "barbell"
-                              ],
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            },
-                            "impact": {
-                              "value": "moderate",
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            },
-                            "laterality": {
-                              "value": "bilateral",
-                              "source": "user_confirmed",
-                              "confidence": 1,
-                              "evidence": "golden fixture",
-                              "taxonomyVersion": "strength-2.0"
-                            }
-                          },
-                          "sets": 4,
-                          "repsMin": 5,
-                          "repsMax": 8,
-                          "targetRpe": 8,
-                          "restSeconds": 150,
-                          "referenceLoad": 100,
-                          "referenceLoadUnit": "kg",
-                          "notes": ""
-                        }
-                      ]
-                    }
-                  }
-                ],
                 "progressionNote": null,
                 "schedulingRationale": null,
                 "legacySnapshot": false,
-                "domain": "strength"
+                "domain": "strength",
+                "prescription": {
+                  "blocks": [
+                    {
+                      "id": "bench-press",
+                      "displayName": "bench-press",
+                      "canonicalKey": null,
+                      "classification": {
+                        "primaryMovement": {
+                          "value": "horizontal_push",
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        },
+                        "primaryMuscles": {
+                          "value": [
+                            "chest"
+                          ],
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        },
+                        "secondaryMuscles": {
+                          "value": [
+                            "triceps"
+                          ],
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        },
+                        "equipment": {
+                          "value": [
+                            "barbell"
+                          ],
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        },
+                        "impact": {
+                          "value": "moderate",
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        },
+                        "laterality": {
+                          "value": "bilateral",
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        }
+                      },
+                      "sets": 4,
+                      "repsMin": 5,
+                      "repsMax": 8,
+                      "targetRpe": 8,
+                      "restSeconds": 150,
+                      "referenceLoad": 100,
+                      "referenceLoadUnit": "kg",
+                      "notes": ""
+                    },
+                    {
+                      "id": "barbell-row",
+                      "displayName": "barbell-row",
+                      "canonicalKey": null,
+                      "classification": {
+                        "primaryMovement": {
+                          "value": "horizontal_pull",
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        },
+                        "primaryMuscles": {
+                          "value": [
+                            "upper_back"
+                          ],
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        },
+                        "secondaryMuscles": {
+                          "value": [
+                            "biceps"
+                          ],
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        },
+                        "equipment": {
+                          "value": [
+                            "barbell"
+                          ],
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        },
+                        "impact": {
+                          "value": "moderate",
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        },
+                        "laterality": {
+                          "value": "bilateral",
+                          "source": "user_confirmed",
+                          "confidence": 1,
+                          "evidence": "golden fixture",
+                          "taxonomyVersion": "strength-2.0"
+                        }
+                      },
+                      "sets": 4,
+                      "repsMin": 5,
+                      "repsMax": 8,
+                      "targetRpe": 8,
+                      "restSeconds": 150,
+                      "referenceLoad": 100,
+                      "referenceLoadUnit": "kg",
+                      "notes": ""
+                    }
+                  ]
+                }
               }
             ]
           }
-        ],
-        "adjustmentRules": []
+        ]
       },
       "effectiveStartDate": "2026-09-07"
     },
@@ -424,25 +409,9 @@
     "valid": false,
     "results": [
       {
-        "enforcement": "blocker",
-        "reasonCode": "COMPONENT_IDS",
         "status": "pass",
-        "rulePackId": "structure",
-        "ruleVersion": "0.3.0",
-        "subjectRefs": [],
-        "evidence": {
-          "componentIds": [
-            "mon-lower",
-            "fri-upper"
-          ]
-        },
-        "missingFacts": [],
-        "confidenceLimit": null
-      },
-      {
         "enforcement": "blocker",
         "reasonCode": "EXERCISE_IDS",
-        "status": "pass",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -458,9 +427,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "pass",
         "enforcement": "blocker",
         "reasonCode": "MESOCYCLE_SCHEDULE",
-        "status": "pass",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -476,9 +445,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "pass",
         "enforcement": "blocker",
         "reasonCode": "PROFILE_TRAINING_RHYTHM",
-        "status": "pass",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -506,9 +475,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "fail",
         "enforcement": "blocker",
         "reasonCode": "DOMAIN_PROGRESSION",
-        "status": "fail",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -552,9 +521,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "pass",
         "enforcement": "blocker",
         "reasonCode": "SESSION_STRENGTH_PRESCRIPTION",
-        "status": "pass",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [
@@ -567,14 +536,13 @@
         "confidenceLimit": null
       },
       {
+        "status": "pass",
         "enforcement": "blocker",
         "reasonCode": "EXERCISE_EQUIPMENT",
-        "status": "pass",
         "rulePackId": "constraints",
         "ruleVersion": "0.3.0",
         "subjectRefs": [
           "mon-strength",
-          "mon-lower",
           "back-squat"
         ],
         "evidence": {
@@ -623,14 +591,13 @@
         }
       },
       {
+        "status": "pass",
         "enforcement": "blocker",
         "reasonCode": "EXERCISE_EQUIPMENT",
-        "status": "pass",
         "rulePackId": "constraints",
         "ruleVersion": "0.3.0",
         "subjectRefs": [
           "mon-strength",
-          "mon-lower",
           "romanian-deadlift"
         ],
         "evidence": {
@@ -679,9 +646,9 @@
         }
       },
       {
+        "status": "pass",
         "enforcement": "blocker",
         "reasonCode": "SESSION_STRENGTH_PRESCRIPTION",
-        "status": "pass",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [
@@ -694,14 +661,13 @@
         "confidenceLimit": null
       },
       {
+        "status": "pass",
         "enforcement": "blocker",
         "reasonCode": "EXERCISE_EQUIPMENT",
-        "status": "pass",
         "rulePackId": "constraints",
         "ruleVersion": "0.3.0",
         "subjectRefs": [
           "fri-strength",
-          "fri-upper",
           "bench-press"
         ],
         "evidence": {
@@ -750,14 +716,13 @@
         }
       },
       {
+        "status": "pass",
         "enforcement": "blocker",
         "reasonCode": "EXERCISE_EQUIPMENT",
-        "status": "pass",
         "rulePackId": "constraints",
         "ruleVersion": "0.3.0",
         "subjectRefs": [
           "fri-strength",
-          "fri-upper",
           "barbell-row"
         ],
         "evidence": {
@@ -806,9 +771,9 @@
         }
       },
       {
+        "status": "pass",
         "enforcement": "info",
         "reasonCode": "STRENGTH_VOLUME_DISTRIBUTION",
-        "status": "pass",
         "rulePackId": "strength",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -835,9 +800,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "pass",
         "enforcement": "advisory",
         "reasonCode": "STRENGTH_PUSH_PULL_BALANCE",
-        "status": "pass",
         "rulePackId": "strength",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -850,9 +815,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "pass",
         "enforcement": "advisory",
         "reasonCode": "STRENGTH_KNEE_HINGE_BALANCE",
-        "status": "pass",
         "rulePackId": "strength",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -865,9 +830,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "pass",
         "enforcement": "advisory",
         "reasonCode": "STRENGTH_EFFORT_RPE",
-        "status": "pass",
         "rulePackId": "strength",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -879,9 +844,9 @@
         "confidenceLimit": null
       },
       {
+        "status": "not_applicable",
         "enforcement": "advisory",
         "reasonCode": "ENDURANCE_EFFORT_ZONE",
-        "status": "not_applicable",
         "rulePackId": "structure",
         "ruleVersion": "0.3.0",
         "subjectRefs": [],
@@ -895,10 +860,10 @@
     ],
     "dataGaps": [],
     "validatedAt": "2026-09-17T10:30:00.000Z",
-    "inputHash": "fnv1a-0fa70042",
+    "inputHash": "fnv1a-71068986",
     "coverage": {
-      "hardChecksResolved": 11,
-      "hardChecksTotal": 11,
+      "hardChecksResolved": 10,
+      "hardChecksTotal": 10,
       "movementFactsResolved": 4,
       "movementFactsTotal": 4,
       "muscleFactsResolved": 4,

@@ -215,53 +215,16 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
             _ => false,
         };
 
-        let mut component_ids: Vec<String> = Vec::new();
-        let mut exercise_ids: Vec<String> = Vec::new();
-        for session in &prescriptions {
-            for component in array_field(session, "components") {
-                component_ids.push(string_field(component, "id").to_string());
-                let prescription = field(component, "prescription");
-                if string_field(prescription, "kind") == "strength" {
-                    for exercise in array_field(prescription, "exercises") {
-                        exercise_ids.push(string_field(exercise, "id").to_string());
-                    }
-                }
-            }
-        }
-        let component_ids_unique = prescriptions.iter().all(|session| {
-            let ids: Vec<&str> = array_field(session, "components")
-                .iter()
-                .map(|component| string_field(component, "id"))
-                .collect();
-            unique(&ids)
-        });
+        let exercise_ids: Vec<&str> = prescriptions.iter()
+            .filter(|session| crate::training_type::session_domain(session) == Some("strength"))
+            .flat_map(|session| array_field(field(session, "prescription"), "blocks"))
+            .map(|exercise| string_field(exercise, "id")).collect();
         let exercise_ids_unique = prescriptions.iter().all(|session| {
-            let ids: Vec<&str> = array_field(session, "components")
-                .iter()
-                .flat_map(|component| {
-                    let prescription = field(component, "prescription");
-                    if string_field(prescription, "kind") == "strength" {
-                        array_field(prescription, "exercises")
-                            .iter()
-                            .map(|exercise| string_field(exercise, "id"))
-                            .collect::<Vec<_>>()
-                    } else {
-                        Vec::new()
-                    }
-                })
-                .collect();
+            if crate::training_type::session_domain(session) != Some("strength") { return true; }
+            let ids: Vec<&str> = array_field(field(session, "prescription"), "blocks").iter()
+                .map(|exercise| string_field(exercise, "id")).collect();
             unique(&ids)
         });
-        results.push(rule(
-            "blocker",
-            "COMPONENT_IDS",
-            if component_ids_unique { "pass" } else { "fail" },
-            &[],
-            json!({ "componentIds": component_ids }),
-            &[],
-            Value::Null,
-            "structure",
-        ));
         results.push(rule(
             "blocker",
             "EXERCISE_IDS",
@@ -371,17 +334,16 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
                 data_gaps.push(json!({"code":"SESSION_DOMAIN_MISSING","subjectRef":session_id,"factPath":"domain","requiredByRuleCodes":[],"blocking":false,"resolution":"agent_infer"}));
             }
             if crate::training_type::session_domain(session) == Some("strength") {
-                let has_strength = array_field(session, "components").iter().any(|component| component["prescription"]["kind"] == "strength");
+                let has_strength = session["prescription"]["blocks"].as_array().is_some_and(|blocks| !blocks.is_empty() && blocks.iter().all(|block| block.get("sets").is_some() && block.get("classification").is_some()));
                 results.push(rule("blocker", "SESSION_STRENGTH_PRESCRIPTION", if has_strength { "pass" } else { "fail" }, &[session_id], json!({"hasStrengthPrescription":has_strength}), &[], Value::Null, "structure"));
             }
-            for component in array_field(session, "components") {
-                let component_id = string_field(component, "id");
-                let prescription = field(component, "prescription");
-                let prescription_kind = string_field(prescription, "kind");
-                if prescription_kind != "strength" {
+            {
+                let prescription = field(session, "prescription");
+                if prescription.is_null() { continue; }
+                if crate::training_type::session_domain(session) != Some("strength") {
                     continue;
                 }
-                for exercise in array_field(prescription, "exercises") {
+                for exercise in array_field(prescription, "blocks") {
                     let exercise_id = string_field(exercise, "id");
                     let classification = field(exercise, "classification");
                     let movement = field(classification, "primaryMovement");
@@ -445,7 +407,7 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
                         "blocker",
                         "EXERCISE_EQUIPMENT",
                         equipment_status,
-                        &[session_id, component_id, exercise_id],
+                        &[session_id, exercise_id],
                         json!({
                             "required": equipment_values,
                             "available": field(profile, "equipment"),
@@ -515,12 +477,13 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
         let mut strength_exercises: Vec<&Value> = Vec::new();
         let mut endurance_steps: Vec<&Value> = Vec::new();
         for session in &prescriptions {
-            for component in array_field(session, "components") {
-                let prescription = field(component, "prescription");
-                match string_field(prescription, "kind") {
-                    "strength" => strength_exercises.extend(array_field(prescription, "exercises")),
+            {
+                let prescription = field(session, "prescription");
+                if prescription.is_null() { continue; }
+                match crate::training_type::session_domain(session).unwrap_or("") {
+                    "strength" => strength_exercises.extend(array_field(prescription, "blocks")),
                     "endurance" => {
-                        for segment in array_field(prescription, "segments") {
+                        for segment in array_field(prescription, "blocks") {
                             if string_field(segment, "type") == "repeat" {
                                 endurance_steps.push(field(segment, "work"));
                                 let recovery = field(segment, "recovery");
@@ -688,11 +651,7 @@ mod tests {
             "recoveryDemand": "high",
             "durationMinutes": 45,
             "domain": "mobility",
-            "components": [{
-                "id": format!("{id}-recovery"),
-                "name": "Recovery",
-                "prescription": { "kind": "duration_only", "notes": "" },
-            }],
+            "prescription": {"blocks":[]},
         })
     }
 
@@ -712,7 +671,6 @@ mod tests {
                 "focus": null,
                 "sessions": [high_session("mon-1", "2026-09-07"), high_session("wed-1", "2026-09-09")],
             }],
-            "adjustmentRules": [],
         })
     }
 
@@ -813,14 +771,14 @@ mod tests {
     }
     #[test]
     fn prescriptions_support_mobility_mind_body_and_functional_content() {
-        for (domain, kind) in [("mobility","mobility"),("mind_body","mind_body"),("functional","functional"),("functional","strength"),("functional","endurance")] {
+        for (domain, kind) in [("mobility","mobility"),("mind_body","mind_body"),("functional","functional")] {
             let mut mesocycle = two_high_session_plan();
             for session in mesocycle["weeks"][0]["sessions"].as_array_mut().unwrap() {
                 session["domain"] = json!(domain);
-                session["components"][0]["prescription"] = match kind {
-                    "strength" => json!({"kind":kind,"exercises":[]}),
-                    "endurance" => json!({"kind":kind,"segments":[]}),
-                    _ => json!({"kind":kind,"blocks":[]}),
+                session["prescription"] = match kind {
+                    "strength" => json!({"blocks":[]}),
+                    "endurance" => json!({"blocks":[]}),
+                    _ => json!({"blocks":[]}),
                 };
             }
             mesocycle["domainProgressions"][0]["domain"] = json!(domain);

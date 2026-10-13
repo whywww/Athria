@@ -16,7 +16,6 @@
         "sport": null,
         "name": "m-1",
         "startAt": "2026-09-07T08:00:00Z",
-        "endAt": "2026-09-07T08:45:00Z",
         "durationMinutes": 45,
         "status": "completed",
         "timezone": null,
@@ -65,7 +64,7 @@
         "formulaVersion": "0.2.0",
         "timeRange": {
           "start": "2026-09-07T08:00:00Z",
-          "end": "2026-09-07T08:45:00Z"
+          "end": "2026-09-07T08:45:00.000Z"
         },
         "dataQuality": {
           "completeness": 1,
@@ -86,7 +85,7 @@
         "formulaVersion": "0.2.0",
         "timeRange": {
           "start": "2026-09-07T08:00:00Z",
-          "end": "2026-09-07T08:45:00Z"
+          "end": "2026-09-07T08:45:00.000Z"
         },
         "dataQuality": {
           "completeness": 1,
@@ -109,7 +108,7 @@
         "formulaVersion": "0.2.0",
         "timeRange": {
           "start": "2026-09-07T08:00:00Z",
-          "end": "2026-09-07T08:45:00Z"
+          "end": "2026-09-07T08:45:00.000Z"
         },
         "dataQuality": {
           "completeness": 1,
@@ -128,7 +127,7 @@
         "formulaVersion": "0.2.0",
         "timeRange": {
           "start": "2026-09-07T08:00:00Z",
-          "end": "2026-09-07T08:45:00Z"
+          "end": "2026-09-07T08:45:00.000Z"
         },
         "dataQuality": {
           "completeness": 1,
@@ -151,7 +150,7 @@
         "formulaVersion": "0.2.0",
         "timeRange": {
           "start": "2026-09-07T08:00:00Z",
-          "end": "2026-09-07T08:45:00Z"
+          "end": "2026-09-07T08:45:00.000Z"
         },
         "dataQuality": {
           "completeness": 1,
@@ -172,7 +171,7 @@
         "formulaVersion": "0.2.0",
         "timeRange": {
           "start": "2026-09-07T08:00:00Z",
-          "end": "2026-09-07T08:45:00Z"
+          "end": "2026-09-07T08:45:00.000Z"
         },
         "dataQuality": {
           "completeness": 1,
@@ -191,7 +190,7 @@
         "formulaVersion": "0.2.0",
         "timeRange": {
           "start": "2026-09-07T08:00:00Z",
-          "end": "2026-09-07T08:45:00Z"
+          "end": "2026-09-07T08:45:00.000Z"
         },
         "dataQuality": {
           "completeness": 1,
@@ -214,7 +213,7 @@
         "formulaVersion": "0.2.0",
         "timeRange": {
           "start": "2026-09-07T08:00:00Z",
-          "end": "2026-09-07T08:45:00Z"
+          "end": "2026-09-07T08:45:00.000Z"
         },
         "dataQuality": {
           "completeness": 1,

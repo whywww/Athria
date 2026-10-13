@@ -8,7 +8,7 @@ const START = "2026-09-07";
 function session(scheduledDate: string, weekNumber: number, id = `${scheduledDate}-${weekNumber}`): CalendarSession {
   return {
     id, occurrenceId: `occ-${id}`, revision: 0, scheduledDate, order: 0, weekNumber, phaseRefs: [{ domain: "strength", phaseId: "base" }], templateRef: { source: "builtin", id: "full-body", catalogVersion: "2.0" },
-    name: "Full body", intent: "Build strength", durationMinutes: 60, recoveryDemand: "normal", keySession: false, progressionNote: null, schedulingRationale: null, status: "planned", components: [],
+    name: "Full body", intent: "Build strength", durationMinutes: 60, recoveryDemand: "normal", keySession: false, progressionNote: null, schedulingRationale: null, status: "planned", prescription: null,
     legacySnapshot: false, overrideReason: null,
   };
 }

@@ -146,8 +146,8 @@ fn duplicate_score(left: &Value, right: &Value) -> Result<Option<f64>> {
     }
     let left_start = timestamp_millis(left, "startAt")?;
     let right_start = timestamp_millis(right, "startAt")?;
-    let left_end = timestamp_millis(left, "endAt")?;
-    let right_end = timestamp_millis(right, "endAt")?;
+    let left_end = left_start + integer(left, "durationMinutes") * 60_000;
+    let right_end = right_start + integer(right, "durationMinutes") * 60_000;
     let start_difference = (left_start - right_start).abs() as f64 / 60_000.0;
     let overlap = (left_end.min(right_end) - left_start.max(right_start)).max(0);
     let shorter = (left_end - left_start)
@@ -252,7 +252,6 @@ fn information_score(session: &Value) -> i64 {
     if !array(session, "domains").is_empty() {
         score += 3;
     }
-    score -= array(session, "missingFields").len() as i64;
     score
 }
 
@@ -267,12 +266,15 @@ fn representative_session(cluster: &[Observation]) -> &Value {
     cluster
         .iter()
         .min_by(|left, right| {
-            information_score(&right.session)
-                .cmp(&information_score(&left.session))
-                .then_with(|| js_locale_compare(&left.id, &right.id))
+            observation_priority(&left.session, &left.id, &right.session, &right.id)
         })
         .map(|observation| &observation.session)
         .expect("clusters always contain at least one observation")
+}
+
+fn observation_priority(left: &Value, left_id: &str, right: &Value, right_id: &str) -> Ordering {
+    information_score(right).cmp(&information_score(left))
+        .then_with(|| js_locale_compare(left_id, right_id))
 }
 
 fn cluster_observations(observations: &[Observation]) -> Result<Vec<Vec<Observation>>> {
@@ -401,14 +403,9 @@ fn cluster_observations(observations: &[Observation]) -> Result<Vec<Vec<Observat
 
 fn planned_content_score(planned: &Value, actual: &Value) -> Result<f64> {
     let mut planned_exercises: BTreeSet<String> = BTreeSet::new();
-    for component in array(planned, "components") {
-        let Some(prescription) = component.get("prescription") else {
-            continue;
-        };
-        if text_or(prescription, "kind", "") != "strength" {
-            continue;
-        }
-        for exercise in array(prescription, "exercises") {
+    let prescription = &planned["prescription"];
+    if text_or(prescription, "kind", "") == "strength" {
+        for exercise in array(prescription, "blocks") {
             if let Some(name) =
                 text(exercise, "canonicalKey").or_else(|| text(exercise, "displayName"))
             {
@@ -497,7 +494,7 @@ impl SqliteStore {
     pub(crate) fn source_summaries(&self, owner_id: &str) -> Result<HashMap<String, Vec<Value>>> {
         let mut statement = self
             .sqlite()
-            .prepare("SELECT training_session_id, source, external_id FROM training_session_sources WHERE owner_id = ?1 ORDER BY source, external_id")
+            .prepare("SELECT training_session_id, source, external_id, id, data FROM training_session_sources WHERE owner_id = ?1")
             .map_err(database_error)?;
         let rows = statement
             .query_map(params![owner_id], |row| {
@@ -505,17 +502,23 @@ impl SqliteStore {
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
                     row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
                 ))
             })
             .map_err(database_error)?;
-        let mut summaries: HashMap<String, Vec<Value>> = HashMap::new();
+        let mut observations: HashMap<String, Vec<(String, Value, Value)>> = HashMap::new();
         for row in rows {
-            let (training_session_id, source, external_id) = row.map_err(database_error)?;
-            summaries
+            let (training_session_id, source, external_id, id, data) = row.map_err(database_error)?;
+            observations
                 .entry(training_session_id)
                 .or_default()
-                .push(json!({ "source": source, "externalId": external_id }));
+                .push((id, parse_json_column(&data)?, json!({ "source": source, "externalId": external_id })));
         }
+        let summaries = observations.into_iter().map(|(id, mut entries)| {
+            entries.sort_by(|left, right| observation_priority(&left.1, &left.0, &right.1, &right.0));
+            (id, entries.into_iter().map(|entry| entry.2).collect())
+        }).collect();
         Ok(summaries)
     }
 
@@ -550,6 +553,10 @@ impl SqliteStore {
                 "stored training session is not a JSON object",
             ));
         };
+        fields.entry("rpe").or_insert(Value::Null);
+        fields.entry("sessionRpe").or_insert(Value::Null);
+        for key in athria_core::schema::session::API_SESSION_METRICS { fields.entry(key).or_insert(Value::Null); }
+        fields.remove("endAt");
 
         fields.insert(
             "plannedSessionId".to_string(),
@@ -565,8 +572,15 @@ impl SqliteStore {
         let summary = sources
             .get(&id)
             .cloned()
-            .unwrap_or_else(|| vec![json!({ "source": text_or(session, "source", ""), "externalId": text_or(session, "externalId", "") })]);
+            .unwrap_or_else(|| {
+                let stored = array(session, "sources");
+                if !stored.is_empty() { stored.to_vec() }
+                else if let (Some(source), Some(external_id)) = (text(session, "source"), text(session, "externalId")) {
+                    vec![json!({ "source": source, "externalId": external_id })]
+                } else { Vec::new() }
+            });
         fields.insert("sources".to_string(), Value::Array(summary));
+        fields.retain(|key, _| !matches!(key.as_str(), "source" | "externalId" | "missingFields"));
         fields.insert(
             "isPlanMatchExcluded".to_string(),
             Value::Bool(excluded.contains(&id)),
@@ -608,10 +622,10 @@ impl SqliteStore {
     ) -> Result<Vec<Value>> {
         let mut statement = self
             .sqlite()
-            .prepare("SELECT data, training_session_id FROM training_session_sources WHERE owner_id = ?1 AND source = ?2 AND (?3 IS NULL OR start_at >= ?3) ORDER BY start_at DESC")
+            .prepare(if since.is_some() { "SELECT data, training_session_id FROM training_session_sources WHERE owner_id = ?1 AND source = ?2 AND start_at >= ?3 ORDER BY start_at DESC" } else { "SELECT data, training_session_id FROM training_session_sources WHERE owner_id = ?1 AND source = ?2 ORDER BY start_at DESC" })
             .map_err(database_error)?;
         let rows = statement
-            .query_map(params![owner_id, source, since], |row| {
+            .query_map(rusqlite::params_from_iter([owner_id, source].into_iter().chain(since)), |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
             })
             .map_err(database_error)?;
@@ -625,6 +639,11 @@ impl SqliteStore {
                 .cloned()
                 .unwrap_or(Value::Null);
             let mut projected = session.clone();
+            projected.as_object_mut().unwrap().remove("endAt");
+            projected.as_object_mut().unwrap().remove("missingFields");
+            projected.as_object_mut().unwrap().entry("rpe").or_insert(Value::Null);
+            projected.as_object_mut().unwrap().entry("sessionRpe").or_insert(Value::Null);
+            for key in athria_core::schema::session::API_SESSION_METRICS { projected.as_object_mut().unwrap().entry(key).or_insert(Value::Null); }
             projected["plannedSessionId"] = plan_match
                 .get("plannedSessionId")
                 .cloned()
@@ -644,12 +663,15 @@ impl SqliteStore {
             updated: 0,
         };
         self.transaction(&mut || {
+            let mut timezones: HashMap<String, String> = HashMap::new();
             for input in sessions {
                 let normalized = athria_core::schema::parse_training_session(input)?;
                 let mut value = input.clone();
-                for key in ["type", "subtype", "domains"] { value[key] = normalized[key].clone(); }
+                for key in ["type", "subtype", "domains", "rpe", "sessionRpe", "trainingLoad", "powerLoad", "hrLoad", "paceLoad", "intensity"] { value[key] = normalized[key].clone(); }
                 value.as_object_mut().unwrap().remove("sport");
                 value.as_object_mut().unwrap().remove("modality");
+                value.as_object_mut().unwrap().remove("endAt");
+                value.as_object_mut().unwrap().remove("missingFields");
                 let value = &value;
                 let owner_id = text_or(value, "ownerId", DEFAULT_OWNER_ID);
                 let source = text_or(value, "source", "");
@@ -669,7 +691,15 @@ impl SqliteStore {
                     counts.added += 1;
                 }
                 let start_at = text_or(value, "startAt", "").to_string();
-                let timezone = text(value, "timezone").map(str::to_string).unwrap_or(self.profile_timezone(owner_id)?);
+                let timezone = match text(value, "timezone") {
+                    Some(timezone) => timezone.to_string(),
+                    None => {
+                        if !timezones.contains_key(owner_id) {
+                            timezones.insert(owner_id.to_string(), self.profile_timezone(owner_id)?);
+                        }
+                        timezones[owner_id].clone()
+                    }
+                };
                 let local_date = crate::tz::local_date(&start_at, &timezone)?;
                 let timestamp = self.now();
                 let (row_id, training_session_id, created_at) = match &existing {
@@ -771,6 +801,7 @@ impl SqliteStore {
                 let mut stored = value.clone();
                 stored["ownerId"] = json!(input.owner_id);
                 stored["source"] = json!(input.source);
+                stored.as_object_mut().unwrap().remove("missingFields");
                 stored["plannedSessionId"] = Value::Null;
                 self.sqlite()
                     .execute(
@@ -982,9 +1013,21 @@ impl SqliteStore {
             };
             used.insert(id.clone());
             let mut session = representative_session(&cluster).clone();
+            session.as_object_mut().unwrap().remove("endAt");
+            for field in ["rpe", "sessionRpe", "trainingLoad", "powerLoad", "hrLoad", "paceLoad", "intensity"] {
+                let observation = cluster.iter().filter(|observation| observation.session.get(field).is_some_and(|value| !value.is_null()))
+                    .min_by_key(|observation| (text_or(&observation.session, "source", "") != "intervals", observation.id.clone()));
+                session[field] = observation.map(|observation| observation.session[field].clone()).unwrap_or(Value::Null);
+            }
             session["id"] = json!(id);
             session["ownerId"] = json!(owner_id);
             session["plannedSessionId"] = Value::Null;
+                        let mut ordered = cluster.iter().collect::<Vec<_>>();
+            ordered.sort_by(|left, right| observation_priority(&left.session, &left.id, &right.session, &right.id));
+            session["sources"] = json!(ordered.iter().map(|observation| json!({
+                "source": observation.session["source"], "externalId": observation.session["externalId"],
+            })).collect::<Vec<_>>());
+            session.as_object_mut().unwrap().retain(|key, _| !matches!(key.as_str(), "source" | "externalId" | "missingFields"));
             canonical.push(session);
             for observation in &cluster {
                 assignments.push((observation.id.clone(), id.clone()));
@@ -1006,12 +1049,10 @@ impl SqliteStore {
         for session in &canonical {
             self.sqlite()
                 .execute(
-                    "INSERT INTO training_sessions(id, owner_id, source, external_id, start_at, data) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    "INSERT INTO training_sessions(id, owner_id, start_at, data) VALUES (?1, ?2, ?3, ?4)",
                     params![
                         text_or(session, "id", ""),
                         owner_id,
-                        text_or(session, "source", ""),
-                        text_or(session, "externalId", ""),
                         text_or(session, "startAt", ""),
                         session.to_string()
                     ],
@@ -1332,18 +1373,13 @@ impl SqliteStore {
                 return Err(AthriaError::new(AthriaErrorCode::ManualDateChangeRequiresPlanMove, "MANUAL_DATE_CHANGE_REQUIRES_PLAN_MOVE"));
             }
             let duration = duration_minutes.unwrap_or_else(|| integer(&current, "durationMinutes"));
-            let end_at = crate::tz::iso_from_millis(crate::tz::millis(&start_at)? + duration * 60_000);
-            let missing: Vec<Value> = if requested_start.is_some() {
-                array(&current, "missingFields").iter().filter(|item| item.as_str() != Some("actual start time")).cloned().collect()
-            } else {
-                array(&current, "missingFields").to_vec()
-            };
             let mut updated = current.clone();
             updated["startAt"] = json!(start_at);
-            updated["endAt"] = json!(end_at);
+            updated.as_object_mut().unwrap().remove("endAt");
             updated["durationMinutes"] = json!(duration);
+            updated["sessionRpe"] = updated["rpe"].as_f64().map(|rpe| athria_core::js_number(rpe * duration as f64)).unwrap_or(Value::Null);
             updated["timePrecision"] = json!(if requested_start.is_some() { "exact" } else { text_or(&current, "timePrecision", "exact") });
-            updated["missingFields"] = Value::Array(missing);
+            updated.as_object_mut().unwrap().remove("missingFields");
             self.sqlite()
                 .execute(
                     "UPDATE training_session_sources SET start_at = ?1, data = ?2, updated_at = ?3 WHERE id = ?4",
@@ -1458,16 +1494,35 @@ mod tests {
                     "sessions": [{
                         "id": "s1", "scheduledDate": "2026-09-10", "order": 0, "status": "planned", "templateRef": null,
                         "type": "Run", "subtype": null, "name": "Easy Run", "intent": "Aerobic base", "durationMinutes": 60, "recoveryDemand": "low", "keySession": false,
-                        "components": [{
-                            "id": "c1", "name": "Run",
-                            "domain": { "value": "endurance", "source": "user_confirmed", "confidence": 1, "evidence": "", "taxonomyVersion": "strength-2.0" },
-                            "prescription": { "kind": "duration_only", "notes": "" },
-                        }],
+                        "prescription": {"blocks":[]},
                         "progressionNote": null, "schedulingRationale": null, "legacySnapshot": false,
                     }],
                 }],
             },
         })
+    }
+
+    #[test]
+    fn batch_timezones_are_owner_scoped_and_explicit_values_skip_profile_reads() {
+        let store = store();
+        store.save_profile(&json!({"ownerId":"east","timezone":"Asia/Hong_Kong"})).unwrap();
+        store.save_profile(&json!({"ownerId":"west","timezone":"America/Los_Angeles"})).unwrap();
+        store.sqlite().execute("INSERT INTO profiles VALUES ('explicit','invalid JSON','original')", []).unwrap();
+        let mut records = Vec::new();
+        for (owner, id, timezone) in [("east","e1",None),("west","w1",None),("east","e2",None),("explicit","x1",Some("UTC"))] {
+            let mut record = run("manual",id,id,"2026-10-01T01:00:00.000Z","2026-10-01T02:00:00.000Z",60,"Run");
+            record["ownerId"]=json!(owner);
+            record.as_object_mut().unwrap().remove("timezone");
+            if let Some(timezone)=timezone { record["timezone"]=json!(timezone); }
+            records.push(record);
+        }
+        store.upsert_sessions(&records).unwrap();
+        for (owner,day) in [("east","2026-10-01"),("west","2026-09-30"),("explicit","2026-10-01")] {
+            let dates=store.sqlite().prepare("SELECT local_date FROM training_session_sources WHERE owner_id=?1").unwrap()
+                .query_map([owner],|r|r.get::<_,String>(0)).unwrap().map(|r|r.unwrap()).collect::<Vec<_>>();
+            assert!(!dates.is_empty());
+            assert!(dates.iter().all(|date|date==day));
+        }
     }
 
     #[test]
@@ -1660,6 +1715,67 @@ mod tests {
     }
 
     #[test]
+    fn session_rpe_survives_sync_and_merging_and_old_rows_read_as_null() {
+        let store = store();
+        let mut rich = run("hevy", "rich", "11111111-1111-4111-8111-111111111111", "2026-09-10T10:00:00.000Z", "2026-09-10T11:00:00.000Z", 60, "Easy Run");
+        rich["rpe"] = json!(8);
+        rich["endurance"]["averageHeartRate"] = json!(140);
+        store.upsert_sessions(&[rich]).unwrap();
+        let mut icu = run("intervals", "icu", "22222222-2222-4222-8222-222222222222", "2026-09-10T10:00:00.000Z", "2026-09-10T11:00:00.000Z", 60, "Easy Run");
+        icu["rpe"] = json!(3);
+        icu["sessionRpe"] = json!(118);
+        for field in athria_core::schema::session::API_SESSION_METRICS { icu[field] = json!(123.5); }
+        for _ in 0..2 { store.upsert_sessions(&[icu.clone()]).unwrap(); }
+        let sessions = store.list_sessions(DEFAULT_OWNER_ID, None).unwrap();
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0]["rpe"], json!(3));
+        assert_eq!(sessions[0]["sessionRpe"], json!(118));
+        for field in athria_core::schema::session::API_SESSION_METRICS { assert_eq!(sessions[0][field], json!(123.5)); }
+        for field in athria_core::schema::session::API_SESSION_METRICS { icu[field] = Value::Null; }
+        store.upsert_sessions(&[icu]).unwrap();
+        let cleared = store.list_sessions(DEFAULT_OWNER_ID, None).unwrap();
+        for field in athria_core::schema::session::API_SESSION_METRICS { assert_eq!(cleared[0][field], Value::Null); }
+        let source = store.list_sessions_by_source("hevy", DEFAULT_OWNER_ID, None).unwrap();
+        assert_eq!(source[0]["sessionRpe"], json!(480));
+        store.sqlite().execute("UPDATE training_sessions SET data = json_remove(data, '$.rpe', '$.sessionRpe')", []).unwrap();
+        let old = store.list_sessions(DEFAULT_OWNER_ID, None).unwrap();
+        assert_eq!(old[0].get("rpe"), Some(&Value::Null));
+        assert_eq!(old[0].get("sessionRpe"), Some(&Value::Null));
+        store.sqlite().execute("UPDATE training_sessions SET data=json_remove(data, '$.trainingLoad', '$.powerLoad', '$.hrLoad', '$.paceLoad', '$.intensity')", []).unwrap();
+        let old = store.list_sessions(DEFAULT_OWNER_ID, None).unwrap();
+        for field in athria_core::schema::session::API_SESSION_METRICS { assert_eq!(old[0].get(field), Some(&Value::Null)); }
+    }
+
+    #[test]
+    fn source_summaries_follow_representative_priority_and_stable_ties() {
+        let store = store();
+        let make = |source, id| run(source, id, id, "2026-09-10T10:00:00.000Z", "2026-09-10T11:00:00.000Z", 60, "Easy Run");
+        let hevy = make("hevy", "hevy-base");
+        let mut xunji = make("xunji", "xunji-richer");
+        xunji["endurance"]["maxHeartRate"] = json!(170);
+        store.upsert_sessions(&[hevy.clone(), xunji.clone()]).unwrap();
+        let sessions = store.list_sessions(DEFAULT_OWNER_ID, None).unwrap();
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0]["sources"], json!([
+            {"source":"xunji", "externalId":"xunji-richer"},
+            {"source":"hevy", "externalId":"hevy-base"},
+        ]));
+        assert_eq!(sessions[0]["endurance"]["maxHeartRate"], json!(170));
+        let stored = store.list_training_sessions(DEFAULT_OWNER_ID).unwrap();
+        assert_eq!(stored[0]["sources"], sessions[0]["sources"]);
+        for key in ["source", "externalId", "missingFields"] { assert!(stored[0].get(key).is_none()); }
+
+        // Equal information scores use the same observation-row ID tie breaker.
+        xunji["endurance"] = hevy["endurance"].clone();
+        store.upsert_sessions(&[xunji]).unwrap();
+        store.sqlite().execute_batch("UPDATE training_session_sources SET id=CASE source WHEN 'xunji' THEN 'a' ELSE 'z' END;").unwrap();
+        store.rebuild_canonical_sessions(DEFAULT_OWNER_ID).unwrap();
+        let tied = store.list_sessions(DEFAULT_OWNER_ID, None).unwrap();
+        assert_eq!(tied[0]["sources"][0]["source"], json!("xunji"));
+        assert_eq!(store.list_training_sessions(DEFAULT_OWNER_ID).unwrap()[0]["sources"], tied[0]["sources"]);
+    }
+
+    #[test]
     fn merging_keeps_the_existing_canonical_id_and_the_better_source_payload() {
         let store = store();
         let manual = run(
@@ -1689,7 +1805,8 @@ mod tests {
             sessions[0]["id"],
             json!("11111111-1111-4111-8111-111111111111")
         );
-        assert_eq!(sessions[0]["source"], json!("hevy"));
+        assert_eq!(sessions[0]["sources"][0]["source"], json!("hevy"));
+        for key in ["source", "externalId", "missingFields"] { assert!(sessions[0].get(key).is_none()); }
     }
 
     #[test]
@@ -1716,7 +1833,7 @@ mod tests {
     }
     #[test]
     fn matching_and_deduplication_use_type_and_ignore_subtype() {
-        let mut planned = json!({"type":"Swim","subtype":"poolswim","scheduledDate":"2026-10-07","durationMinutes":60,"components":[]});
+        let mut planned = json!({"type":"Swim","subtype":"poolswim","scheduledDate":"2026-10-07","durationMinutes":60,"prescription": {"blocks":[]}});
         let actual = json!({"type":"Swim","subtype":"openwaterswim","startAt":"2026-10-07T11:03:08Z","endAt":"2026-10-07T11:51:08Z","durationMinutes":48,"source":"intervals","domains":["endurance"],"endurance":{"distanceMeters":925},"strengthSets":[]});
         assert!(plan_match_score(&planned, &actual, "Asia/Hong_Kong").unwrap().unwrap() >= 70.0);
         planned["type"] = json!("Run");
