@@ -2,7 +2,7 @@ import type { WellnessRecord } from "./view-models";
 import { addDays } from "./plan/view";
 import { sleepDurationField } from "./wellness-view";
 
-export type WellnessAssessmentKey = "hrvRmssdMs" | "hrvSdnnMs" | "restingHeartRateBpm" | "avgSleepingHeartRateBpm" | "stepsCount" | "sleepSeconds" | "sleepScore" | "vo2maxMlKgMin" | "spo2Percent" | "sleepQuality" | "fatigue" | "soreness" | "stress" | "mood" | "motivation";
+export type WellnessAssessmentKey = "hrvRmssdMs" | "hrvSdnnMs" | "restingHeartRateBpm" | "avgSleepingHeartRateBpm" | "stepsCount" | "sleepSeconds" | "sleepScore" | "vo2maxMlKgMin" | "spo2Percent";
 export interface WellnessAssessment {
   level: "favorable" | "neutral" | "unfavorable";
   message: string;
@@ -23,12 +23,6 @@ const rules = {
   sleepScore: { mode: "absolute", threshold: 5, direction: "higher", messages: ["Sleep looks good", "Sleep is steady", "Sleep dipped; rest up"] },
   vo2maxMlKgMin: { mode: "ratio", threshold: 0.05, direction: "higher", messages: ["Your endurance indicator improved", "Your endurance indicator is steady", "Your endurance indicator dipped"] },
   spo2Percent: { mode: "absolute", threshold: 1, direction: "oxygen", messages: ["Oxygen reading is higher than usual", "Oxygen reading is steady", "Reading is lower; check again"] },
-  sleepQuality: { mode: "absolute", threshold: 0.5, direction: "subjective", messages: ["Sleep felt less settled", "Sleep feels much as usual", "Sleep feels good; keep it up"] },
-  fatigue: { mode: "absolute", threshold: 0.5, direction: "subjective", messages: ["Feeling tired; ease off", "Fatigue feels much as usual", "Less fatigue; looking good"] },
-  soreness: { mode: "absolute", threshold: 0.5, direction: "subjective", messages: ["Some soreness; take it easy", "Soreness feels much as usual", "Your body feels easier"] },
-  stress: { mode: "absolute", threshold: 0.5, direction: "subjective", messages: ["More stress; take a breather", "Stress feels much as usual", "Less stress; take a breath"] },
-  mood: { mode: "absolute", threshold: 0.5, direction: "subjective", messages: ["Mood dipped; be kind to yourself", "Mood feels much as usual", "Mood looks good; keep it up"] },
-  motivation: { mode: "absolute", threshold: 0.5, direction: "subjective", messages: ["Less motivation; take your time", "Motivation feels much as usual", "Motivation looks good; stay steady"] },
 } as const;
 
 // These thresholds describe personal changes in the UI, not clinical cutoffs.
@@ -59,7 +53,6 @@ export function assessWellness(records: WellnessRecord[], key: WellnessAssessmen
   result.threshold = rule.threshold;
   const index = change > rule.threshold ? 0 : change < -rule.threshold ? 2 : 1;
   if ((key === "hrvRmssdMs" || key === "hrvSdnnMs") && change > 0.5) return { ...result, level: "unfavorable", message: "Big change; notice how you feel" };
-  if (rule.direction === "subjective" && current.source !== "intervals_icu") return { ...result, message: ["Score is higher than usual", "Score is close to usual", "Score is lower than usual"][index]! };
-  const level = index === 1 ? "neutral" : rule.direction === "subjective" ? (index === 2 ? "favorable" : "unfavorable") : rule.direction === "heart" ? (index === 0 ? "unfavorable" : "neutral") : rule.direction === "descriptive" ? "neutral" : rule.direction === "oxygen" ? (index === 2 ? "unfavorable" : "neutral") : index === 0 ? "favorable" : "unfavorable";
+  const level = index === 1 ? "neutral" : rule.direction === "heart" ? (index === 0 ? "unfavorable" : "neutral") : rule.direction === "descriptive" ? "neutral" : rule.direction === "oxygen" ? (index === 2 ? "unfavorable" : "neutral") : index === 0 ? "favorable" : "unfavorable";
   return { ...result, level, message: rule.messages[index] };
 }

@@ -100,7 +100,6 @@ enum ToolKind {
     AllowAutomaticPlanMatch,
     UpdateManualTrainingSession,
     RemoveManualTrainingSource,
-    UpdateWellness,
     UpdateAthleteProfile,
     UpdateTrainingMemory,
     ReportSkillVersion,
@@ -150,7 +149,6 @@ impl ToolKind {
             "allow_automatic_plan_match" => Self::AllowAutomaticPlanMatch,
             "update_manual_training_session" => Self::UpdateManualTrainingSession,
             "remove_manual_training_source" => Self::RemoveManualTrainingSource,
-            "update_wellness" => Self::UpdateWellness,
             "update_athlete_profile" => Self::UpdateAthleteProfile,
             "update_training_memory" => Self::UpdateTrainingMemory,
             "report_skill_version" => Self::ReportSkillVersion,
@@ -291,12 +289,24 @@ impl<S: AthriaStore> McpService<S> {
                 app.list_sessions_in_window(days(input, 30)?, optional_date(input, "from")?, optional_date(input, "to")?)
                     .map_err(ToolError::application)?,
             ),
-            ToolKind::ListWellness => serialize(
-                app.list_wellness_in_window(days(input, 42)?, optional_date(input, "from")?, optional_date(input, "to")?)
-                    .map_err(ToolError::application)?,
-            ),
+            ToolKind::ListWellness => {
+                // snapshotHash guards desktop writes; MCP wellness is read-only.
+                let mut records = app
+                    .list_wellness_in_window(days(input, 42)?, optional_date(input, "from")?, optional_date(input, "to")?)
+                    .map_err(ToolError::application)?;
+                for record in &mut records {
+                    if let Some(object) = record.as_object_mut() {
+                        object.remove("snapshotHash");
+                    }
+                }
+                Ok(Value::Array(records))
+            }
             ToolKind::GetWellnessDay => {
-                application(app.get_wellness_day(required_str(input, "day")?))
+                let mut day = application(app.get_wellness_day(required_str(input, "day")?))?;
+                if let Some(object) = day.as_object_mut() {
+                    object.remove("snapshotHash");
+                }
+                Ok(day)
             }
             ToolKind::ListXunjiTrainingSessions => {
                 application(app.list_xunji_sessions(days(input, 30)?))
@@ -429,14 +439,6 @@ impl<S: AthriaStore> McpService<S> {
             ToolKind::RemoveManualTrainingSource => {
                 application(app.delete_manual_training_session(required_str(input, "id")?, input))
             }
-            ToolKind::UpdateWellness => application(
-                app.update_wellness(
-                    required_str(input, "day")?,
-                    input
-                        .get("update")
-                        .ok_or_else(|| ToolError::invalid("update is required"))?,
-                ),
-            ),
             ToolKind::UpdateAthleteProfile => application(app.update_profile(input)),
             ToolKind::UpdateTrainingMemory => application(app.update_training_memory(input)),
             ToolKind::ReportSkillVersion => {
@@ -844,7 +846,7 @@ mod tests {
     #[test]
     fn exposes_contract_and_calls_application() {
         let service = service();
-        assert_eq!(service.tools().len(), 45);
+        assert_eq!(service.tools().len(), 44);
         assert!(service.tools().iter().all(|tool| {
             tool.get("handlerKey").and_then(Value::as_str).is_some()
                 && tool.get("outputSchema").is_some()
@@ -967,7 +969,7 @@ mod tests {
         let service = service();
         let fixtures: Value =
             serde_json::from_str(include_str!("../tests/fixtures/tool-results.json")).unwrap();
-        assert_eq!(fixtures.as_object().unwrap().len(), 45);
+        assert_eq!(fixtures.as_object().unwrap().len(), 44);
 
         for (tool, registered) in service.tools().iter().zip(&service.registry) {
             let name = tool["name"].as_str().unwrap();
@@ -1033,6 +1035,53 @@ mod tests {
         assert_eq!(too_long["isError"], true);
     }
     #[test]
+    fn wellness_dictionary_tool_is_removed() {
+        let service = service();
+        assert!(!service.tools().iter().any(|tool| tool["name"] == "get_wellness_field_definitions"));
+        assert_eq!(service.call_result("get_wellness_field_definitions", &json!({}))["isError"], true);
+    }
+
+    #[test]
+    fn wellness_tools_are_read_only_and_hide_snapshot_hashes() {
+        let service = service();
+        service
+            .application
+            .store()
+            .upsert_wellness("local-user", &[json!({ "id": "2026-10-14", "sleepScore": 80, "restingHR": 50 })])
+            .unwrap();
+
+        let day = service.call_result("get_wellness_day", &json!({ "day": "2026-10-13" }));
+        assert_ne!(day["isError"], true, "{day}");
+        let result = &day["structuredContent"]["result"];
+        assert_eq!(result["record"]["day"], "2026-10-13");
+        assert!(result.get("snapshotHash").is_none(), "{result}");
+        assert!(result["record"].get("snapshotHash").is_none());
+
+        let missing = service.call_result("get_wellness_day", &json!({ "day": "2026-10-15" }));
+        assert_eq!(missing["structuredContent"]["result"], json!({}));
+
+        let listed = service.call_result("list_wellness", &json!({ "from": "2026-10-13", "to": "2026-10-13" }));
+        assert_ne!(listed["isError"], true, "{listed}");
+        let records = listed["structuredContent"]["result"].as_array().unwrap();
+        assert_eq!(records.len(), 1);
+        assert!(records[0].get("snapshotHash").is_none(), "{}", records[0]);
+        assert_eq!(records[0]["fields"]["sleepScore"]["value"], 80);
+
+        service.application.store().upsert_wellness("local-user", &[json!({ "id": "2026-10-14", "fatigue": 3 })]).unwrap();
+        let rating = service.call_result("get_wellness_day", &json!({ "day": "2026-10-14" }));
+        let fields = &rating["structuredContent"]["result"]["record"]["fields"];
+        assert_eq!(fields["subjectiveFatigue"]["value"], 75);
+        assert!(fields.get("fatigue").is_none());
+
+        let removed = service.call_result("update_wellness", &json!({ "day": "2026-10-13", "update": {} }));
+        assert_eq!(removed["isError"], true);
+        let error: Value =
+            serde_json::from_str(removed["content"][0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(error["code"], "INTERNAL_ERROR");
+        assert!(error["error"].as_str().unwrap().contains("update_wellness"));
+    }
+
+    #[test]
     fn optional_day_windows_use_dispatcher_defaults() {
         assert_eq!(days(&json!({}), 30).unwrap(), 30);
         assert_eq!(days(&json!({}), 42).unwrap(), 42);
@@ -1086,7 +1135,6 @@ mod tests {
             "allow_automatic_plan_match",
             "update_manual_training_session",
             "remove_manual_training_source",
-            "update_wellness",
             "update_athlete_profile",
             "update_training_memory",
             "commit_plan_draft",
@@ -1206,7 +1254,7 @@ mod tests {
     #[test]
     fn rmcp_server_advertises_only_the_wire_it_emits() {
         let server = RmcpServer::new(service());
-        assert_eq!(server.tools.len(), 45);
+        assert_eq!(server.tools.len(), 44);
         assert!(server.tools.iter().all(|tool| tool.output_schema.is_some()));
         assert_eq!(
             server.supported_protocol_versions().as_ref(),

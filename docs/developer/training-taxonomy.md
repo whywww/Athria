@@ -99,6 +99,6 @@ Use taxonomy IDs, not translated labels. A familiar exercise name alone cannot c
 
 ## Legacy data
 
-Current prescriptions use mobility instead of the legacy recovery domain. Schema 38 upgrades only the current schema 37 structure; historical taxonomy conversion files are no longer shipped. Ambiguous or unrecognized names remain unclassified; do not infer from broad domain alone.
+Current prescriptions use mobility instead of the legacy recovery domain. Only database schema 40 is supported; historical taxonomy conversion files and database upgrade paths are not shipped. Ambiguous or unrecognized names remain unclassified; do not infer from broad domain alone.
 
-Migration preserves workout identities and increments affected plan/template/draft revisions. Refresh guards after migration. Runtime parsing is not a general free-text name classifier.
+Runtime parsing is not a general free-text name classifier.

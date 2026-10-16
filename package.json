@@ -22,6 +22,7 @@
   },
   "devDependencies": {
     "@modelcontextprotocol/conformance": "0.1.16",
+    "happy-dom": "21.0.1",
     "typescript": "7.0.2",
     "vitest": "4.1.11",
     "yaml": "2.8.1"

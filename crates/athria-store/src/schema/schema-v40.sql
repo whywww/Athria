@@ -1,5 +1,7 @@
 CREATE TABLE athria_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
 
+CREATE TABLE athria_data_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL);
+
 CREATE TABLE connection_secrets (
           source TEXT PRIMARY KEY,
           config TEXT NOT NULL,
@@ -113,3 +115,14 @@ INSERT INTO athria_data_version(id, version) VALUES (1, 0);
 CREATE TABLE training_memory (owner_id TEXT PRIMARY KEY, content_markdown TEXT NOT NULL CHECK(length(content_markdown) BETWEEN 1 AND 2000), revision INTEGER NOT NULL CHECK(revision >= 1), updated_at TEXT NOT NULL);
 CREATE TABLE daily_sync_attempts (owner_id TEXT NOT NULL, source TEXT NOT NULL, local_date TEXT NOT NULL, attempted_at TEXT NOT NULL, PRIMARY KEY(owner_id, source, local_date));
 CREATE TABLE plan_review_context (owner_id TEXT PRIMARY KEY, data TEXT NOT NULL);
+
+CREATE TRIGGER training_sessions_rpe_INSERT BEFORE INSERT ON training_sessions
+WHEN json_type(NEW.data,'$.rpe') IS NOT NULL AND json_type(NEW.data,'$.rpe') != 'null'
+    AND NOT (json_type(NEW.data,'$.rpe')='integer' AND json_extract(NEW.data,'$.rpe') BETWEEN 1 AND 10)
+BEGIN SELECT RAISE(ABORT, 'session.rpe: expected an integer from 1 to 10 or null'); END;
+CREATE TRIGGER training_sessions_rpe_UPDATE BEFORE UPDATE ON training_sessions
+WHEN json_type(NEW.data,'$.rpe') IS NOT NULL AND json_type(NEW.data,'$.rpe') != 'null'
+    AND NOT (json_type(NEW.data,'$.rpe')='integer' AND json_extract(NEW.data,'$.rpe') BETWEEN 1 AND 10)
+BEGIN SELECT RAISE(ABORT, 'session.rpe: expected an integer from 1 to 10 or null'); END;
+CREATE TRIGGER training_session_sources_rpe_INSERT BEFORE INSERT ON training_session_sources WHEN json_type(NEW.data,'$.rpe') IS NOT NULL BEGIN SELECT RAISE(ABORT, 'session.rpe is stored only on the canonical training session'); END;
+CREATE TRIGGER training_session_sources_rpe_UPDATE BEFORE UPDATE ON training_session_sources WHEN json_type(NEW.data,'$.rpe') IS NOT NULL BEGIN SELECT RAISE(ABORT, 'session.rpe is stored only on the canonical training session'); END;

@@ -13,11 +13,11 @@ function data(key: WellnessAssessmentKey, baseline: number, current: number, cou
 }
 
 describe("personal wellness assessment", () => {
-  it("assesses effective manual sleep against matching manual history and falls back to API", () => {
-    const records = data("sleepSeconds", 28800, 28800).map((entry) => ({ ...entry, fields: { ...entry.fields, manualSleepSeconds: { value: entry.day === day ? 25200 : 27000, source: "user" as const, updatedAt: entry.updatedAt } } }));
-    expect(assessWellness(records, "sleepSeconds", day)).toMatchObject({ baseline: 27000, sampleCount: 7, change: -1800 });
-    const reverted = records.map((entry) => ({ ...entry, fields: { sleepSeconds: entry.fields.sleepSeconds! } }));
-    expect(assessWellness(reverted, "sleepSeconds", day)).toMatchObject({ baseline: 28800, sampleCount: 7, change: 0 });
+  it("assesses a single sleep duration against matching-source history without mixing sources", () => {
+    const manual = [record(day, "sleepSeconds", 25200, "user"), ...Array.from({ length: 7 }, (_, index) => record(addDays(day, -index - 1), "sleepSeconds", 27000, "user"))];
+    expect(assessWellness(manual, "sleepSeconds", day)).toMatchObject({ baseline: 27000, sampleCount: 7, change: -1800 });
+    const device = [record(day, "sleepSeconds", 28800), ...manual.slice(1)];
+    expect(assessWellness(device, "sleepSeconds", day)).toMatchObject({ message: "Still learning your usual rhythm", sampleCount: 0 });
   });
   const cases: [WellnessAssessmentKey, number, number, number, string, string, string][] = [
     ["hrvRmssdMs", 30, 35, 25, "Recovery looks good", "Recovery is steady", "Recovery is slower; take it easy"],
@@ -29,12 +29,6 @@ describe("personal wellness assessment", () => {
     ["sleepScore", 80, 86, 74, "Sleep looks good", "Sleep is steady", "Sleep dipped; rest up"],
     ["vo2maxMlKgMin", 40, 43, 37, "Your endurance indicator improved", "Your endurance indicator is steady", "Your endurance indicator dipped"],
     ["spo2Percent", 97, 99, 95, "Oxygen reading is higher than usual", "Oxygen reading is steady", "Reading is lower; check again"],
-    ["sleepQuality", 2, 3, 1, "Sleep felt less settled", "Sleep feels much as usual", "Sleep feels good; keep it up"],
-    ["fatigue", 2, 3, 1, "Feeling tired; ease off", "Fatigue feels much as usual", "Less fatigue; looking good"],
-    ["soreness", 2, 3, 1, "Some soreness; take it easy", "Soreness feels much as usual", "Your body feels easier"],
-    ["stress", 2, 3, 1, "More stress; take a breather", "Stress feels much as usual", "Less stress; take a breath"],
-    ["mood", 2, 3, 1, "Mood dipped; be kind to yourself", "Mood feels much as usual", "Mood looks good; keep it up"],
-    ["motivation", 2, 3, 1, "Less motivation; take your time", "Motivation feels much as usual", "Motivation looks good; stay steady"],
   ];
   it.each(cases)("maps all three levels for %s with translated messages", (key, baseline, high, low, highMessage, middleMessage, lowMessage) => {
     for (const [value, message] of [[high, highMessage], [baseline, middleMessage], [low, lowMessage]] as const) {
@@ -47,7 +41,6 @@ describe("personal wellness assessment", () => {
     ["hrvRmssdMs", 30, 3], ["hrvSdnnMs", 30, 3], ["restingHeartRateBpm", 60, 3],
     ["avgSleepingHeartRateBpm", 60, 3], ["stepsCount", 10000, 2000], ["sleepSeconds", 25000, 1800],
     ["sleepScore", 80, 5], ["vo2maxMlKgMin", 40, 2], ["spo2Percent", 97, 1],
-    ["sleepQuality", 2, .5], ["fatigue", 2, .5], ["soreness", 2, .5], ["stress", 2, .5], ["mood", 2, .5], ["motivation", 2, .5],
   ] as [WellnessAssessmentKey, number, number][])("keeps threshold boundaries neutral for %s", (key, baseline, threshold) => {
     for (const value of [baseline + threshold, baseline - threshold]) expect(assessWellness(data(key, baseline, value), key, day).level).toBe("neutral");
   });
@@ -67,12 +60,6 @@ describe("personal wellness assessment", () => {
     expect(assessWellness(data("stepsCount", 100, 0), "stepsCount", day).message).toBe("Less active; take your time");
     expect(assessWellness([record(day, "stepsCount", null), ...data("stepsCount", 100, 0).slice(1)], "stepsCount", day).message).toBe("No record for this day");
     expect(assessWellness([], "stepsCount", day).message).toBe("No record for this day");
-  });
-  it("uses neutral comparisons for subjective scores from unknown scales", () => {
-    for (const value of [1, 2, 3]) {
-      const records = data("mood", 2, value).map((r) => record(r.day, "mood", r.fields.mood!.value as number, "user"));
-      expect(assessWellness(records, "mood", day)).toMatchObject({ level: "neutral", message: ["Score is lower than usual", "Score is close to usual", "Score is higher than usual"][value - 1] });
-    }
   });
   it("keeps descriptive indicators and low heart rate neutral", () => {
     for (const [key, baseline, current] of [["stepsCount", 100, 200], ["stepsCount", 100, 0], ["spo2Percent", 97, 99], ["restingHeartRateBpm", 60, 50], ["avgSleepingHeartRateBpm", 60, 50]] as [WellnessAssessmentKey, number, number][]) expect(assessWellness(data(key, baseline, current), key, day).level).toBe("neutral");

@@ -123,7 +123,6 @@
   "allow_automatic_plan_match": {},
   "update_manual_training_session": {},
   "remove_manual_training_source": {},
-  "update_wellness": {},
   "update_athlete_profile": {},
   "report_skill_version": {
     "recorded": true,

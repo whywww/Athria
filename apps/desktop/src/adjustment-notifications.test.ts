@@ -1,17 +1,31 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { adjustmentNotification, createAdjustmentNotifications } from "./adjustment-notifications";
+import { adjustmentNotification, adjustmentToastKey, createAdjustmentNotifications } from "./adjustment-notifications";
 import { LanguageProvider } from "./i18n";
 import { dismissToast, notify, ToastProvider } from "./toasts";
-import { adjustmentReasonMessage, type AdjustmentReminder } from "./view-models";
+import { adjustmentReasonMessage, type AdjustmentAssessment, type AdjustmentReminder } from "./view-models";
 
+type StorageLike = Pick<Storage, "getItem" | "setItem">;
+function storage() {
+  const entries = new Map<string, string>();
+  return { entries, getItem: (key: string) => entries.get(key) ?? null, setItem: (key: string, value: string) => { entries.set(key, value); } };
+}
 const reminder: AdjustmentReminder = {
   assessment: { trigger: "weekly_review", reviewStatus: "watch", recommendedScope: "week", reasons: [{ reasonCode: "KEY_SESSION_MISSED", severity: "strong", evidenceRefs: [], affectedScope: "week" }], hardOverrides: [], dataGaps: [], currentPlanRevision: 1, inputSnapshotHash: "snapshot", profileHash: "profile", suggestedReadWindow: 1 },
   idempotencyContext: "review", showReminder: true,
 };
+const conditionConflict = (assessment: Partial<AdjustmentAssessment> = {}): AdjustmentReminder => ({
+  ...reminder, idempotencyContext: "conflict",
+  assessment: { ...reminder.assessment, trigger: "profile_change", reviewStatus: "review_required", reasons: [{ reasonCode: "PROFILE_TRAINING_RHYTHM_CONFLICT", severity: "hard", evidenceRefs: [], affectedScope: "plan" }], hardOverrides: ["PROFILE_CONSTRAINT_CONFLICT"], ...assessment },
+});
 const managers: ReturnType<typeof createAdjustmentNotifications>[] = [];
-const manager = () => { const value = createAdjustmentNotifications(); managers.push(value); return value; };
+const manager = (saved: StorageLike | null = null) => { const value = createAdjustmentNotifications(saved); managers.push(value); return value; };
+const userDismiss = (value: ReturnType<typeof createAdjustmentNotifications>, databaseUuid: string, dismissed: AdjustmentReminder, close: () => void) => {
+  const id = notify("probe", "info", { persistent: true, key: adjustmentToastKey(databaseUuid, adjustmentNotification(dismissed.assessment)!.key) })!;
+  value.sync(databaseUuid, dismissed, close);
+  dismissToast(id, true);
+};
 const render = (page = "Overview") => renderToStaticMarkup(createElement(LanguageProvider, null, createElement(ToastProvider, null, page)));
 afterEach(() => {
   managers.splice(0).forEach((value) => value.clear());
@@ -22,7 +36,7 @@ afterEach(() => {
 describe("persistent adjustment notifications", () => {
   it("selects the strongest reason and maps review tiers to toast kinds", () => {
     const assessment = { ...reminder.assessment, reasons: [{ reasonCode: "ADHERENCE_MINOR_DEVIATION", severity: "soft" as const, evidenceRefs: [], affectedScope: "none" as const }, ...reminder.assessment.reasons] };
-    expect(adjustmentNotification(assessment)).toEqual({ message: "Last week's review: You missed a key session last week.", kind: "info" });
+    expect(adjustmentNotification(assessment)).toEqual({ message: "Last week's review: You missed a key session last week.", kind: "info", weekly: true, key: JSON.stringify(["Last week's review:", "KEY_SESSION_MISSED", "", "info"]) });
     expect(adjustmentNotification({ ...assessment, reviewStatus: "review_recommended" })?.kind).toBe("warning");
     expect(adjustmentNotification({ ...assessment, reviewStatus: "review_required" })?.kind).toBe("error");
     expect(adjustmentNotification({ ...assessment, reasons: [] })).toBeNull();
@@ -43,6 +57,18 @@ describe("persistent adjustment notifications", () => {
     expect(adjustmentNotification(assessment)?.message).toBe("计划条件发生变化： 你偏好的每周训练节奏与计划不一致。 建议让 AI 助手调整计划。");
     expect(adjustmentNotification({ ...assessment, reasons: [{ ...assessment.reasons[0]!, reasonCode: "PROFILE_EQUIPMENT_CONFLICT" }] })?.message).not.toContain("建议让 AI 助手调整计划");
     expect(adjustmentNotification(reminder.assessment)?.message).not.toContain("建议让 AI 助手调整计划");
+  });
+
+  it("gives structural rhythm conflicts distinct copy and identity", () => {
+    const soft = { ...reminder.assessment, trigger: "profile_change" as const, reviewStatus: "watch" as const, reasons: [{ reasonCode: "PROFILE_TRAINING_RHYTHM_CONFLICT", severity: "soft" as const, evidenceRefs: [], affectedScope: "none" as const }] };
+    const hard = { ...soft, reviewStatus: "review_required" as const, reasons: [{ ...soft.reasons[0]!, severity: "hard" as const, affectedScope: "plan" as const }] };
+    expect(adjustmentNotification(soft)).toMatchObject({ message: "Plan conditions changed: Your preferred weekly training rhythm differs from this plan. Ask your AI assistant to adjust the plan.", weekly: false });
+    expect(adjustmentNotification(hard)).toMatchObject({ message: "Plan conditions changed: The plan's schedule conflicts with your weekly training rhythm. Ask your AI assistant to adjust the plan.", kind: "error" });
+    expect(adjustmentNotification(soft)!.key).not.toBe(adjustmentNotification(hard)!.key);
+    vi.stubGlobal("localStorage", { getItem: () => "zh-CN" });
+    render();
+    expect(adjustmentNotification(soft)?.message).toContain("你偏好的每周训练节奏与计划不一致。");
+    expect(adjustmentNotification(hard)?.message).toContain("计划的排期与你的每周训练节奏冲突。");
   });
 
   it("preserves reason domains and stays silent for missing evidence alone", () => {
@@ -88,29 +114,76 @@ describe("persistent adjustment notifications", () => {
   });
 
   it("replaces reminders without recording a manual dismissal", () => {
-    const value = manager(); const close = vi.fn();
-    value.sync("replace", reminder, close);
-    value.sync("replace", { ...reminder, idempotencyContext: "new", assessment: { ...reminder.assessment, reviewStatus: "review_required" } }, close);
+    const saved = storage();
+    const value = manager(saved); const close = vi.fn();
+    value.sync("replace", conditionConflict(), close);
+    value.sync("replace", conditionConflict({ reasons: [{ reasonCode: "PROFILE_EQUIPMENT_CONFLICT", severity: "hard", evidenceRefs: [], affectedScope: "week" }] }), close);
     expect(render().match(/toast-persistent/g)).toHaveLength(1);
     expect(render()).toContain("toast-error");
     expect(close).not.toHaveBeenCalled();
+    expect(saved.entries.size).toBe(0);
     value.clear();
     expect(close).not.toHaveBeenCalled();
   });
 
-  it("keeps manual dismissal through refreshes and remounts, isolated by database", () => {
-    const value = manager(); const close = vi.fn();
-    const conflict = { ...reminder, assessment: { ...reminder.assessment, trigger: "profile_change" as const } };
+  it("keeps dismissal through content updates, remounts and other databases", () => {
+    const saved = storage(); const close = vi.fn();
+    const conflict = conditionConflict();
+    const value = manager(saved);
     value.sync("dismissal", conflict, close);
-    const id = notify("updated", "info", { persistent: true, key: `adjustment:${JSON.stringify(["dismissal", reminder.idempotencyContext])}`, onDismiss: () => close() })!;
-    // Restore the manager's close handler after finding the existing toast by its stable key.
-    value.sync("dismissal", conflict, close);
-    dismissToast(id, true);
+    userDismiss(value, "dismissal", conflict, close);
     expect(close).toHaveBeenCalledOnce();
-    value.sync("dismissal", conflict, close);
-    manager().sync("dismissal", conflict, close);
+    expect([...saved.entries]).toEqual([["athria:adjustment-dismissed:dismissal", JSON.stringify([adjustmentNotification(conflict.assessment)!.key])]]);
+    const refreshed = { ...conflict, idempotencyContext: "content-update", assessment: { ...conflict.assessment, inputSnapshotHash: "changed", currentPlanRevision: 2 } };
+    value.sync("dismissal", refreshed, close);
+    expect(render()).not.toContain("toast-persistent");
+    manager(saved).sync("dismissal", refreshed, close);
     expect(render()).not.toContain("toast-persistent");
     value.sync("different", conflict, close);
+    expect(render()).toContain("toast-persistent");
+    expect(saved.entries.size).toBe(1);
+  });
+
+  it("re-surfaces once per severity level and stays silent within a level", () => {
+    const saved = storage(); const close = vi.fn();
+    const soft = conditionConflict({ reviewStatus: "watch", hardOverrides: [], reasons: [{ reasonCode: "PROFILE_TRAINING_RHYTHM_CONFLICT", severity: "soft", evidenceRefs: [], affectedScope: "none" }] });
+    const value = manager(saved);
+    value.sync("escalation", soft, close);
+    userDismiss(value, "escalation", soft, close);
+    value.sync("escalation", { ...soft, idempotencyContext: "same-level-again" }, close);
+    expect(render()).not.toContain("toast-persistent");
+    const warned = { ...soft, idempotencyContext: "warned", assessment: { ...soft.assessment, reviewStatus: "review_recommended" as const } };
+    value.sync("escalation", warned, close);
+    expect(render()).toContain("toast-warning");
+    userDismiss(value, "escalation", warned, close);
+    const hard = conditionConflict();
+    value.sync("escalation", hard, close);
+    expect(render()).toContain("toast-error");
+    expect(render()).toContain("conflicts with your weekly training rhythm");
+    userDismiss(value, "escalation", hard, close);
+    value.sync("escalation", { ...hard, idempotencyContext: "hard-again" }, close);
+    expect(render()).not.toContain("toast-persistent");
+  });
+
+  it("leaves weekly reviews to the week-scoped record", () => {
+    const saved = storage(); const close = vi.fn();
+    const value = manager(saved);
+    value.sync("weekly", reminder, close);
+    userDismiss(value, "weekly", reminder, close);
+    expect(saved.entries.size).toBe(0);
+    value.sync("weekly", { ...reminder, idempotencyContext: "next-week" }, close);
+    expect(render()).toContain("toast-persistent");
+  });
+
+  it("tolerates unavailable or corrupt storage", () => {
+    const broken = { getItem: () => "{not json", setItem: () => { throw new Error("quota"); } };
+    const close = vi.fn();
+    const conflict = conditionConflict();
+    const value = manager(broken);
+    value.sync("broken", conflict, close);
+    userDismiss(value, "broken", conflict, close);
+    expect(close).toHaveBeenCalledOnce();
+    value.sync("broken", conflict, close);
     expect(render()).toContain("toast-persistent");
   });
 });

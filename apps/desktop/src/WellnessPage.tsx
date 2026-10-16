@@ -6,7 +6,7 @@ import { currentLanguage, T, tr, useLanguage } from "./i18n";
 import { addDays } from "./plan/view";
 import type { WellnessRecord } from "./view-models";
 import { useWellnessSort } from "./wellness-sort";
-import { sleepStorageDay, metricNumber, sleepCanReset, sleepDraft, sleepHasChanges, sleepPatch, wellnessMetrics, wellnessRanges, wellnessSeries, wellnessWindow, type SleepCleared, type SleepDraft, type WellnessMetric, type WellnessPoint, type WellnessRange } from "./wellness-view";
+import { metricNumber, sleepCanReset, sleepDraft, sleepHasChanges, sleepPatch, wellnessMetrics, wellnessRanges, wellnessSeries, wellnessWindow, type SleepCleared, type SleepDraft, type WellnessMetric, type WellnessPoint, type WellnessRange } from "./wellness-view";
 
 function dateLabel(day: string, short = false) {
   return new Intl.DateTimeFormat(currentLanguage() === "zh-CN" ? "zh-CN" : "en-US", { year: short ? undefined : "numeric", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${day}T12:00:00Z`));
@@ -15,9 +15,10 @@ function numberLabel(value: number) {
   return new Intl.NumberFormat(currentLanguage(), { maximumFractionDigits: 2 }).format(value);
 }
 function sourceLabel(source: string, key: string) {
-  if (key === "subjectiveSleepScore") return tr("Subjective sleep score");
-  if (key === "manualSleepSeconds") return tr("Manual sleep duration");
-  const label = source === "intervals_icu" ? "Intervals.icu" : source === "user" ? tr("Manual record") : source === "ai" ? tr("AI record") : source;
+  if (key === "atl") return tr("Acute training load (ATL)");
+  if (key === "ctl") return tr("Chronic training load (CTL)");
+  if (key === "form") return tr("Training load balance (Form)");
+  const label = source === "athria" ? "Athria" : source === "intervals_icu" ? "Intervals.icu" : source === "user" ? tr("Manual record") : source === "ai" ? tr("AI record") : source;
   return key === "hrvRmssdMs" ? `${label} RMSSD` : key === "hrvSdnnMs" ? `${label} SDNN` : label;
 }
 function pointLabel(point: WellnessPoint, unit: string) {
@@ -37,8 +38,8 @@ export function WellnessMetricRow({ metric, records, start, end, weekly = false,
         const label = weekly ? new Intl.DateTimeFormat(currentLanguage() === "zh-CN" ? "zh-CN" : "en-US", { weekday: "short", timeZone: "UTC" }).format(new Date(`${day}T12:00:00Z`)) : dateLabel(day, true);
         return <text key={fraction} x={58 + fraction * 700} y="97" textAnchor={fraction === 0 ? "start" : fraction === 1 ? "end" : "middle"}>{label}</text>;
       })}
+      {chart.lines.map((line) => <g key={`${line.key}-${line.points[0]!.source}-${line.points[0]!.day}`} className={`wellness-series-${line.tone}`} data-entrance="trend"><polyline points={line.points.map((point) => `${point.x},${point.y}`).join(" ")} fill="none" stroke="currentColor" strokeWidth="2"/></g>)}
       {chart.series.map((series) => <g key={`${series.key}-${series.source}`} className={`wellness-series-${series.tone}`} data-entrance={series.points.length === 1 ? "point" : "trend"}>
-        {series.segments.filter((segment) => segment.length > 1).map((segment) => <polyline key={segment[0]!.day} points={segment.map((point) => `${point.x},${point.y}`).join(" ")} fill="none" stroke="currentColor" strokeWidth="2"/>)}
         {series.points.map((point) => <g key={point.day}><circle cx={point.x} cy={point.y} r="3" fill="currentColor"/><circle cx={point.x} cy={point.y} r="9" className="wellness-point-target" tabIndex={0} role="img" aria-label={describe(point)}><title>{describe(point)}</title></circle></g>)}
       </g>)}
     </svg>
@@ -98,7 +99,7 @@ export function SleepSlider({ label, value, max, step, valueLabel, disabled, onC
   const sliderValue = Math.min(max, Math.max(0, Math.round((value ?? 0) / step) * step));
   return <div className="sleep-slider-field">
     <div className="sleep-slider-heading"><span>{label}</span><output className={value === null ? "not-recorded" : undefined}>{valueLabel}</output><button type="button" className="sleep-slider-reset" disabled={disabled || (resetDisabled ?? value === null)} aria-label={`${tr(confirmReset ? "Confirm reset" : "Reset")} · ${label}`} onClick={onReset}><T>{confirmReset ? "Confirm reset" : "Reset"}</T></button></div>
-    <input type="range" aria-label={label} aria-valuetext={valueLabel} min={0} max={max} step={step} value={sliderValue} disabled={disabled} style={{ "--sleep-slider-progress": `${sliderValue / max * 100}%` } as CSSProperties} onChange={(event) => onChange(Number(event.target.value))} onPointerUp={(event) => { if (value === null) onChange(Number(event.currentTarget.value)); }} onKeyUp={(event) => { if (value === null && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"].includes(event.key)) onChange(Number(event.currentTarget.value)); }}/>
+    <div className="sleep-slider-row"><span aria-hidden="true">0</span><input type="range" aria-label={label} aria-valuetext={valueLabel} min={0} max={max} step={step} value={sliderValue} disabled={disabled} style={{ "--sleep-slider-progress": `${sliderValue / max * 100}%` } as CSSProperties} onChange={(event) => onChange(Number(event.target.value))} onPointerUp={(event) => { if (value === null) onChange(Number(event.currentTarget.value)); }} onKeyUp={(event) => { if (value === null && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"].includes(event.key)) onChange(Number(event.currentTarget.value)); }}/><span aria-hidden="true">{max}</span></div>
   </div>;
 }
 export function HealthRecordModal({ today, databaseUuid, onClose }: { today: string; databaseUuid: string; onClose: () => void }) {
@@ -108,25 +109,23 @@ export function HealthRecordModal({ today, databaseUuid, onClose }: { today: str
   const [error, setError] = useState<unknown>(null);
   const [conflict, setConflict] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [confirmResetKey, setConfirmResetKey] = useState<"score" | "duration" | null>(null);
+  const [confirmResetKey, setConfirmResetKey] = useState<"score" | "duration" | "subjectiveFatigue" | null>(null);
   const [cleared, setCleared] = useState<SleepCleared>({});
   useModalDismiss(() => { if (!saving) onClose(); });
   const client = useQueryClient();
   const validDay = /^\d{4}-\d{2}-\d{2}$/.test(day) && Number.isFinite(Date.parse(day)) && day <= today;
-  const storageDay = validDay ? sleepStorageDay(day) : "";
+  const storageDay = validDay ? day : "";
   const query = useQuery({ queryKey: ["wellness", "day", databaseUuid, storageDay], queryFn: () => api<WellnessDay>(`/api/wellness/${storageDay}`), enabled: validDay });
   useEffect(() => { if (query.data && draft === null) { setDraft(sleepDraft(query.data.record)); setCleared({}); setBaseline(query.data); } }, [query.data, draft]);
-  const update = (key: keyof SleepDraft, value: string) => { setConfirmResetKey(null); setCleared((current) => ({ ...current, [key === "score" ? "score" : "duration"]: false })); setDraft((current) => ({ ...(current ?? sleepDraft()), [key]: value })); setError(null); };
+  const update = (key: keyof SleepDraft, value: string) => { setConfirmResetKey(null); setCleared((current) => ({ ...current, [key === "hours" || key === "minutes" ? "duration" : key]: false })); setDraft((current) => ({ ...(current ?? sleepDraft()), [key]: value })); setError(null); };
   const hasChanges = !!draft && !!baseline && sleepHasChanges(draft, baseline.record, cleared);
-  const reset = (key: "score" | "duration") => {
+  const reset = (key: "score" | "duration" | "subjectiveFatigue") => {
     if (confirmResetKey !== key) { setConfirmResetKey(key); return; }
-    const fallback = sleepDraft(baseline?.record, { score: true, duration: true });
+    const fallback = sleepDraft(baseline?.record, { score: true, duration: true, subjectiveFatigue: true });
     setCleared((current) => ({ ...current, [key]: true }));
-    setDraft((current) => ({ ...(current ?? sleepDraft()), ...(key === "score" ? { score: fallback.score } : { hours: fallback.hours, minutes: fallback.minutes }) }));
+    setDraft((current) => ({ ...(current ?? sleepDraft()), ...(key === "score" ? { score: fallback.score } : key === "subjectiveFatigue" ? { subjectiveFatigue: fallback.subjectiveFatigue } : { hours: fallback.hours, minutes: fallback.minutes }) }));
     setConfirmResetKey(null); setError(null);
   };
-  const apiDuration = baseline?.record?.fields.sleepSeconds;
-  const durationSource = apiDuration?.source === "intervals_icu" ? "Intervals.icu" : apiDuration?.source === "user" ? tr("Manual record") : apiDuration?.source === "llm" ? tr("AI record") : apiDuration?.source;
   const save = async () => {
     if (!baseline || !draft || !validDay || !hasChanges || query.isFetching || query.error || error || saving || conflict) return;
     try {
@@ -142,21 +141,24 @@ export function HealthRecordModal({ today, databaseUuid, onClose }: { today: str
     } finally { setSaving(false); }
   };
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) onClose(); }}><section className="connection-modal sleep-record-modal" role="dialog" aria-modal="true" aria-labelledby="health-record-title" aria-describedby="health-record-description">
-    <header><div><h2 id="health-record-title"><T>{"Record health data"}</T></h2><p id="health-record-description"><T>{"Record your sleep experience and duration for the selected evening."}</T></p></div><button type="button" className="modal-close" aria-label={tr("Close dialog")} disabled={saving} onClick={onClose}><svg className="app-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>
+    <header><div><h2 id="health-record-title"><T>{"Record health data"}</T></h2><p id="health-record-description"><T>{"Record your sleep experience, duration and fatigue for the selected evening."}</T></p></div><button type="button" className="modal-close" aria-label={tr("Close dialog")} disabled={saving} onClick={onClose}><svg className="app-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>
     <form className="modal-body" onSubmit={(event) => { event.preventDefault(); void save(); }}>
       <div className="sleep-record-card sleep-date-card"><label><T>{"Record date"}</T><input type="date" value={day} max={today} required disabled={saving} onChange={(event) => { setConfirmResetKey(null); setCleared({}); setDay(event.target.value); setDraft(null); setBaseline(null); setError(null); setConflict(false); }}/></label>
         <p className="sleep-record-note"><T>{"Sleep belongs to the selected evening and ends the following day."}</T></p>
       </div>
       {!validDay ? <p role="alert"><T>{"Choose today or an earlier date."}</T></p> : query.isPending ? <Loading/> : query.error ? <><ErrorBanner error={query.error}/><button type="button" onClick={() => void query.refetch()}><T>{"Retry"}</T></button></> : draft && <>
         <div className="sleep-record-card sleep-score-card">
-          <SleepSlider label={tr("Subjective sleep score")} value={draft.score === "" ? null : Number(draft.score)} max={100} step={1} valueLabel={draft.score === "" ? tr("Not recorded") : `${numberLabel(Number(draft.score))} ${tr("points")}`} disabled={saving || query.isFetching} onChange={(value) => update("score", String(value))} confirmReset={confirmResetKey === "score"} resetDisabled={!sleepCanReset(draft, baseline?.record, cleared, "score")} onReset={() => reset("score")}/>
-          <div className="sleep-slider-scale" aria-hidden="true"><span>0</span><span>100</span></div>
-          <p className="sleep-record-note"><T>{"How did your sleep feel? 0 is very poor and 100 is excellent."}</T></p>
+          <SleepSlider label={tr("Sleep score")} value={draft.score === "" ? null : Number(draft.score)} max={100} step={1} valueLabel={draft.score === "" ? tr("Not recorded") : `${numberLabel(Number(draft.score))} ${tr("points")}`} disabled={saving || query.isFetching} onChange={(value) => update("score", String(value))} confirmReset={confirmResetKey === "score"} resetDisabled={!sleepCanReset(draft, baseline?.record, cleared, "score")} onReset={() => reset("score")}/>
+          <p className="sleep-record-note"><T>{"Your rating takes priority over the source score until you reset it. 0 is very poor and 100 is excellent."}</T></p>
         </div>
         <div className="sleep-record-card sleep-duration-card">
           <div className="sleep-slider-heading"><span>{tr("Sleep duration")}</span><output className={draft.hours === "" && draft.minutes === "" ? "not-recorded" : undefined}>{draft.hours === "" && draft.minutes === "" ? tr("Not recorded") : `${Number(draft.hours || 0)} ${tr("Hours")} ${Number(draft.minutes || 0)} ${tr("Minutes")}`}</output><button type="button" className="sleep-slider-reset" disabled={saving || query.isFetching || !sleepCanReset(draft, baseline?.record, cleared, "duration")} aria-label={`${tr(confirmResetKey === "duration" ? "Confirm reset" : "Reset")} · ${tr("Sleep duration")}`} onClick={() => reset("duration")}><T>{confirmResetKey === "duration" ? "Confirm reset" : "Reset"}</T></button></div>
           <div className="sleep-duration-inputs">{(["hours", "minutes"] as const).map((key) => <SleepDurationInput key={key} unit={key} value={draft[key]} disabled={saving || query.isFetching} onChange={(value) => update(key, value)}/>)}</div>
-          {typeof apiDuration?.value === "number" && Number.isFinite(apiDuration.value) && <p className="sleep-record-note sleep-duration-source">{tr("Manual entries take priority; the original {source} data will be kept.").replace("{source}", durationSource ?? "")}</p>}
+          <p className="sleep-record-note"><T>{"Your entry takes priority over the source duration until you reset it."}</T></p>
+        </div>
+        <div className="sleep-record-card sleep-score-card">
+          <SleepSlider label={tr("Subjective fatigue")} value={draft.subjectiveFatigue === "" ? null : Number(draft.subjectiveFatigue)} max={100} step={1} valueLabel={draft.subjectiveFatigue === "" ? tr("Not recorded") : `${numberLabel(Number(draft.subjectiveFatigue))} ${tr("points")}`} disabled={saving || query.isFetching} onChange={(value) => update("subjectiveFatigue", String(value))} confirmReset={confirmResetKey === "subjectiveFatigue"} resetDisabled={!sleepCanReset(draft, baseline?.record, cleared, "subjectiveFatigue")} onReset={() => reset("subjectiveFatigue")}/>
+          <p className="sleep-record-note"><T>{"0 is well rested and 100 is exhausted."}</T></p>
         </div>
       </>}
       <ErrorBanner error={error}/>
@@ -190,7 +192,7 @@ export function WellnessPage({ today, databaseUuid }: { today: string; databaseU
     motion.addEventListener("change", onMotionChange);
     return () => { clearTimeout(timer); motion.removeEventListener("change", onMotionChange); };
   }, [entranceReady]);
-  const records = (query.data ?? []).filter((record) => record.day <= sleepStorageDay(today));
+  const records = (query.data ?? []).filter((record) => record.day <= today);
   const labels = [currentLanguage() === "zh-CN" ? tr("Wellness week") : "Week", tr("Month"), tr("Six months"), tr("Year")];
   const visibleMetrics = wellnessMetrics.filter((metric) => metric.always || records.some((record) => metric.keys.some((key) => metricNumber(record, key) !== null)));
   const sort = useWellnessSort(databaseUuid, visibleMetrics.map((metric) => metric.id));

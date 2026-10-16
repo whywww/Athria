@@ -3,6 +3,7 @@ use std::path::Path;
 use athria_application::AthriaApplication;
 use athria_store::SqliteStore;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use percent_encoding::percent_decode_str;
 use serde_json::{Value, json};
 
 pub type DesktopApplication = AthriaApplication<SqliteStore>;
@@ -44,10 +45,14 @@ pub fn dispatch(
         .map_err(|_| "Invalid Athria request path.".to_string())?;
     let route = url.path();
     let method = method.to_ascii_uppercase();
-    let segments = url
-        .path_segments()
-        .map(|items| items.collect::<Vec<_>>())
-        .unwrap_or_default();
+    // Split before decoding: imported ids contain ':' and may contain encoded '/'.
+    // Resource handlers must receive the original id, decoded exactly once.
+    let decoded_segments = url.path_segments().into_iter().flatten()
+        .map(|segment| percent_decode_str(segment).decode_utf8()
+            .map(|value| value.into_owned())
+            .map_err(|_| "Invalid UTF-8 in Athria request path.".to_string()))
+        .collect::<Result<Vec<_>, _>>()?;
+    let segments = decoded_segments.iter().map(String::as_str).collect::<Vec<_>>();
     let input = body(request_body);
 
     match (method.as_str(), route) {
@@ -136,6 +141,7 @@ fn dispatch_resource(
     if matches!(segments,
         ["api", "training-sessions", _, "plan-match"]
         | ["api", "training-sessions", _, "automatic-match"]
+        | ["api", "training-sessions", _, "effort"]
         | ["api", "training-sessions", _, "manual"]
         | ["api", "training-sessions", _]
     ) && method != "GET" && method != "PUT"
@@ -149,6 +155,9 @@ fn dispatch_resource(
         }
         ["api", "training-sessions", id, "automatic-match"] if method == "POST" => {
             result(app.clear_training_session_plan_exclusion(id, input))
+        }
+        ["api", "training-sessions", id, "effort"] if method == "PATCH" => {
+            result(app.set_training_session_effort(id, input))
         }
         ["api", "training-sessions", id, "manual"] if method == "PATCH" => {
             result(app.update_manual_training_session(id, input))

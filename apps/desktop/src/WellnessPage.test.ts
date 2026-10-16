@@ -32,7 +32,7 @@ function elements(node: ReactNode): ReactElement<Record<string, unknown>>[] {
   return [element, ...elements(element.props.children as ReactNode)];
 }
 const field = (value: number, source: "user" | "intervals_icu" = "user") => ({ value, source, updatedAt: "2026-10-09T08:00:00Z" });
-const record: WellnessRecord = { ownerId: "local-user", day: "2026-10-09", fields: { subjectiveSleepScore: field(90), manualSleepSeconds: field(28800), sleepScore: field(80, "intervals_icu"), sleepSeconds: field(27000, "intervals_icu"), hrvRmssdMs: field(60, "intervals_icu") }, updatedAt: "2026-10-09T08:00:00Z" };
+const record: WellnessRecord = { ownerId: "local-user", day: "2026-10-08", fields: { sleepScore: field(80, "intervals_icu"), sleepSeconds: field(27000, "intervals_icu"), hrvRmssdMs: field(60, "intervals_icu"), subjectiveFatigue: field(30, "intervals_icu") }, updatedAt: "2026-10-09T08:00:00Z" };
 
 describe("manual sleep evening records", () => {
   const onClose = vi.fn();
@@ -50,46 +50,91 @@ describe("manual sleep evening records", () => {
   }
   beforeEach(() => {
     vi.clearAllMocks(); harness.states = []; harness.records.clear(); harness.query = null;
-    harness.records.set("2026-10-09", { record: structuredClone(record), snapshotHash: "original" });
+    harness.records.set("2026-10-08", { record: structuredClone(record), snapshotHash: "original" });
     harness.api.mockResolvedValue({}); harness.invalidateQueries.mockResolvedValue(undefined);
   });
-  it("defaults to yesterday and reads the next day's raw record with its snapshot", async () => {
+  it("defaults to yesterday and reads the selected day's raw record with its snapshot", async () => {
     const nodes = initialized();
     expect(control(nodes, (element) => element.type === "input" && element.props.type === "date")).toMatchObject({ value: "2026-10-08", max: "2026-10-09" });
-    expect(harness.query?.queryKey).toEqual(["wellness", "day", "database", "2026-10-09"]);
+    expect(harness.query?.queryKey).toEqual(["wellness", "day", "database", "2026-10-08"]);
     await harness.query!.queryFn();
-    expect(harness.api).toHaveBeenCalledWith("/api/wellness/2026-10-09");
-    expect(control(nodes, (element) => element.type === SleepSlider).value).toBe(90);
+    expect(harness.api).toHaveBeenCalledWith("/api/wellness/2026-10-08");
+    expect(control(nodes, (element) => element.type === SleepSlider).value).toBe(80);
     expect(nodes.some((element) => element.props.children === "Record date")).toBe(true);
   });
-  it("saves to the next day using the raw snapshot without touching HRV or device sleep", async () => {
+  it("saves the manual score to the selected evening using the raw snapshot and records only the edited score", async () => {
     let nodes = initialized();
     (control(nodes, (element) => element.type === SleepSlider).onChange as (value: number) => void)(95);
     nodes = render(); await submit(nodes);
     const [path, options] = harness.api.mock.calls[0]!;
-    expect(path).toBe("/api/wellness/2026-10-09");
-    expect(JSON.parse(options.body)).toEqual({ confirmed: true, source: "user", expectedSnapshotHash: "original", fields: { subjectiveSleepScore: 95 } });
+    expect(path).toBe("/api/wellness/2026-10-08");
+    expect(JSON.parse(options.body)).toEqual({ confirmed: true, source: "user", expectedSnapshotHash: "original", fields: { sleepScore: 95 } });
     await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(harness.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["wellness"] });
   });
-  it("maps a changed evening across a year boundary and loads that day's baseline", () => {
+  it("keeps a selected year-end evening on the same date and loads that day's baseline", () => {
     let nodes = initialized();
-    harness.records.set("2026-01-01", { record: { ...record, day: "2026-01-01", fields: { sleepScore: field(70, "intervals_icu") } }, snapshotHash: "january" });
+    harness.records.set("2025-12-31", { record: { ...record, day: "2025-12-31", fields: { sleepScore: field(70, "intervals_icu") } }, snapshotHash: "january" });
     (control(nodes, (element) => element.type === "input" && element.props.type === "date").onChange as (event: unknown) => void)({ target: { value: "2025-12-31" } });
     render(); nodes = render();
-    expect(harness.query?.queryKey.at(-1)).toBe("2026-01-01");
+    expect(harness.query?.queryKey.at(-1)).toBe("2025-12-31");
     expect(control(nodes, (element) => element.type === SleepSlider).value).toBe(70);
   });
-  it("resets the manual score to the device value and clears only the mapped override", async () => {
+  it("disables score reset for device scores", () => {
+    const nodes = initialized();
+    expect(control(nodes, (element) => element.type === SleepSlider).resetDisabled).toBe(true);
+  });
+  it("disables duration reset for device durations", () => {
+    const nodes = initialized();
+    expect(control(nodes, (element) => element.type === "button" && element.props.className === "sleep-slider-reset" && String(element.props["aria-label"]).includes("Sleep duration")).disabled).toBe(true);
+  });
+  it("renders imported subjective fatigue with points and an enabled reset", () => {
+    const nodes = initialized();
+    const subjectiveFatigue = control(nodes, (element) => element.type === SleepSlider && element.props.label === "Subjective fatigue");
+    expect(subjectiveFatigue).toMatchObject({ value: 30, max: 100, step: 1, valueLabel: "30 points", resetDisabled: false });
+  });
+  it("saves an edited subjectiveFatigue rating as the only patch field", async () => {
     let nodes = initialized();
+    const subjectiveFatigue = () => control(nodes, (element) => element.type === SleepSlider && element.props.label === "Subjective fatigue");
+    (subjectiveFatigue().onChange as (value: number) => void)(70);
+    nodes = render(); await submit(nodes);
+    expect(JSON.parse(harness.api.mock.calls[0]![1].body)).toEqual({ confirmed: true, source: "user", expectedSnapshotHash: "original", fields: { subjectiveFatigue: 70 } });
+  });
+  it.each(["user", "intervals_icu"] as const)("clears a %s subjective fatigue rating after confirmation", async (source) => {
+    harness.records.set("2026-10-08", { record: { ...structuredClone(record), fields: { ...record.fields, subjectiveFatigue: field(45, source) } }, snapshotHash: "manual" });
+    let nodes = initialized();
+    const subjectiveFatigue = () => control(nodes, (element) => element.type === SleepSlider && element.props.label === "Subjective fatigue");
+    expect(subjectiveFatigue().resetDisabled).toBe(false);
+    (subjectiveFatigue().onReset as () => void)(); nodes = render();
+    expect(subjectiveFatigue().confirmReset).toBe(true);
+    (subjectiveFatigue().onReset as () => void)(); nodes = render();
+    expect(subjectiveFatigue().value).toBeNull();
+    await submit(nodes);
+    expect(JSON.parse(harness.api.mock.calls[0]![1].body).fields).toEqual({ subjectiveFatigue: null });
+  });
+  it("clears a manual duration to empty after confirmation and resets only the duration", async () => {
+    harness.records.set("2026-10-08", { record: { ...structuredClone(record), fields: { ...record.fields, sleepSeconds: field(25200) } }, snapshotHash: "manual" });
+    let nodes = initialized();
+    const resetButton = () => control(nodes, (element) => element.type === "button" && element.props.className === "sleep-slider-reset" && String(element.props["aria-label"]).includes("Sleep duration"));
+    expect(resetButton().disabled).toBe(false);
+    (resetButton().onClick as () => void)(); nodes = render();
+    expect(resetButton()["aria-label"]).toContain("Confirm reset");
+    (resetButton().onClick as () => void)(); nodes = render();
+    await submit(nodes);
+    expect(JSON.parse(harness.api.mock.calls[0]![1].body).fields).toEqual({ sleepSeconds: null });
+  });
+  it("clears a manual score to empty after confirmation and resets only the score", async () => {
+    harness.records.set("2026-10-08", { record: { ...structuredClone(record), fields: { ...record.fields, sleepScore: field(95) } }, snapshotHash: "manual" });
+    let nodes = initialized();
+    expect(control(nodes, (element) => element.type === SleepSlider).resetDisabled).toBe(false);
     (control(nodes, (element) => element.type === SleepSlider).onReset as () => void)(); nodes = render();
     expect(control(nodes, (element) => element.type === SleepSlider).confirmReset).toBe(true);
     (control(nodes, (element) => element.type === SleepSlider).onReset as () => void)(); nodes = render();
-    expect(control(nodes, (element) => element.type === SleepSlider).value).toBe(80);
+    expect(control(nodes, (element) => element.type === SleepSlider).value).toBeNull();
     await submit(nodes);
-    expect(JSON.parse(harness.api.mock.calls[0]![1].body).fields).toEqual({ subjectiveSleepScore: null });
+    expect(JSON.parse(harness.api.mock.calls[0]![1].body).fields).toEqual({ sleepScore: null });
   });
-  it("reloads the mapped day's snapshot after conflict while keeping the edited score", async () => {
+  it("reloads the selected day's snapshot after conflict while keeping the edited score", async () => {
     let nodes = initialized();
     (control(nodes, (element) => element.type === SleepSlider).onChange as (value: number) => void)(95);
     harness.api.mockRejectedValueOnce(new Error("INPUT_SNAPSHOT_CHANGED"));

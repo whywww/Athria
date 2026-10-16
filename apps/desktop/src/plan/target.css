@@ -76,17 +76,17 @@
 .mt-details-panel { padding: 0 12px 2px; border-radius: 12px; background: var(--surface, #fff); box-shadow: 0 8px 22px rgba(71,85,105,.035); }
 .mt-detail-section + .mt-detail-section { border-top: 1px solid #dfe3e8; }
 .mt-detail-toggle { min-height: 46px; gap: 14px; padding: 6px 0; }
-.mt-detail-toggle > span:nth-child(2) { font-size: 13px; }
-.mt-detail-body { margin: -1px 0 9px; padding: 0 0 0 48px; }
-.mt-list { display: grid; gap: 2px; margin: 0; padding: 0 0 0 18px; color: #68758a; font-size: 12px; line-height: 1.3; }
+/* Section titles inherit the 14px/600 spec from the shared toggle rule above. */
+.mt-detail-body { margin: -1px 0 12px; padding: 0 0 0 48px; }
+.mt-list { display: grid; gap: 10px; margin: 0; padding: 0 0 0 18px; color: #44536d; font-size: 13px; line-height: 1.45; }
 .mt-list li { padding-left: 1px; }
-.mt-list li::marker { color: #8d98aa; font-size: .8em; }
-.mt-list li > span { display: block; }
-.mt-list li > small { display: block; margin-top: 2px; color: #8992a0; font-size: 11px; }
+.mt-list li::marker { color: #68758a; font-size: 1em; }
+.mt-list li > span { display: block; font-weight: 500; }
+.mt-list li > small { display: block; margin-top: 3px; color: #6d7788; font-size: 12px; }
 .mt-coordination {
   margin: 0; padding: 10px 16px; border-left: 3px solid var(--accent-border, rgba(255, 90, 55, .32));
   border-radius: 6px 11px 11px 6px; color: #5e6c81;
-  background: var(--accent-tint, #fffaf8); font-size: 12px; line-height: 1.45;
+  background: var(--accent-tint, #fffaf8); font-size: 13px; line-height: 1.55;
 }
 
 /* =========================================================================
@@ -106,7 +106,7 @@
   text-align: left; cursor: pointer;
 }
 .pdb-toggle:focus-visible { outline: 2px solid #567fb8; outline-offset: 4px; }
-.pdb-heading-text { min-width: 0; display: grid; gap: 12px; }
+.pdb-heading-text { min-width: 0; display: grid; gap: 4px; }
 /* The subheading renders inside the h3 toggle, so restore body weight and normal letter-spacing. */
 .pdb-subheading { margin: 0; color: #7188ad; font-size: 12px; font-weight: 400; line-height: 1.35; letter-spacing: normal; }
 .pdb-chevron { width: 20px; height: 20px; flex: 0 0 auto; color: #52627b; transition: transform .16s ease; }

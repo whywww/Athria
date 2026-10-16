@@ -1,11 +1,11 @@
 import { assessWellness, type WellnessAssessment, type WellnessAssessmentKey } from "./wellness-assessment";
 import { T, tr, currentLanguage, weekdayName } from "./i18n";
 import { useId, useLayoutEffect, useState, type ReactNode } from "react";
-import { formatDistance, formatDuration, friendlyLabel, type CalendarSession, type TrainingHistorySession, type TrainingSummary, type WellnessRecord } from "./view-models";
+import { formatDistance, formatDuration, friendlyLabel, type CalendarSession, type TrainingHistorySession, type TrainingSummary, type ReadinessAssessment, type WellnessRecord } from "./view-models";
 import { addDays, weekdayIndex } from "./plan/view";
 import { domainIconPath } from "./domain-icons";
 import { useModalDismiss } from "./components";
-import { eveningWellnessRecords, sleepDurationField } from "./wellness-view";
+import { sleepDurationField } from "./wellness-view";
 
 const domainOrder = ["strength", "endurance", "sport_skill", "mind_body", "mobility", "functional"] as const;
 const weekdayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -100,18 +100,12 @@ const wellnessPriority: Array<{ key: WellnessAssessmentKey; label: string; forma
   { key: "hrvSdnnMs", label: "HRV SDNN (ms)", format: wellnessCompactNumber, tone: "orange" },
   { key: "sleepSeconds", label: "Sleep time", format: wellnessSleepFormat, tone: "purple" },
   { key: "avgSleepingHeartRateBpm", label: "Sleeping HR (bpm)", format: wellnessCompactNumber, tone: "blue" },
-  { key: "sleepQuality", label: "Sleep quality", format: wellnessCompactNumber, tone: "purple" },
   { key: "spo2Percent", label: "SpO2 (%)", format: (value) => value.toFixed(1), tone: "blue" },
-  { key: "fatigue", label: "Fatigue", format: wellnessCompactNumber, tone: "orange" },
-  { key: "stress", label: "Stress", format: wellnessCompactNumber, tone: "orange" },
-  { key: "soreness", label: "Soreness", format: wellnessCompactNumber, tone: "orange" },
-  { key: "mood", label: "Mood", format: wellnessCompactNumber, tone: "green" },
-  { key: "motivation", label: "Motivation", format: wellnessCompactNumber, tone: "green" },
 ];
 
 // All selected metrics share the actual data range within seven days of the latest measurement.
 export function wellnessHighlights(records: WellnessRecord[], today: string) {
-  records = eveningWellnessRecords(records).filter((record) => record.day <= today);
+  records = records.filter((record) => record.day <= today);
   const available = records.filter((record) => record.day <= today && wellnessPriority.some((item) => wellnessNumber(record, item.key) !== null));
   const latestDay = available.map((record) => record.day).sort().at(-1);
   if (!latestDay) return null;
@@ -163,71 +157,19 @@ export function formatWellnessRange(start: string, end: string) {
   return startYear === endYear ? `${wellnessDayShort(start)} – ${wellnessDayShort(end)}, ${endYear}` : `${wellnessDayShort(start)}, ${startYear} – ${wellnessDayShort(end)}, ${endYear}`;
 }
 
-function medianValue(values: number[]) {
-  const sorted = [...values].sort((left, right) => left - right); const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2;
-}
-
-// Score independent device estimates and subjective reports before blending them.
-export function recoverySleepScore(current: WellnessRecord): number | null {
-  const band = (score: number) => score >= 85 ? 90 : score >= 75 ? 75 : score >= 65 ? 60 : score >= 55 ? 45 : 30;
-  const scores = (["sleepScore", "subjectiveSleepScore"] as const).flatMap((key) => {
-    const value = wellnessNumber(current, key);
-    return value !== null && value >= 0 && value <= 100 ? [band(value)] : [];
-  });
-  if (scores.length) return scores.reduce((sum, value) => sum + value, 0) / scores.length;
-  for (const key of ["manualSleepSeconds", "sleepSeconds"] as const) {
-    const seconds = wellnessNumber(current, key);
-    if (seconds !== null && seconds >= 0) return seconds >= 27000 ? 90 : seconds >= 25200 ? 75 : seconds >= 23400 ? 60 : seconds >= 21600 ? 45 : 30;
-  }
-  return null;
-}
-
-// All three signals are required for an evening's readiness estimate.
-function recoveryScore(current: WellnessRecord, sleepRecord: WellnessRecord | undefined, records: WellnessRecord[]): number | null {
-  const baseline = (key: "hrvRmssdMs" | "hrvSdnnMs" | "restingHeartRateBpm") => {
-    const value = wellnessNumber(current, key);
-    if (value === null || value <= 0) return null;
-    const start = addDays(current.day, -28);
-    const days = new Map<string, number>();
-    for (const record of records) {
-      const previous = wellnessNumber(record, key);
-      if (record.ownerId === current.ownerId && record.day >= start && record.day < current.day && record.fields[key]?.source === current.fields[key]?.source && previous !== null && previous > 0) days.set(record.day, previous);
-    }
-    return days.size >= 7 ? medianValue([...days.values()]) : null;
-  };
-  let hrvScore: number | null = null;
-  for (const key of ["hrvRmssdMs", "hrvSdnnMs"] as const) {
-    const usual = baseline(key);
-    if (usual === null) continue;
-    const ratio = wellnessNumber(current, key)! / usual;
-    hrvScore = ratio >= 1 ? 90 : ratio >= 0.95 ? 75 : ratio >= 0.9 ? 60 : ratio >= 0.85 ? 45 : 30;
-    break;
-  }
-  const usualHr = baseline("restingHeartRateBpm");
-  if (hrvScore === null || usualHr === null) return null;
-  const delta = wellnessNumber(current, "restingHeartRateBpm")! - usualHr;
-  const heartScore = delta <= 0 ? 90 : delta <= 2 ? 75 : delta <= 4 ? 60 : delta <= 6 ? 45 : 30;
-  const sleep = sleepRecord ? recoverySleepScore(sleepRecord) : null;
-  if (sleep === null) return null;
-  return Math.round((hrvScore + heartScore + sleep) / 3);
-}
-
 export function recoveryStatus(records: WellnessRecord[], today: string) {
-  records = eveningWellnessRecords(records).filter((record) => record.day <= today);
   const day = addDays(today, -1);
-  const heart = records.find((record) => record.day === day);
-  const empty = { label: "-", detail: "More wellness data needed.", value: null, day: null, signalCount: 0, series: [] as number[] };
-  if (!heart) return empty;
-  const score = recoveryScore(heart, heart, records);
-  if (score === null) return empty;
-  const series: number[] = [];
-  for (const record of records.filter((record) => record.ownerId === heart.ownerId && record.day <= day).sort((a, b) => b.day.localeCompare(a.day))) {
-    const value = recoveryScore(record, record, records);
-    if (value !== null) series.unshift(value);
-    if (series.length === 5) break;
-  }
-  const signalCount = 3;
+  const current = records.find((record) => record.day === day);
+  const storedScore = (record: WellnessRecord | undefined) => {
+    const field = record?.fields.readiness;
+    return field?.source === "athria" && typeof field.value === "number" && Number.isFinite(field.value) && field.value >= 0 && field.value <= 100 ? field.value : null;
+  };
+  const score = storedScore(current);
+  if (score === null || !current) return { label: "-", detail: "More wellness data needed.", value: null, day: null, signalCount: 0, series: [] as number[] };
+  const series = records.filter((record) => record.ownerId === current.ownerId && record.day <= day)
+    .sort((a, b) => b.day.localeCompare(a.day)).flatMap((record) => { const value = storedScore(record); return value === null ? [] : [value]; }).slice(0, 5).reverse();
+  const assessment = current.readinessAssessment;
+  const signalCount = assessment ? [assessment.cardiacScore, assessment.sleepScore, assessment.subjectiveScore].filter((value) => value !== null).length : 3;
   if (score >= 70) return { label: "Ready", detail: "Ready to train", value: score, day, series, signalCount };
   if (score >= 45) return { label: "Caution", detail: "Train with care", value: score, day, series, signalCount };
   return { label: "Rest", detail: "Prioritize recovery", value: score, day, series, signalCount };
@@ -384,24 +326,27 @@ export function SummaryProgressRing({ percent, children, tone = "plan", entrance
   return <span className={`progress-ring${tone === "plan" ? "" : ` ${tone}`}`}><svg viewBox="0 0 100 100" aria-hidden="true"><defs><linearGradient id={`summary-ring-${uid}`} gradientUnits="userSpaceOnUse" x1="10" y1="5" x2="90" y2="95"><stop offset="0" stopColor={colors[0]} stopOpacity=".9"/><stop offset=".45" stopColor={colors[1]} stopOpacity=".88"/><stop offset="1" stopColor={colors[2]} stopOpacity=".95"/></linearGradient></defs><circle className="summary-ring-track" cx="50" cy="50" r="40"/>{progress > 0 && <circle className="summary-ring-fill" cx="50" cy="50" r="40" pathLength="100" stroke={`url(#summary-ring-${uid})`} strokeDasharray={progress < 100 ? `${progress} 100` : undefined} transform="rotate(-90 50 50)"/>}</svg><b>{children}</b></span>;
 }
 
-export function RecoveryHelpModal({ onClose }: { onClose: () => void }) {
+export function RecoveryHelpModal({ onClose, assessment }: { onClose: () => void; assessment?: ReadinessAssessment | undefined }) {
   useModalDismiss(onClose);
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <section className="connection-modal recovery-modal" role="dialog" aria-modal="true" aria-labelledby="recovery-help-title">
-      <header><div><h2 id="recovery-help-title"><T>{"How We Calculate Overall Readiness"}</T></h2><p><T>{"A recovery estimate from sleep, HRV and resting heart rate."}</T></p></div><button type="button" className="modal-close" aria-label={tr("Close dialog")} onClick={onClose}><svg className="app-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>
+      <header><div><h2 id="recovery-help-title"><T>{"How We Calculate Overall Readiness"}</T></h2><p><T>{"A morning estimate from recovery signals and recent training load."}</T></p></div><button type="button" className="modal-close" aria-label={tr("Close dialog")} onClick={onClose}><svg className="app-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>
       <div className="modal-body">
-        <ul className="recovery-help-signals">
-          <li><strong><T>{"HRV"}</T></strong><span><T>{"Compared with your personal baseline. RMSSD is preferred; SDNN is used when it has a valid baseline and RMSSD does not."}</T></span></li>
-          <li><strong><T>{"Resting heart rate"}</T></strong><span><T>{"Compared with your personal baseline; an elevated rate lowers the estimate."}</T></span></li>
-          <li><strong><T>{"Sleep"}</T></strong><span><T>{"Device and subjective sleep scores are scored separately and averaged equally. Without a score, manual duration is preferred, then device duration."}</T></span></li>
-        </ul>
-        <p className="recovery-help-lead"><T>{"HRV, resting heart rate and sleep scores are averaged only when all three signals are available:"}</T></p>
+        <p><T>{"Each morning uses yesterday's heart data and fatigue, yesterday evening's sleep ending today, and completed training through yesterday. Today's training affects tomorrow. At least two recovery dimensions are required to produce a score."}</T></p>
+        <section className="readiness-breakdown" aria-label={tr("Readiness breakdown")}>
+          <h3><T>{"Readiness breakdown"}</T></h3>
+          {assessment && <p><T>{"Morning estimate for"}</T> {formatWellnessDate(assessment.assessmentDay)} · <T>{assessment.dataQuality === "sufficient" ? "Sufficient data" : assessment.dataQuality === "limited" ? "Limited data" : "Insufficient data"}</T></p>}
+          <dl>{([
+            ["Cardiac recovery", assessment?.cardiacScore ?? null], ["Sleep", assessment?.sleepScore ?? null], ["Subjective recovery", assessment?.subjectiveScore ?? null],
+            ["Weighted base score", assessment?.baseScore ?? null], ["Training load deduction", assessment?.loadAdjustment ?? null], ["Score cap", assessment?.scoreCap ?? null], ["Final readiness", assessment?.score ?? null],
+          ] as const).map(([label, value]) => <div key={label}><dt>{tr(label)}</dt><dd>{value === null ? "–" : Math.round(value * 10) / 10}</dd></div>)}</dl>
+        </section>
         <ul className="recovery-help-verdicts">
           <li className="ready"><i/><div><strong><T>{"Ready · 70+"}</T></strong><span><T>{"Recovered. Train as planned."}</T></span></div></li>
           <li className="caution"><i/><div><strong><T>{"Caution · 45-69"}</T></strong><span><T>{"You can train, but keep it lighter."}</T></span></div></li>
           <li className="rest"><i/><div><strong><T>{"Rest · below 45"}</T></strong><span><T>{"Prioritize recovery today."}</T></span></div></li>
         </ul>
-        <p className="recovery-help-note"><T>{"Readiness evaluates yesterday's HRV and resting heart rate together with yesterday evening's sleep ending today. Each heart baseline requires at least 7 valid days from the same source in the 28 days before yesterday, excluding yesterday itself. If sleep, heart data or baselines are insufficient, no estimate is shown; older readiness is not substituted. Manual sleep scores describe how you felt; they are stored separately from device estimates. Training load and other subjective check-ins are not included. These are Athria's estimation rules, not a scientifically validated score or a reproduction of another product's algorithm."}</T></p>
+        <p className="recovery-help-note"><T>{"These are Athria estimation rules, not a scientifically validated score."}</T></p>
       </div>
     </section>
   </div>;
@@ -412,13 +357,18 @@ export function weeklyRingProgress(actual: number, target: number) {
   return { ratio, percent: Math.round(ratio * 100), full: ratio >= 1, remainder: ratio > 0 ? (ratio % 1 || 1) : 0 };
 }
 
-export function activityAxis(maximum: number, counts = false) {
-  const rough = Math.max(counts ? 1 : 5, maximum / 4);
+/* Both axes render four ticks (0 / s / 2s / 3s) so the right-hand labels sit exactly on the four grid lines for every data shape. */
+const axisSteps = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 7.5, 10];
+function fourTickAxis(rough: number) {
   const magnitude = 10 ** Math.floor(Math.log10(rough));
-  const step = [1, 2, 5, 10].map((value) => value * magnitude).find((value) => value >= rough)!;
-  const ceiling = Math.max(step * 3, Math.ceil(maximum / step) * step);
-  return { ceiling, ticks: Array.from({ length: Math.round(ceiling / step) + 1 }, (_, index) => index * step) };
+  const step = axisSteps.map((value) => value * magnitude).find((value) => value >= rough && Number.isInteger(value))!;
+  return { ceiling: step * 3, ticks: [0, step, step * 2, step * 3] };
 }
+
+export function frequencyAxis(maximum: number) { return fourTickAxis(Math.max(1, maximum / 3)); }
+
+/* A quarter extra headroom keeps the tallest duration at ≤80% of the ceiling so its label always clears the plot's top edge. */
+export function durationAxis(maximum: number) { return fourTickAxis(Math.max(5, maximum * 1.25 / 3)); }
 
 function WeeklyActivityRings({ summary, minutesTarget, countTarget, entranceProgress }: { summary: TrainingSummary; minutesTarget: number; countTarget: number; entranceProgress: number }) {
   const uid = useId().replace(/[^a-zA-Z0-9_-]/g, "");
@@ -447,14 +397,12 @@ function WeeklyActivityRings({ summary, minutesTarget, countTarget, entranceProg
   </div></div>;
 }
 
-/* The `bottom` offset (inside the marker's inner box) that keeps a duration label just above its marker without leaving the 104px plot box. */
-export function durationLabelBottom(pointY: number) {
-  return 4 + Math.min(6, Math.round(pointY) - 14);
-}
+/* Marker border (2px) + ring radius (4px) + 5px gap keeps duration labels just above their markers. */
+const durationLabelBottom = 11;
 
 function ActivityDomainChart({ summary }: { summary: TrainingSummary }) {
-  const counts = activityAxis(Math.max(0, ...domainOrder.map((domain) => summary.byDomain[domain] ?? 0)), true);
-  const minutes = activityAxis(Math.max(0, ...domainOrder.map((domain) => summary.durationMinutesByDomain[domain] ?? 0)));
+  const counts = frequencyAxis(Math.max(0, ...domainOrder.map((domain) => summary.byDomain[domain] ?? 0)));
+  const minutes = durationAxis(Math.max(0, ...domainOrder.map((domain) => summary.durationMinutesByDomain[domain] ?? 0)));
   const points = domainOrder.map((domain, index) => ({ x: (index + .5) / domainOrder.length * 100, y: 100 * (1 - (summary.durationMinutesByDomain[domain] ?? 0) / minutes.ceiling) }));
   const linePath = monotonePath(points);
   return <section className="activity-domain-chart" aria-label={tr("Workout frequency and duration")} data-chart="weekly-combined">
@@ -476,8 +424,7 @@ function ActivityDomainChart({ summary }: { summary: TrainingSummary }) {
       <div className="activity-duration-points" aria-hidden="true">{points.map((point, index) => {
         const domain = domainOrder[index]!;
         const duration = Number((summary.durationMinutesByDomain[domain] ?? 0).toFixed(1));
-        const bottom = durationLabelBottom(point.y);
-        return <i key={domain} style={{ left: `${point.x}%`, top: `${point.y / 104 * 100}%` }}>{duration > 0 ? <span style={{ bottom: `${bottom}px` }}>{duration}</span> : <span className="zero" style={{ bottom: `${bottom}px` }}>0</span>}</i>;
+        return <i key={domain} style={{ left: `${point.x}%`, top: `${point.y / 104 * 100}%` }}>{duration > 0 ? <span style={{ bottom: durationLabelBottom }}>{duration}</span> : <span className="zero" style={{ bottom: durationLabelBottom }}>0</span>}</i>;
       })}</div>
     </div>
   </section>;
@@ -505,7 +452,7 @@ export function OverviewDashboard({ summary, wellness, history, planned, today, 
       <div className="overview-left-column">
         <section className="overview-summary-grid" aria-label={tr("This week so far")}>
           <SummaryCard title={tr("Plan Progress")} value={`${meso.completed} / ${meso.total}`} className="plan-summary" ring={<SummaryProgressRing percent={meso.percent} entranceProgress={entrance.progress}>{meso.percent}%</SummaryProgressRing>}><small>{tr("this mesocycle")}</small></SummaryCard>
-          <SummaryCard title={tr("Readiness")} titleAction={<button type="button" className="recovery-help" aria-haspopup="dialog" onClick={() => setHelpOpen(true)}>{currentLanguage() === "zh-CN" ? "（" : "("}<T>{"How to calculate?"}</T>{currentLanguage() === "zh-CN" ? "）" : ")"}</button>} value={tr(recovery.label)} className="recovery-summary" ring={<SummaryProgressRing percent={recovery.value ?? 0} tone={recoveryRingTone(recovery.label)} entranceProgress={entrance.progress}>{recovery.value ?? "-"}</SummaryProgressRing>}><small>{tr(recovery.signalCount === 3 ? recovery.detail : "Insufficient data")}</small></SummaryCard>
+          <SummaryCard title={tr("Readiness")} titleAction={<button type="button" className="recovery-help" aria-haspopup="dialog" onClick={() => setHelpOpen(true)}>{currentLanguage() === "zh-CN" ? "（" : "("}<T>{"How to calculate?"}</T>{currentLanguage() === "zh-CN" ? "）" : ")"}</button>} value={tr(recovery.label)} className="recovery-summary" ring={<SummaryProgressRing percent={recovery.value ?? 0} tone={recoveryRingTone(recovery.label)} entranceProgress={entrance.progress}>{recovery.value ?? "-"}</SummaryProgressRing>}><small>{tr(recovery.value !== null ? recovery.detail : "Insufficient data")}</small></SummaryCard>
         </section>
 
         <section className="overview-panel overview-activity"><header><div><h2><T>{"Your workouts this week"}</T></h2></div><button type="button" className="wellness-open" aria-label={tr("Open Training")} title={tr("Open Training")} onClick={() => window.dispatchEvent(new CustomEvent("athria-open-training"))}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button></header>
@@ -536,6 +483,6 @@ export function OverviewDashboard({ summary, wellness, history, planned, today, 
         </section>
       </div>
     </div>
-    {helpOpen && <RecoveryHelpModal onClose={() => setHelpOpen(false)}/>}
+    {helpOpen && <RecoveryHelpModal onClose={() => setHelpOpen(false)} assessment={wellness.find((record) => record.day === addDays(today, -1))?.readinessAssessment}/>}
   </div>;
 }

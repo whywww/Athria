@@ -32,7 +32,8 @@
               "enum": [
                 "intervals_icu",
                 "user",
-                "llm"
+                "llm",
+                "athria"
               ]
             },
             "updatedAt": {
@@ -67,7 +68,8 @@
               "enum": [
                 "intervals_icu",
                 "user",
-                "llm"
+                "llm",
+                "athria"
               ]
             },
             "updatedAt": {
@@ -102,7 +104,8 @@
               "enum": [
                 "intervals_icu",
                 "user",
-                "llm"
+                "llm",
+                "athria"
               ]
             },
             "updatedAt": {
@@ -126,7 +129,7 @@
                 {
                   "type": "integer",
                   "minimum": 0,
-                  "maximum": 9007199254740991
+                  "maximum": 86400
                 },
                 {
                   "type": "null"
@@ -138,7 +141,8 @@
               "enum": [
                 "intervals_icu",
                 "user",
-                "llm"
+                "llm",
+                "athria"
               ]
             },
             "updatedAt": {
@@ -174,115 +178,8 @@
               "enum": [
                 "intervals_icu",
                 "user",
-                "llm"
-              ]
-            },
-            "updatedAt": {
-              "type": "string",
-              "format": "date-time",
-              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-            }
-          },
-          "required": [
-            "value",
-            "source",
-            "updatedAt"
-          ],
-          "additionalProperties": false
-        },
-        "subjectiveSleepScore": {
-          "type": "object",
-          "properties": {
-            "value": {
-              "anyOf": [
-                {
-                  "type": "number",
-                  "minimum": 0,
-                  "maximum": 100
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "source": {
-              "type": "string",
-              "enum": [
-                "intervals_icu",
-                "user",
-                "llm"
-              ]
-            },
-            "updatedAt": {
-              "type": "string",
-              "format": "date-time",
-              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-            }
-          },
-          "required": [
-            "value",
-            "source",
-            "updatedAt"
-          ],
-          "additionalProperties": false
-        },
-        "manualSleepSeconds": {
-          "type": "object",
-          "properties": {
-            "value": {
-              "anyOf": [
-                {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 86400
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "source": {
-              "type": "string",
-              "enum": [
-                "intervals_icu",
-                "user",
-                "llm"
-              ]
-            },
-            "updatedAt": {
-              "type": "string",
-              "format": "date-time",
-              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-            }
-          },
-          "required": [
-            "value",
-            "source",
-            "updatedAt"
-          ],
-          "additionalProperties": false
-        },
-        "sleepQuality": {
-          "type": "object",
-          "properties": {
-            "value": {
-              "anyOf": [
-                {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "source": {
-              "type": "string",
-              "enum": [
-                "intervals_icu",
-                "user",
-                "llm"
+                "llm",
+                "athria"
               ]
             },
             "updatedAt": {
@@ -317,7 +214,8 @@
               "enum": [
                 "intervals_icu",
                 "user",
-                "llm"
+                "llm",
+                "athria"
               ]
             },
             "updatedAt": {
@@ -352,7 +250,8 @@
               "enum": [
                 "intervals_icu",
                 "user",
-                "llm"
+                "llm",
+                "athria"
               ]
             },
             "updatedAt": {
@@ -388,7 +287,8 @@
               "enum": [
                 "intervals_icu",
                 "user",
-                "llm"
+                "llm",
+                "athria"
               ]
             },
             "updatedAt": {
@@ -423,7 +323,8 @@
               "enum": [
                 "intervals_icu",
                 "user",
-                "llm"
+                "llm",
+                "athria"
               ]
             },
             "updatedAt": {
@@ -459,7 +360,8 @@
               "enum": [
                 "intervals_icu",
                 "user",
-                "llm"
+                "llm",
+                "athria"
               ]
             },
             "updatedAt": {
@@ -495,7 +397,8 @@
               "enum": [
                 "intervals_icu",
                 "user",
-                "llm"
+                "llm",
+                "athria"
               ]
             },
             "updatedAt": {
@@ -530,7 +433,8 @@
               "enum": [
                 "intervals_icu",
                 "user",
-                "llm"
+                "llm",
+                "athria"
               ]
             },
             "updatedAt": {
@@ -546,14 +450,15 @@
           ],
           "additionalProperties": false
         },
-        "fatigue": {
+        "subjectiveFatigue": {
           "type": "object",
           "properties": {
             "value": {
               "anyOf": [
                 {
                   "type": "number",
-                  "minimum": 0
+                  "minimum": 0,
+                  "maximum": 100
                 },
                 {
                   "type": "null"
@@ -565,147 +470,8 @@
               "enum": [
                 "intervals_icu",
                 "user",
-                "llm"
-              ]
-            },
-            "updatedAt": {
-              "type": "string",
-              "format": "date-time",
-              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-            }
-          },
-          "required": [
-            "value",
-            "source",
-            "updatedAt"
-          ],
-          "additionalProperties": false
-        },
-        "soreness": {
-          "type": "object",
-          "properties": {
-            "value": {
-              "anyOf": [
-                {
-                  "type": "number",
-                  "minimum": 0
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "source": {
-              "type": "string",
-              "enum": [
-                "intervals_icu",
-                "user",
-                "llm"
-              ]
-            },
-            "updatedAt": {
-              "type": "string",
-              "format": "date-time",
-              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-            }
-          },
-          "required": [
-            "value",
-            "source",
-            "updatedAt"
-          ],
-          "additionalProperties": false
-        },
-        "stress": {
-          "type": "object",
-          "properties": {
-            "value": {
-              "anyOf": [
-                {
-                  "type": "number",
-                  "minimum": 0
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "source": {
-              "type": "string",
-              "enum": [
-                "intervals_icu",
-                "user",
-                "llm"
-              ]
-            },
-            "updatedAt": {
-              "type": "string",
-              "format": "date-time",
-              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-            }
-          },
-          "required": [
-            "value",
-            "source",
-            "updatedAt"
-          ],
-          "additionalProperties": false
-        },
-        "mood": {
-          "type": "object",
-          "properties": {
-            "value": {
-              "anyOf": [
-                {
-                  "type": "number",
-                  "minimum": 0
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "source": {
-              "type": "string",
-              "enum": [
-                "intervals_icu",
-                "user",
-                "llm"
-              ]
-            },
-            "updatedAt": {
-              "type": "string",
-              "format": "date-time",
-              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-            }
-          },
-          "required": [
-            "value",
-            "source",
-            "updatedAt"
-          ],
-          "additionalProperties": false
-        },
-        "motivation": {
-          "type": "object",
-          "properties": {
-            "value": {
-              "anyOf": [
-                {
-                  "type": "number",
-                  "minimum": 0
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "source": {
-              "type": "string",
-              "enum": [
-                "intervals_icu",
-                "user",
-                "llm"
+                "llm",
+                "athria"
               ]
             },
             "updatedAt": {
@@ -728,43 +494,8 @@
               "anyOf": [
                 {
                   "type": "number",
-                  "minimum": 0
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "source": {
-              "type": "string",
-              "enum": [
-                "intervals_icu",
-                "user",
-                "llm"
-              ]
-            },
-            "updatedAt": {
-              "type": "string",
-              "format": "date-time",
-              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-            }
-          },
-          "required": [
-            "value",
-            "source",
-            "updatedAt"
-          ],
-          "additionalProperties": false
-        },
-        "injuryScore": {
-          "type": "object",
-          "properties": {
-            "value": {
-              "anyOf": [
-                {
-                  "type": "integer",
                   "minimum": 0,
-                  "maximum": 9007199254740991
+                  "maximum": 100
                 },
                 {
                   "type": "null"
@@ -776,7 +507,8 @@
               "enum": [
                 "intervals_icu",
                 "user",
-                "llm"
+                "llm",
+                "athria"
               ]
             },
             "updatedAt": {
@@ -792,42 +524,7 @@
           ],
           "additionalProperties": false
         },
-        "notes": {
-          "type": "object",
-          "properties": {
-            "value": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "maxLength": 2000
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "source": {
-              "type": "string",
-              "enum": [
-                "intervals_icu",
-                "user",
-                "llm"
-              ]
-            },
-            "updatedAt": {
-              "type": "string",
-              "format": "date-time",
-              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-            }
-          },
-          "required": [
-            "value",
-            "source",
-            "updatedAt"
-          ],
-          "additionalProperties": false
-        },
-        "eftpWatts": {
+        "atl": {
           "type": "object",
           "properties": {
             "value": {
@@ -846,7 +543,8 @@
               "enum": [
                 "intervals_icu",
                 "user",
-                "llm"
+                "llm",
+                "athria"
               ]
             },
             "updatedAt": {
@@ -862,7 +560,7 @@
           ],
           "additionalProperties": false
         },
-        "wPrimeJoules": {
+        "ctl": {
           "type": "object",
           "properties": {
             "value": {
@@ -881,7 +579,8 @@
               "enum": [
                 "intervals_icu",
                 "user",
-                "llm"
+                "llm",
+                "athria"
               ]
             },
             "updatedAt": {
@@ -897,14 +596,13 @@
           ],
           "additionalProperties": false
         },
-        "pMaxWatts": {
+        "form": {
           "type": "object",
           "properties": {
             "value": {
               "anyOf": [
                 {
-                  "type": "number",
-                  "minimum": 0
+                  "type": "number"
                 },
                 {
                   "type": "null"
@@ -916,7 +614,8 @@
               "enum": [
                 "intervals_icu",
                 "user",
-                "llm"
+                "llm",
+                "athria"
               ]
             },
             "updatedAt": {
@@ -939,6 +638,318 @@
       "type": "string",
       "format": "date-time",
       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+    },
+    "readinessAssessment": {
+      "type": "object",
+      "readOnly": true,
+      "description": "Athria-managed readiness breakdown; ignored on raw record normalization and regenerated on writes.",
+      "properties": {
+        "cardiacScore": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 100
+        },
+        "sleepScore": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 100
+        },
+        "subjectiveScore": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 100
+        },
+        "baseScore": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 100
+        },
+        "loadAdjustment": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "scoreCap": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 100
+        },
+        "algorithmVersion": {
+          "const": "athria-readiness-percentile-load"
+        },
+        "assessmentDay": {
+          "type": "string",
+          "format": "date"
+        },
+        "score": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 100
+        },
+        "status": {
+          "enum": [
+            "Ready",
+            "Caution",
+            "Rest",
+            "Insufficient data"
+          ]
+        },
+        "loadMethod": {
+          "enum": [
+            "sessionRpe",
+            "trainingLoad",
+            "powerLoad",
+            "hrLoad",
+            "paceLoad",
+            "atlCtl",
+            "mixed",
+            null
+          ]
+        },
+        "dataQuality": {
+          "enum": [
+            "sufficient",
+            "limited",
+            "insufficient"
+          ]
+        },
+        "missingReasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "hrvField": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "heartRateField": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "hrvBaselineDays": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 28
+        },
+        "heartRateBaselineDays": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 28
+        },
+        "trainingLoad": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string"
+            },
+            "recentSessionCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "durationMinutes": {
+              "type": "number",
+              "minimum": 0
+            },
+            "ratedSessionCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "knownRpeLoad": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "knownRpePressure": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "groups": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "activityType": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "method": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "recentSessionCount": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "validSessionCount": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "historyWindows": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "referenceDays": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "referenceSpanDays": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "durationMinutes": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "rawAdjustment": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "weightedAdjustment": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "knownLoad": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "knownPressure": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "complete": {
+                    "type": "boolean"
+                  },
+                  "eligible": {
+                    "type": "boolean"
+                  },
+                  "selected": {
+                    "type": "boolean"
+                  },
+                  "evidenceWeight": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "durationShare": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "percentile": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "maximum": 1
+                  }
+                },
+                "required": [
+                  "activityType",
+                  "method",
+                  "status",
+                  "recentSessionCount",
+                  "validSessionCount",
+                  "historyWindows",
+                  "referenceDays",
+                  "referenceSpanDays",
+                  "durationMinutes",
+                  "rawAdjustment",
+                  "weightedAdjustment",
+                  "knownLoad",
+                  "knownPressure",
+                  "complete",
+                  "eligible",
+                  "selected",
+                  "evidenceWeight",
+                  "durationShare",
+                  "percentile"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "combinedAdjustment": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 15
+            },
+            "wellnessFactor": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          },
+          "required": [
+            "status",
+            "recentSessionCount",
+            "durationMinutes",
+            "ratedSessionCount",
+            "knownRpeLoad",
+            "knownRpePressure",
+            "groups",
+            "combinedAdjustment",
+            "wellnessFactor"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "cardiacScore",
+        "sleepScore",
+        "subjectiveScore",
+        "baseScore",
+        "loadAdjustment",
+        "scoreCap",
+        "algorithmVersion",
+        "assessmentDay",
+        "score",
+        "status",
+        "loadMethod",
+        "dataQuality",
+        "missingReasons",
+        "hrvField",
+        "heartRateField",
+        "hrvBaselineDays",
+        "heartRateBaselineDays",
+        "trainingLoad"
+      ],
+      "additionalProperties": false
     }
   },
   "required": [

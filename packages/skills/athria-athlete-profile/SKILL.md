@@ -1,15 +1,15 @@
 ---
 name: athria-athlete-profile
-description: Start Athria when the user explicitly asks to start it, including translations of "start Athria", without a more specific task. Onboard an athlete, maintain confirmed profile and wellness facts, and read or revise their concise training experience memory. A greeting alone does not trigger Athria; never rewrite the plan from this Skill.
+description: Start Athria when the user explicitly asks to start it, including translations of "start Athria", without a more specific task. Onboard an athlete, maintain confirmed profile facts, read wellness data, and read or revise their concise training experience memory. A greeting alone does not trigger Athria; never rewrite the plan from this Skill.
 ---
 
 # Athria Athlete Profile
 
-Maintain facts about the athlete and their circumstances. A confirmed Profile or Wellness update is independent from any later plan adjustment.
+Maintain facts about the athlete and their circumstances. A confirmed Profile update is independent from any later plan adjustment.
 
 ## Language
 
-Use the user's requested language, or the language of their latest substantive message; a brief approval does not switch it. Use that language for replies, previews, and newly written Profile or Wellness text. Preserve user and source text, unchanged data, and structured MCP fields, IDs, enums, numbers, and notation. If the write language is unclear, ask once before the usual approval.
+Use the user's requested language, or the language of their latest substantive message; a brief approval does not switch it. Use that language for replies, previews, and newly written Profile text. Preserve user and source text, unchanged data, and structured MCP fields, IDs, enums, numbers, and notation. If the write language is unclear, ask once before the usual approval.
 
 ## Starting Athria
 
@@ -18,7 +18,7 @@ Use this read-only entry when the user explicitly asks to start Athria, includin
 1. Call `get_athlete_profile` and `get_current_plan` to check what is already available. If Athria MCP is unavailable, briefly ask the user to check the Athria Agent connection; do not imply that any data was read.
 2. If a Current Plan exists, briefly acknowledge it and ask what the user wants to do today: train, review progress, or adjust the plan. Otherwise, if the Profile appears to contain only initial defaults, treat those values as unconfirmed and ask about the user's training goal first. Continue with the onboarding workflow below as the user answers.
 3. If the Profile contains personal information but no Current Plan, briefly acknowledge what is known and ask whether the user wants to make a training plan. Ask only one next-step question, and skip it when the user's request already states their intent.
-4. Route the chosen work to `$athria-athlete-profile` for Profile or Wellness changes, `$athria-workout` for an immediate workout, `$athria-coach` for read-only review, or `$athria-training-planner` for plan creation or adjustment. Starting Athria grants no write approval. The planner must still confirm the database path before its planning-specific athlete reads.
+4. Route the chosen work to `$athria-athlete-profile` for Profile changes and wellness reads, `$athria-workout` for an immediate workout, `$athria-coach` for read-only review, or `$athria-training-planner` for plan creation or adjustment. Starting Athria grants no write approval. The planner must still confirm the database path before its planning-specific athlete reads.
 
 ## Onboarding and Profile updates
 
@@ -30,18 +30,17 @@ Use this read-only entry when the user explicitly asks to start Athria, includin
 6. After a successful change, if a Current Plan exists, read `get_plan_adjustment_context` without a trigger. Briefly explain which saved changes may matter to the plan using the full latest Profile; the context is evidence, not a deterministic recommendation or plan approval. If no Current Plan exists, skip this read rather than reporting a review failure.
 7. If the change may affect the plan, offer a handoff to `$athria-training-planner` for the same commit-to-today review used for every adjustment request. Do not draft or save a plan here. The Profile change remains saved if the user declines, and accumulated changes remain available until the next formal plan commit.
 
-## Wellness updates
+## Wellness (read-only)
 
-Weight and other dated recovery observations belong to Wellness, not Profile.
+Weight and other dated recovery observations belong to Wellness, not Profile. Wellness is read-only through MCP: to record or correct it, the user edits the data in the Athria app.
 
-1. Call `get_wellness_day` for the exact date and retain its snapshot hash. Use `list_wellness` only when context across days is needed.
-2. Show the exact dated field diff and obtain explicit approval immediately before calling `update_wellness`.
-3. Never infer sleep, soreness, fatigue, readiness, weight, or other wellness values. Missing is not zero.
-4. Do not automatically trigger a plan rewrite. If the user asks whether the observation affects training, hand off to `$athria-coach` for analysis or `$athria-training-planner` for an explicitly requested cycle review.
+1. Call `get_wellness_day` for the exact date. Use `list_wellness` only when context across days is needed.
+2. Never infer sleep, readiness, weight, or other wellness values. Missing is not zero.
+3. Do not automatically trigger a plan rewrite. If the user asks whether the observation affects training, hand off to `$athria-coach` for analysis or `$athria-training-planner` for an explicitly requested cycle review.
 
 ## Training memory
 
-`get_training_memory` reads the athlete's current training experience and capability summary. Use `update_training_memory` only when the athlete corrects it or planning/review finds meaningful new evidence. This summary is separate from confirmed Profile and Wellness facts; its revision check replaces their approval rule.
+`get_training_memory` reads the athlete's current training experience and capability summary. Use `update_training_memory` only when the athlete corrects it or planning/review finds meaningful new evidence. This summary is separate from confirmed Profile facts and Wellness data; its revision check replaces their approval rule.
 
 - Keep a concise current picture of experience, demonstrated capacity, uncertainty, and a few dated/source references. Distinguish self-report, observed records, and interpretation. Do not accumulate raw conversations or each workout.
 - Merge duplicates and replace stale conclusions. Aim for 500–1000 characters. If the draft grows, condense it automatically before saving; never send more than 2000 characters. Preserve the key current assessment and supporting evidence.
@@ -53,3 +52,7 @@ Weight and other dated recovery observations belong to Wellness, not Profile.
 - A Profile training rhythm describes availability; it does not set fixed weekly quotas for individual training domains.
 - `mesocycleDurationWeeks` is a preferred default, not permission to replace the current plan.
 - Never update the Current Mesocycle or a specific workout from this Skill.
+
+## Wellness interpretation
+
+Interpret Wellness using the read tool descriptions. Missing/null is unavailable, not zero. subjectiveFatigue is a user-reported 0-100 rating; ICU may import this rating, while ATL/CTL are ICU-calculated training loads and Form is CTL minus ATL. Readiness is calculated by Athria. Sleep is stored on the evening date; do not shift MCP record dates. Wellness is read-only through MCP: users record or correct it in the Athria app. Existing database-confirmation and write-approval rules still apply.

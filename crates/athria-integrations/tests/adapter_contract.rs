@@ -64,12 +64,12 @@ fn intervals_imports_independent_loads_and_unscaled_intensity() {
 }
 
 #[test]
-fn intervals_imports_rpe_and_prefers_reported_session_load() {
+fn intervals_imports_rpe_and_ignores_reported_session_load() {
     for (rpe, load, expected_rpe, expected_load) in [
-        (json!(3), json!(118), json!(3), json!(118)),
+        (json!(3), json!(118), json!(3), json!(159)),
         (json!(3), Value::Null, json!(3), json!(159)),
-        (json!(2.5), json!(-1), json!(2.5), json!(132.5)),
-        (json!(0), json!(0), json!(0), json!(0)),
+        (json!(2.5), json!(-1), Value::Null, Value::Null),
+        (json!(0), json!(0), Value::Null, Value::Null),
         (json!(11), json!("bad"), Value::Null, Value::Null),
         (Value::Null, Value::Null, Value::Null, Value::Null),
     ] {

@@ -40,7 +40,7 @@ Profile `trainingRhythm` is a required discriminated union and is Core-enforced.
 
 Profile `usualSessionMinutes` is the target duration for regular sessions, allowing reasonable variation, not a ceiling. Validation does not impose a maximum or emit `MAX_SESSION_DURATION`. The planner must obtain explicit acceptance of noticeably longer or shorter sessions before outline approval and show those exceptions again for detailed approval; activity type alone does not grant an exception.
 
-Profile also owns stable Personal Information: `preferredName`, optional `gender`, `heightCm`, and `birthDate`. Weight is never a Profile field; read and update it as the dated Wellness `weightKg` field.
+Profile also owns stable Personal Information: `preferredName`, optional `gender`, `heightCm`, and `birthDate`. Weight is never a Profile field; read the dated Wellness `weightKg` field instead. Wellness is read-only through MCP; users record weight in the Athria app.
 
 Create a user Template before committing a plan that references its exact revision. `commit_plan_draft` revalidates the complete Weekly Sessions against the current Profile, classifications, taxonomy, rule-pack versions, snapshot hash, and references. User Template updates and deletes require `expectedRevision`; built-in originals cannot be updated directly (derive one first with `create_session_template`), while deleting a built-in only hides it and needs no `expectedRevision`.
 

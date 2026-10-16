@@ -7,7 +7,6 @@ Use shared application services for writes. Approval, optimistic concurrency, an
 | Operation | Agent policy | Runtime guard / behavior |
 | --- | --- | --- |
 | Profile patch | Approve the exact diff | `confirmed` and current `expectedProfileHash` |
-| Wellness update | Approve values for that day | Nested update has confirmation and `expectedSnapshotHash`; absent day uses `"new"` |
 | Template create/update | Approve the operation | Schema/reference checks; update has `expectedRevision` |
 | Template deletion | Explicit deletion request | `confirmedExplicitRequest`; applicable revision and in-use checks |
 | Draft week replacement | Approve outline before drafting | `expectedDraftRevision`; replaces a complete week |
@@ -26,7 +25,7 @@ Use the [MCP contract](../../crates/athria-mcp/contract.json) for exact argument
 | Guard | Read from | Protects |
 | --- | --- | --- |
 | Profile hash | Profile snapshot | Stable context being patched |
-| Wellness/workout snapshot hash | Target day or workout | Exact object being corrected |
+| Workout snapshot hash | Target workout | Exact object being corrected |
 | Template / Memory revision | Target object | Object version |
 | Draft revision | Draft summary / week write result | Draft contents |
 | Plan revision | Current Plan / occurrence context | Editable plan state |

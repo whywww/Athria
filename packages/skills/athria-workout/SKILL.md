@@ -46,3 +46,7 @@ Each new session owns one domain and one direct, non-null `prescription` with do
 - Do not fabricate completion details, timestamps, duration, load, RPE, heart rate, distance, or exercise classification.
 
 Read [references/tool-contracts.md](references/tool-contracts.md) before constructing a planned-session, history, or match-correction write.
+
+## Wellness interpretation
+
+Interpret Wellness using the read tool descriptions. Missing/null is unavailable, not zero. subjectiveFatigue is a user-reported 0-100 rating; ICU may import this rating, while ATL/CTL are ICU-calculated training loads and Form is CTL minus ATL. Readiness is calculated by Athria. Sleep is stored on the evening date; do not shift MCP record dates. Wellness is read-only through MCP: users record or correct it in the Athria app. Existing database-confirmation and write-approval rules still apply.

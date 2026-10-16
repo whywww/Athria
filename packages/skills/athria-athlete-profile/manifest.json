@@ -1,10 +1,10 @@
 {
   "name": "athria-athlete-profile",
-  "version": "0.1.5",
-  "purpose": "Start Athria with a read-only profile and plan check, then onboard an athlete or maintain confirmed profile and wellness facts.",
+  "version": "0.1.8",
+  "purpose": "Start Athria with a read-only profile and plan check, then onboard an athlete or maintain confirmed profile facts; wellness data stays read-only.",
   "appliesWhen": [
     "The user explicitly asks to start Athria, including a translated equivalent of 'start Athria', without naming a more specific task.",
-    "The user is setting up Athria or asks to change personal information, goals, schedule, equipment, restrictions, preferences, race dates, weight, or wellness.",
+    "The user is setting up Athria or asks to change personal information, goals, schedule, equipment, restrictions, preferences, or race dates, or asks to review wellness data.",
     "The user asks to view or correct their training experience memory."
   ],
   "doesNotApplyWhen": [
@@ -19,7 +19,6 @@
     "get_wellness_day",
     "list_wellness",
     "update_athlete_profile",
-    "update_wellness",
     "get_plan_adjustment_context",
     "get_training_memory",
     "update_training_memory"
@@ -35,12 +34,11 @@
     "handoff"
   ],
   "approvalPoints": [
-    "Before update_athlete_profile",
-    "Before update_wellness"
+    "Before update_athlete_profile"
   ],
   "safetyRules": [
-    "Never infer or silently change athlete or wellness facts.",
-    "Do not rewrite the Current Mesocycle after a Profile or Wellness change.",
+    "Never infer or silently change athlete facts; never infer wellness values when reading.",
+    "Do not rewrite the Current Mesocycle after a Profile change.",
     "Use current hashes and stop on a freshness conflict.",
     "Do not provide medical diagnosis or injury treatment.",
     "Keep training memory concise, evidence-labeled, and revision-checked; notify after a meaningful automatic update."

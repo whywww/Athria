@@ -892,7 +892,7 @@ impl<S: AthriaStore> AthriaApplication<S> {
             }
         }
         if value.get("sessionRpe").is_some() {
-            return Err(invalid_input("session.sessionRpe: API import only; provide rpe to calculate session load"));
+            return Err(invalid_input("session.sessionRpe: derived from rpe × durationMinutes; provide rpe instead"));
         }
         let id = match optional_text(value, "id", "session")? {
             Some(id) => id,
@@ -988,6 +988,20 @@ impl<S: AthriaStore> AthriaApplication<S> {
     }
 
 
+
+    pub fn set_training_session_effort(&self, id: &str, value: &Value) -> Result<Value> {
+        object_input(value, "session")?;
+        require_confirmed(value, "session")?;
+        if optional_text(value, "expectedSnapshotHash", "session")?.is_none() {
+            return Err(failure(AthriaErrorCode::InputSnapshotChanged, "The workout snapshot is required. Refresh and try again.", 409));
+        }
+        let rpe = match value.get("rpe") {
+            Some(Value::Null) => None,
+            Some(_) => Some(input_int(value, "rpe", "session", 1..=10)?),
+            None => return Err(invalid_input("session.rpe: required")),
+        };
+        self.checked_session_write(id, value, &mut || self.store.set_training_session_effort(&self.owner_id, id, rpe))
+    }
 
     pub fn update_manual_training_session(&self, id: &str, value: &Value) -> Result<Value> {
         object_input(value, "session")?;

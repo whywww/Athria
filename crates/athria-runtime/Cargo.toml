@@ -19,3 +19,7 @@ uuid = { version = "1", features = ["v4"] }
 [[bin]]
 name = "athria"
 path = "src/main.rs"
+
+[dev-dependencies]
+base64 = "0.22"
+percent-encoding = "2"

@@ -2,7 +2,7 @@
 
 Athria stores a workspace as a single SQLite file. The schema is a thin relational shell around JSON documents: columns carry only what the app queries and guards (identity, owner, dates, status, revision counters), while each row's complete business document lives as camelCase JSON in a `data` column — the same shapes returned by the API and MCP tools.
 
-This is the field dictionary for the current SQLite schema version **38** and plan contract **7.0**. Writable opens upgrade schema 37 to 38 transactionally; versions 36 and earlier and future versions are rejected. Read-only backup previews accept only schema 38 and never migrate. A fresh database is created directly at this schema. It describes the current application contract, not the values present in every existing database row.
+This is the field dictionary for the current SQLite schema version **40** and plan contract **7.0**. Writable opens accept only schema 40; older and future versions are rejected without modification. Read-only backup previews accept only schema 40 and never migrate. A fresh database is created directly at this schema. It describes the current application contract, not the values present in every existing database row.
 
 Column declarations live in the [store schema directory](../../crates/athria-store/src/schema) and [store.rs](../../crates/athria-store/src/store.rs); public JSON ranges come from the [v7 schemas](../../schemas/v7) and runtime normalization from the linked Rust sources.
 
@@ -124,20 +124,20 @@ wellness.data
    └─ <key>: { value, source, updatedAt }
 ```
 
-Each present `fields.<key>` carries its own `value`, `source` (`intervals_icu`, `user`, `llm`), and `updatedAt`. Missing values stay missing; zero and null are not interchangeable, and a user patch with null clears the stored field. Read snapshot hashes are concurrency guards, not additional measurement fields.
+Each present `fields.<key>` carries its own `value`, `source` (`intervals_icu`, `user`, `llm`, `athria`), and `updatedAt`. Missing values stay missing; zero and null are not interchangeable, and a user patch with null clears the stored field. Read snapshot hashes are concurrency guards, not additional measurement fields.
 
 #### Wellness fields
 
 Every value below is nullable; missing keys remain absent.
 
+`subjectiveFatigue` replaces legacy `fatigue`. Writable schema-40 opens perform a named, transactional data migration; read-only reads normalize in memory. The new field wins if both exist. Legacy ICU grades are mapped only while converting the old field; new low scores remain unchanged. ICU payloads still use `fatigue` for user-reported ratings, not device measurements.
+
 | Field key | Value type / runtime range | Unit / meaning |
 | --- | --- | --- |
 | `restingHeartRateBpm` | Nonnegative number | Resting bpm |
 | `hrvRmssdMs`, `hrvSdnnMs` | Nonnegative numbers | HRV, milliseconds |
-| `sleepSeconds` | Nonnegative integer | Source sleep duration, seconds |
-| `sleepScore`, `subjectiveSleepScore` | Number 0–100 | Source and subjective sleep scores |
-| `manualSleepSeconds` | Integer 0–86,400 | Manually supplied sleep duration, seconds |
-| `sleepQuality` | Nonnegative integer | Source sleep-quality scale |
+| `sleepSeconds` | Integer 0–86,400 | Sleep duration, seconds; manual entries take priority |
+| `sleepScore` | Number 0–100 | Perceived sleep quality; manual entries take priority |
 | `avgSleepingHeartRateBpm` | Nonnegative number | Sleeping bpm |
 | `weightKg` | Positive number | Kilograms |
 | `bodyFatPercent` | Number 0–100 | Body fat percentage |
@@ -145,14 +145,14 @@ Every value below is nullable; missing keys remain absent.
 | `spo2Percent` | Number 0–100 | Oxygen saturation percentage |
 | `stepsCount` | Nonnegative integer | Steps |
 | `respirationRpm` | Nonnegative number | Breaths per minute |
-| `fatigue`, `soreness`, `stress`, `mood`, `motivation`, `readiness` | Nonnegative numbers | Subjective/source scales; do not invent a shared scale |
-| `injuryScore` | Nonnegative integer | Injury score |
-| `notes` | String, at most 2,000 UTF-16 code units | Dated notes |
-| `eftpWatts` | Nonnegative number | Estimated functional threshold power, watts |
-| `wPrimeJoules` | Nonnegative number | W′, joules |
-| `pMaxWatts` | Nonnegative number | Maximum power, watts |
+| `subjectiveFatigue` | Number 0–100 | Subjective fatigue; ICU grades import as 0/25/50/75/100; manual entries take priority |
+| `readiness` | Integer 0–100 | Athria morning estimate for the following day; see [readiness.md](readiness.md) |
+| `atl`, `ctl` | Nonnegative finite numbers | ICU-calculated acute/chronic training load; Athria does not calculate the time constants |
+| `form` | Signed finite number | `ctl - atl`, load points/day |
 
-These groups cover all 26 keys in [wellness.rs](../../crates/athria-core/src/schema/wellness.rs). Wellness source ID `intervals_icu` differs from workout source ID `intervals`.
+Athria stores the score on evening D−1 for morning D. Cardiac recovery, sleep and subjective fatigue form three dimensions; at least two are required. Recent session-RPE statistics are available without a mature baseline. Comparable overall or activity-group load series use historical percentiles and progressive evidence weights; ATL/CTL is an exclusive fallback. Dates without workouts count as zero, while missing fields remain unknown. Load deductions are attenuated when capped wellness is below 70 and stop at 45 or below, with at most 15 points deducted. Missing dimensions are omitted with weights normalized, and severe fatigue/sleep signals cap the final score. See [the full algorithm and validation policy](readiness.md).
+
+Records additionally carry an optional, Athria-managed top-level `readinessAssessment` with `algorithmVersion`, `assessmentDay`, `score`, `status`, component scores, `baseScore`, `loadAdjustment`, `loadMethod`, `trainingLoad` (recent statistics, group comparisons, support weights and wellness attenuation), `scoreCap`, `dataQuality`, baseline fields/counts and `missingReasons`. It is derived metadata, not an editable wellness field. Raw record parsing discards supplied metadata; write paths regenerate it. Writable opens backfill assessments using the current calculation rules, while read-only inspection never writes. Numeric scores are absent when fewer than two recovery dimensions are usable, but the assessment retains the reasons. Wellness, canonical training/RPE and profile timezone changes atomically recompute the owner's cached assessments; stable results do not change timestamps. Overview displays D−1's persisted score and its breakdown without duplicating the formula.
 
 ### `training_memory` — agent portrait
 
@@ -301,7 +301,6 @@ There is no duration-only prescription format. Simple sessions still have a doma
 | `referenceLoadUnit` | `kg`, `lb`, or null | Explicit reference-load unit |
 | `tempo` | Optional string or null | Tempo notation |
 | `alternatives` | Optional string array | Alternative exercise names |
-| `notes` | String | Exercise instructions; default empty string |
 
 `classification` contains six facts: `primaryMovement`, `primaryMuscles`, `secondaryMuscles`, `equipment`, `impact`, and `laterality`. Movement is a taxonomy ID or null; muscle/equipment values are taxonomy ID arrays; impact is `low`, `moderate`, `high`, or null; laterality is `bilateral`, `unilateral`, `alternating`, or null.
 
@@ -331,7 +330,6 @@ An endurance `blocks[]` entry is either a step (`type: "step"`) or a repeat (`ty
 | `heartRateZone` | Optional string: `1`–`5` or an ascending range such as `1-3` | Stored without a prefix; displayed as `Zone 2` or `Zone 1-3`; missing zone guidance remains advisory |
 | `powerWatts`, `cadence` | Optional strings | Target notation, including ranges; these are not numeric actual-history metrics |
 | `rpe`, `talkTest` | Optional strings | Secondary effort guidance; step RPE is text, unlike numeric session/set RPE |
-| `notes` | Optional string | Instructions |
 
 **Repeat fields**
 
@@ -342,7 +340,6 @@ An endurance `blocks[]` entry is either a step (`type: "step"`) or a repeat (`ty
 | `repetitions` | Integer | Number of repetitions |
 | `work` | Step | Repeated step, using the full step shape |
 | `recovery` | Optional step | Recovery step, using the full step shape |
-| `notes` | Optional string | Instructions |
 
 #### Other blocks
 
@@ -482,8 +479,8 @@ Actual training has no embedded planned `prescription` — intended dose is in t
 | `name` | String | Actual workout label |
 | `startAt` | String | Start timestamp; respect `timePrecision` |
 | `durationMinutes` | Integer | Actual session duration, minutes |
-| `rpe` | Number 0–10 or null | Whole-session perceived effort |
-| `sessionRpe` | Nonnegative number or null | Imported session load or RPE × minutes |
+| `rpe` | Integer 1–10 or null | Whole-session perceived effort |
+| `sessionRpe` | Nonnegative number or null | Always `rpe × durationMinutes`; null when `rpe` is null |
 | `trainingLoad`, `powerLoad`, `hrLoad`, `paceLoad`, `intensity` | Nonnegative numbers or null | Source API metrics; runtime accepts supplied values only for `intervals`/`xunji`; preserve source meaning |
 | `status` | `completed` | Actual-history status |
 | `timezone` | String or null | Source/session timezone |
@@ -495,7 +492,7 @@ Actual training has no embedded planned `prescription` — intended dose is in t
 | `strengthSets[]` | Array; default `[]` | Actual completed strength sets |
 | `endurance` | Object or null | Actual endurance summary |
 
-Session-level `rpe` is a nullable number 0–10, separate from strength-set RPE. `sessionRpe` is a nullable nonnegative number: a supported API-imported value takes precedence; manual and MCP writes cannot supply it and calculate it as `rpe × durationMinutes`. Intervals imports map `icu_rpe` and `session_rpe` to these fields, treating invalid source values as missing, and canonical workouts preserve available RPE values across sources, preferring Intervals.
+Session-level `rpe` is a nullable integer 1–10, separate from strength-set RPE. `sessionRpe` is a derived nullable nonnegative number, always calculated as `rpe × durationMinutes` (null when `rpe` is null); it is never imported — parsing ignores a supplied value and manual/MCP writes reject the field. Intervals imports map only `icu_rpe` to `rpe`, treating invalid source values as missing, and each valid imported RPE replaces the current canonical value in write order; missing or invalid source RPE preserves it. Session `rpe` stores only its latest value — there is no rating history — and both API imports and manual writes can modify it.
 
 API-only metrics `trainingLoad`, `powerLoad`, `hrLoad`, `paceLoad`, and `intensity` map to Intervals fields `icu_training_load`, `power_load`, `hr_load`, `pace_load`, and `icu_intensity`. They preserve nonnegative finite values, including zero and decimals; intensity is unscaled and may exceed 100. Missing or invalid source values become null. Manual and MCP writes reject these fields, while reads include them; canonical merging preserves available values per field, preferring Intervals.
 
@@ -756,7 +753,7 @@ Applied schema versions.
 | `version` (INTEGER) | Applied version; PK |
 | `applied_at` | Timestamp |
 
-Writable opens accept schema 38 directly or upgrade schema 37 in one transaction. Read-only opens require schema 38. Other versions are rejected without conversion.
+Writable opens accept only schema 40; automatic database upgrades are not supported. Read-only opens require schema 40. Other versions are rejected without conversion.
 
 ### `athria_data_version` — change counter
 
@@ -771,4 +768,8 @@ Insert/update/delete on 18 of the 21 tables — all except `athria_migrations`, 
 
 Definitions: [public schemas](../../schemas/v7), [runtime parsers](../../crates/athria-core/src/schema), and [application services](../../crates/athria-application/src/app.rs); implementation details remain authoritative in the linked sources.
 
-Schema 38 creates the current structure directly. Migration bookkeeping retains rows 1–38. The template list uses `(owner_id, updated_at DESC)` and source history uses `(owner_id, source, start_at)`. Template content is described by `session-template.json`; full user and built-in read responses use `session-template-read.json`. Profile writes enforce the numeric ranges and fixed-week day constraints in `athlete-profile.json`; historical reads remain permissive, and updating an invalid legacy profile requires correcting its invalid values.
+Schema 40 creates the current structure directly. Migration bookkeeping retains rows 1–40. The template list uses `(owner_id, updated_at DESC)` and source history uses `(owner_id, source, start_at)`. Template content is described by `session-template.json`; full user and built-in read responses use `session-template-read.json`. Profile writes enforce the numeric ranges and fixed-week day constraints in `athlete-profile.json`; historical reads remain permissive, and updating an invalid legacy profile requires correcting its invalid values.
+
+Sleep dates use the evening date: sleep from D to D+1 is stored on D for manual/API entries. ICU sleep fields (`sleepSeconds`, `sleepScore`, `avgSleepingHeartRateBpm`) are converted from the source wake date to the previous evening at import; all other fields keep their source date. UI charts and highlights use stored dates directly.
+
+On the first writable open after this date correction, the `sleep_evening_dates` data migration moves legacy sleep fields back one day for every owner and source, preserving field provenance and timestamps. It leaves other metrics on their original dates, recomputes readiness, and commits a migration marker in the same transaction. Read-only opens do not migrate. Further writable opens do not shift dates again.

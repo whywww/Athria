@@ -419,10 +419,10 @@
     },
     "rpe": {
       "type": [
-        "number",
+        "integer",
         "null"
       ],
-      "minimum": 0,
+      "minimum": 1,
       "maximum": 10,
       "default": null
     },

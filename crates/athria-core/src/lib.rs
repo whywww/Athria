@@ -16,6 +16,7 @@ pub mod error;
 pub mod hash;
 pub mod metrics;
 pub mod progression;
+pub mod readiness;
 pub mod reminder;
 pub mod schedule;
 pub mod schema;

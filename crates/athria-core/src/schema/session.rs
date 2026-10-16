@@ -50,10 +50,11 @@ pub fn parse_training_session(value: &Value) -> Result<Value> {
         Value::from(required_int(value, "durationMinutes", "session")?),
     );
     let rpe = session_metric(value, "rpe", Some(10.0))?;
-    let supplied_load = if matches!(session["source"].as_str(), Some("intervals" | "xunji")) {
-        session_metric(value, "sessionRpe", None)?
-    } else { None };
-    let load = supplied_load.or_else(|| rpe.map(|rpe| rpe * session["durationMinutes"].as_i64().unwrap() as f64));
+    if rpe.is_some_and(|number| number < 1.0 || number.fract() != 0.0) {
+        return Err(invalid("session.rpe", "expected an integer from 1 to 10 or null"));
+    }
+    // Session load is always derived; supplied sessionRpe values are ignored.
+    let load = rpe.map(|rpe| rpe * session["durationMinutes"].as_i64().unwrap() as f64);
     session.insert("rpe".into(), rpe.map(crate::js_number).unwrap_or(Value::Null));
     session.insert("sessionRpe".into(), load.map(crate::js_number).unwrap_or(Value::Null));
     for key in API_SESSION_METRICS {
@@ -244,14 +245,12 @@ mod tests {
     }
 
     #[test]
-    fn session_rpe_validates_and_calculates_without_using_set_rpe() {
+    fn session_rpe_is_always_rpe_times_duration_minutes() {
         for (rpe, supplied, expected) in [
-            (serde_json::json!(3), serde_json::json!(118), serde_json::json!(118)),
+            (serde_json::json!(3), serde_json::json!(118), serde_json::json!(180)),
             (serde_json::json!(3), Value::Null, serde_json::json!(180)),
-            (serde_json::json!(0), Value::Null, serde_json::json!(0)),
-            (serde_json::json!(2.5), Value::Null, serde_json::json!(150)),
             (Value::Null, Value::Null, Value::Null),
-            (Value::Null, serde_json::json!(0), serde_json::json!(0)),
+            (Value::Null, serde_json::json!(0), Value::Null),
         ] {
             let mut input = write_payload();
             input["source"] = serde_json::json!("intervals");
@@ -261,8 +260,8 @@ mod tests {
             assert_eq!(parsed["rpe"], rpe);
             assert_eq!(parsed["sessionRpe"], expected);
         }
-        for (field, value) in [("rpe", serde_json::json!(11)), ("rpe", serde_json::json!(-1)), ("rpe", serde_json::json!("bad")), ("sessionRpe", serde_json::json!(-1))] {
-            let mut input = write_payload(); input["source"] = serde_json::json!("intervals"); input[field] = value;
+        for value in [serde_json::json!(0), serde_json::json!(2.5), serde_json::json!(11), serde_json::json!(-1), serde_json::json!("bad")] {
+            let mut input = write_payload(); input["source"] = serde_json::json!("intervals"); input["rpe"] = value;
             assert!(parse_training_session(&input).is_err());
         }
         let mut manual = write_payload();

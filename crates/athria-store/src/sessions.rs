@@ -554,7 +554,8 @@ impl SqliteStore {
             ));
         };
         fields.entry("rpe").or_insert(Value::Null);
-        fields.entry("sessionRpe").or_insert(Value::Null);
+        let load = fields.get("rpe").and_then(Value::as_f64).map(|rpe| js_number_value(rpe * integer(session, "durationMinutes") as f64)).unwrap_or(Value::Null);
+        fields.insert("sessionRpe".into(), load);
         for key in athria_core::schema::session::API_SESSION_METRICS { fields.entry(key).or_insert(Value::Null); }
         fields.remove("endAt");
 
@@ -630,6 +631,7 @@ impl SqliteStore {
             })
             .map_err(database_error)?;
         let matches = self.match_details(owner_id)?;
+        let efforts: HashMap<String, Value> = self.list_sessions(owner_id, None)?.into_iter().map(|session| (text_or(&session, "id", "").to_string(), session["rpe"].clone())).collect();
         let mut sessions = Vec::new();
         for row in rows {
             let (data, training_session_id) = row.map_err(database_error)?;
@@ -641,8 +643,12 @@ impl SqliteStore {
             let mut projected = session.clone();
             projected.as_object_mut().unwrap().remove("endAt");
             projected.as_object_mut().unwrap().remove("missingFields");
-            projected.as_object_mut().unwrap().entry("rpe").or_insert(Value::Null);
-            projected.as_object_mut().unwrap().entry("sessionRpe").or_insert(Value::Null);
+            let rpe = efforts.get(&training_session_id).cloned().unwrap_or(Value::Null);
+            let load = rpe.as_f64().map(|rpe| js_number_value(rpe * integer(&projected, "durationMinutes") as f64)).unwrap_or(Value::Null);
+            let fields = projected.as_object_mut().unwrap();
+            let position = fields.keys().position(|key| key == "sessionRpe").unwrap_or(fields.len());
+            fields.shift_insert(position, "rpe".into(), rpe);
+            fields.insert("sessionRpe".into(), load);
             for key in athria_core::schema::session::API_SESSION_METRICS { projected.as_object_mut().unwrap().entry(key).or_insert(Value::Null); }
             projected["plannedSessionId"] = plan_match
                 .get("plannedSessionId")
@@ -655,6 +661,26 @@ impl SqliteStore {
         Ok(sessions)
     }
 
+    fn import_session(input: &Value) -> Result<Value> {
+        let mut input = input.clone();
+        if text_or(&input, "source", "") != "manual" && input["rpe"].as_f64().is_none_or(|rpe| !rpe.is_finite() || !(1.0..=10.0).contains(&rpe) || rpe.fract() != 0.0) {
+            input["rpe"] = Value::Null;
+        }
+        let normalized = athria_core::schema::parse_training_session(&input)?;
+        for key in ["type", "subtype", "domains", "rpe", "sessionRpe", "trainingLoad", "powerLoad", "hrLoad", "paceLoad", "intensity"] { input[key] = normalized[key].clone(); }
+        for key in ["sport", "modality", "endAt", "missingFields"] { input.as_object_mut().unwrap().remove(key); }
+        Ok(input)
+    }
+
+    // Apply new values only after source observations have their final canonical ids.
+    fn apply_imported_efforts(&self, owner_id: &str, incoming: &[Value]) -> Result<()> {
+        for value in incoming.iter().filter(|value| text_or(value, "ownerId", DEFAULT_OWNER_ID) == owner_id && !value["rpe"].is_null()) {
+            let id: String = self.sqlite().query_row("SELECT training_session_id FROM training_session_sources WHERE owner_id=?1 AND source=?2 AND external_id=?3", params![owner_id,text_or(value,"source",""),text_or(value,"externalId","")], |row| row.get(0)).map_err(database_error)?;
+            self.sqlite().execute("UPDATE training_sessions SET data=json_set(data,'$.rpe',?1,'$.sessionRpe',?1*json_extract(data,'$.durationMinutes')) WHERE owner_id=?2 AND id=?3", params![value["rpe"].as_i64(),owner_id,id]).map_err(database_error)?;
+        }
+        self.recompute_readiness(owner_id, None)
+    }
+
     /// `upsertSessions`: merge observations by `(owner, source, externalId)`,
     /// then rebuild canonical sessions and plan matches.
     pub fn upsert_sessions(&self, sessions: &[Value]) -> Result<WriteCounts> {
@@ -664,14 +690,10 @@ impl SqliteStore {
         };
         self.transaction(&mut || {
             let mut timezones: HashMap<String, String> = HashMap::new();
+            let mut incoming = Vec::new();
             for input in sessions {
-                let normalized = athria_core::schema::parse_training_session(input)?;
-                let mut value = input.clone();
-                for key in ["type", "subtype", "domains", "rpe", "sessionRpe", "trainingLoad", "powerLoad", "hrLoad", "paceLoad", "intensity"] { value[key] = normalized[key].clone(); }
-                value.as_object_mut().unwrap().remove("sport");
-                value.as_object_mut().unwrap().remove("modality");
-                value.as_object_mut().unwrap().remove("endAt");
-                value.as_object_mut().unwrap().remove("missingFields");
+                let value = Self::import_session(input)?;
+                incoming.push(value.clone());
                 let value = &value;
                 let owner_id = text_or(value, "ownerId", DEFAULT_OWNER_ID);
                 let source = text_or(value, "source", "");
@@ -707,6 +729,7 @@ impl SqliteStore {
                     None => (Uuid::new_v4().to_string(), text_or(value, "id", "").to_string(), timestamp.clone()),
                 };
                 let mut stored = value.clone();
+                stored.as_object_mut().unwrap().shift_remove("rpe");
                 stored["plannedSessionId"] = Value::Null;
                 self.sqlite()
                     .execute(
@@ -726,6 +749,7 @@ impl SqliteStore {
             }
             for owner_id in owner_ids {
                 self.rebuild_canonical_sessions(owner_id)?;
+                self.apply_imported_efforts(owner_id, &incoming)?;
                 for value in sessions.iter().filter(|value| text_or(value, "ownerId", DEFAULT_OWNER_ID) == owner_id) {
                     let Some(planned_session_id) = text(value, "plannedSessionId").filter(|id| !id.is_empty()) else { continue };
                     let source = text_or(value, "source", "");
@@ -758,13 +782,13 @@ impl SqliteStore {
                 Some(dates) => {
                     let placeholders = vec!["?"; dates.len()].join(",");
                     (
-                        format!("SELECT external_id FROM training_session_sources WHERE owner_id = ?1 AND source = ?2 AND local_date IN ({placeholders})"),
+                        format!("SELECT external_id, training_session_id FROM training_session_sources WHERE owner_id = ?1 AND source = ?2 AND local_date IN ({placeholders})"),
                         format!("DELETE FROM training_session_sources WHERE owner_id = ?1 AND source = ?2 AND local_date IN ({placeholders})"),
                         dates.to_vec(),
                     )
                 }
                 None => (
-                    "SELECT external_id FROM training_session_sources WHERE owner_id = ?1 AND source = ?2 AND local_date >= ?3 AND local_date <= ?4".to_string(),
+                    "SELECT external_id, training_session_id FROM training_session_sources WHERE owner_id = ?1 AND source = ?2 AND local_date >= ?3 AND local_date <= ?4".to_string(),
                     "DELETE FROM training_session_sources WHERE owner_id = ?1 AND source = ?2 AND local_date >= ?3 AND local_date <= ?4".to_string(),
                     vec![input.range_start.unwrap_or_default().to_string(), input.range_end.unwrap_or_default().to_string()],
                 ),
@@ -773,12 +797,13 @@ impl SqliteStore {
             for value in &bound {
                 parameters.push(value);
             }
-            let mut existing_ids: HashSet<String> = HashSet::new();
+            let mut existing_ids: HashMap<String, String> = HashMap::new();
             {
                 let mut statement = self.sqlite().prepare(&select_sql).map_err(database_error)?;
-                let rows = statement.query_map(parameters.as_slice(), |row| row.get::<_, String>(0)).map_err(database_error)?;
+                let rows = statement.query_map(parameters.as_slice(), |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))).map_err(database_error)?;
                 for row in rows {
-                    existing_ids.insert(row.map_err(database_error)?);
+                    let (external_id, canonical_id) = row.map_err(database_error)?;
+                    existing_ids.insert(external_id, canonical_id);
                 }
             }
             self.sqlite().execute(&delete_sql, parameters.as_slice()).map_err(database_error)?;
@@ -786,14 +811,20 @@ impl SqliteStore {
             let timestamp = self.now();
             let timezone = self.profile_timezone(input.owner_id)?;
             let mut counts = WriteCounts { added: 0, updated: 0 };
-            for value in input.sessions {
+            let mut incoming = Vec::new();
+            for input_value in input.sessions {
+                let mut value = input_value.clone();
+                value["ownerId"] = json!(input.owner_id); value["source"] = json!(input.source);
+                let value = Self::import_session(&value)?;
+                incoming.push(value.clone());
+                let value = &value;
                 let external_id = text_or(value, "externalId", "");
                 let session_timezone = text(value, "timezone").unwrap_or(&timezone);
                 let local_date = match input.local_dates.and_then(|dates| dates.get(external_id)).and_then(Value::as_str) {
                     Some(date) => date.to_string(),
                     None => crate::tz::local_date(text_or(value, "startAt", ""), session_timezone)?,
                 };
-                if existing_ids.contains(external_id) {
+                if existing_ids.contains_key(external_id) {
                     counts.updated += 1;
                 } else {
                     counts.added += 1;
@@ -801,6 +832,7 @@ impl SqliteStore {
                 let mut stored = value.clone();
                 stored["ownerId"] = json!(input.owner_id);
                 stored["source"] = json!(input.source);
+                stored.as_object_mut().unwrap().shift_remove("rpe");
                 stored.as_object_mut().unwrap().remove("missingFields");
                 stored["plannedSessionId"] = Value::Null;
                 self.sqlite()
@@ -810,7 +842,7 @@ impl SqliteStore {
                         params![
                             Uuid::new_v4().to_string(),
                             input.owner_id,
-                            text_or(value, "id", ""),
+                            existing_ids.get(external_id).map(String::as_str).unwrap_or_else(|| text_or(value, "id", "")),
                             input.source,
                             external_id,
                             local_date,
@@ -823,6 +855,7 @@ impl SqliteStore {
                     .map_err(database_error)?;
             }
             self.rebuild_canonical_sessions(input.owner_id)?;
+            self.apply_imported_efforts(input.owner_id, &incoming)?;
             self.reconcile_plan_matches(input.owner_id)?;
             Ok(counts)
         })
@@ -1014,11 +1047,16 @@ impl SqliteStore {
             used.insert(id.clone());
             let mut session = representative_session(&cluster).clone();
             session.as_object_mut().unwrap().remove("endAt");
-            for field in ["rpe", "sessionRpe", "trainingLoad", "powerLoad", "hrLoad", "paceLoad", "intensity"] {
+            for field in ["trainingLoad", "powerLoad", "hrLoad", "paceLoad", "intensity"] {
                 let observation = cluster.iter().filter(|observation| observation.session.get(field).is_some_and(|value| !value.is_null()))
                     .min_by_key(|observation| (text_or(&observation.session, "source", "") != "intervals", observation.id.clone()));
                 session[field] = observation.map(|observation| observation.session[field].clone()).unwrap_or(Value::Null);
             }
+            // RPE belongs to the retained canonical record, never to source snapshots.
+            let fields = session.as_object_mut().unwrap();
+            let position = fields.keys().position(|key| key == "sessionRpe").unwrap_or(fields.len());
+            fields.shift_insert(position, "rpe".into(), existing.get(&id).map(|previous| previous["rpe"].clone()).unwrap_or(Value::Null));
+            session["sessionRpe"] = session["rpe"].as_f64().map(|rpe| js_number_value(rpe * integer(&session, "durationMinutes") as f64)).unwrap_or(Value::Null);
             session["id"] = json!(id);
             session["ownerId"] = json!(owner_id);
             session["plannedSessionId"] = Value::Null;
@@ -1093,7 +1131,7 @@ impl SqliteStore {
                     .map_err(database_error)?;
             }
         }
-        Ok(())
+        self.recompute_readiness(owner_id, None)
     }
 
     fn owner_scoped_ids(&self, table: &str, owner_id: &str) -> Result<HashSet<String>> {
@@ -1340,8 +1378,21 @@ impl SqliteStore {
             })
     }
 
-    /// `updateManualTrainingSession`: retime a manual observation without
-    /// moving it to another local date.
+    /// Replace the single current RPE value on the canonical record.
+    pub fn set_training_session_effort(&self, owner_id: &str, training_session_id: &str, rpe: Option<i64>) -> Result<Value> {
+        self.transaction(&mut || {
+            let session = self.list_sessions(owner_id, None)?.into_iter().find(|session| text_or(session, "id", "") == training_session_id)
+                .ok_or_else(|| AthriaError::new(AthriaErrorCode::TrainingSessionNotFound, "TRAINING_SESSION_NOT_FOUND"))?;
+            let mut updated = session;
+            updated["rpe"] = json!(rpe);
+            updated["sessionRpe"] = rpe.map(|value| js_number_value(value as f64 * integer(&updated, "durationMinutes") as f64)).unwrap_or(Value::Null);
+            self.sqlite().execute("UPDATE training_sessions SET data=?1 WHERE owner_id=?2 AND id=?3", params![updated.to_string(),owner_id,training_session_id]).map_err(database_error)?;
+            self.recompute_readiness(owner_id, None)?;
+            Ok(updated)
+        })
+    }
+
+    /// Retime a manual observation without moving it to another local date.
     pub fn update_manual_training_session(
         &self,
         owner_id: &str,
@@ -1377,7 +1428,7 @@ impl SqliteStore {
             updated["startAt"] = json!(start_at);
             updated.as_object_mut().unwrap().remove("endAt");
             updated["durationMinutes"] = json!(duration);
-            updated["sessionRpe"] = updated["rpe"].as_f64().map(|rpe| athria_core::js_number(rpe * duration as f64)).unwrap_or(Value::Null);
+
             updated["timePrecision"] = json!(if requested_start.is_some() { "exact" } else { text_or(&current, "timePrecision", "exact") });
             updated.as_object_mut().unwrap().remove("missingFields");
             self.sqlite()
@@ -1500,6 +1551,59 @@ mod tests {
                 }],
             },
         })
+    }
+
+    #[test]
+    fn readiness_recomputes_after_effort_retime_import_merge_and_delete_and_rolls_back() {
+        let store = store();
+        let evening = athria_core::date::epoch_day("2026-10-15");
+        store.save_wellness(&json!({"ownerId":DEFAULT_OWNER_ID,"day":"2026-10-15","updatedAt":"original","fields":{
+            "sleepScore":{"value":90,"source":"user","updatedAt":"original"},
+            "subjectiveFatigue":{"value":0,"source":"user","updatedAt":"original"}
+        }})).unwrap();
+        let mut workouts=Vec::new();
+        for offset in 0..35 {
+            let day=athria_core::date::format_iso_date(evening-offset);
+            let id=Uuid::new_v4().to_string();
+            let mut workout=run("manual",&id,&id,&format!("{day}T04:00:00Z"),&format!("{day}T05:00:00Z"),60,"Run");
+            workout["rpe"]=json!(3);
+            workouts.push(workout);
+        }
+        store.upsert_sessions(&workouts).unwrap();
+        let assessment=|| store.get_wellness(DEFAULT_OWNER_ID,"2026-10-15").unwrap().unwrap()["readinessAssessment"].clone();
+        let original=assessment();
+        assert_eq!(original["loadMethod"],"sessionRpe");
+        assert_eq!(original["loadAdjustment"],0.0);
+        assert_eq!(original["score"],94);
+        let id=workouts[0]["id"].as_str().unwrap();
+        store.set_training_session_effort(DEFAULT_OWNER_ID,id,Some(10)).unwrap();
+        let heavy=assessment();
+        assert!(heavy["score"].as_i64().unwrap()<94);
+        assert!(heavy["loadAdjustment"].as_f64().unwrap()>0.0);
+        store.set_training_session_effort(DEFAULT_OWNER_ID,id,Some(3)).unwrap();
+        assert_eq!(assessment(),original);
+        store.update_manual_training_session(DEFAULT_OWNER_ID,id,None,Some(600)).unwrap();
+        assert_eq!(assessment()["loadAdjustment"],15.0);
+        // An enclosing transaction must roll back both workout and derived cache.
+        let before=assessment();
+        let result: Result<()> = store.transaction(&mut || {
+            store.set_training_session_effort(DEFAULT_OWNER_ID,id,Some(1))?;
+            Err(AthriaError::new(AthriaErrorCode::InvalidData,"rollback test"))
+        });
+        assert!(result.is_err()); assert_eq!(assessment(),before);
+        store.delete_training_session(DEFAULT_OWNER_ID,id).unwrap();
+        assert_eq!(assessment()["loadAdjustment"],0.0);
+        assert_eq!(assessment()["score"],94);
+        // Imported actual RPE is applied after canonical reconciliation, then re-evaluated.
+        let mut imported=workouts[0].clone();
+        imported["source"]=json!("intervals"); imported["externalId"]=json!("icu-heavy");
+        imported["durationMinutes"]=json!(600); imported["rpe"]=json!(10);
+        store.upsert_sessions(&[imported.clone()]).unwrap();
+        assert_eq!(assessment()["loadAdjustment"],15.0);
+        imported["rpe"]=json!(1); imported["durationMinutes"]=json!(60);
+        store.upsert_sessions(&[imported]).unwrap();
+        assert_eq!(assessment()["loadAdjustment"],0.0);
+        assert_eq!(assessment()["assessmentDay"],"2026-10-16");
     }
 
     #[test]
@@ -1715,7 +1819,88 @@ mod tests {
     }
 
     #[test]
-    fn session_rpe_survives_sync_and_merging_and_old_rows_read_as_null() {
+    fn effort_is_a_single_value_with_latest_nonempty_import_winning() {
+        let store = store();
+        let mut icu = run("intervals", "i1", "intervals:i1", "2026-09-10T10:00:00.000Z", "2026-09-10T11:00:00.000Z", 60, "Easy Run");
+        icu["rpe"] = json!(3);
+        store.upsert_sessions(&[icu.clone()]).unwrap();
+        let id = store.list_sessions(DEFAULT_OWNER_ID,None).unwrap()[0]["id"].as_str().unwrap().to_string();
+        store.set_training_session_effort(DEFAULT_OWNER_ID,&id,Some(7)).unwrap();
+        assert_eq!(store.list_sessions_by_source("intervals",DEFAULT_OWNER_ID,None).unwrap()[0]["rpe"],json!(7));
+        let stored: String = store.sqlite().query_row("SELECT data FROM training_session_sources",[],|row|row.get(0)).unwrap();
+        assert!(serde_json::from_str::<Value>(&stored).unwrap().get("rpe").is_none());
+        for missing in [Value::Null,json!(0),json!(2.5),json!("bad"),json!(11)] {
+            icu["rpe"] = missing;
+            store.upsert_sessions(&[icu.clone()]).unwrap();
+            assert_eq!(store.list_sessions(DEFAULT_OWNER_ID,None).unwrap()[0]["rpe"],json!(7));
+        }
+        icu["rpe"] = json!(2);
+        store.upsert_sessions(&[icu.clone()]).unwrap();
+        assert_eq!(store.list_sessions(DEFAULT_OWNER_ID,None).unwrap()[0]["rpe"],json!(2));
+        let mut other = icu.clone(); other["source"] = json!("hevy"); other["externalId"] = json!("h1"); other["id"] = json!("hevy:h1"); other["rpe"] = json!(8);
+        store.upsert_sessions(&[icu.clone(),other.clone()]).unwrap();
+        assert_eq!(store.list_sessions(DEFAULT_OWNER_ID,None).unwrap()[0]["rpe"],json!(8));
+        store.upsert_sessions(&[other,icu]).unwrap();
+        assert_eq!(store.list_sessions(DEFAULT_OWNER_ID,None).unwrap()[0]["rpe"],json!(2));
+        store.set_training_session_effort(DEFAULT_OWNER_ID,&id,Some(9)).unwrap();
+        store.rebuild_canonical_sessions(DEFAULT_OWNER_ID).unwrap();
+        assert_eq!(store.list_sessions(DEFAULT_OWNER_ID,None).unwrap()[0]["rpe"],json!(9));
+        assert!(store.set_training_session_effort("other",&id,Some(1)).is_err());
+        assert!(store.set_training_session_effort(DEFAULT_OWNER_ID,&id,Some(0)).is_err());
+        assert!(!store.table_exists("training_session_effort_overrides").unwrap());
+    }
+
+    #[test]
+    fn current_effort_survives_reopening_and_manual_retiming() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("effort.sqlite");
+        let store = SqliteStore::open(&path).unwrap();
+        let manual = run("manual","m1","manual:m1","2026-09-10T10:00:00.000Z","2026-09-10T11:00:00.000Z",60,"Easy Run");
+        store.upsert_sessions(&[manual]).unwrap();
+        let id = store.list_sessions(DEFAULT_OWNER_ID,None).unwrap()[0]["id"].as_str().unwrap().to_string();
+        store.set_training_session_effort(DEFAULT_OWNER_ID,&id,Some(10)).unwrap();
+        drop(store);
+        let store = SqliteStore::open(&path).unwrap();
+        let changed = store.update_manual_training_session(DEFAULT_OWNER_ID,&id,None,Some(30)).unwrap();
+        assert_eq!(changed["rpe"],json!(10));
+        assert_eq!(changed["sessionRpe"],json!(300));
+        store.delete_training_session(DEFAULT_OWNER_ID,&id).unwrap();
+        assert!(store.list_sessions(DEFAULT_OWNER_ID,None).unwrap().is_empty());
+    }
+
+    #[test]
+    fn source_replacement_and_merge_keep_current_rpe_until_a_new_rating_arrives() {
+        let store=store();
+        let mut first=run("hevy","h1","hevy:h1","2026-09-10T10:00:00.000Z","2026-09-10T11:00:00.000Z",60,"Easy Run");
+        first["rpe"]=json!(3);
+        store.upsert_sessions(&[first.clone()]).unwrap();
+        let id=store.list_sessions(DEFAULT_OWNER_ID,None).unwrap()[0]["id"].as_str().unwrap().to_string();
+        store.set_training_session_effort(DEFAULT_OWNER_ID,&id,Some(7)).unwrap();
+        let mut replacement=first.clone(); replacement["source"]=json!("intervals"); replacement["externalId"]=json!("i1"); replacement["id"]=json!("intervals:i1"); replacement["rpe"]=Value::Null;
+        store.upsert_sessions(&[replacement.clone()]).unwrap();
+        assert_eq!(store.list_sessions(DEFAULT_OWNER_ID,None).unwrap()[0]["rpe"],json!(7));
+        assert_eq!(store.list_sessions(DEFAULT_OWNER_ID,None).unwrap()[0]["sessionRpe"],json!(420));
+        store.sqlite().execute("DELETE FROM training_session_sources WHERE source='hevy'",[]).unwrap();
+        for (rpe,expected,load) in [(Value::Null,7,420),(json!(0),7,420),(json!(9),9,540),(Value::Null,9,540)] {
+            replacement["rpe"]=rpe.clone();
+            store.replace_source_sessions(&ReplaceSourceSessionsInput {owner_id:DEFAULT_OWNER_ID,source:"intervals",sessions:&[replacement.clone()],dates:None,local_dates:None,range_start:Some("2026-09-10"),range_end:Some("2026-09-10")}).unwrap();
+            let current=store.list_sessions(DEFAULT_OWNER_ID,None).unwrap();
+            assert_eq!(current.len(),1);
+            assert_eq!(current[0]["id"],json!(id));
+            assert_eq!(current[0]["rpe"],json!(expected));
+            assert_eq!(current[0]["sessionRpe"],json!(load));
+        }
+        replacement["startAt"]=json!("2026-09-10T14:00:00.000Z");
+        replacement["endAt"]=json!("2026-09-10T15:00:00.000Z");
+        store.replace_source_sessions(&ReplaceSourceSessionsInput {owner_id:DEFAULT_OWNER_ID,source:"intervals",sessions:&[replacement],dates:None,local_dates:None,range_start:Some("2026-09-10"),range_end:Some("2026-09-10")}).unwrap();
+        let current=store.list_sessions(DEFAULT_OWNER_ID,None).unwrap();
+        assert_eq!(current[0]["id"],json!(id));
+        assert_eq!(current[0]["rpe"],json!(9));
+        assert_eq!(current[0]["sessionRpe"],json!(540));
+    }
+
+    #[test]
+    fn session_rpe_is_derived_across_syncs_and_merges_and_old_rows_read_as_null() {
         let store = store();
         let mut rich = run("hevy", "rich", "11111111-1111-4111-8111-111111111111", "2026-09-10T10:00:00.000Z", "2026-09-10T11:00:00.000Z", 60, "Easy Run");
         rich["rpe"] = json!(8);
@@ -1729,14 +1914,14 @@ mod tests {
         let sessions = store.list_sessions(DEFAULT_OWNER_ID, None).unwrap();
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0]["rpe"], json!(3));
-        assert_eq!(sessions[0]["sessionRpe"], json!(118));
+        assert_eq!(sessions[0]["sessionRpe"], json!(180));
         for field in athria_core::schema::session::API_SESSION_METRICS { assert_eq!(sessions[0][field], json!(123.5)); }
         for field in athria_core::schema::session::API_SESSION_METRICS { icu[field] = Value::Null; }
         store.upsert_sessions(&[icu]).unwrap();
         let cleared = store.list_sessions(DEFAULT_OWNER_ID, None).unwrap();
         for field in athria_core::schema::session::API_SESSION_METRICS { assert_eq!(cleared[0][field], Value::Null); }
         let source = store.list_sessions_by_source("hevy", DEFAULT_OWNER_ID, None).unwrap();
-        assert_eq!(source[0]["sessionRpe"], json!(480));
+        assert_eq!(source[0]["sessionRpe"], json!(180));
         store.sqlite().execute("UPDATE training_sessions SET data = json_remove(data, '$.rpe', '$.sessionRpe')", []).unwrap();
         let old = store.list_sessions(DEFAULT_OWNER_ID, None).unwrap();
         assert_eq!(old[0].get("rpe"), Some(&Value::Null));

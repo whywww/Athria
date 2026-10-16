@@ -97,6 +97,10 @@ impl AthriaStore for SqliteStore {
 
 
 
+    fn set_training_session_effort(&self, owner_id: &str, training_session_id: &str, rpe: Option<i64>) -> Result<Value> {
+        SqliteStore::set_training_session_effort(self, owner_id, training_session_id, rpe)
+    }
+
     fn update_manual_training_session(
         &self,
         owner_id: &str,
@@ -135,7 +139,8 @@ impl AthriaStore for SqliteStore {
 
     fn save_wellness(&self, record: &Value) -> Result<Value> {
         SqliteStore::save_wellness(self, record)?;
-        Ok(record.clone())
+        SqliteStore::get_wellness(self, record["ownerId"].as_str().unwrap_or(athria_core::DEFAULT_OWNER_ID), record["day"].as_str().unwrap())?
+            .ok_or_else(|| athria_core::AthriaError::new(athria_core::AthriaErrorCode::InvalidData, "Saved wellness record is missing"))
     }
 
     fn upsert_wellness(&self, owner_id: &str, records: &[Value]) -> Result<i64> {

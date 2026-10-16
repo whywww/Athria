@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { OverviewDashboard, RecoveryHelpModal, SummaryProgressRing, calendarDays, durationLabelBottom, formatWellnessDate, formatWellnessRange, loadAxisLabel, mesocycleProgress, overviewDateRange, recoveryRingTone, recoveryStatus, sparklineGeometry, twelveWeekConsistency, weeklyLoad, weeklyOverview, weeklyRingProgress, activityAxis, wellnessHighlights } from "./overview";
+import { OverviewDashboard, RecoveryHelpModal, SummaryProgressRing, calendarDays, durationAxis, formatWellnessDate, formatWellnessRange, loadAxisLabel, mesocycleProgress, overviewDateRange, recoveryRingTone, recoveryStatus, sparklineGeometry, twelveWeekConsistency, weeklyLoad, weeklyOverview, weeklyRingProgress, frequencyAxis, wellnessHighlights } from "./overview";
 import { LanguageProvider } from "./i18n";
 import type { CalendarSession, TrainingHistorySession, TrainingSummary, WellnessRecord } from "./view-models";
 import { addDays } from "./plan/view";
@@ -62,20 +62,22 @@ describe("Overview", () => {
     const result = wellnessHighlights(wellness, "2026-09-11")!;
     expect(result.start).toBe("2026-09-09");
     expect(result.end).toBe("2026-09-10");
-    expect(result.values.map((item) => item.key)).toEqual(["hrvRmssdMs", "restingHeartRateBpm"]);
-    expect(result.values[0]).toMatchObject({ display: "55", measurementDay: "2026-09-10", delta: 5, series: [50, 55] });
+    expect(result.values.map((item) => item.key)).toEqual(["sleepScore", "hrvRmssdMs", "restingHeartRateBpm", "sleepSeconds"]);
+    expect(result.values.find((item) => item.key === "hrvRmssdMs")).toMatchObject({ display: "55", measurementDay: "2026-09-10", delta: 5, series: [50, 55] });
   });
-  it("shows a recorded current evening from the next storage day without shifting tomorrow's HRV", () => {
-    const result = wellnessHighlights([{ ownerId: "local-user", day: "2026-10-10", fields: { subjectiveSleepScore: field(90), sleepScore: field(80), hrvRmssdMs: field(60) }, updatedAt: "2026-10-09T00:00:00Z" }], "2026-10-09")!;
+  it("shows sleep on its stored evening and excludes tomorrow's records", () => {
+    const result = wellnessHighlights([
+      { ownerId: "local-user", day: "2026-10-09", fields: { sleepScore: field(80) }, updatedAt: "2026-10-09T00:00:00Z" },
+      { ownerId: "local-user", day: "2026-10-10", fields: { sleepScore: field(20), hrvRmssdMs: field(60) }, updatedAt: "2026-10-10T00:00:00Z" },
+    ], "2026-10-09")!;
     expect(result.end).toBe("2026-10-09");
     expect(result.values).toHaveLength(1);
     expect(result.values[0]).toMatchObject({ key: "sleepScore", display: "80", measurementDay: "2026-10-09" });
   });
-  it("uses manual sleep in highlights and falls back to API values after removal", () => {
-    const base: WellnessRecord = { ownerId: "local-user", day: "2026-10-09", fields: { sleepSeconds: field(28800), manualSleepSeconds: { ...field(0), source: "user" } }, updatedAt: "2026-10-09T00:00:00Z" };
-    expect(wellnessHighlights([base], base.day)?.values[0]).toMatchObject({ key: "sleepSeconds", display: "0:00", series: [0] });
-    expect(wellnessHighlights([{ ...base, fields: { sleepSeconds: base.fields.sleepSeconds! } }], base.day)?.values[0]).toMatchObject({ display: "8:00", series: [28800] });
-    expect(wellnessHighlights([{ ...base, fields: { manualSleepSeconds: { ...field(27000), source: "user" } } }], base.day)?.values[0]).toMatchObject({ display: "7:30", series: [27000] });
+  it("reads the single sleep duration in highlights for device and manual sources", () => {
+    const base: WellnessRecord = { ownerId: "local-user", day: "2026-10-09", fields: { sleepSeconds: field(28800) }, updatedAt: "2026-10-09T00:00:00Z" };
+    expect(wellnessHighlights([base], base.day)?.values[0]).toMatchObject({ key: "sleepSeconds", display: "8:00", series: [28800] });
+    expect(wellnessHighlights([{ ...base, fields: { sleepSeconds: { ...field(27000), source: "user" } } }], base.day)?.values[0]).toMatchObject({ display: "7:30", series: [27000] });
   });
 
   it("excludes metrics missing on the common end day", () => {
@@ -154,8 +156,8 @@ describe("Overview", () => {
     const result = wellnessHighlights(records, "2026-09-10")!;
     expect(result.start).toBe("2026-09-10");
     expect(result.end).toBe("2026-09-10");
-    expect(result.values.map((item) => item.key)).toEqual(["hrvRmssdMs"]);
-    expect(result.values[0]?.series).toEqual([60]);
+    expect(result.values.map((item) => item.key)).toEqual(["sleepScore", "hrvRmssdMs"]);
+    expect(result.values.find((item) => item.key === "hrvRmssdMs")?.series).toEqual([60]);
     expect(result.values.find((item) => item.key === "restingHeartRateBpm")).toBeUndefined();
     expect(wellnessHighlights(records, "2026-10-01")?.end).toBe("2026-09-10");
   });
@@ -245,10 +247,11 @@ describe("Overview", () => {
     expect(weeklyRingProgress(30, 10)).toMatchObject({ remainder: 1, percent: 300 });
   });
 
-  it("keeps empty axes valid and frequency ticks integral", () => {
-    expect(activityAxis(0).ceiling).toBeGreaterThan(0);
-    expect(activityAxis(108).ceiling).toBeGreaterThanOrEqual(108);
-    expect(activityAxis(2, true).ticks).toEqual([0, 1, 2, 3]);
+  it("keeps every axis at four evenly spaced ticks", () => {
+    expect(frequencyAxis(0).ceiling).toBeGreaterThan(0);
+    expect(frequencyAxis(108).ceiling).toBeGreaterThanOrEqual(108);
+    expect(frequencyAxis(2).ticks).toEqual([0, 1, 2, 3]);
+    expect(frequencyAxis(7).ticks).toEqual([0, 3, 6, 9]);
   });
 
   it("renders both charts and empty goal rings even with no recorded workouts", () => {
@@ -272,16 +275,21 @@ describe("Overview", () => {
     expect(html.match(/class="zero"/g)).toHaveLength(3);
     for (const value of [45, 30, 60]) expect(html).toContain(`>${value}</span>`);
     expect(html).not.toContain("<b>1</b>");
+    expect(html).toContain("bottom:11px");
+    const count = (needle: string) => html.split(needle).length - 1;
+    expect(count(`style="bottom:${1 / 3 * 100}%"`)).toBe(2);
+    expect(count(`style="bottom:${2 / 3 * 100}%"`)).toBe(2);
 
     const empty = renderToStaticMarkup(createElement(OverviewDashboard, { summary: { ...summary, sessionCount: 0, totalDurationMinutes: 0, byDomain: {}, durationMinutesByDomain: {} }, wellness: [], history: [], planned: [], today: "2026-09-11", timezone: "Asia/Hong_Kong" }));
     expect(empty.match(/class="zero"/g)).toHaveLength(6);
     expect(empty).not.toContain("<b>0</b>");
   });
 
-  it("keeps a duration label above its marker without leaving the plot box", () => {
-    expect(durationLabelBottom(100)).toBe(10);
-    expect(durationLabelBottom(28)).toBe(10);
-    expect(durationLabelBottom(0)).toBe(-10);
+  it("keeps four evenly divided ticks so the minute labels align with the grid lines", () => {
+    expect(durationAxis(0)).toEqual({ ceiling: 15, ticks: [0, 5, 10, 15] });
+    expect(durationAxis(45)).toEqual({ ceiling: 60, ticks: [0, 20, 40, 60] });
+    expect(durationAxis(53)).toEqual({ ceiling: 75, ticks: [0, 25, 50, 75] });
+    expect(durationAxis(60).ceiling).toBeGreaterThanOrEqual(75);
   });
 
   it("compares the current week with the matching elapsed days last week", () => {
@@ -417,123 +425,17 @@ describe("Overview", () => {
   const recoveryRecord = (day: string, fields: WellnessRecord["fields"]): WellnessRecord => ({ ownerId: "local-user", day, fields, updatedAt: `${day}T00:00:00Z` });
   const core = { sleepScore: field(85), hrvRmssdMs: field(50), restingHeartRateBpm: field(50) };
   const recoveryHistory = (day: string, fields: WellnessRecord["fields"] = core, count = 7) => Array.from({ length: count }, (_, index) => recoveryRecord(addDays(day, -index - 2), fields));
-  const recoveryPair = (day: string, fields: WellnessRecord["fields"]) => [recoveryRecord(addDays(day, -1), fields), recoveryRecord(day, fields)];
-  const recoveryFor = (fields: WellnessRecord["fields"]) => recoveryStatus([...recoveryPair("2026-10-06", fields), ...recoveryHistory("2026-10-06", { hrvRmssdMs: field(50), restingHeartRateBpm: field(50) })], "2026-10-06");
-
-  it("averages three required recovery signals and excludes subjective check-ins", () => {
-    expect(recoveryFor({ ...core, hrvRmssdMs: field(40), restingHeartRateBpm: field(55), sleepScore: field(70), readiness: field(100), fatigue: field(0), soreness: field(0) })).toMatchObject({ label: "Caution", value: 45, day: "2026-10-05", series: [45] });
-    expect(recoveryFor(core)).toMatchObject({ label: "Ready", value: 90 });
-    expect(recoveryFor({ ...core, hrvRmssdMs: field(40), restingHeartRateBpm: field(57), sleepScore: field(50) })).toMatchObject({ label: "Rest", value: 30 });
-  });
-
-  it("uses yesterday's heart data and today's sleep without substituting other dates", () => {
-    const history = recoveryHistory("2026-10-06");
-    const heart = recoveryRecord("2026-10-05", { hrvRmssdMs: field(50), restingHeartRateBpm: field(50), sleepScore: field(0) });
-    const sleep = recoveryRecord("2026-10-06", { subjectiveSleepScore: { ...field(90), source: "user" }, manualSleepSeconds: { ...field(30600), source: "user" } });
-    expect(recoveryStatus([sleep, heart, ...history].reverse(), "2026-10-06")).toMatchObject({ value: 90, day: "2026-10-05", signalCount: 3 });
-    expect(recoveryStatus([heart, ...history], "2026-10-06")).toMatchObject({ value: null, day: null, signalCount: 0 });
-    expect(recoveryStatus([{ ...sleep, fields: { ...sleep.fields, hrvRmssdMs: field(1), restingHeartRateBpm: field(100) } }, heart, ...history], "2026-10-06")).toMatchObject({ value: 90, signalCount: 3 });
-    expect(recoveryStatus([recoveryRecord("2026-10-06", core), ...history], "2026-10-06").value).toBeNull();
-    expect(recoveryStatus([sleep, ...history, recoveryRecord("2026-10-07", core)], "2026-10-06")).toMatchObject({ value: null, day: null, series: [] });
-    expect(recoveryStatus([sleep, { ...heart, fields: { restingHeartRateBpm: field(50) } }, ...history], "2026-10-06").value).toBeNull();
-    expect(recoveryStatus([], "2026-10-06").value).toBeNull();
-    const otherUserSleep = { ...sleep, ownerId: "another-user" };
-    expect(recoveryStatus([otherUserSleep, heart, ...history], "2026-10-06")).toMatchObject({ signalCount: 0, value: null });
-  });
-
-  it("labels every historical score with its evening date and keeps the last five", () => {
-    const records = recoveryHistory("2026-10-09", { hrvRmssdMs: field(50), restingHeartRateBpm: field(50) }, 14);
-    records.push(recoveryRecord("2026-10-08", { hrvRmssdMs: field(50), restingHeartRateBpm: field(50), sleepScore: field(0) }));
-    for (const [day, score] of [["2026-10-05", 85], ["2026-10-06", 75], ["2026-10-07", 65], ["2026-10-09", 55]] as const) {
-      const existing = records.find((record) => record.day === day);
-      if (existing) existing.fields = { ...existing.fields, sleepScore: field(score) };
-      else records.push(recoveryRecord(day, { sleepScore: field(score) }));
+  const recoveryPair = (day: string, fields: WellnessRecord["fields"], value = 90) => [recoveryRecord(addDays(day, -1), { ...fields, readiness: { ...field(value), source: "athria" } }), recoveryRecord(day, fields)];
+  it("reads persisted Athria scores and never calculates or substitutes other dates", () => {
+    const score = (day: string, value: number, source: "athria" | "intervals_icu" = "athria") => recoveryRecord(day, { readiness: { ...field(value), source } });
+    expect(recoveryStatus([score("2026-10-05", 90)], "2026-10-06")).toMatchObject({ value: 90, label: "Ready", day: "2026-10-05", signalCount: 3 });
+    expect(recoveryStatus([score("2026-10-05", 45)], "2026-10-06")).toMatchObject({ value: 45, label: "Caution" });
+    expect(recoveryStatus([score("2026-10-05", 44)], "2026-10-06")).toMatchObject({ value: 44, label: "Rest" });
+    for (const records of [[], [score("2026-10-04", 90)], [score("2026-10-06", 90)], [score("2026-10-05", 90, "intervals_icu")], [...recoveryPair("2026-10-06", core).map((record) => ({ ...record, fields: core })), ...recoveryHistory("2026-10-06")]]) {
+      expect(recoveryStatus(records, "2026-10-06")).toMatchObject({ value: null, day: null, signalCount: 0 });
     }
-    records.push(recoveryRecord("2026-10-10", core));
-    expect(recoveryStatus(records.reverse(), "2026-10-09")).toMatchObject({ day: "2026-10-08", value: 75, signalCount: 3, series: [90, 85, 80, 70, 75] });
-  });
-
-  it.each(["hrvRmssdMs", "restingHeartRateBpm"] as const)("requires %s on yesterday without borrowing it from other dates", (key) => {
-    const fields: WellnessRecord["fields"] = { ...core };
-    delete fields[key];
-    expect(recoveryFor(fields).value).toBeNull();
-  });
-
-  it("requires sleep rather than calculating only the two heart signals", () => {
-    const fields: WellnessRecord["fields"] = { ...core }; delete fields.sleepScore;
-    expect(recoveryFor(fields)).toMatchObject({ value: null, signalCount: 0 });
-    expect(recoveryFor({ ...fields, hrvRmssdMs: field(40), restingHeartRateBpm: field(55) })).toMatchObject({ value: null, label: "-", signalCount: 0 });
-    const html = renderToStaticMarkup(createElement(OverviewDashboard, { summary, wellness: [...recoveryPair("2026-10-06", fields), ...recoveryHistory("2026-10-06")], history: [], planned: [], today: "2026-10-06", timezone: "Asia/Hong_Kong" }));
-    expect(html).toContain("Insufficient data");
-    expect(html).toContain('aria-label="Open wellness trends"');
-    expect(html).not.toContain("Record sleep");
-  });
-
-  it("blends device and subjective sleep scores equally and prefers scores over durations", () => {
-    expect(recoveryFor({ ...core, sleepScore: field(85), subjectiveSleepScore: { ...field(54), source: "user" } })).toMatchObject({ value: 80, signalCount: 3 });
-    expect(recoveryFor({ ...core, sleepScore: { ...field(0), value: null }, subjectiveSleepScore: { ...field(55), source: "user" }, sleepSeconds: field(27000) }).value).toBe(75);
-    expect(recoveryFor({ ...core, sleepScore: { ...field(0), value: null }, sleepSeconds: field(27000), manualSleepSeconds: { ...field(0), source: "user" } }).value).toBe(70);
-    expect(recoveryFor({ ...core, sleepScore: { ...field(0), value: null }, manualSleepSeconds: { ...field(0), source: "user" } })).toMatchObject({ value: 70, signalCount: 3 });
-  });
-
-  it("requires seven distinct historical days and excludes the current day", () => {
-    const history = recoveryHistory("2026-10-06", { hrvRmssdMs: field(50), restingHeartRateBpm: field(50) }, 6);
-    expect(recoveryStatus([...recoveryPair("2026-10-06", core), ...history, history[0]!], "2026-10-06").value).toBeNull();
-    expect(recoveryStatus([...recoveryPair("2026-10-06", core), ...history, recoveryRecord("2026-09-28", core)], "2026-10-06").value).toBe(90);
-  });
-
-  it("uses a median baseline only from the preceding 28 calendar days and the same source", () => {
-    const history = recoveryHistory("2026-10-06", { hrvRmssdMs: field(50), restingHeartRateBpm: field(50) }, 6);
-    const today = recoveryPair("2026-10-06", core);
-    expect(recoveryStatus([...today, ...history, recoveryRecord("2026-09-07", { hrvRmssdMs: field(1000), restingHeartRateBpm: field(1000) })], "2026-10-06").value).toBe(90);
-    expect(recoveryStatus([...today, ...history, recoveryRecord("2026-09-06", core)], "2026-10-06").value).toBeNull();
-    expect(recoveryStatus([...today, ...history, recoveryRecord("2026-09-07", { hrvRmssdMs: { ...field(50), source: "user" }, restingHeartRateBpm: field(50) })], "2026-10-06").value).toBeNull();
-    expect(recoveryStatus([...today, ...history, recoveryRecord("2026-09-07", { hrvRmssdMs: field(50), restingHeartRateBpm: { ...field(50), source: "user" } })], "2026-10-06").value).toBeNull();
-  });
-
-  it("keeps RMSSD and SDNN baselines separate and falls back to SDNN when RMSSD cannot be compared", () => {
-    const history = recoveryHistory("2026-10-06", { hrvSdnnMs: field(20), restingHeartRateBpm: field(50) });
-    const today = recoveryPair("2026-10-06", { ...core, hrvRmssdMs: field(500), hrvSdnnMs: field(16) });
-    expect(recoveryStatus([...today, ...history], "2026-10-06").value).toBe(70);
-    expect(recoveryStatus([...today, ...recoveryHistory("2026-10-06", { ...core, hrvSdnnMs: field(20) })], "2026-10-06").value).toBe(90);
-    delete today[0]!.fields.hrvSdnnMs;
-    expect(recoveryStatus([...today, ...history], "2026-10-06").value).toBeNull();
-  });
-
-  it("prefers valid sleep scores, uses duration as a fallback, and accepts a recorded zero sleep value", () => {
-    expect(recoveryFor({ ...core, sleepScore: field(55), sleepSeconds: field(27000) }).value).toBe(75);
-    for (const value of [null, Number.NaN, -1, 101]) {
-      expect(recoveryFor({ ...core, sleepScore: { ...field(0), value }, sleepSeconds: field(27000) }).value).toBe(90);
-    }
-    expect(recoveryFor({ ...core, sleepScore: field(0) }).value).toBe(70);
-    expect(recoveryFor({ ...core, sleepScore: { ...field(0), value: null }, sleepSeconds: field(0) }).value).toBe(70);
-  });
-
-  it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])("rejects invalid current and baseline heart metrics (%s)", (value) => {
-    expect(recoveryFor({ ...core, hrvRmssdMs: field(value) }).value).toBeNull();
-    expect(recoveryFor({ ...core, restingHeartRateBpm: field(value) }).value).toBeNull();
-    expect(recoveryStatus([...recoveryPair("2026-10-06", core), ...recoveryHistory("2026-10-06", { ...core, hrvRmssdMs: field(value) })], "2026-10-06").value).toBeNull();
-    expect(recoveryStatus([...recoveryPair("2026-10-06", core), ...recoveryHistory("2026-10-06", { ...core, restingHeartRateBpm: field(value) })], "2026-10-06").value).toBeNull();
-  });
-
-  it.each([[85, 90], [75, 85], [65, 80], [55, 75], [54, 70]])("scores sleep score %s at its band boundary", (sleepScore, expected) => {
-    expect(recoveryFor({ ...core, sleepScore: field(sleepScore) }).value).toBe(expected);
-  });
-  it.each([[27000, 90], [25200, 85], [23400, 80], [21600, 75], [21599, 70]])("scores sleep duration %s at its band boundary", (sleepSeconds, expected) => {
-    expect(recoveryFor({ ...core, sleepScore: { ...field(0), value: null }, sleepSeconds: field(sleepSeconds) }).value).toBe(expected);
-  });
-  it.each([[50, 90], [47.5, 85], [45, 80], [42.5, 75], [42.4, 70]])("scores HRV %s against its own baseline", (hrv, expected) => {
-    expect(recoveryFor({ ...core, hrvRmssdMs: field(hrv) }).value).toBe(expected);
-  });
-  it.each([[50, 90], [52, 85], [54, 80], [56, 75], [57, 70]])("scores resting heart rate %s against its own baseline", (heartRate, expected) => {
-    expect(recoveryFor({ ...core, restingHeartRateBpm: field(heartRate) }).value).toBe(expected);
-  });
-
-  it("rounds the mean and keeps the Ready and Caution verdict boundaries", () => {
-    expect(recoveryFor({ ...core, hrvRmssdMs: field(42.5), restingHeartRateBpm: field(54), sleepScore: field(55) })).toMatchObject({ value: 50, label: "Caution" });
-    expect(recoveryFor({ ...core, hrvRmssdMs: field(40), restingHeartRateBpm: field(55), sleepScore: field(70) })).toMatchObject({ value: 45, label: "Caution" });
-    expect(recoveryFor({ ...core, hrvRmssdMs: field(40), restingHeartRateBpm: field(57), sleepScore: field(70) })).toMatchObject({ value: 40, label: "Rest" });
-    expect(recoveryFor({ ...core, hrvRmssdMs: field(40) })).toMatchObject({ value: 70, label: "Ready" });
+    const history = Array.from({ length: 7 }, (_, index) => score(addDays("2026-10-05", -index), 90 - index));
+    expect(recoveryStatus([...history, { ...score("2026-10-04", 10), ownerId: "other-user" }, score("2026-10-06", 30)], "2026-10-06").series).toEqual([86, 87, 88, 89, 90]);
   });
 
   it("maps recovery verdicts to readiness ring tones", () => {
@@ -546,16 +448,16 @@ describe("Overview", () => {
   it.each(["en", "zh-CN"])("renders exactly one readiness line for every state in %s", (language) => {
     vi.stubGlobal("localStorage", { getItem: () => language, setItem: () => {} });
     try {
-      const cases: [WellnessRecord["fields"] | null, string, string][] = [
-        [core, "Ready to train", "可以训练"],
-        [{ ...core, hrvRmssdMs: field(40), restingHeartRateBpm: field(55), sleepScore: field(70) }, "Train with care", "谨慎训练"],
-        [{ ...core, hrvRmssdMs: field(40), restingHeartRateBpm: field(57), sleepScore: field(50) }, "Prioritize recovery", "优先恢复"],
-        [{ hrvRmssdMs: field(50), restingHeartRateBpm: field(50) }, "Insufficient data", "数据不足"],
-        [null, "Insufficient data", "数据不足"],
+      const cases: [WellnessRecord["fields"] | null, string, string, number | null][] = [
+        [core, "Ready to train", "可以训练", 90],
+        [{ ...core, hrvRmssdMs: field(40), restingHeartRateBpm: field(55), sleepScore: field(70) }, "Train with care", "谨慎训练", 45],
+        [{ ...core, hrvRmssdMs: field(40), restingHeartRateBpm: field(57), sleepScore: field(50) }, "Prioritize recovery", "优先恢复", 30],
+        [{ hrvRmssdMs: field(50), restingHeartRateBpm: field(50) }, "Insufficient data", "数据不足", null],
+        [null, "Insufficient data", "数据不足", null],
       ];
       for (const day of ["2026-10-06"]) {
-        for (const [fields, english, chinese] of cases) {
-          const records = fields ? [...recoveryPair(day, fields), ...recoveryHistory(day)] : [];
+        for (const [fields, english, chinese, value] of cases) {
+          const records = fields ? [...(value === null ? [recoveryRecord(addDays(day, -1), fields)] : recoveryPair(day, fields, value)), ...recoveryHistory(day)] : [];
           const html = renderToStaticMarkup(createElement(LanguageProvider, null, createElement(OverviewDashboard, { summary, wellness: records, history: [], planned: [], today: "2026-10-06", timezone: "Asia/Hong_Kong" })));
           const card = html.match(/<article class="overview-summary-card recovery-summary">[\s\S]*?<\/article>/)![0];
           expect(card).toContain(`<small>${language === "en" ? english : chinese}</small>`);
@@ -609,10 +511,67 @@ describe("Overview", () => {
       expect(empty).toContain("<small>数据不足</small>");
       const help = renderToStaticMarkup(createElement(LanguageProvider, null, createElement(RecoveryHelpModal, { onClose: () => undefined })));
       expect(help).not.toContain("同一天的三项指标必须齐全");
-      expect(help).toContain('class="recovery-help-note">准备度评估昨天的 HRV、静息心率及昨天晚上至今天的睡眠。');
-      expect(help).toContain("对三项得分取平均");
+      expect(help).toContain("Athria 估计规则");
+      expect(help).toContain("至少需要两个恢复维度");
       expect(help).not.toContain("每项指标取 30、45、60、75 或 90 分");
       expect(help).toContain("并非经过科学验证");
+    } finally {
+      vi.stubGlobal("localStorage", { getItem: () => "en", setItem: () => {} });
+      renderToStaticMarkup(createElement(LanguageProvider, null, createElement("span", null, "reset")));
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("shows the core breakdown, its morning date and missing data without recalculating", () => {
+    const assessment: NonNullable<WellnessRecord["readinessAssessment"]> = {
+      algorithmVersion: "athria-readiness-v2", assessmentDay: "2026-10-06", score: 69, status: "Caution",
+      cardiacScore: 85, sleepScore: null, subjectiveScore: 50, baseScore: 71.5,
+      loadAdjustment: 0, loadMethod: null, scoreCap: 69, dataQuality: "limited",
+      missingReasons: ["Sleep not included", "Training load not included"],
+      hrvField: "hrvRmssdMs", heartRateField: null, hrvBaselineDays: 14, heartRateBaselineDays: 0,
+    };
+    const html = renderToStaticMarkup(createElement(RecoveryHelpModal, { assessment, onClose: () => undefined }));
+    expect(html).toContain("Readiness breakdown");
+    expect(html).toContain("Oct 6, 2026");
+    expect(html).toContain("Limited data");
+    expect(html).toContain("<dt>Weighted base score</dt><dd>71.5</dd>");
+    expect(html).toContain("<dt>Final readiness</dt><dd>69</dd>");
+    expect(html).not.toContain("Sleep not included");
+    expect(html).not.toContain("Training load not included");
+    expect(html).not.toContain("Wellness influence factor");
+    const record = { ...recoveryRecord("2026-10-05", { readiness: { ...field(69), source: "athria" } }), readinessAssessment: assessment };
+    expect(recoveryStatus([record], "2026-10-06")).toMatchObject({ value: 69, label: "Caution" });
+  });
+
+  it.each(["en", "zh-CN"])("shows only the compact score chain and no load statistics in %s", (language) => {
+    vi.stubGlobal("localStorage", { getItem: () => language, setItem: () => {} });
+    try {
+      const assessment: NonNullable<WellnessRecord["readinessAssessment"]> = {
+        algorithmVersion: "athria-readiness-percentile-load", assessmentDay: "2026-10-06", score: 52, status: "Caution",
+        cardiacScore: 34, sleepScore: 89, subjectiveScore: 30, baseScore: 52, loadAdjustment: 0, loadMethod: "sessionRpe", scoreCap: 69,
+        dataQuality: "limited", missingReasons: [], hrvField: "hrvSdnnMs", heartRateField: "restingHeartRateBpm", hrvBaselineDays: 17, heartRateBaselineDays: 16,
+        trainingLoad: {
+          status: "not_elevated", recentSessionCount: 6, durationMinutes: 280, ratedSessionCount: 6, knownRpeLoad: 670, knownRpePressure: 236.5,
+          combinedAdjustment: 0, wellnessFactor: 0.28, groups: [{
+            activityType: null, method: "sessionRpe", recentSessionCount: 6, validSessionCount: 6, durationMinutes: 280,
+            knownLoad: 670, knownPressure: 236.5, complete: true, historyWindows: 23, referenceDays: 7, referenceSpanDays: 10,
+            percentile: 0.696, evidenceWeight: 0.293, rawAdjustment: 0, weightedAdjustment: 0, durationShare: 1, eligible: true, selected: true, status: "not_elevated",
+          }],
+        },
+      };
+      const html = renderToStaticMarkup(createElement(LanguageProvider, null, createElement(RecoveryHelpModal, { assessment, onClose: () => undefined })));
+      const labels = language === "zh-CN"
+        ? { base: "加权基础分", deduction: "训练负荷扣分", cap: "分数上限", final: "最终准备度", quality: "数据有限" }
+        : { base: "Weighted base score", deduction: "Training load deduction", cap: "Score cap", final: "Final readiness", quality: "Limited data" };
+      expect(html).toContain(`<dt>${labels.base}</dt><dd>52</dd>`);
+      expect(html).toContain(`<dt>${labels.deduction}</dt><dd>0</dd>`);
+      expect(html).toContain(`<dt>${labels.cap}</dt><dd>69</dd>`);
+      expect(html).toContain(`<dt>${labels.final}</dt><dd>52</dd>`);
+      expect(html).toContain(labels.quality);
+      const hidden = language === "zh-CN"
+        ? ["历史支持权重", "Wellness 影响系数", "近期训练次数", "负荷计算方式"]
+        : ["Historical support weight", "Wellness influence factor", "Recent workouts", "Load method"];
+      for (const text of hidden) expect(html).not.toContain(text);
     } finally {
       vi.stubGlobal("localStorage", { getItem: () => "en", setItem: () => {} });
       renderToStaticMarkup(createElement(LanguageProvider, null, createElement("span", null, "reset")));
@@ -628,11 +587,13 @@ describe("Overview", () => {
     expect(html).toContain("Caution · 45-69");
     expect(html).toContain("Rest · below 45");
     expect(html).not.toContain("All three signals must be available on the same day");
-    expect(html).toContain("yesterday evening&#x27;s sleep ending today.");
-    expect(html).toContain("HRV, resting heart rate and sleep scores are averaged only when all three signals are available");
+    expect(html).toContain("yesterday evening&#x27;s sleep ending today,");
+    expect(html).toContain("At least two recovery dimensions are required");
     expect(html).not.toContain("Each signal receives 30, 45, 60, 75 or 90 points");
     expect(html).toContain("not a scientifically validated score");
     expect(html).not.toContain("Signals with no data are skipped");
+    expect(html).toContain("<dt>Final readiness</dt><dd>–</dd>");
+    expect(html).not.toContain("Seven-day pressure uses a two-day half-life");
   });
 
   it("renders featured wellness trends, compact sleep, and never the excluded weight", () => {
@@ -641,7 +602,8 @@ describe("Overview", () => {
       { ownerId: "local-user", day: "2026-09-09", fields: { sleepSeconds: field(27900), hrvRmssdMs: field(50), restingHeartRateBpm: field(51), weightKg: field(71) }, updatedAt: "2026-09-09T00:00:00Z" },
     ];
     const html = renderToStaticMarkup(createElement(OverviewDashboard, { summary, wellness: records, history: [], planned: [], today: "2026-09-11", timezone: "Asia/Hong_Kong" }));
-    expect(html).not.toContain("<span>Sleep time</span>");
+    expect(html).toContain("<span>Sleep time</span>");
+    expect(html).toContain('<strong title="7:47">7:47</strong>');
     expect(html).toContain("VO2 max");
     expect(html).not.toContain("VO2 max (ml/kg/min)");
     expect(html).toContain('<strong title="51.2">51.2</strong>');
@@ -653,7 +615,7 @@ describe("Overview", () => {
     const html = renderToStaticMarkup(createElement(OverviewDashboard, { summary, wellness, history, planned: [], today: "2026-09-11", timezone: "Asia/Hong_Kong" }));
     expect(html).toContain("Bars: frequency");
     expect(html).toContain("Line: duration");
-    expect(html).not.toContain("<span>Sleep score</span>");
+    expect(html).toContain("<span>Sleep score</span>");
     expect(html).toContain("<strong>-</strong>");
     expect(html).toContain("Insufficient data");
     expect(html).toContain("How to calculate?");

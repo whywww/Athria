@@ -26,7 +26,85 @@ fn test_app() -> AthriaApplication<SqliteStore> {
 }
 
 #[test]
-fn manual_sleep_is_independent_of_sync_and_uses_snapshot_conflict_checks() {
+fn athria_readiness_is_persisted_and_recomputed_for_dependent_days() {
+    let app = test_app();
+    let day = "2026-10-05";
+    let mut records: Vec<Value> = (0..=7).map(|offset| json!({
+        "id": athria_core::date::format_iso_date(athria_core::date::epoch_day(day) - offset),
+        "hrv": 50, "restingHR": 50, "readiness": 1
+    })).collect();
+    records.push(json!({ "id": "2026-10-06", "sleepScore": 85, "readiness": 100 }));
+    app.store().upsert_wellness("local-user", &records).unwrap();
+    let fetched = app.get_wellness_day(day).unwrap();
+    assert_eq!(fetched["record"]["fields"]["readiness"]["value"], 85);
+    assert_eq!(fetched["record"]["fields"]["readiness"]["source"], "athria");
+    assert!(app.get_wellness_day("2026-10-06").unwrap()["record"]["fields"].get("readiness").is_none());
+    let mut list = app.list_wellness_in_window(30, Some("2026-09-28"), Some("2026-10-06")).unwrap();
+    assert_eq!(list.iter_mut().find(|record| record["day"] == day).unwrap()["fields"]["readiness"]["value"], 85);
+    let sleep = app.get_wellness_day(day).unwrap();
+    app.update_wellness(day, &json!({ "confirmed": true, "source": "user",
+        "expectedSnapshotHash": sleep["snapshotHash"], "fields": { "sleepScore": 0 }
+    })).unwrap();
+    assert_eq!(app.get_wellness_day(day).unwrap()["record"]["fields"]["readiness"]["value"], 45);
+    let current = app.get_wellness_day(day).unwrap();
+    assert!(app.update_wellness(day, &json!({ "confirmed": true, "source": "user",
+        "expectedSnapshotHash": current["snapshotHash"], "fields": { "readiness": 100 }
+    })).is_err());
+    // Removing one cardiac baseline falls back to the remaining heart-rate signal.
+    let baseline = app.get_wellness_day("2026-09-28").unwrap();
+    app.update_wellness("2026-09-28", &json!({ "confirmed": true, "source": "user",
+        "expectedSnapshotHash": baseline["snapshotHash"], "fields": { "hrvRmssdMs": null }
+    })).unwrap();
+    assert_eq!(app.get_wellness_day(day).unwrap()["record"]["fields"]["readiness"]["value"], 45);
+    app.store().upsert_wellness("local-user", &[json!({ "id": "2026-09-28", "hrv": 50 })]).unwrap();
+    assert_eq!(app.get_wellness_day(day).unwrap()["record"]["fields"]["readiness"]["value"], 45);
+    let current = app.get_wellness_day(day).unwrap();
+    let saved = app.update_wellness(day, &json!({ "confirmed": true, "source": "user",
+        "expectedSnapshotHash": current["snapshotHash"], "fields": { "restingHeartRateBpm": null, "hrvRmssdMs": null }
+    })).unwrap();
+    assert!(saved["fields"].get("readiness").is_none());
+}
+
+#[test]
+fn wellness_load_import_and_updates_keep_form_derived() {
+    let app = test_app();
+    let day = "2026-10-14";
+    for (atl, ctl, form) in [(60.5, 40.25, -20.25), (10.25, 40.5, 30.25), (0.0, 0.0, 0.0)] {
+        app.store().upsert_wellness("local-user", &[json!({
+            "id": day, "atl": atl, "ctl": ctl, "form": 999, "sleepScore": 3,
+        })]).unwrap();
+        let record = app.store().get_wellness("local-user", day).unwrap().unwrap();
+        assert_eq!(record["fields"]["atl"]["value"].as_f64(), Some(atl));
+        assert_eq!(record["fields"]["ctl"]["value"].as_f64(), Some(ctl));
+        assert_eq!(record["fields"]["form"]["value"], json!(form));
+        assert_eq!(record["fields"]["form"]["source"], "intervals_icu");
+        assert_eq!(app.store().get_wellness("local-user", "2026-10-13").unwrap().unwrap()["fields"]["sleepScore"]["value"], 3);
+    }
+    app.store().upsert_wellness("local-user", &[json!({ "id": day, "atl": null, "ctl": -10 })]).unwrap();
+    let record = app.store().get_wellness("local-user", day).unwrap().unwrap();
+    assert_eq!(record["fields"]["form"]["value"], 0.0);
+    let current = app.get_wellness_day(day).unwrap();
+    assert_eq!(current["record"]["fields"]["form"]["value"], 0.0);
+    let saved = app.update_wellness(day, &json!({ "confirmed": true, "source": "user",
+        "expectedSnapshotHash": current["snapshotHash"], "fields": { "ctl": 7.5, "form": 100 }
+    })).unwrap();
+    assert_eq!(saved["fields"]["form"]["value"], 7.5);
+    let current = app.get_wellness_day(day).unwrap();
+    let saved = app.update_wellness(day, &json!({ "confirmed": true, "source": "user",
+        "expectedSnapshotHash": current["snapshotHash"], "fields": { "atl": null }
+    })).unwrap();
+    assert!(saved["fields"].get("form").is_none());
+    assert!(app.store().get_wellness("local-user", day).unwrap().unwrap()["fields"].get("form").is_none());
+    app.store().save_wellness(&json!({ "ownerId": "local-user", "day": day, "updatedAt": NOW,
+        "fields": { "form": { "value": 99, "source": "user", "updatedAt": NOW } }
+    })).unwrap();
+    assert!(app.store().get_wellness("local-user", day).unwrap().unwrap()["fields"].get("form").is_none());
+    app.store().upsert_wellness("local-user", &[json!({ "id": "2026-10-13", "ctl": "12.5" })]).unwrap();
+    assert!(app.store().get_wellness("local-user", "2026-10-13").unwrap().unwrap()["fields"].get("form").is_none());
+}
+
+#[test]
+fn manual_sleep_entries_survive_sync_until_cleared_and_use_snapshot_conflict_checks() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("sleep.sqlite3");
     let clock = Arc::new(FixedClock::new(NOW));
@@ -34,25 +112,35 @@ fn manual_sleep_is_independent_of_sync_and_uses_snapshot_conflict_checks() {
     let app = AthriaApplication::with_clock(store, "local-user", clock.clone());
     let day = "2026-09-17";
     let initial = app.get_wellness_day(day).unwrap();
-    let saved = app.update_wellness(day, &json!({ "confirmed": true, "source": "user", "expectedSnapshotHash": initial["snapshotHash"], "fields": { "subjectiveSleepScore": 60, "manualSleepSeconds": 25200 } })).unwrap();
-    assert_eq!(saved["fields"]["subjectiveSleepScore"]["source"], "user");
-    app.store().upsert_wellness("local-user", &[json!({ "id": day, "sleepScore": 90, "sleepSecs": 28800, "restingHR": 50 })]).unwrap();
-    let stale = app.update_wellness(day, &json!({ "confirmed": true, "source": "user", "expectedSnapshotHash": initial["snapshotHash"], "fields": { "subjectiveSleepScore": 80 } })).unwrap_err();
+    let saved = app.update_wellness(day, &json!({ "confirmed": true, "source": "user", "expectedSnapshotHash": initial["snapshotHash"], "fields": { "sleepScore": 60, "sleepSeconds": 25200, "subjectiveFatigue": 70 } })).unwrap();
+    assert_eq!(saved["fields"]["sleepScore"]["source"], "user");
+    assert_eq!(saved["fields"]["sleepSeconds"]["source"], "user");
+    assert_eq!(saved["fields"]["subjectiveFatigue"], json!({ "value": 70, "source": "user", "updatedAt": NOW }));
+    // Manual entries win over sync; every other source field still imports.
+    app.store().upsert_wellness("local-user", &[json!({ "id": "2026-09-18", "sleepScore": 90, "sleepSecs": 28800, "restingHR": 50 })]).unwrap();
+    app.store().upsert_wellness("local-user", &[json!({ "id": "2026-09-17", "fatigue": 1 })]).unwrap();
+    let stale = app.update_wellness(day, &json!({ "confirmed": true, "source": "user", "expectedSnapshotHash": initial["snapshotHash"], "fields": { "sleepScore": 80 } })).unwrap_err();
     assert_eq!(stale.code(), AthriaErrorCode::InputSnapshotChanged);
     let after_sync = app.get_wellness_day(day).unwrap();
-    assert_eq!(after_sync["record"]["fields"]["subjectiveSleepScore"]["value"], 60);
-    assert_eq!(after_sync["record"]["fields"]["manualSleepSeconds"]["value"], 25200);
-    assert_eq!(after_sync["record"]["fields"]["sleepScore"]["value"], 90);
-    assert_eq!(after_sync["record"]["fields"]["sleepSeconds"]["value"], 28800);
+    assert_eq!(after_sync["record"]["fields"]["sleepScore"], json!({ "value": 60, "source": "user", "updatedAt": NOW }));
+    assert_eq!(after_sync["record"]["fields"]["sleepSeconds"], json!({ "value": 25200, "source": "user", "updatedAt": NOW }));
+    assert_eq!(after_sync["record"]["fields"]["subjectiveFatigue"], json!({ "value": 70, "source": "user", "updatedAt": NOW }));
+    assert_eq!(app.get_wellness_day("2026-09-18").unwrap()["record"]["fields"]["restingHeartRateBpm"]["value"], 50);
     drop(app);
     let store = SqliteStore::open_with_clock(&path, clock.clone()).unwrap();
     let app = AthriaApplication::with_clock(store, "local-user", clock);
     assert_eq!(app.get_wellness_day(day).unwrap(), after_sync);
-    let cleared = app.update_wellness(day, &json!({ "confirmed": true, "source": "user", "expectedSnapshotHash": after_sync["snapshotHash"], "fields": { "subjectiveSleepScore": null, "manualSleepSeconds": null } })).unwrap();
-    assert!(cleared["fields"].get("subjectiveSleepScore").is_none());
-    assert!(cleared["fields"].get("manualSleepSeconds").is_none());
-    assert_eq!(cleared["fields"]["sleepScore"]["value"], 90);
-    assert_eq!(cleared["fields"]["restingHeartRateBpm"]["value"], 50);
+    // Clearing the manual fields hands the day back to the source, which refills on a later sync.
+    let cleared = app.update_wellness(day, &json!({ "confirmed": true, "source": "user", "expectedSnapshotHash": after_sync["snapshotHash"], "fields": { "sleepScore": null, "sleepSeconds": null, "subjectiveFatigue": null } })).unwrap();
+    assert!(cleared["fields"].get("sleepScore").is_none());
+    assert!(cleared["fields"].get("sleepSeconds").is_none());
+    assert!(cleared["fields"].get("subjectiveFatigue").is_none());
+    app.store().upsert_wellness("local-user", &[json!({ "id": "2026-09-18", "sleepScore": 90, "sleepSecs": 28800 })]).unwrap();
+    app.store().upsert_wellness("local-user", &[json!({ "id": "2026-09-17", "fatigue": 1 })]).unwrap();
+    let refilled = app.get_wellness_day(day).unwrap();
+    assert_eq!(refilled["record"]["fields"]["sleepScore"], json!({ "value": 90, "source": "intervals_icu", "updatedAt": NOW }));
+    assert_eq!(refilled["record"]["fields"]["sleepSeconds"], json!({ "value": 28800, "source": "intervals_icu", "updatedAt": NOW }));
+    assert_eq!(refilled["record"]["fields"]["subjectiveFatigue"], json!({ "value": 25, "source": "intervals_icu", "updatedAt": NOW }));
 }
 
 #[test]
@@ -1282,7 +1370,7 @@ fn wellness_updates_merge_fields_under_the_snapshot_hash_check() {
             .keys()
             .map(String::as_str)
             .collect::<Vec<_>>(),
-        ["ownerId", "day", "fields", "updatedAt"]
+        ["ownerId", "day", "fields", "updatedAt", "readinessAssessment"]
     );
     assert_eq!(updated["ownerId"], json!("local-user"));
     assert_eq!(updated["day"], json!("2026-09-16"));
@@ -1375,7 +1463,7 @@ fn wellness_history_is_windowed_and_hashed_per_record() {
             .keys()
             .map(String::as_str)
             .collect::<Vec<_>>(),
-        ["ownerId", "day", "fields", "updatedAt", "snapshotHash"]
+        ["ownerId", "day", "fields", "updatedAt", "readinessAssessment", "snapshotHash"]
     );
 }
 
@@ -3140,4 +3228,25 @@ fn draft_delete_failure_rolls_back_plan_review_context_and_cascade() {
     assert!(app.store().list_plan_draft_weeks(id).unwrap().is_empty());
     assert_eq!(app.get_current_plan().unwrap().unwrap()["sourceDraftId"], id);
     assert_eq!(app.store().get_plan_review_context("local-user").unwrap().unwrap()["profileChanges"], json!([]));
+}
+
+#[test]
+fn effort_edits_require_confirmation_valid_integers_and_a_fresh_snapshot() {
+    let app = test_app();
+    app.record_training_session(&json!({"type":"Run","name":"Run","startAt":"2026-09-16T09:00:00Z","durationMinutes":30})).unwrap();
+    let session = app.list_sessions_with_snapshots(30).unwrap().remove(0);
+    let id = session["id"].as_str().unwrap();
+    let hash = &session["snapshotHash"];
+    assert!(app.set_training_session_effort(id, &json!({"rpe":7,"expectedSnapshotHash":hash})).is_err());
+    assert!(app.set_training_session_effort(id, &json!({"rpe":7,"confirmed":true})).is_err());
+    for rpe in [json!(0), json!(11), json!(2.5), json!("7"), json!(false)] {
+        assert!(app.set_training_session_effort(id,&json!({"rpe":rpe,"confirmed":true,"expectedSnapshotHash":hash})).is_err());
+    }
+    let changed = app.set_training_session_effort(id,&json!({"rpe":7,"confirmed":true,"expectedSnapshotHash":hash})).unwrap();
+    assert_eq!(changed["rpe"],json!(7));
+    assert_eq!(changed["sessionRpe"],json!(210));
+    let stale = app.set_training_session_effort(id,&json!({"rpe":8,"confirmed":true,"expectedSnapshotHash":hash})).unwrap_err();
+    assert_eq!(stale.code(),AthriaErrorCode::InputSnapshotChanged);
+    let fresh = app.list_sessions_with_snapshots(30).unwrap().remove(0);
+    assert!(app.set_training_session_effort(id,&json!({"rpe":null,"confirmed":true,"expectedSnapshotHash":fresh["snapshotHash"]})).unwrap()["rpe"].is_null());
 }

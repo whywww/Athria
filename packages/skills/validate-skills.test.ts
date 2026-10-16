@@ -80,7 +80,7 @@ describe("Athria Skill routing and least privilege", () => {
   });
 
   it("routes onboarding and plan-impact review through the profile Skill without plan writes", () => {
-    expect(profile.allowedTools).toEqual(expect.arrayContaining(["update_athlete_profile", "update_wellness", "get_plan_adjustment_context"]));
+    expect(profile.allowedTools).toEqual(expect.arrayContaining(["update_athlete_profile", "get_plan_adjustment_context"]));
     expect(profile.allowedTools).not.toContain("save_current_plan");
   });
 

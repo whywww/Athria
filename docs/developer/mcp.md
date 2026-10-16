@@ -20,11 +20,10 @@ Successful calls expose `structuredContent.result` and a JSON text representatio
 | `list_training_sessions` | Read canonical actual history and target snapshot hashes |
 | `get_training_summary` | Read recent metrics separated by domain |
 | `list_wellness` | Read dated measurements and per-field provenance |
-| `get_wellness_day` | Read one day and its update hash; an absent day uses `new` |
+| `get_wellness_day` | Read one day; a missing day returns an empty result |
 | `list_xunji_training_sessions` | Read locally synchronized SynFit/Xunji history and freshness |
 | `get_xunji_sync_status` | Read SynFit/Xunji connection and synchronization status |
 | `update_athlete_profile` | Apply an approved Profile patch with its expected hash |
-| `update_wellness` | Apply approved values to one day with its snapshot guard |
 | `update_training_memory` | Replace the concise portrait with revision protection |
 
 Source reads do not fetch live external records. Connections owns synchronization. Hevy status may be returned for existing data; it does not mean new import is available.
@@ -118,3 +117,5 @@ Stable application error codes are defined in [Core errors](../../crates/athria-
 
 
 After commit, the draft and its weeks are deleted; Current Plan retains the Athria-managed `sourceDraftId`. There is no commit replay or historical receipt. If a commit response is lost or times out, call `get_current_plan` first: a matching `sourceDraftId` confirms success. If the draft still exists, refresh the draft, plan revision, and training context before deciding whether to retry. If the draft is absent and the source ID does not match, the outcome is uncertain (a later formal commit may have replaced the marker); do not infer success or failure, or automatically recreate and submit a replacement. Reading or submitting a deleted draft returns `DRAFT_NOT_FOUND`.
+
+Wellness interpretation is documented directly in the read tool descriptions; no separate dictionary call is required. subjectiveFatigue is a user-reported rating, including ratings imported through ICU. ATL/CTL are calculated by ICU; readiness is calculated by Athria. Missing/null is unavailable, while zero retains field-specific meaning. MCP wellness is read-only.

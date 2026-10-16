@@ -7,10 +7,10 @@ vi.mock("react", async (importOriginal) => {
 });
 import { LanguageProvider, zh } from "./i18n";
 import { SleepDurationInput, SleepSlider, WellnessMetricRow } from "./WellnessPage";
-import { eveningWellnessRecords, sleepStorageDay, metricNumber, moveMetric, normalizeMetricOrder, readMetricOrder, saveMetricOrder, sleepCanReset, sleepDraft, sleepHasChanges, sleepPatch, wellnessMetrics, wellnessSeries, wellnessWindow } from "./wellness-view";
+import { metricNumber, moveMetric, normalizeMetricOrder, readMetricOrder, saveMetricOrder, sleepCanReset, sleepDraft, sleepHasChanges, sleepPatch, wellnessMetrics, wellnessSeries, wellnessWindow } from "./wellness-view";
 import type { WellnessRecord } from "./view-models";
 
-const record = (day: string, values: Partial<Record<keyof WellnessRecord["fields"], number | null>>): WellnessRecord => ({ ownerId: "local-user", day, fields: Object.fromEntries(Object.entries(values).map(([key, value]) => [key, { value, source: key === "subjectiveSleepScore" || key === "manualSleepSeconds" ? "user" : "intervals_icu", updatedAt: "2026-10-09T00:00:00Z" }])), updatedAt: "2026-10-09T00:00:00Z" });
+const record = (day: string, values: Partial<Record<keyof WellnessRecord["fields"], number | null>>): WellnessRecord => ({ ownerId: "local-user", day, fields: Object.fromEntries(Object.entries(values).map(([key, value]) => [key, { value, source: "intervals_icu", updatedAt: "2026-10-09T00:00:00Z" }])), updatedAt: "2026-10-09T00:00:00Z" });
 const scoreMetric = wellnessMetrics[0]!;
 
 describe("wellness trends", () => {
@@ -50,26 +50,61 @@ describe("wellness trends", () => {
     expect(wellnessWindow("2026-10-09", 30, -1)).toEqual(wellnessWindow("2026-10-09", 30, 0));
     expect(wellnessWindow("2026-10-09", 183, 2).days).toBe(551);
   });
-  it("keeps device and subjective sleep in independent series and does not join across missing days", () => {
-    const chart = wellnessSeries([record("2026-10-02", { sleepScore: 70, subjectiveSleepScore: 80 }), record("2026-10-03", { sleepScore: 75 }), record("2026-10-05", { sleepScore: 85 }), record("2026-10-06", { sleepScore: null }), record("2026-10-10", { sleepScore: 90 })], scoreMetric, "2026-10-01", "2026-10-07");
+  it.each(["sleepScore", "sleepSeconds"] as const)("joins %s across sources with destination colors and breaks at missing days", (key) => {
+    const metric = wellnessMetrics.find((item) => item.keys.includes(key))!;
+    const manual = record("2026-10-03", { [key]: 0 });
+    manual.fields[key]!.source = "user";
+    const records = [record("2026-10-04", { [key]: 28800 }), record("2026-10-02", { [key]: 25200 }), record("2026-10-05", { [key]: null }), record("2026-10-06", { [key]: 27000 }), record("2026-10-08", { [key]: 28000 }), record("2026-10-10", { [key]: 90 }), manual];
+    const chart = wellnessSeries(records, metric, "2026-10-01", "2026-10-09");
     expect(chart.series).toHaveLength(2);
-    const device = chart.series.find((series) => series.key === "sleepScore")!;
-    expect(device.segments.map((segment) => segment.map((point) => point.day))).toEqual([["2026-10-01", "2026-10-02"], ["2026-10-04"]]);
-    expect(chart.series.find((series) => series.key === "subjectiveSleepScore")!.points[0]).toMatchObject({ value: 80, source: "user" });
+    expect(chart.lines.map((line) => [line.tone, line.points.map((point) => point.day)])).toEqual([
+      ["manual", ["2026-10-02", "2026-10-03"]], ["device", ["2026-10-03", "2026-10-04"]],
+    ]);
+    expect(chart.series.find((series) => series.source === "user")!.points).toEqual([expect.objectContaining({ day: "2026-10-03", value: 0, key })]);
+    if (key === "sleepSeconds") expect(chart.lines[0]!.points[0]!.value).toBe(7);
+    const html = renderToStaticMarkup(createElement(WellnessMetricRow, { metric, records, start: "2026-10-01", end: "2026-10-09" }));
+    expect(html.match(/<polyline /g)).toHaveLength(2);
+    expect(html.match(/r="3"/g)).toHaveLength(5);
+    expect(html).toContain('class="wellness-series-manual" data-entrance="trend"><polyline');
+    expect(html).toContain('class="wellness-series-device" data-entrance="trend"><polyline');
+    expect(html.lastIndexOf("<polyline")).toBeLessThan(html.indexOf("<circle"));
+    expect(html).toContain("Manual record");
+    expect(html).toContain("Intervals.icu");
+    expect(wellnessSeries([manual], metric, "2026-10-01", "2026-10-09").lines).toEqual([]);
+    expect(wellnessSeries([], metric, "2026-10-01", "2026-10-09").lines).toEqual([]);
   });
   it("renders constant and zero readings with finite coordinates and converts duration to hours", () => {
     const records = [record("2026-10-01", { sleepScore: 0 }), record("2026-10-02", { sleepScore: 0 })];
     const chart = wellnessSeries(records, scoreMetric, "2026-10-01", "2026-10-02");
     expect(chart.high).toBeGreaterThan(chart.low);
     expect(chart.series[0]!.points.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y))).toBe(true);
-    const duration = wellnessSeries([record("2026-10-02", { sleepSeconds: 27000, manualSleepSeconds: 25200 })], wellnessMetrics[1]!, "2026-10-01", "2026-10-01");
+    const manual = record("2026-10-03", { sleepSeconds: 25200 });
+    manual.fields.sleepSeconds!.source = "user";
+    const duration = wellnessSeries([record("2026-10-02", { sleepSeconds: 27000 }), manual], wellnessMetrics[1]!, "2026-10-01", "2026-10-04");
     expect(duration.series.map((series) => series.points[0]!.value)).toEqual([7.5, 7]);
   });
-  it("excludes power metrics and notes and always keeps both sleep rows available", () => {
-    expect(wellnessMetrics.flatMap((metric) => metric.keys)).not.toEqual(expect.arrayContaining(["eftpWatts", "wPrimeJoules", "pMaxWatts", "notes"]));
+  it("excludes retired fields and always keeps both sleep rows available", () => {
+    expect(wellnessMetrics.flatMap((metric) => metric.keys)).not.toEqual(expect.arrayContaining(["eftpWatts", "wPrimeJoules", "pMaxWatts", "notes", "soreness", "stress", "mood", "motivation", "injuryScore", "subjectiveSleepScore", "sleepQuality", "manualSleepSeconds"]));
     expect(wellnessMetrics.filter((metric) => metric.always).map((metric) => metric.id)).toEqual(["sleep-score", "sleep-duration"]);
-    expect(wellnessMetrics.find((metric) => metric.id === "readiness")?.label).toBe("Source readiness");
+    expect(wellnessMetrics.find((metric) => metric.id === "readiness")?.label).toBe("Readiness");
     expect(metricNumber(record("2026-10-01", { sleepScore: null }), "sleepScore")).toBeNull();
+  });
+  it("draws ATL, CTL and Form on one shared scale with distinct tones and keeps negative Form inside the plot", () => {
+    const metric = wellnessMetrics.find((item) => item.id === "training-load")!;
+    expect(metric).toMatchObject({ label: "Training load", unit: "load points/day", keys: ["atl", "ctl", "form"] });
+    const records = [record("2026-10-01", { atl: 90, ctl: 70, form: -20 }), record("2026-10-02", { atl: 40, ctl: 65, form: 25 })];
+    const chart = wellnessSeries(records, metric, "2026-10-01", "2026-10-02");
+    expect(chart.series.map(({ key, tone }) => [key, tone])).toEqual([["atl", "device"], ["ctl", "manual"], ["form", "accent"]]);
+    expect(chart.low).toBeLessThan(0);
+    expect(chart.series.flatMap(({ points }) => points).every(({ y }) => y >= 13 && y <= 83)).toBe(true);
+    const html = renderToStaticMarkup(createElement(WellnessMetricRow, { metric, records, start: "2026-10-01", end: "2026-10-02" }));
+    expect(html).toContain("<h2>Training load</h2>");
+    expect(html).toContain("load points/day");
+    expect(html).toContain("wellness-series-accent");
+    expect(html).toContain("Acute training load (ATL)");
+    expect(html).toContain("Chronic training load (CTL)");
+    expect(html).toContain("Training load balance (Form)</span>");
+    expect(html).not.toContain("Intervals.icu");
   });
   it("renders accessible dates and source legends without an inline recording button", () => {
     const render = (records: WellnessRecord[]) => renderToStaticMarkup(createElement(WellnessMetricRow, { metric: scoreMetric, records, start: "2026-10-01", end: "2026-10-07" }));
@@ -81,10 +116,12 @@ describe("wellness trends", () => {
     }
     expect(render([])).toContain("<h2>Sleep score</h2>");
     expect(render([])).not.toContain("Record sleep");
-    const html = render([record("2026-10-02", { sleepScore: 80, subjectiveSleepScore: 60 })]);
+    const manual = record("2026-10-03", { sleepScore: 60 });
+    manual.fields.sleepScore!.source = "user";
+    const html = render([record("2026-10-02", { sleepScore: 80 }), manual]);
     expect(html).toContain('tabindex="0" role="img"');
     expect(html).toContain("80 points · Intervals.icu");
-    expect(html).toContain("60 points · Subjective sleep score");
+    expect(html).toContain("60 points · Manual record");
     expect(html).not.toContain("NaN");
   });
   it("localizes the new metric labels and help", () => {
@@ -97,7 +134,15 @@ describe("wellness trends", () => {
       const duration = renderToStaticMarkup(createElement(WellnessMetricRow, { metric: wellnessMetrics[1]!, records: [], start: "2026-10-01", end: "2026-10-07" }));
       expect(duration).toContain("<h2>睡眠时间</h2>");
       expect(zh["Sleep"]).toBe("睡眠");
-      for (const label of ["Back to Overview", "Subjective sleep score", "Manual sleep duration", "Source readiness", "Based on HRV and resting HR · Sleep not included"]) expect(zh[label]).toBeTruthy();
+      const load = renderToStaticMarkup(createElement(WellnessMetricRow, { metric: wellnessMetrics.find((item) => item.id === "training-load")!, records: [record("2026-10-01", { atl: 90, ctl: 70, form: -20 })], start: "2026-10-01", end: "2026-10-07" }));
+      expect(load).toContain("<h2>训练负荷</h2>");
+      expect(load).toContain("负荷点/天");
+      expect(load).toContain("短期训练负荷（ATL）");
+      expect(load).toContain("长期训练负荷（CTL）");
+      expect(load).toContain("训练负荷平衡（Form）");
+      for (const [label, value] of [["Training load", "训练负荷"], ["load points/day", "负荷点/天"], ["Acute training load (ATL)", "短期训练负荷（ATL）"], ["Chronic training load (CTL)", "长期训练负荷（CTL）"], ["Training load balance (Form)", "训练负荷平衡（Form）"]] as const) expect(zh[label]).toBe(value);
+      expect(zh["Sleep duration"]).toBe("睡眠时长");
+      for (const label of ["Back to Overview", "Sleep score", "Sleep duration", "Readiness", "Subjective fatigue", "Based on HRV and resting HR · Sleep not included", "Your entry takes priority over the source duration until you reset it.", "0 is well rested and 100 is exhausted."]) expect(zh[label]).toBeTruthy();
     } finally {
       vi.stubGlobal("localStorage", { getItem: () => "en", setItem: () => {} });
       renderToStaticMarkup(createElement(LanguageProvider, null, createElement("span")));
@@ -151,52 +196,59 @@ describe("manual sleep entries", () => {
     expect(sleepPatch(draft, api)).toEqual({});
     expect(sleepCanReset(draft, api, {}, "score")).toBe(false);
     expect(sleepCanReset(draft, api, {}, "duration")).toBe(false);
-    expect(sleepPatch({ ...draft, hours: "8" }, api)).toEqual({ manualSleepSeconds: 30600 });
+    expect(sleepPatch({ ...draft, hours: "8" }, api)).toEqual({ sleepSeconds: 30600 });
   });
-  it.each([false, true])("clears stored manual overrides even when their display matches API (%s)", (same) => {
-    const stored = record("2026-10-09", { subjectiveSleepScore: same ? 80 : 0, sleepScore: 80, manualSleepSeconds: same ? 27045 : 0, sleepSeconds: 27045 });
+  it.each([[80, 27045], [95, 0]])("clears stored manual entries with reset flags (score %s, duration %s)", (score, seconds) => {
+    const stored = record("2026-10-09", { sleepScore: score, sleepSeconds: seconds });
+    stored.fields.sleepScore!.source = "user";
+    stored.fields.sleepSeconds!.source = "user";
     const initial = sleepDraft(stored);
     expect(sleepCanReset(initial, stored, {}, "score")).toBe(true);
     expect(sleepCanReset(initial, stored, {}, "duration")).toBe(true);
-    const cleared = { score: true, duration: true };
-    const fallback = sleepDraft(stored, cleared);
-    expect(fallback).toEqual({ score: "80", hours: "7", minutes: "30" });
-    expect(sleepPatch(fallback, stored, cleared)).toEqual({ subjectiveSleepScore: null, manualSleepSeconds: null });
-    expect(sleepHasChanges(fallback, stored, cleared)).toBe(true);
-    expect(sleepCanReset(fallback, stored, cleared, "score")).toBe(false);
-    expect(sleepCanReset(fallback, stored, cleared, "duration")).toBe(false);
-    expect(stored.fields.sleepScore?.value).toBe(80);
-    expect(stored.fields.sleepSeconds?.value).toBe(27045);
+    const cleared = { score: true, duration: true, subjectiveFatigue: true };
+    const empty = sleepDraft(stored, cleared);
+    expect(empty).toEqual({ score: "", hours: "", minutes: "", subjectiveFatigue: "" });
+    expect(sleepPatch(empty, stored, cleared)).toEqual({ sleepScore: null, sleepSeconds: null });
+    expect(sleepHasChanges(empty, stored, cleared)).toBe(true);
+    expect(sleepCanReset(empty, stored, cleared, "score")).toBe(false);
+    expect(sleepCanReset(empty, stored, cleared, "duration")).toBe(false);
+    expect(stored.fields.sleepScore?.value).toBe(score);
+    expect(stored.fields.sleepSeconds?.value).toBe(seconds);
   });
   it("clears manual-only records to empty and preserves edits in the other field", () => {
-    const stored = record("2026-10-09", { subjectiveSleepScore: 70, manualSleepSeconds: 27045 });
+    const stored = record("2026-10-09", { sleepScore: 70, sleepSeconds: 27045 });
+    stored.fields.sleepScore!.source = "user";
+    stored.fields.sleepSeconds!.source = "user";
     const empty = sleepDraft(stored, { score: true, duration: true });
     expect(empty).toEqual(sleepDraft());
-    expect(sleepPatch(empty, stored, { score: true, duration: true })).toEqual({ subjectiveSleepScore: null, manualSleepSeconds: null });
-    expect(sleepPatch({ ...empty, score: "85" }, stored, { duration: true })).toEqual({ subjectiveSleepScore: 85, manualSleepSeconds: null });
-    expect(sleepPatch({ ...empty, hours: "8", minutes: "0" }, stored, { score: true })).toEqual({ subjectiveSleepScore: null, manualSleepSeconds: 28800 });
+    expect(sleepPatch(empty, stored, { score: true, duration: true })).toEqual({ sleepScore: null, sleepSeconds: null });
+    expect(sleepPatch({ ...empty, score: "85" }, stored, { duration: true })).toEqual({ sleepScore: 85, sleepSeconds: null });
+    expect(sleepPatch({ ...empty, hours: "8", minutes: "0" }, stored, { score: true })).toEqual({ sleepScore: null, sleepSeconds: 28800 });
   });
-  it("discards API-only edits on reset without creating or deleting API fields", () => {
+  it("keeps device durations out of reset and empty drafts, and edits replace them as user entries", () => {
     const api = record("2026-10-09", { sleepScore: 80, sleepSeconds: 27045 });
-    const edited = { score: "75", hours: "8", minutes: "0" };
-    expect(sleepCanReset(edited, api, {}, "score")).toBe(true);
-    expect(sleepCanReset(edited, api, {}, "duration")).toBe(true);
-    const cleared = { score: true, duration: true };
-    expect(sleepPatch(sleepDraft(api, cleared), api, cleared)).toEqual({});
-    expect(sleepHasChanges(sleepDraft(api, cleared), api, cleared)).toBe(false);
-    expect(sleepPatch({ ...sleepDraft(api), score: "75" }, api, { score: false, duration: true })).toEqual({ subjectiveSleepScore: 75 });
+    const edited = { score: "80", hours: "8", minutes: "0", subjectiveFatigue: "" };
+    expect(sleepCanReset(edited, api, {}, "score")).toBe(false);
+    expect(sleepCanReset(edited, api, {}, "duration")).toBe(false);
+    expect(sleepPatch(edited, api, { duration: true })).toEqual({});
+    expect(sleepHasChanges(edited, api, { duration: true })).toBe(false);
+    expect(sleepPatch({ ...sleepDraft(api), hours: "", minutes: "" }, api)).toEqual({});
+    expect(sleepHasChanges({ ...sleepDraft(api), hours: "", minutes: "" }, api)).toBe(false);
+    expect(sleepPatch({ ...sleepDraft(api), hours: "8" }, api)).toEqual({ sleepSeconds: 30600 });
+    expect(sleepPatch({ ...sleepDraft(api), score: "75" }, api, { score: false, duration: true })).toEqual({ sleepScore: 75 });
   });
-  it("prefers manual duration including zero and falls back to API duration without creating an override", () => {
+  it("reads the stored duration for any source and clears manual values when the inputs are emptied", () => {
     const api = record("2026-10-09", { sleepSeconds: 27045 });
-    expect(sleepDraft(api)).toEqual({ score: "", hours: "7", minutes: "30" });
+    expect(sleepDraft(api)).toEqual({ score: "", hours: "7", minutes: "30", subjectiveFatigue: "" });
     expect(sleepPatch(sleepDraft(api), api)).toEqual({});
-    expect(sleepPatch({ ...sleepDraft(api), score: "80" }, api)).toEqual({ subjectiveSleepScore: 80 });
-    expect(sleepPatch({ ...sleepDraft(api), hours: "8" }, api)).toEqual({ manualSleepSeconds: 30600 });
+    expect(sleepPatch({ ...sleepDraft(api), score: "80" }, api)).toEqual({ sleepScore: 80 });
+    expect(sleepPatch({ ...sleepDraft(api), hours: "8" }, api)).toEqual({ sleepSeconds: 30600 });
     expect(api.fields.sleepSeconds?.value).toBe(27045);
-    const manual = record("2026-10-09", { sleepSeconds: 27045, manualSleepSeconds: 0 });
-    expect(sleepDraft(manual)).toEqual({ score: "", hours: "0", minutes: "0" });
-    expect(sleepPatch({ score: "", hours: "", minutes: "" }, manual)).toEqual({ manualSleepSeconds: null });
-    expect(sleepDraft({ ...manual, fields: { sleepSeconds: api.fields.sleepSeconds! } })).toEqual(sleepDraft(api));
+    const manual = record("2026-10-09", { sleepSeconds: 0 });
+    manual.fields.sleepSeconds!.source = "user";
+    expect(sleepDraft(manual)).toEqual({ score: "", hours: "0", minutes: "0", subjectiveFatigue: "" });
+    expect(sleepPatch({ score: "", hours: "", minutes: "", subjectiveFatigue: "" }, manual)).toEqual({ sleepSeconds: null });
+    expect(sleepPatch({ score: "", hours: "", minutes: "", subjectiveFatigue: "" }, api)).toEqual({});
   });
   it("enables saving only for valid effective changes and disables it again after reset", () => {
     const api = record("2026-10-09", { sleepSeconds: 27045 });
@@ -209,40 +261,85 @@ describe("manual sleep entries", () => {
     expect(sleepHasChanges({ ...initial, hours: "8" }, api)).toBe(true);
     expect(sleepHasChanges({ ...initial, score: "75" }, api)).toBe(true);
     expect(sleepHasChanges(initial, api)).toBe(false);
-    expect(sleepHasChanges({ score: "", hours: "0", minutes: "0" })).toBe(true);
+    expect(sleepHasChanges({ score: "", hours: "0", minutes: "0", subjectiveFatigue: "" })).toBe(true);
   });
   it("resets individual fields and preserves off-step stored duration until edited", () => {
-    const existing = record("2026-10-09", { subjectiveSleepScore: 80.5, manualSleepSeconds: 26865 });
+    const existing = record("2026-10-09", { sleepScore: 80.5, sleepSeconds: 26865 });
+    existing.fields.sleepSeconds!.source = "user";
     const draft = sleepDraft(existing);
     expect(sleepPatch(draft, existing)).toEqual({});
-    expect(sleepPatch({ ...draft, score: "" }, existing)).toEqual({ subjectiveSleepScore: null });
-    expect(sleepPatch({ ...draft, hours: "", minutes: "" }, existing)).toEqual({ manualSleepSeconds: null });
-    expect(sleepPatch({ ...draft, hours: "8", minutes: "15" }, existing)).toEqual({ manualSleepSeconds: 29700 });
+    expect(sleepPatch({ ...draft, score: "" }, existing)).toEqual({ sleepScore: null });
+    expect(sleepPatch({ ...draft, hours: "", minutes: "" }, existing)).toEqual({ sleepSeconds: null });
+    expect(sleepPatch({ ...draft, hours: "8", minutes: "15" }, existing)).toEqual({ sleepSeconds: 29700 });
   });
   it("writes only edited manual fields and keeps zeros as valid values", () => {
-    expect(sleepPatch({ score: "0", hours: "0", minutes: "0" })).toEqual({ subjectiveSleepScore: 0, manualSleepSeconds: 0 });
-    const existing = record("2026-10-09", { subjectiveSleepScore: 80, manualSleepSeconds: 27000, sleepScore: 90 });
-    expect(sleepDraft(existing)).toEqual({ score: "80", hours: "7", minutes: "30" });
-    expect(sleepPatch({ score: "75", hours: "7", minutes: "30" }, existing)).toEqual({ subjectiveSleepScore: 75 });
+    expect(sleepPatch({ score: "0", hours: "0", minutes: "0", subjectiveFatigue: "" })).toEqual({ sleepScore: 0, sleepSeconds: 0 });
+    const existing = record("2026-10-09", { sleepScore: 80, sleepSeconds: 27000 });
+    existing.fields.sleepSeconds!.source = "user";
+    expect(sleepDraft(existing)).toEqual({ score: "80", hours: "7", minutes: "30", subjectiveFatigue: "" });
+    expect(sleepPatch({ score: "75", hours: "7", minutes: "30", subjectiveFatigue: "" }, existing)).toEqual({ sleepScore: 75 });
     expect(sleepPatch(sleepDraft(existing), existing)).toEqual({});
-    expect(sleepPatch({ score: "", hours: "", minutes: "" }, existing)).toEqual({ subjectiveSleepScore: null, manualSleepSeconds: null });
+    expect(sleepPatch({ score: "", hours: "", minutes: "", subjectiveFatigue: "" }, existing)).toEqual({ sleepScore: null, sleepSeconds: null });
   });
   it("allows either score or duration, and preserves sub-minute stored precision when duration is untouched", () => {
-    expect(sleepPatch({ score: "80", hours: "", minutes: "" })).toEqual({ subjectiveSleepScore: 80 });
-    expect(sleepPatch({ score: "", hours: "", minutes: "30" })).toEqual({ manualSleepSeconds: 1800 });
-    expect(sleepPatch({ score: "", hours: "24", minutes: "0" })).toEqual({ manualSleepSeconds: 86400 });
-    const existing = record("2026-10-09", { manualSleepSeconds: 27045 });
-    expect(sleepPatch({ ...sleepDraft(existing), score: "85" }, existing)).toEqual({ subjectiveSleepScore: 85 });
+    expect(sleepPatch({ score: "80", hours: "", minutes: "", subjectiveFatigue: "" })).toEqual({ sleepScore: 80 });
+    expect(sleepPatch({ score: "", hours: "", minutes: "30", subjectiveFatigue: "" })).toEqual({ sleepSeconds: 1800 });
+    expect(sleepPatch({ score: "", hours: "24", minutes: "0", subjectiveFatigue: "" })).toEqual({ sleepSeconds: 86400 });
+    const existing = record("2026-10-09", { sleepSeconds: 27045 });
+    expect(sleepDraft(existing)).toEqual({ score: "", hours: "7", minutes: "30", subjectiveFatigue: "" });
+    expect(sleepPatch({ ...sleepDraft(existing), score: "85" }, existing)).toEqual({ sleepScore: 85 });
   });
   it.each(["-1", "101", "NaN", "Infinity"])("rejects invalid scores (%s)", (score) => {
-    expect(() => sleepPatch({ score, hours: "", minutes: "" })).toThrow("0 to 100");
+    expect(() => sleepPatch({ score, hours: "", minutes: "", subjectiveFatigue: "" })).toThrow("0 to 100");
   });
   it.each([["24", "1"], ["25", "0"], ["7", "60"], ["-1", "0"], ["7.5", "0"], ["NaN", "0"]])("rejects invalid durations (%s:%s)", (hours, minutes) => {
-    expect(() => sleepPatch({ score: "", hours, minutes })).toThrow("0 and 24");
+    expect(() => sleepPatch({ score: "", hours, minutes, subjectiveFatigue: "" })).toThrow("0 and 24");
   });
   it("rejects an empty new record without substituting zeros", () => {
-    expect(sleepDraft()).toEqual({ score: "", hours: "", minutes: "" });
-    expect(() => sleepPatch(sleepDraft())).toThrow("score or duration");
+    expect(sleepDraft()).toEqual({ score: "", hours: "", minutes: "", subjectiveFatigue: "" });
+    expect(() => sleepPatch(sleepDraft())).toThrow("score, duration or fatigue");
+  });
+});
+
+describe("manual subjectiveFatigue entries", () => {
+  it("reads stored subjectiveFatigue for any source, replaces imported ratings when edited, and keeps untouched entries out of the patch", () => {
+    const api = record("2026-10-09", { subjectiveFatigue: 30 });
+    expect(sleepDraft(api)).toEqual({ score: "", hours: "", minutes: "", subjectiveFatigue: "30" });
+    expect(sleepPatch(sleepDraft(api), api)).toEqual({});
+    expect(sleepCanReset(sleepDraft(api), api, {}, "subjectiveFatigue")).toBe(true);
+    expect(sleepPatch({ ...sleepDraft(api), subjectiveFatigue: "70" }, api)).toEqual({ subjectiveFatigue: 70 });
+    const manual = record("2026-10-09", { subjectiveFatigue: 40 });
+    manual.fields.subjectiveFatigue!.source = "user";
+    expect(sleepCanReset(sleepDraft(manual), manual, {}, "subjectiveFatigue")).toBe(true);
+    expect(sleepPatch(sleepDraft(manual), manual)).toEqual({});
+    expect(sleepPatch({ ...sleepDraft(manual), subjectiveFatigue: "70" }, manual)).toEqual({ subjectiveFatigue: 70 });
+  });
+  it("clears manual subjectiveFatigue with the reset flag and leaves the stored value untouched", () => {
+    const stored = record("2026-10-09", { subjectiveFatigue: 50 });
+    stored.fields.subjectiveFatigue!.source = "user";
+    const cleared = { subjectiveFatigue: true };
+    const empty = sleepDraft(stored, cleared);
+    expect(empty.subjectiveFatigue).toBe("");
+    expect(sleepPatch(empty, stored, cleared)).toEqual({ subjectiveFatigue: null });
+    expect(sleepHasChanges(empty, stored, cleared)).toBe(true);
+    expect(sleepCanReset(empty, stored, cleared, "subjectiveFatigue")).toBe(false);
+    expect(stored.fields.subjectiveFatigue?.value).toBe(50);
+  });
+  it("allows resetting an unsaved rating including zero, then disables reset when empty", () => {
+    for (const value of ["0", "70"]) {
+      const draft = { ...sleepDraft(), subjectiveFatigue: value };
+      expect(sleepCanReset(draft, undefined, {}, "subjectiveFatigue")).toBe(true);
+    }
+    expect(sleepCanReset(sleepDraft(), undefined, {}, "subjectiveFatigue")).toBe(false);
+    expect(sleepCanReset(sleepDraft(), undefined, { subjectiveFatigue: true }, "subjectiveFatigue")).toBe(false);
+  });
+  it("saves subjectiveFatigue on its own without requiring a score or duration, including zero", () => {
+    expect(sleepPatch({ score: "", hours: "", minutes: "", subjectiveFatigue: "70" })).toEqual({ subjectiveFatigue: 70 });
+    expect(sleepHasChanges({ score: "", hours: "", minutes: "", subjectiveFatigue: "70" })).toBe(true);
+    expect(sleepPatch({ score: "", hours: "", minutes: "", subjectiveFatigue: "0" })).toEqual({ subjectiveFatigue: 0 });
+  });
+  it.each(["-1", "101", "NaN", "Infinity"])("rejects invalid subjectiveFatigue ratings (%s)", (subjectiveFatigue) => {
+    expect(() => sleepPatch({ score: "", hours: "", minutes: "", subjectiveFatigue })).toThrow("0 to 100");
   });
 });
 
@@ -346,7 +443,8 @@ describe("sleep sliders", () => {
   it("updates selected values and allows pointer or keyboard selection of an initial zero", () => {
     const onChange = vi.fn();
     const element = SleepSlider({ ...props, onChange });
-    const input = (element.props.children[1] as ReactElement<ComponentProps<"input">>).props;
+    const row = (element.props.children[1] as ReactElement<{ children: ReactElement[] }>).props;
+    const input = (row.children.find((child) => child.type === "input") as ReactElement<ComponentProps<"input">>).props;
     input.onChange!({ target: { value: "495" } } as Parameters<NonNullable<typeof input.onChange>>[0]);
     expect(onChange).toHaveBeenLastCalledWith(495);
     input.onPointerUp!({ currentTarget: { value: "0" } } as Parameters<NonNullable<typeof input.onPointerUp>>[0]);
@@ -361,23 +459,19 @@ describe("sleep sliders", () => {
 
 
 describe("sleep evening dates", () => {
-  it.each([["2026-10-09", "2026-10-08"], ["2026-01-01", "2025-12-31"], ["2026-11-01", "2026-10-31"], ["2024-03-01", "2024-02-29"]])("projects %s sleep to %s without moving heart data", (wake, evening) => {
-    const raw = [record(wake, { sleepSeconds: 28800, manualSleepSeconds: 27000, sleepScore: 80, subjectiveSleepScore: 90, sleepQuality: 1, avgSleepingHeartRateBpm: 45, hrvRmssdMs: 60, restingHeartRateBpm: 50 })];
-    const before = structuredClone(raw);
-    const projected = eveningWellnessRecords(raw);
-    expect(projected.find((item) => item.day === evening)?.fields).toEqual(Object.fromEntries(Object.entries(raw[0]!.fields).filter(([key]) => key !== "hrvRmssdMs" && key !== "restingHeartRateBpm")));
-    expect(projected.find((item) => item.day === wake)?.fields).toEqual({ hrvRmssdMs: raw[0]!.fields.hrvRmssdMs, restingHeartRateBpm: raw[0]!.fields.restingHeartRateBpm });
-    expect(sleepStorageDay(evening)).toBe(wake);
-    expect(raw).toEqual(before);
-    expect(eveningWellnessRecords(raw)).toEqual(projected);
+  it.each(["2026-10-09", "2025-12-31", "2026-10-31", "2024-02-29"])("displays stored sleep on the same evening %s for all sources", (day) => {
+    for (const source of ["intervals_icu", "user", "llm"] as const) {
+      const raw = [record(day, { sleepScore: 80 })];
+      raw[0]!.fields.sleepScore!.source = source;
+      const before = structuredClone(raw);
+      const chart = wellnessSeries(raw, scoreMetric, day, day);
+      expect(chart.series.flatMap(({ points }) => points)).toEqual([expect.objectContaining({ day, value: 80, source })]);
+      expect(raw).toEqual(before);
+    }
   });
-  it("includes the next morning at the last evening in a chart window and excludes the prior night", () => {
-    const raw = [record("2026-10-03", { sleepScore: 10 }), record("2026-10-04", { sleepScore: 20 }), record("2026-10-10", { sleepScore: 30 })];
+  it("includes the selected evening and excludes sleep stored after the chart window", () => {
+    const raw = [record("2026-10-02", { sleepScore: 10 }), record("2026-10-03", { sleepScore: 20 }), record("2026-10-09", { sleepScore: 30 }), record("2026-10-10", { sleepScore: 40 })];
     const chart = wellnessSeries(raw, scoreMetric, "2026-10-03", "2026-10-09");
     expect(chart.series[0]!.points.map(({ day, value }) => [day, value])).toEqual([["2026-10-03", 20], ["2026-10-09", 30]]);
-  });
-  it("merges sleep with the evening's health data while isolating owners", () => {
-    const raw = [record("2026-10-08", { hrvRmssdMs: 60 }), record("2026-10-09", { sleepScore: 80 }), { ...record("2026-10-09", { sleepScore: 20 }), ownerId: "other" }];
-    expect(eveningWellnessRecords(raw).find((item) => item.day === "2026-10-08" && item.ownerId === "local-user")?.fields).toEqual({ hrvRmssdMs: raw[0]!.fields.hrvRmssdMs, sleepScore: raw[1]!.fields.sleepScore });
   });
 });

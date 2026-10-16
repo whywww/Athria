@@ -182,7 +182,7 @@
         "unitSystem": "metric",
         "weightKg": 67.2,
         "weightDate": "2026-09-17",
-        "snapshotHash": "fnv1a-7c667953"
+        "snapshotHash": "fnv1a-d322175b"
       }
     },
     {
@@ -214,7 +214,64 @@
             "updatedAt": "2026-09-17T04:00:00.000Z"
           }
         },
-        "updatedAt": "2026-09-17T04:00:00.000Z"
+        "updatedAt": "2026-09-17T04:00:00.000Z",
+        "readinessAssessment": {
+          "algorithmVersion": "athria-readiness-percentile-load",
+          "assessmentDay": "2026-09-17",
+          "score": null,
+          "status": "Insufficient data",
+          "cardiacScore": null,
+          "sleepScore": 82.0,
+          "subjectiveScore": null,
+          "baseScore": null,
+          "loadAdjustment": 0.0,
+          "loadMethod": null,
+          "trainingLoad": {
+            "status": "no_training",
+            "recentSessionCount": 0,
+            "durationMinutes": 0.0,
+            "ratedSessionCount": 0,
+            "knownRpeLoad": 0.0,
+            "knownRpePressure": 0.0,
+            "groups": [
+              {
+                "activityType": null,
+                "method": "sessionRpe",
+                "recentSessionCount": 0,
+                "validSessionCount": 0,
+                "durationMinutes": 0.0,
+                "knownLoad": 0.0,
+                "knownPressure": 0.0,
+                "complete": true,
+                "historyWindows": 28,
+                "referenceDays": 0,
+                "referenceSpanDays": 0,
+                "percentile": null,
+                "evidenceWeight": 0.0,
+                "rawAdjustment": 0.0,
+                "weightedAdjustment": 0.0,
+                "durationShare": 0.0,
+                "eligible": false,
+                "selected": false,
+                "status": "building_baseline"
+              }
+            ],
+            "combinedAdjustment": 0.0,
+            "wellnessFactor": 0.0
+          },
+          "scoreCap": null,
+          "dataQuality": "insufficient",
+          "missingReasons": [
+            "Cardiac baseline unavailable",
+            "Subjective fatigue not included",
+            "Training baseline is still developing",
+            "At least two recovery dimensions required"
+          ],
+          "hrvField": null,
+          "heartRateField": null,
+          "hrvBaselineDays": 0,
+          "heartRateBaselineDays": 0
+        }
       }
     },
     {
@@ -693,7 +750,7 @@
         "sourceAgent": "compat",
         "model": null,
         "skillVersion": "phase-5",
-        "inputSnapshotHash": "fnv1a-1f5f98d2",
+        "inputSnapshotHash": "fnv1a-7c302fa3",
         "expectedRevision": 0
       },
       "expected": {
@@ -773,7 +830,7 @@
           "sourceAgent": "compat",
           "model": null,
           "skillVersion": "phase-5",
-          "inputSnapshotHash": "fnv1a-1f5f98d2",
+          "inputSnapshotHash": "fnv1a-7c302fa3",
           "updatedAt": "2026-09-17T04:00:00.000Z",
           "sourceDraftId": null
         },
@@ -1045,7 +1102,7 @@
         "sourceAgent": "compat",
         "model": null,
         "skillVersion": "phase-5",
-        "inputSnapshotHash": "fnv1a-1f5f98d2",
+        "inputSnapshotHash": "fnv1a-7c302fa3",
         "expectedRevision": 0
       },
       "error": {

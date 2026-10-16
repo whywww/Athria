@@ -147,8 +147,25 @@ export function paginateTrainingHistory<T>(items: T[], requestedPage: number, pa
   const offset = (page - 1) * pageSize;
   return { items: items.slice(offset, offset + pageSize), page, totalPages, start: items.length ? offset + 1 : 0, end: Math.min(offset + pageSize, items.length) };
 }
-export type WellnessFieldValue = { value: number | string | null; source: "intervals_icu" | "user" | "llm"; updatedAt: string };
-export interface WellnessRecord { ownerId: string; day: string; fields: Partial<Record<"restingHeartRateBpm" | "hrvRmssdMs" | "hrvSdnnMs" | "sleepSeconds" | "sleepScore" | "subjectiveSleepScore" | "manualSleepSeconds" | "sleepQuality" | "avgSleepingHeartRateBpm" | "weightKg" | "bodyFatPercent" | "vo2maxMlKgMin" | "spo2Percent" | "stepsCount" | "respirationRpm" | "fatigue" | "soreness" | "stress" | "mood" | "motivation" | "readiness" | "injuryScore" | "eftpWatts" | "wPrimeJoules" | "pMaxWatts" | "notes", WellnessFieldValue>>; updatedAt: string }
+export type WellnessFieldValue = { value: number | null; source: "intervals_icu" | "user" | "llm" | "athria"; updatedAt: string };
+export interface TrainingLoadGroup {
+  activityType: string | null; method: string; recentSessionCount: number; validSessionCount: number; durationMinutes: number;
+  knownLoad: number | null; knownPressure: number | null; complete: boolean; historyWindows: number; referenceDays: number;
+  referenceSpanDays: number; percentile: number | null; evidenceWeight: number; rawAdjustment: number; weightedAdjustment: number;
+  durationShare: number; eligible: boolean; selected: boolean; status: string;
+}
+export interface TrainingLoadAssessment {
+  status: string; recentSessionCount: number; durationMinutes: number; ratedSessionCount: number;
+  knownRpeLoad: number | null; knownRpePressure: number | null; groups: TrainingLoadGroup[];
+  combinedAdjustment: number; wellnessFactor: number;
+}
+export interface ReadinessAssessment {
+  algorithmVersion: string; assessmentDay: string; score: number | null; status: "Ready" | "Caution" | "Rest" | "Insufficient data";
+  cardiacScore: number | null; sleepScore: number | null; subjectiveScore: number | null; baseScore: number | null;
+  trainingLoad?: TrainingLoadAssessment; loadAdjustment: number; loadMethod: string | null; scoreCap: number | null; dataQuality: "sufficient" | "limited" | "insufficient";
+  missingReasons: string[]; hrvField: string | null; heartRateField: string | null; hrvBaselineDays: number; heartRateBaselineDays: number;
+}
+export interface WellnessRecord { readinessAssessment?: ReadinessAssessment; ownerId: string; day: string; fields: Partial<Record<"restingHeartRateBpm" | "hrvRmssdMs" | "hrvSdnnMs" | "sleepSeconds" | "sleepScore" | "avgSleepingHeartRateBpm" | "weightKg" | "bodyFatPercent" | "vo2maxMlKgMin" | "spo2Percent" | "stepsCount" | "respirationRpm" | "subjectiveFatigue" | "readiness" | "atl" | "ctl" | "form", WellnessFieldValue>>; updatedAt: string }
 
 export interface PersonalInformation {
   preferredName: string;
@@ -459,6 +476,8 @@ const adjustmentReasonMessages: Record<string, string> = {
   TRAINING_INTERRUPTION: "Training has been interrupted for 7 days or more.",
   NEXT_WEEK_INFEASIBLE: "Next week cannot fit the plan as written.",
   PROFILE_TRAINING_RHYTHM_CONFLICT: "Your preferred weekly training rhythm differs from this plan.",
+  // Same Core code as the soft rhythm conflict; hard structural conflicts get distinct copy.
+  PROFILE_TRAINING_RHYTHM_CONFLICT_STRUCTURAL: "The plan's schedule conflicts with your weekly training rhythm.",
   PROFILE_SESSION_DURATION_CONFLICT: "Some sessions exceed your usual session length; review any exceptions you have not agreed to.",
   PROFILE_EQUIPMENT_CONFLICT: "Some planned exercises need equipment you no longer have.",
   PROFILE_RECOVERY_CONSTRAINT_CONFLICT: "The plan does not keep your required recovery days free.",
@@ -469,7 +488,8 @@ const adjustmentReasonMessages: Record<string, string> = {
 };
 
 export function adjustmentReasonMessage(reason: AdjustmentAssessment["reasons"][number], previousWeek = false): string {
-  const original = adjustmentReasonMessages[reason.reasonCode];
+  const structural = reason.reasonCode === "PROFILE_TRAINING_RHYTHM_CONFLICT" && reason.severity === "hard";
+  const original = adjustmentReasonMessages[structural ? "PROFILE_TRAINING_RHYTHM_CONFLICT_STRUCTURAL" : reason.reasonCode];
   const message = previousWeek ? original?.replaceAll("this week", "last week") : original;
   if (!message) return friendlyLabel(reason.reasonCode.toLowerCase());
   const language = currentLanguage();

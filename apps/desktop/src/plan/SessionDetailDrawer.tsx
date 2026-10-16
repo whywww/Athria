@@ -139,7 +139,7 @@ function DrawerPanel({ session, templates, plan, today, onClose, onMutated, retu
 
   const phaseLabels = plan ? phaseLabelsForSession(plan.mesocycle.domainProgressions, session) : [];
   const template = session.templateRef ? templates.find((item) => item.id === session.templateRef?.id) : undefined;
-  const reason = reasonCode ? { reasonCode, ...(reasonNote.trim() ? { note: reasonNote.trim() } : {}) } : undefined;
+  const reason = reasonCode ? { reasonCode, ...(reasonCode === "other" && reasonNote.trim() ? { note: reasonNote.trim() } : {}) } : undefined;
   const planEnd = plan ? addDays(plan.effectiveStartDate, plan.mesocycle.durationWeeks * 7 - 1) : undefined;
   const moveOutsidePlan = Boolean(plan && moveDate && (moveDate < plan.effectiveStartDate || (planEnd && moveDate > planEnd)));
 
@@ -196,15 +196,14 @@ function DrawerPanel({ session, templates, plan, today, onClose, onMutated, retu
               >
                 <T>{"Move"}</T>
               </button>
-            </div>
-            {moveOpen && (
-              <div className="sd-move" id="sd-move-panel">
-                <div className="sd-move-fields">
+              {moveOpen && (
+                <div className="sd-move" id="sd-move-panel">
                   <label>
                     <T>{"Move to date"}</T>
                     <input type="date" min={plan?.effectiveStartDate} max={planEnd} value={moveDate} onChange={(event) => setMoveDate(event.target.value)} />
                   </label>
                   <label className="sd-reason"><T>{"Optional reason"}</T><select value={reasonCode} onChange={(event) => setReasonCode(event.target.value)}><option value=""><T>{"None"}</T></option><option value="schedule"><T>{"Schedule"}</T></option><option value="recovery"><T>{"Recovery"}</T></option><option value="health"><T>{"Health"}</T></option><option value="travel"><T>{"Travel"}</T></option><option value="equipment_weather"><T>{"Equipment or weather"}</T></option><option value="preference"><T>{"Preference"}</T></option><option value="other"><T>{"Other"}</T></option></select></label>
+                  {reasonCode === "other" && <label className="sd-reason sd-reason-note"><T>{"Optional note"}</T><input value={reasonNote} maxLength={500} onChange={(event) => setReasonNote(event.target.value)} /></label>}
                   <button
                     type="button"
                     className="sd-action secondary"
@@ -214,10 +213,9 @@ function DrawerPanel({ session, templates, plan, today, onClose, onMutated, retu
                     <T>{"Confirm"}</T>
                   </button>
                 </div>
-                {moveOutsidePlan && <small role="alert"><T>{"The workout must stay within this mesocycle."}</T></small>}
-                {reasonCode && <label className="sd-reason sd-reason-note"><T>{"Optional note"}</T><input value={reasonNote} maxLength={500} onChange={(event) => setReasonNote(event.target.value)} /></label>}
-              </div>
-            )}
+              )}
+            </div>
+            {moveOpen && moveOutsidePlan && <small role="alert"><T>{"The workout must stay within this mesocycle."}</T></small>}
           </footer>
         )}
         {session.status === "skipped" && <footer className="sd-actions"><button type="button" className="sd-action secondary" disabled={busy} onClick={() => void act({ action: "restore" })}><T>{"Undo skip"}</T></button></footer>}

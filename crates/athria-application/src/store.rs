@@ -123,6 +123,7 @@ pub trait AthriaStore {
         owner_id: &str,
         training_session_id: &str,
     ) -> Result<Value>;
+    fn set_training_session_effort(&self, owner_id: &str, training_session_id: &str, rpe: Option<i64>) -> Result<Value>;
     fn update_manual_training_session(
         &self,
         owner_id: &str,
