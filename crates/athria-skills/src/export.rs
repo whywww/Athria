@@ -169,6 +169,26 @@ pub fn with_handshake(markdown: &str, identity: &SkillIdentity) -> String {
     }
 }
 
+/// Adds the handshake tool to a copy of `manifest.json` so exported Skills can
+/// call `report_skill_version`; source manifests stay provider-neutral.
+fn with_handshake_tool(manifest: &[u8], name: &str) -> Result<Vec<u8>, String> {
+    let mut value: serde_json::Value = serde_json::from_slice(manifest)
+        .map_err(|error| format!("Athria's bundled Skill {name} has an invalid manifest.json: {error}"))?;
+    let object = value
+        .as_object_mut()
+        .ok_or_else(|| format!("Athria's bundled Skill {name} has a non-object manifest.json"))?;
+    let allowed = object
+        .entry("allowedTools")
+        .or_insert_with(|| serde_json::Value::Array(Vec::new()))
+        .as_array_mut()
+        .ok_or_else(|| format!("Athria's bundled Skill {name} manifest allowedTools must be an array"))?;
+    if !allowed.iter().any(|tool| tool.as_str() == Some("report_skill_version")) {
+        allowed.push(json!("report_skill_version"));
+    }
+    serde_json::to_vec_pretty(&value)
+        .map_err(|error| format!("Could not serialize the manifest for {name}: {error}"))
+}
+
 pub fn export_skill(
     source_root: &Path,
     name: &str,
@@ -192,6 +212,14 @@ pub fn export_skill(
     files.insert(
         "SKILL.md".to_string(),
         with_handshake(skill_markdown, &identity).into_bytes(),
+    );
+    let manifest = files
+        .get("manifest.json")
+        .cloned()
+        .ok_or_else(|| missing_skill(name))?;
+    files.insert(
+        "manifest.json".to_string(),
+        with_handshake_tool(&manifest, name)?,
     );
     files.insert(
         EXPORT_MANIFEST.to_string(),
@@ -368,6 +396,27 @@ mod tests {
         // Frontmatter stays first: the handshake is a body block.
         assert!(skill_markdown.starts_with("---\nname: test\n"));
         assert!(skill_markdown.contains("# Test"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn exported_manifest_adds_the_handshake_tool() {
+        let root = fixture("manifest");
+        fs::write(
+            root.join("athria-coach/manifest.json"),
+            r#"{"version":"1.2.3","allowedTools":["get_training_state"]}"#,
+        )
+        .unwrap();
+        let exported = export_skill(&root, "athria-coach", "0.2.0").unwrap();
+        let manifest: serde_json::Value =
+            serde_json::from_slice(exported.files.get("manifest.json").unwrap()).unwrap();
+        assert_eq!(
+            manifest["allowedTools"],
+            json!(["get_training_state", "report_skill_version"])
+        );
+        assert!(!fs::read_to_string(root.join("athria-coach/manifest.json"))
+            .unwrap()
+            .contains("report_skill_version"));
         fs::remove_dir_all(root).unwrap();
     }
 

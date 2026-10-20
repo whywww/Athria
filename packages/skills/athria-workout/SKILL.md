@@ -29,8 +29,9 @@ Each new session owns one domain and one direct, non-null `prescription` with do
 
 ## Training History
 
-- Before `record_training_session`, show the complete normalized record and obtain explicit approval. Do not send a `plannedSessionId`; Athria's deterministic reconciler owns normal matching.
+- Before `record_training_session`, show the complete normalized record and obtain explicit approval. RPE may be set only when creating that record. Do not send a `plannedSessionId`; Athria's deterministic reconciler owns normal matching.
 - Use `update_manual_training_session` only for the exact start time or duration of a workout with a manual source. Obtain approval for the diff.
+- RPE on an existing workout is read-only through MCP. Direct the user to change it in the Athria app under Training History → Effort (训练历史 → 强度); do not re-record, delete, or fabricate the workout or its RPE.
 - Use `remove_manual_training_source` only after the user explicitly chooses removal and understands that synchronized observations remain.
 
 ## Match corrections
@@ -49,4 +50,4 @@ Read [references/tool-contracts.md](references/tool-contracts.md) before constru
 
 ## Wellness interpretation
 
-Interpret Wellness using the read tool descriptions. Missing/null is unavailable, not zero. subjectiveFatigue is a user-reported 0-100 rating; ICU may import this rating, while ATL/CTL are ICU-calculated training loads and Form is CTL minus ATL. Readiness is calculated by Athria. Sleep is stored on the evening date; do not shift MCP record dates. Wellness is read-only through MCP: users record or correct it in the Athria app. Existing database-confirmation and write-approval rules still apply.
+Interpret Wellness using the read tool descriptions. Missing/null is unavailable, not zero. subjectiveFatigue is a user-reported 0-100 rating; ICU may import this rating, while ATL/CTL are ICU-calculated training loads and Form is CTL minus ATL. Readiness is Athria's 0-100 estimate of health status through the previous day: the app on day E+1 displays the estimate calculated from day E wellness, and `readinessAssessment.assessmentDay` is the display day while the record date is E. To discuss the score shown today, read yesterday's wellness record. Sleep is stored on the evening date; do not shift MCP record dates. Wellness is read-only through MCP: users record or correct it in the Athria app. Workout write approval still applies.

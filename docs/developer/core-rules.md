@@ -86,6 +86,6 @@ History strength metrics include strength and functional records, excluding warm
 
 Raw strength volume sums recorded load × reps; different load units require normalization before comparison. Indirect participation is not equivalent to direct sets. Metrics retain quality gaps; partial totals are not complete evidence.
 
-Core owns Epley 1RM, explicit-max-HR zones, double progression, and RPE autoregulation. Missing actual RPE cannot authorize a load adjustment; maximum HR is not derived from age. Athria provides no unified readiness score or medical clearance.
+Core owns Epley 1RM, explicit-max-HR zones, double progression, and RPE autoregulation. Missing actual RPE cannot authorize a load adjustment; maximum HR is not derived from age. Athria's readiness estimate is neither a unified strength/endurance fatigue score nor medical clearance.
 
 Authority: [validation](../../crates/athria-core/src/validation.rs), [plan refinements](../../crates/athria-core/src/schema/plan.rs), [metrics](../../crates/athria-core/src/metrics.rs), and [golden fixtures](../../crates/athria-core/tests/fixtures).

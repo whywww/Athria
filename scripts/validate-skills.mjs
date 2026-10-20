@@ -14,7 +14,7 @@ const skills = readdirSync(skillsRoot, { withFileTypes: true })
   })
   .sort();
 const allowedProperties = new Set(["name", "description", "license", "allowed-tools", "metadata"]);
-const toolReferencePattern = /`((?:get|list|calculate|estimate|evaluate|validate|check|create|update|delete|save|record|set|allow|remove)_[a-z0-9_]+)`/g;
+const toolReferencePattern = /`((?:get|list|calculate|estimate|evaluate|validate|check|create|update|delete|save|record|set|allow|remove|report|override|commit|discard|upsert)_[a-z0-9_]+)`/g;
 
 function readMarkdownTree(directory) {
   return readdirSync(directory, { withFileTypes: true })

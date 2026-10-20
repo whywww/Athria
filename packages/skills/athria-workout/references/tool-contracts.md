@@ -23,7 +23,7 @@ Call `override_training_session_plan_match` only after the user explicitly ident
 
 `allow_automatic_plan_match` is the only reversal of an intentionally-unplanned decision. Use it only when the user explicitly asks to return that workout to deterministic automatic matching.
 
-`update_manual_training_session` changes only the exact start time or duration of a canonical workout containing a manual source. `remove_manual_training_source` removes only that manual source; synchronized observations remain.
+`update_manual_training_session` changes only the exact start time or duration of a canonical workout containing a manual source. It cannot change RPE; RPE on an existing workout is read-only through MCP, while `record_training_session` may set it when first creating the record. Direct existing-workout RPE changes to the Athria app under Training History → Effort (训练历史 → 强度). `remove_manual_training_source` removes only that manual source; synchronized observations remain.
 
 ## Freshness and writes
 

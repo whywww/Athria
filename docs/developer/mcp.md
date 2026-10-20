@@ -91,7 +91,7 @@ Next-day workflow: read the day and revision, construct complete prescriptions, 
 | `override_training_session_plan_match` | Apply an explicit user-directed match correction or intentional exclusion |
 | `allow_automatic_plan_match` | Remove an intentional exclusion and permit automatic matching again |
 
-History workflow: record user-supplied facts, let Athria reconcile, and use a correction tool only for an explicit user decision. Existing-workout edits require the target `snapshotHash` as `expectedSnapshotHash`; matching corrections may also require the plan revision. See [matching policy](write-policy.md#plan-and-history-matching).
+History workflow: record user-supplied facts, let Athria reconcile, and use a correction tool only for an explicit user decision. Existing-workout edits require the target `snapshotHash` as `expectedSnapshotHash`; matching corrections may also require the plan revision. RPE on an existing workout is read-only through MCP; the user changes it in the Athria app under Training History → Effort. See [matching policy](write-policy.md#plan-and-history-matching).
 
 ## Skill handshake
 
@@ -99,7 +99,7 @@ History workflow: record user-supplied facts, let Athria reconcile, and use a co
 | --- | --- |
 | `report_skill_version` | Report the loaded Skill's literal name, version, and content hash |
 
-Athria injects the handshake into exported Skills for clients such as Claude Desktop whose installed Skill lists it cannot inspect. Call it when the Skill first runs. Reports are recorded only when a report location is configured; they never alter training data or require training-write approval.
+Athria injects the handshake into exported Skills for clients such as Claude Desktop whose installed Skill lists it cannot inspect. The exported `SKILL.md` carries the handshake block and the exported `manifest.json` adds `report_skill_version` to `allowedTools`; source manifests stay provider-neutral. Call it when the Skill first runs. Reports are recorded only when a report location is configured; they never alter training data or require training-write approval.
 
 ## Failure recovery
 
@@ -118,4 +118,4 @@ Stable application error codes are defined in [Core errors](../../crates/athria-
 
 After commit, the draft and its weeks are deleted; Current Plan retains the Athria-managed `sourceDraftId`. There is no commit replay or historical receipt. If a commit response is lost or times out, call `get_current_plan` first: a matching `sourceDraftId` confirms success. If the draft still exists, refresh the draft, plan revision, and training context before deciding whether to retry. If the draft is absent and the source ID does not match, the outcome is uncertain (a later formal commit may have replaced the marker); do not infer success or failure, or automatically recreate and submit a replacement. Reading or submitting a deleted draft returns `DRAFT_NOT_FOUND`.
 
-Wellness interpretation is documented directly in the read tool descriptions; no separate dictionary call is required. subjectiveFatigue is a user-reported rating, including ratings imported through ICU. ATL/CTL are calculated by ICU; readiness is calculated by Athria. Missing/null is unavailable, while zero retains field-specific meaning. MCP wellness is read-only.
+Wellness interpretation is documented directly in the read tool descriptions; no separate dictionary call is required. subjectiveFatigue is a user-reported rating, including ratings imported through ICU. ATL/CTL are calculated by ICU; readiness is calculated by Athria from the previous day's wellness and displayed the next day, so today's shown value represents health status through the previous day. `readinessAssessment.assessmentDay` is that display day, one day after the wellness record. Missing/null is unavailable, while zero retains field-specific meaning. MCP wellness is read-only.

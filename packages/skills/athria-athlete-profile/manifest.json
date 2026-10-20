@@ -1,6 +1,6 @@
 {
   "name": "athria-athlete-profile",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "purpose": "Start Athria with a read-only profile and plan check, then onboard an athlete or maintain confirmed profile facts; wellness data stays read-only.",
   "appliesWhen": [
     "The user explicitly asks to start Athria, including a translated equivalent of 'start Athria', without naming a more specific task.",

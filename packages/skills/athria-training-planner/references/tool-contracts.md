@@ -4,7 +4,7 @@
 
 `get_database_context` returns the normalized absolute `databasePath` used by the current MCP session. It is the first planning-context read. The user must confirm that path before any athlete data is read. Re-read it immediately before committing; a changed path invalidates every earlier confirmation.
 
-`get_data_source_status` returns `asOf`, the Profile timezone and local date, and fixed entries for Intervals.icu, Xunji, and Hevy. API entries use `kind: "api_sync"`, expose `connected` and `syncedToday`, and retain non-secret historical sync timestamps after disconnection. Hevy uses `kind: "file_import"`, `lastImportAt`, and `importedToday`; it is never described as connected or subject to daily API sync. The tool never returns credentials. Asking the user to use Athria → Connections does not authorize the Agent to synchronize or import data itself.
+`get_data_source_status` returns `asOf`, the Profile timezone and local date, and fixed entries for Intervals.icu, Xunji, and Hevy. API entries use `kind: "api_sync"`, expose `connected` and `syncedToday`, and retain non-secret historical sync timestamps after disconnection. Hevy uses `kind: "file_import"`, `lastImportAt`, and `importedToday`; it is never described as connected or subject to daily API sync. Import is unavailable in this version: do not offer it, though existing imported history may still serve as evidence. The tool never returns credentials. Asking the user to use Athria → Connections does not authorize the Agent to synchronize or import data itself.
 
 Database confirmation, outline confirmation, and detailed-plan confirmation are distinct. Only outline confirmation permits persistent draft writes. Only detailed-plan confirmation permits `commit_plan_draft`.
 

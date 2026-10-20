@@ -25,6 +25,18 @@ describe("skill tool validation", () => {
       .toThrow("SKILL.md references tools missing from manifest allowedTools: save_current_plan");
   });
 
+  it("rejects unauthorized references to tools outside the former prefix list", () => {
+    const names = [
+      "override_training_session_plan_match",
+      "commit_plan_draft",
+      "discard_plan_draft",
+      "upsert_plan_draft_week",
+    ];
+    const references = names.map((name) => `\`${name}\``).join(" ");
+    expect(() => validateSkillTools("test-skill", { allowedTools: [] }, references, validateToolNames(names.map(tool))))
+      .toThrow(`SKILL.md references tools missing from manifest allowedTools: ${names.join(", ")}`);
+  });
+
   it("rejects duplicate MCP tool names", () => {
     expect(() => validateToolNames([tool("get_training_state"), tool("get_training_state")]))
       .toThrow("MCP contract contains duplicate tools: get_training_state");

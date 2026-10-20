@@ -17,7 +17,7 @@ Reply in the user's requested language, or the language of their latest substant
 2. Call `list_xunji_training_sessions` with the smallest date window that satisfies the request.
 3. Clearly distinguish fields returned from synchronized Xunji records from calculations or interpretations.
 4. Treat missing RPE, heart rate, duration, load, or distance as unavailable rather than zero.
-5. If there is no successful sync, or the requested dates fall outside the synchronized range, ask the user to open Athria → Connections → SynFit and use **Sync now**.
+5. If there is no successful sync, or the requested dates fall outside the synchronized range, ask the user to open Athria → Connections (连接) → SynFit (训记) and use **Sync now (立即同步)**.
 
 ## Boundaries
 
