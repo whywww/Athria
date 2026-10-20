@@ -203,6 +203,7 @@ describe("AgentIntegrations", () => {
     const html = renderChinese(createElement(AddAgentModal, { onClose: () => {} }), integrations);
     expect(html).toContain('<h2 id="agent-modal-title">添加助手</h2>');
     expect(html).toContain(">连接</button>");
+    expect(html).toContain("需要手动导入");
   });
 
   it("shows agent paths relative to the home folder", () => {
@@ -245,7 +246,7 @@ describe("AgentIntegrations", () => {
     const html = render(createElement(AddAgentModal, { onClose: () => {} }), [
       { agent: "claude_desktop", name: "Claude Desktop", available: true, mcp: "missing", skills: "missing", configPath: "C:/c/claude_desktop_config.json", skillsMode: "gui_managed", skillReports: [], restartRequired: false },
     ]);
-    expect(html).toContain("Athria prepares these when you Connect");
+    expect(html).toContain("Requires manual import");
     expect(html).not.toContain("Need manual install");
     expect(html).not.toContain('class="agent-modal-connected"');
   });

@@ -326,27 +326,91 @@ export function SummaryProgressRing({ percent, children, tone = "plan", entrance
   return <span className={`progress-ring${tone === "plan" ? "" : ` ${tone}`}`}><svg viewBox="0 0 100 100" aria-hidden="true"><defs><linearGradient id={`summary-ring-${uid}`} gradientUnits="userSpaceOnUse" x1="10" y1="5" x2="90" y2="95"><stop offset="0" stopColor={colors[0]} stopOpacity=".9"/><stop offset=".45" stopColor={colors[1]} stopOpacity=".88"/><stop offset="1" stopColor={colors[2]} stopOpacity=".95"/></linearGradient></defs><circle className="summary-ring-track" cx="50" cy="50" r="40"/>{progress > 0 && <circle className="summary-ring-fill" cx="50" cy="50" r="40" pathLength="100" stroke={`url(#summary-ring-${uid})`} strokeDasharray={progress < 100 ? `${progress} 100` : undefined} transform="rotate(-90 50 50)"/>}</svg><b>{children}</b></span>;
 }
 
-export function RecoveryHelpModal({ onClose, assessment }: { onClose: () => void; assessment?: ReadinessAssessment | undefined }) {
+const recoveryGlyphs = {
+  heart: <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.51 4.04 3 5.5l7 7Z"/>,
+  moon: <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>,
+  person: <><circle cx="12" cy="7.4" r="3.4"/><path d="M5.5 19.7c1.3-3.4 3.6-5 6.5-5s5.2 1.6 6.5 5"/></>,
+  chart: <path d="M5.6 17.2v-5.4M12 17.2V6.8M18.4 17.2v-7.6"/>,
+  star: <path d="m12 3.9 2.5 5.1 5.6.8-4.05 3.95.95 5.6L12 16.7l-5 2.65.95-5.6L3.9 9.8l5.6-.8Z"/>,
+  info: <><circle cx="12" cy="12" r="8.6" fill="currentColor" stroke="none"/><path d="M12 11v5.6M12 7.4h.01" stroke="#fbfcfe" strokeWidth="2.3"/></>,
+};
+
+function RecoveryGlyph({ kind, className }: { kind: keyof typeof recoveryGlyphs; className?: string }) {
+  if (kind === "star") return <svg className={className} viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true">{recoveryGlyphs.star}</svg>;
+  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{recoveryGlyphs[kind]}</svg>;
+}
+
+function RecoveryArrow() {
+  return <span className="recovery-arrow" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 .9v21.2M6.7 16.7 12 22l5.3-5.3"/></svg></span>;
+}
+
+export function RecoveryHelpModal({ onClose, assessment, dataDay }: { onClose: () => void; assessment?: ReadinessAssessment | undefined; dataDay?: string | undefined }) {
   useModalDismiss(onClose);
+  const displayedDay = assessment ? addDays(assessment.assessmentDay, -1) : dataDay;
+  const number = (value: number | null | undefined) => value === null || value === undefined ? "–" : String(Math.round(value * 10) / 10);
+  const chain = assessment && assessment.baseScore !== null ? { base: assessment.baseScore, load: assessment.loadAdjustment, adjusted: assessment.baseScore - assessment.loadAdjustment } : null;
+  const cap = assessment?.scoreCap ?? null;
+  const triggered = chain !== null && cap !== null && chain.adjusted > cap;
+  const scalePercent = (value: number) => Math.max(0, Math.min(100, value));
+  const capTight = chain !== null && cap !== null && Math.abs(scalePercent(cap) - scalePercent(chain.adjusted)) < 12;
+  const status = assessment?.status ?? "Insufficient data";
+  const tone = status === "Ready" ? "ready" : status === "Caution" ? "caution" : status === "Rest" ? "rest" : "insufficient";
+  const verdict = status === "Ready" ? "Recovered" : status === "Caution" ? "Train with caution" : status === "Rest" ? "Rest and recover" : "Insufficient data";
+  const advice = status === "Ready" ? "Recovered. Train as planned." : status === "Caution" ? "You can train, but keep it lighter." : status === "Rest" ? "Prioritize recovery today." : "More wellness data needed.";
+  const signals = [
+    { key: "cardiac", label: "Cardiac recovery", value: assessment?.cardiacScore ?? null },
+    { key: "sleep", label: "Sleep", value: assessment?.sleepScore ?? null },
+    { key: "subjective", label: "Subjective recovery", value: assessment?.subjectiveScore ?? null },
+  ] as const;
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <section className="connection-modal recovery-modal" role="dialog" aria-modal="true" aria-labelledby="recovery-help-title">
-      <header><div><h2 id="recovery-help-title"><T>{"How We Calculate Overall Readiness"}</T></h2><p><T>{"A morning estimate from recovery signals and recent training load."}</T></p></div><button type="button" className="modal-close" aria-label={tr("Close dialog")} onClick={onClose}><svg className="app-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>
+      <header><div><h2 id="recovery-help-title"><T>{"How We Calculate Overall Readiness"}</T></h2><p>{displayedDay && `${formatWellnessDate(displayedDay)} · `}<T>{"Based on the day's data"}</T></p></div><button type="button" className="modal-close" aria-label={tr("Close dialog")} onClick={onClose}><svg className="app-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>
       <div className="modal-body">
-        <p><T>{"Each morning uses yesterday's heart data and fatigue, yesterday evening's sleep ending today, and completed training through yesterday. Today's training affects tomorrow. At least two recovery dimensions are required to produce a score."}</T></p>
-        <section className="readiness-breakdown" aria-label={tr("Readiness breakdown")}>
-          <h3><T>{"Readiness breakdown"}</T></h3>
-          {assessment && <p><T>{"Morning estimate for"}</T> {formatWellnessDate(assessment.assessmentDay)} · <T>{assessment.dataQuality === "sufficient" ? "Sufficient data" : assessment.dataQuality === "limited" ? "Limited data" : "Insufficient data"}</T></p>}
-          <dl>{([
-            ["Cardiac recovery", assessment?.cardiacScore ?? null], ["Sleep", assessment?.sleepScore ?? null], ["Subjective recovery", assessment?.subjectiveScore ?? null],
-            ["Weighted base score", assessment?.baseScore ?? null], ["Training load deduction", assessment?.loadAdjustment ?? null], ["Score cap", assessment?.scoreCap ?? null], ["Final readiness", assessment?.score ?? null],
-          ] as const).map(([label, value]) => <div key={label}><dt>{tr(label)}</dt><dd>{value === null ? "–" : Math.round(value * 10) / 10}</dd></div>)}</dl>
-        </section>
-        <ul className="recovery-help-verdicts">
-          <li className="ready"><i/><div><strong><T>{"Ready · 70+"}</T></strong><span><T>{"Recovered. Train as planned."}</T></span></div></li>
-          <li className="caution"><i/><div><strong><T>{"Caution · 45-69"}</T></strong><span><T>{"You can train, but keep it lighter."}</T></span></div></li>
-          <li className="rest"><i/><div><strong><T>{"Rest · below 45"}</T></strong><span><T>{"Prioritize recovery today."}</T></span></div></li>
-        </ul>
-        <p className="recovery-help-note"><T>{"These are Athria estimation rules, not a scientifically validated score."}</T></p>
+        <p className="recovery-intro"><T>{"Estimates your overall training readiness from recovery signals and recent training load. Scored 0–100; higher means more suitable for higher-intensity training."}</T></p>
+        <div className="recovery-flow">
+          <section className="recovery-step signals-step">
+            <div className="recovery-step-head"><b>01</b><div><h3><T>{"Recovery signals"}</T></h3><p><T>{"Based on last night's sleep, cardiac recovery, and how you feel."}</T></p></div></div>
+            <ul className="recovery-signals">
+              {signals.map((signal) => <li key={signal.key} className={`signal-${signal.key}`}>
+                <RecoveryGlyph kind={signal.key === "cardiac" ? "heart" : signal.key === "sleep" ? "moon" : "person"} className="signal-icon"/>
+                <span className="signal-label"><T>{signal.label}</T></span>
+                <span className="signal-track"><i style={{ width: `${signal.value === null ? 0 : scalePercent(signal.value)}%` }}/></span>
+                <span className="signal-value">{number(signal.value)}<small>/ 100</small></span>
+              </li>)}
+            </ul>
+          </section>
+          <RecoveryArrow/>
+          <div className="recovery-base"><RecoveryGlyph kind="chart" className="base-icon"/><span className="base-label"><T>{"Weighted base score"}</T></span><span className="base-score"><strong>{number(assessment?.baseScore)}</strong><small>/ 100</small></span></div>
+          <span className="recovery-link" aria-hidden="true"/>
+          <section className="recovery-step equation-step">
+            <div className="recovery-step-head"><b>02</b><div><h3><T>{"Training load adjustment"}</T></h3><p><T>{"Adjusted based on recent training history."}</T></p></div></div>
+            <div className="recovery-well"><div className="recovery-equation"><strong>{number(chain?.base)}</strong><i>−</i><strong>{number(chain?.load)}</strong><i>=</i><strong className="result">{number(chain?.adjusted)}</strong><small><T>{"Training load deduction"}</T></small></div></div>
+          </section>
+          <RecoveryArrow/>
+          <section className="recovery-step cap-step">
+            <div className="recovery-step-head"><b>03</b><div><h3><T>{"Score cap"}</T></h3><p><T>{"Set by severe fatigue or short sleep."}</T></p></div></div>
+            <div className="recovery-well"><div className={`recovery-cap${capTight ? " tight" : ""}`}>
+              <div className="cap-scale">
+                {chain && <span className="cap-value" style={{ left: `${scalePercent(chain.adjusted)}%` }}>{number(chain.adjusted)}</span>}
+                {cap !== null && <span className="cap-limit" style={{ left: `${scalePercent(cap)}%` }}>{number(cap)}</span>}
+                <span className="cap-track">{chain && <i style={{ width: `${scalePercent(chain.adjusted)}%` }}/>}{cap !== null && <b className="cap-mark" style={{ left: `${scalePercent(cap)}%` }}/>}{chain && <b className="cap-dot" style={{ left: `${scalePercent(chain.adjusted)}%` }}/>}</span>
+                <span className="cap-min">0</span><span className="cap-max">100</span>
+              </div>
+              {assessment !== undefined && <small className="cap-caption">{cap === null ? <T>{"No cap"}</T> : <><b>{tr("Cap")} {number(cap)}</b><span> · {tr(triggered ? "Triggered" : "Not triggered")}</span></>}</small>}
+            </div></div>
+          </section>
+          <RecoveryArrow/>
+          <div className={`recovery-final ${tone}`}>
+            <RecoveryGlyph kind="star" className="final-icon"/>
+            <div className="final-copy"><span className="final-score"><strong>{assessment?.score ?? "–"}</strong><small>/ 100</small></span><em><T>{verdict}</T></em><span><T>{advice}</T></span></div>
+          </div>
+        </div>
+        <footer className="recovery-legend">
+          <span><i className="legend-ready"/><T>{"Recovered"}</T> 70 – 100</span>
+          <span><i className="legend-caution"/><T>{"Caution"}</T> 45 – 69</span>
+          <span><i className="legend-rest"/><T>{"Rest"}</T> 0 – 44</span>
+          <span className="recovery-disclaimer"><RecoveryGlyph kind="info" className="disclaimer-icon"/><T>{"An Athria model estimate, not a medical diagnosis."}</T></span>
+        </footer>
       </div>
     </section>
   </div>;
@@ -483,6 +547,6 @@ export function OverviewDashboard({ summary, wellness, history, planned, today, 
         </section>
       </div>
     </div>
-    {helpOpen && <RecoveryHelpModal onClose={() => setHelpOpen(false)} assessment={wellness.find((record) => record.day === addDays(today, -1))?.readinessAssessment}/>}
+    {helpOpen && <RecoveryHelpModal onClose={() => setHelpOpen(false)} assessment={wellness.find((record) => record.day === addDays(today, -1))?.readinessAssessment} dataDay={addDays(today, -1)}/>}
   </div>;
 }

@@ -510,11 +510,13 @@ describe("Overview", () => {
       expect(empty).toContain("<strong>-</strong>");
       expect(empty).toContain("<small>数据不足</small>");
       const help = renderToStaticMarkup(createElement(LanguageProvider, null, createElement(RecoveryHelpModal, { onClose: () => undefined })));
-      expect(help).not.toContain("同一天的三项指标必须齐全");
-      expect(help).toContain("Athria 估计规则");
-      expect(help).toContain("至少需要两个恢复维度");
-      expect(help).not.toContain("每项指标取 30、45、60、75 或 90 分");
-      expect(help).toContain("并非经过科学验证");
+      expect(help).toContain("根据当日数据评估");
+      expect(help).toContain("加权基础分");
+      expect(help).not.toContain("加权合成");
+      expect(help).toContain("训练负荷扣分");
+      expect(help).toContain("Athria 的模型估计，不代表医学诊断。");
+      expect(help).toContain("数据不足");
+      expect(help).toContain("需要更多健康指标。");
     } finally {
       vi.stubGlobal("localStorage", { getItem: () => "en", setItem: () => {} });
       renderToStaticMarkup(createElement(LanguageProvider, null, createElement("span", null, "reset")));
@@ -522,56 +524,51 @@ describe("Overview", () => {
     }
   });
 
-  it("shows the core breakdown, its morning date and missing data without recalculating", () => {
-    const assessment: NonNullable<WellnessRecord["readinessAssessment"]> = {
-      algorithmVersion: "athria-readiness-v2", assessmentDay: "2026-10-06", score: 69, status: "Caution",
-      cardiacScore: 85, sleepScore: null, subjectiveScore: 50, baseScore: 71.5,
-      loadAdjustment: 0, loadMethod: null, scoreCap: 69, dataQuality: "limited",
-      missingReasons: ["Sleep not included", "Training load not included"],
-      hrvField: "hrvRmssdMs", heartRateField: null, hrvBaselineDays: 14, heartRateBaselineDays: 0,
-    };
-    const html = renderToStaticMarkup(createElement(RecoveryHelpModal, { assessment, onClose: () => undefined }));
-    expect(html).toContain("Readiness breakdown");
-    expect(html).toContain("Oct 6, 2026");
-    expect(html).toContain("Limited data");
-    expect(html).toContain("<dt>Weighted base score</dt><dd>71.5</dd>");
-    expect(html).toContain("<dt>Final readiness</dt><dd>69</dd>");
-    expect(html).not.toContain("Sleep not included");
-    expect(html).not.toContain("Training load not included");
-    expect(html).not.toContain("Wellness influence factor");
-    const record = { ...recoveryRecord("2026-10-05", { readiness: { ...field(69), source: "athria" } }), readinessAssessment: assessment };
-    expect(recoveryStatus([record], "2026-10-06")).toMatchObject({ value: 69, label: "Caution" });
+  const chainAssessment: NonNullable<WellnessRecord["readinessAssessment"]> = {
+    algorithmVersion: "athria-readiness-v2", assessmentDay: "2026-10-06", score: 52, status: "Caution",
+    cardiacScore: 34.4, sleepScore: 88.8, subjectiveScore: 30, baseScore: 52.34,
+    loadAdjustment: 0, loadMethod: null, scoreCap: 69, dataQuality: "limited",
+    missingReasons: [], hrvField: "hrvRmssdMs", heartRateField: null, hrvBaselineDays: 14, heartRateBaselineDays: 0,
+  };
+
+  it("shows the readiness chain in the redesigned calculation dialog", () => {
+    const html = renderToStaticMarkup(createElement(RecoveryHelpModal, { assessment: chainAssessment, onClose: () => undefined }));
+    expect(html).toContain("Oct 5, 2026 · Based on the day&#x27;s data");
+    expect(html).toContain("Weighted base score");
+    expect(html).not.toContain("Weighted blend");
+    expect(html).toContain(">34.4<small>");
+    expect(html).toContain(">88.8<small>");
+    expect(html).toContain(">30<small>");
+    expect(html).toContain("<strong>52.3</strong>");
+    expect(html).toContain('class="result">52.3</strong>');
+    expect(html).toContain("Cap 69");
+    expect(html).toContain("Not triggered");
+    expect(html).toContain("<strong>52</strong>");
+    expect(html).toContain("Train with caution");
+    expect(html).toContain("You can train, but keep it lighter.");
+    expect(html).toContain("70 – 100");
+    for (const text of ["Historical support weight", "Wellness influence factor", "Recent workouts", "Seven-day pressure"]) expect(html).not.toContain(text);
+    const record = { ...recoveryRecord("2026-10-05", { readiness: { ...field(52), source: "athria" } }), readinessAssessment: chainAssessment };
+    expect(recoveryStatus([record], "2026-10-06")).toMatchObject({ value: 52, label: "Caution" });
   });
 
-  it.each(["en", "zh-CN"])("shows only the compact score chain and no load statistics in %s", (language) => {
-    vi.stubGlobal("localStorage", { getItem: () => language, setItem: () => {} });
+  it("localizes the redesigned calculation dialog and hides load statistics", () => {
+    vi.stubGlobal("localStorage", { getItem: () => "zh-CN", setItem: () => {} });
     try {
-      const assessment: NonNullable<WellnessRecord["readinessAssessment"]> = {
-        algorithmVersion: "athria-readiness-percentile-load", assessmentDay: "2026-10-06", score: 52, status: "Caution",
-        cardiacScore: 34, sleepScore: 89, subjectiveScore: 30, baseScore: 52, loadAdjustment: 0, loadMethod: "sessionRpe", scoreCap: 69,
-        dataQuality: "limited", missingReasons: [], hrvField: "hrvSdnnMs", heartRateField: "restingHeartRateBpm", hrvBaselineDays: 17, heartRateBaselineDays: 16,
-        trainingLoad: {
-          status: "not_elevated", recentSessionCount: 6, durationMinutes: 280, ratedSessionCount: 6, knownRpeLoad: 670, knownRpePressure: 236.5,
-          combinedAdjustment: 0, wellnessFactor: 0.28, groups: [{
-            activityType: null, method: "sessionRpe", recentSessionCount: 6, validSessionCount: 6, durationMinutes: 280,
-            knownLoad: 670, knownPressure: 236.5, complete: true, historyWindows: 23, referenceDays: 7, referenceSpanDays: 10,
-            percentile: 0.696, evidenceWeight: 0.293, rawAdjustment: 0, weightedAdjustment: 0, durationShare: 1, eligible: true, selected: true, status: "not_elevated",
-          }],
-        },
-      };
-      const html = renderToStaticMarkup(createElement(LanguageProvider, null, createElement(RecoveryHelpModal, { assessment, onClose: () => undefined })));
-      const labels = language === "zh-CN"
-        ? { base: "加权基础分", deduction: "训练负荷扣分", cap: "分数上限", final: "最终准备度", quality: "数据有限" }
-        : { base: "Weighted base score", deduction: "Training load deduction", cap: "Score cap", final: "Final readiness", quality: "Limited data" };
-      expect(html).toContain(`<dt>${labels.base}</dt><dd>52</dd>`);
-      expect(html).toContain(`<dt>${labels.deduction}</dt><dd>0</dd>`);
-      expect(html).toContain(`<dt>${labels.cap}</dt><dd>69</dd>`);
-      expect(html).toContain(`<dt>${labels.final}</dt><dd>52</dd>`);
-      expect(html).toContain(labels.quality);
-      const hidden = language === "zh-CN"
-        ? ["历史支持权重", "Wellness 影响系数", "近期训练次数", "负荷计算方式"]
-        : ["Historical support weight", "Wellness influence factor", "Recent workouts", "Load method"];
-      for (const text of hidden) expect(html).not.toContain(text);
+      const html = renderToStaticMarkup(createElement(LanguageProvider, null, createElement(RecoveryHelpModal, { assessment: chainAssessment, onClose: () => undefined })));
+      expect(html).toContain("2026年10月5日 · 根据当日数据评估");
+      expect(html).toContain("加权基础分");
+      expect(html).not.toContain("加权合成");
+      expect(html).toContain("训练负荷扣分");
+      expect(html).toContain("Athria 的模型估计，不代表医学诊断。");
+      expect(html).toContain("得分上限");
+      expect(html).toContain("上限 69");
+      expect(html).toContain("未触发");
+      expect(html).toContain("谨慎训练");
+      expect(html).toContain("可以训练，但建议降低强度。");
+      expect(html).toContain("恢复良好");
+      expect(html).toContain("70 – 100");
+      for (const text of ["历史支持权重", "Wellness 影响系数", "近期训练次数", "负荷计算方式"]) expect(html).not.toContain(text);
     } finally {
       vi.stubGlobal("localStorage", { getItem: () => "en", setItem: () => {} });
       renderToStaticMarkup(createElement(LanguageProvider, null, createElement("span", null, "reset")));
@@ -579,21 +576,21 @@ describe("Overview", () => {
     }
   });
 
-  it("renders the recovery help dialog with the plain-language calculation", () => {
-    const html = renderToStaticMarkup(createElement(RecoveryHelpModal, { onClose: () => undefined }));
+  it("renders the calculation dialog with placeholder values when no assessment exists", () => {
+    const html = renderToStaticMarkup(createElement(RecoveryHelpModal, { onClose: () => undefined, dataDay: "2026-10-05" }));
     expect(html).toContain('role="dialog"');
     expect(html).toContain("How We Calculate Overall Readiness");
-    expect(html).toContain("Ready · 70+");
-    expect(html).toContain("Caution · 45-69");
-    expect(html).toContain("Rest · below 45");
-    expect(html).not.toContain("All three signals must be available on the same day");
-    expect(html).toContain("yesterday evening&#x27;s sleep ending today,");
-    expect(html).toContain("At least two recovery dimensions are required");
-    expect(html).not.toContain("Each signal receives 30, 45, 60, 75 or 90 points");
-    expect(html).toContain("not a scientifically validated score");
-    expect(html).not.toContain("Signals with no data are skipped");
-    expect(html).toContain("<dt>Final readiness</dt><dd>–</dd>");
-    expect(html).not.toContain("Seven-day pressure uses a two-day half-life");
+    expect(html).toContain("<p>Oct 5, 2026 · Based on the day&#x27;s data</p>");
+    expect(html).toContain(">–<small>");
+    expect(html).toContain('<i>=</i><strong class="result">–</strong>');
+    expect(html).toContain("Insufficient data");
+    expect(html).toContain("More wellness data needed.");
+    expect(html).toContain("70 – 100");
+    expect(html).not.toContain("Ready · 70+");
+    expect(html).not.toContain("Caution · 45-69");
+    expect(html).not.toContain("Rest · below 45");
+    expect(html).not.toContain("Readiness breakdown");
+    expect(html).not.toContain("Final readiness");
   });
 
   it("renders featured wellness trends, compact sleep, and never the excluded weight", () => {
