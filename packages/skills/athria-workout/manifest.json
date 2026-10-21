@@ -1,6 +1,6 @@
 {
   "name": "athria-workout",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "purpose": "Inspect and execute near-term workouts without redesigning the whole Mesocycle.",
   "appliesWhen": [
     "The user asks what to do today, to add near-term sessions, skip, restore, or move a planned session, record or correct a manual workout, or explicitly correct a workout-plan match."
@@ -8,7 +8,10 @@
   "doesNotApplyWhen": [
     "The user asks to create or materially redesign the complete Current Mesocycle."
   ],
-  "requiredContext": ["CurrentPlan", "TrainingHistory"],
+  "requiredContext": [
+    "CurrentPlan",
+    "TrainingHistory"
+  ],
   "allowedTools": [
     "get_athlete_profile",
     "get_training_state",
@@ -25,7 +28,16 @@
     "update_manual_training_session",
     "remove_manual_training_source"
   ],
-  "workflow": ["read-execution-queue", "identify-exact-action", "validate-if-adding", "show-change", "approve", "freshness-check", "write", "report-result"],
+  "workflow": [
+    "read-execution-queue",
+    "identify-exact-action",
+    "validate-if-adding",
+    "show-change",
+    "approve",
+    "freshness-check",
+    "write",
+    "report-result"
+  ],
   "approvalPoints": [
     "Before every tool that changes a planned session, Training History, or plan match"
   ],

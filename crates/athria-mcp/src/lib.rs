@@ -288,7 +288,7 @@ impl<S: AthriaStore> McpService<S> {
                 Ok(profile)
             }
             ToolKind::GetTrainingMemory => application(app.get_training_memory()),
-            ToolKind::GetTrainingState => application(app.get_training_state()),
+            ToolKind::GetTrainingState => application(app.get_training_state_with_view(input["view"] == "compact")),
             ToolKind::ListTrainingSessions => serialize(
                 app.list_sessions_in_window(days(input, 30)?, optional_date(input, "from")?, optional_date(input, "to")?)
                     .map_err(ToolError::application)?,
@@ -313,7 +313,7 @@ impl<S: AthriaStore> McpService<S> {
                 Ok(day)
             }
             ToolKind::ListXunjiTrainingSessions => {
-                application(app.list_xunji_sessions(days(input, 30)?))
+                application(app.list_xunji_sessions_in_window(days(input, 30)?, optional_date(input, "from")?, optional_date(input, "to")?))
             }
             ToolKind::GetXunjiSyncStatus => {
                 let status = app.get_data_source_status().map_err(ToolError::application)?;
@@ -391,7 +391,11 @@ impl<S: AthriaStore> McpService<S> {
             )),
             ToolKind::GetPlanAdjustmentContext => application(app.get_plan_adjustment_context()),
             ToolKind::ListSessionTemplates => {
-                serialize(app.list_templates().map_err(ToolError::application)?)
+                let mut templates = app.list_templates().map_err(ToolError::application)?;
+                for template in &mut templates {
+                    template.as_object_mut().expect("template is an object").remove("nodes");
+                }
+                Ok(Value::Array(templates))
             }
             ToolKind::GetSessionTemplate => {
                 application(app.get_template(required_str(input, "id")?))
@@ -972,8 +976,9 @@ mod tests {
         let schema: Value=serde_json::from_str(include_str!("../../../schemas/v7/session-template-read.json")).unwrap();
         let validator=jsonschema::options().with_draft(jsonschema::Draft::Draft202012).build(&schema).unwrap();
         let fixtures: Value=serde_json::from_str(include_str!("../tests/fixtures/tool-results.json")).unwrap();
-        for template in fixtures["list_session_templates"].as_array().unwrap() {
-            assert!(validator.is_valid(template));
+        let service=service();
+        for template in service.application.list_templates().unwrap() {
+            assert!(validator.is_valid(&template));
             let mut bad=template.clone();
             bad["origin"]=json!("unknown");
             assert!(!validator.is_valid(&bad));
@@ -981,10 +986,43 @@ mod tests {
             bad.as_object_mut().unwrap().remove(if template["origin"]=="user" {"revision"} else {"catalogVersion"});
             assert!(!validator.is_valid(&bad));
         }
-        let service=service();
         let registered=service.registry.iter().zip(service.tools()).find(|(_,tool)|tool["name"]=="get_session_template").unwrap().0;
         assert!(registered.output.is_valid(&json!({"result":fixtures["get_session_template"]})));
         assert!(!registered.output.is_valid(&json!({"result":{}})));
+    }
+
+    #[test]
+    fn template_summaries_keep_identity_and_details_remain_available() {
+        let service = service();
+        let listed = service.call_result("list_session_templates", &json!({}));
+        assert_ne!(listed["isError"], true, "{listed}");
+        let templates = listed["structuredContent"]["result"].as_array().unwrap();
+        assert!(!templates.is_empty());
+        for summary in templates {
+            assert!(summary.get("nodes").is_none());
+            let detail = service.call_result("get_session_template", &json!({"id":summary["id"]}));
+            assert_ne!(detail["isError"], true, "{detail}");
+            let mut template = detail["structuredContent"]["result"].clone();
+            assert!(!template.as_object_mut().unwrap().remove("nodes").unwrap().as_array().unwrap().is_empty());
+            assert_eq!(&template, summary);
+        }
+    }
+
+    #[test]
+    fn compact_state_uses_the_full_snapshot_hash_and_rejects_unknown_views() {
+        let service = service();
+        let full = service.call_result("get_training_state", &json!({}));
+        let compact = service.call_result("get_training_state", &json!({"view":"compact"}));
+        assert_ne!(compact["isError"], true, "{compact}");
+        let full = &full["structuredContent"]["result"];
+        let compact = &compact["structuredContent"]["result"];
+        assert_eq!(full["inputSnapshotHash"], compact["inputSnapshotHash"]);
+        assert_eq!(full["metrics"], compact["metrics"]);
+        assert!(full.get("wellness").is_some());
+        assert!(full.get("personalInformation").is_some());
+        assert!(compact.get("wellness").is_none());
+        assert!(compact.get("personalInformation").is_none());
+        assert_eq!(service.call_result("get_training_state", &json!({"view":"invalid"}))["isError"], true);
     }
 
     #[test]
@@ -1074,7 +1112,7 @@ mod tests {
     #[test]
     fn explicit_date_windows_are_dispatched_and_invalid_pairs_fail() {
         let service = service();
-        for name in ["list_training_sessions", "get_training_summary", "list_wellness"] {
+        for name in ["list_training_sessions", "get_training_summary", "list_wellness", "list_xunji_training_sessions"] {
             let output = service.call_result(name, &json!({"days":1,"from":"2026-09-01","to":"2026-09-30"}));
             assert_ne!(output["isError"], true, "{name}: {output}");
             for input in [json!({"from":"2026-09-01"}), json!({"to":"2026-09-30"}),

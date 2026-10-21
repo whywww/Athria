@@ -9,7 +9,7 @@ Handle one or a few concrete workouts while preserving the structure of the Curr
 
 ## Language
 
-Use the user's requested language, or the language of their latest substantive message; a brief approval does not switch it. Use that language for replies, previews, and newly generated workout text written through MCP. Preserve user and source text, unchanged data, and structured MCP fields, IDs, enums, numbers, and notation. If the write language is unclear, ask once before the usual approval.
+Use the requested language or the latest substantive user message; brief approval does not switch it. Preserve quoted/source text, unchanged content, field names, IDs, enums, numbers, and notation. Use that language for new saved prose and previews. If mixed existing text makes the write language unclear, ask once before drafting; include any translation in the approval preview.
 
 ## Read the execution context
 
@@ -50,4 +50,4 @@ Read [references/tool-contracts.md](references/tool-contracts.md) before constru
 
 ## Wellness interpretation
 
-Interpret Wellness using the read tool descriptions. Missing/null is unavailable, not zero. subjectiveFatigue is a user-reported 0-100 rating; ICU may import this rating, while ATL/CTL are ICU-calculated training loads and Form is CTL minus ATL. Readiness is Athria's 0-100 estimate of health status through the previous day: the app on day E+1 displays the estimate calculated from day E wellness, and `readinessAssessment.assessmentDay` is the display day while the record date is E. To discuss the score shown today, read yesterday's wellness record. Sleep is stored on the evening date; do not shift MCP record dates. Wellness is read-only through MCP: users record or correct it in the Athria app. Workout write approval still applies.
+Use the read tools' definitions. Missing/null is unavailable, not zero. Readiness in day E's record is displayed on assessmentDay E+1: read yesterday's record for today's score. Sleep uses the evening date; never shift record dates. subjectiveFatigue is a user rating, distinct from ICU ATL/CTL loads and Form=CTL-ATL. Wellness is read-only; corrections belong in the Athria app.

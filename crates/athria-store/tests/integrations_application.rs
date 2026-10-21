@@ -156,3 +156,23 @@ fn xunji_normalization_failures_keep_dates_and_cancel_the_batch() {
     assert_eq!(retry["sync"]["status"], "success");
     assert_eq!(retry["sync"]["lastSuccessAt"], NOW);
 }
+
+#[test]
+fn xunji_explicit_window_uses_profile_local_days_and_overrides_rolling_days() {
+    let app = app();
+    let records = [
+        ("before", "2026-09-10T15:59:59Z"),
+        ("start", "2026-09-10T16:00:00Z"),
+        ("end", "2026-09-11T15:59:59Z"),
+        ("after", "2026-09-11T16:00:00Z"),
+    ].map(|(id, start)| json!({"localid":id,"datestr":"2026-09-11","title":id,"start":start,"movements":[]}));
+    let committed = app.commit_xunji(&json!({"rangeStart":"2026-09-11","rangeEnd":"2026-09-11","successfulDates":["2026-09-11"],"errors":[],"records":records}), NOW).unwrap();
+    assert_eq!(committed["added"], 4, "{committed}");
+    let result = app.list_xunji_sessions_in_window(1, Some("2026-09-11"), Some("2026-09-11")).unwrap();
+    let names: Vec<&str> = result["sessions"].as_array().unwrap().iter().map(|session| session["name"].as_str().unwrap()).collect();
+    assert_eq!(names.len(), 2, "{result}");
+    assert!(names.contains(&"start"));
+    assert!(names.contains(&"end"));
+    assert_eq!(result["sync"]["lastSuccessAt"], NOW);
+    assert_eq!(app.list_xunji_sessions(1).unwrap()["sessions"].as_array().unwrap().len(), 0);
+}

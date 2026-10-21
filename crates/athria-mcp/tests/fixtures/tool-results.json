@@ -60,14 +60,6 @@
       "name": "Mobility",
       "intent": "Easy movement",
       "domain": "mobility",
-      "nodes": [
-        {
-          "role": "mobility",
-          "variables": [
-            "movement"
-          ]
-        }
-      ],
       "origin": "user",
       "revision": 1
     },
@@ -76,14 +68,6 @@
       "name": "Mobility",
       "intent": "Easy movement",
       "domain": "mobility",
-      "nodes": [
-        {
-          "role": "mobility",
-          "variables": [
-            "movement"
-          ]
-        }
-      ],
       "origin": "builtin",
       "catalogVersion": "1"
     }

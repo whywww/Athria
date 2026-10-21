@@ -908,6 +908,25 @@ fn training_state_reports_the_snapshot_hash_and_the_current_metrics() {
 }
 
 #[test]
+fn compact_training_state_keeps_wellness_and_memory_in_its_freshness_hash() {
+    let app = test_app();
+    let compact = app.get_training_state_with_view(true).unwrap();
+    assert!(compact.get("wellness").is_none());
+    assert!(compact.get("personalInformation").is_none());
+    assert_eq!(compact["inputSnapshotHash"], app.get_training_state().unwrap()["inputSnapshotHash"]);
+
+    app.store().upsert_wellness("local-user", &[json!({"id":"2026-09-16", "restingHR":52})]).unwrap();
+    let after_wellness = app.get_training_state_with_view(true).unwrap();
+    assert_ne!(compact["inputSnapshotHash"], after_wellness["inputSnapshotHash"]);
+    assert_eq!(after_wellness["inputSnapshotHash"], app.get_training_state().unwrap()["inputSnapshotHash"]);
+
+    app.update_training_memory(&json!({"expectedRevision":0,"contentMarkdown":"Comfortable with regular short runs."})).unwrap();
+    let after_memory = app.get_training_state_with_view(true).unwrap();
+    assert_ne!(after_wellness["inputSnapshotHash"], after_memory["inputSnapshotHash"]);
+    assert_eq!(after_memory["inputSnapshotHash"], app.snapshot_hash().unwrap());
+}
+
+#[test]
 fn training_summary_groups_domains_and_sports() {
     let app = test_app();
     record(

@@ -763,6 +763,10 @@ impl<S: AthriaStore> AthriaApplication<S> {
 
     /// `snapshotHash()`: the hash the plan/personal-information writes compare against.
     pub fn snapshot_hash(&self) -> Result<String> {
+        Ok(stable_hash(&self.training_snapshot()?))
+    }
+
+    fn training_snapshot(&self) -> Result<Value> {
         let mut snapshot = json!({
             "profile": self.get_profile()?,
             "sessions": self.list_sessions(90)?,
@@ -771,27 +775,38 @@ impl<S: AthriaStore> AthriaApplication<S> {
         if let Some(memory) = self.store.get_training_memory(&self.owner_id)? {
             snapshot["trainingMemory"] = memory;
         }
-        Ok(stable_hash(&snapshot))
+        Ok(snapshot)
     }
 
     pub fn get_training_state(&self) -> Result<Value> {
-        let sessions = self.list_sessions(90)?;
+        self.get_training_state_with_view(false)
+    }
+
+    /// Compact MCP reads retain identical freshness protection without returning Wellness.
+    pub fn get_training_state_with_view(&self, compact: bool) -> Result<Value> {
+        let snapshot = self.training_snapshot()?;
+        let sessions = snapshot["sessions"].as_array().expect("snapshot sessions are an array");
         let metrics =
-            serde_json::to_value(calculate_training_metrics(&sessions)).map_err(|error| {
+            serde_json::to_value(calculate_training_metrics(sessions)).map_err(|error| {
                 failure(
                     AthriaErrorCode::InvalidData,
                     &format!("training metrics did not serialize: {error}"),
                     500,
                 )
             })?;
-        Ok(json!({
-            "asOf": self.now_iso(),
-            "inputSnapshotHash": self.snapshot_hash()?,
-            "personalInformation": self.get_personal_information()?,
-            "metrics": metrics,
-            "wellness": self.list_wellness(42)?,
-            "dataGaps": [],
-        }))
+        let state = if compact {
+            json!({ "asOf": self.now_iso(), "inputSnapshotHash": stable_hash(&snapshot), "metrics": metrics, "dataGaps": [] })
+        } else {
+            json!({
+                "asOf": self.now_iso(),
+                "inputSnapshotHash": stable_hash(&snapshot),
+                "personalInformation": self.get_personal_information()?,
+                "metrics": metrics,
+                "wellness": snapshot["wellness"],
+                "dataGaps": [],
+            })
+        };
+        Ok(state)
     }
 
     /// `getTrainingSummary(days = 7, from?, to?)`: domain-separated metrics over
@@ -1419,6 +1434,21 @@ impl<S: AthriaStore> AthriaApplication<S> {
     }
 
     pub fn list_xunji_sessions(&self, days: i64) -> Result<Value> {
+        self.list_xunji_sessions_in_window(days, None, None)
+    }
+
+    pub fn list_xunji_sessions_in_window(&self, days: i64, from: Option<&str>, to: Option<&str>) -> Result<Value> {
+        if let Some((from, to)) = date_window(from, to)? {
+            let profile = self.get_profile()?;
+            let timezone = string_field(&profile, "timezone");
+            let since = format!("{}T00:00:00.000Z", add_days(&from, -2));
+            let mut sessions = Vec::new();
+            for session in self.store.list_sessions_by_source("xunji", &self.owner_id, Some(&since))? {
+                let day = tz::local_date(string_field(&session, "startAt"), timezone)?;
+                if day >= from && day <= to { sessions.push(session); }
+            }
+            return Ok(json!({ "source": "xunji", "sync": self.get_xunji_sync_status()?, "sessions": sessions }));
+        }
         let since = tz::iso_minus_days(&self.now_iso(), days)?;
         Ok(
             json!({ "source": "xunji", "sync": self.get_xunji_sync_status()?, "sessions": self.store.list_sessions_by_source("xunji", &self.owner_id, Some(&since))? }),

@@ -27,10 +27,10 @@ describe("signed Skill release tooling", () => {
     expect(() => signIndex(index, pem, "")).toThrow();
   });
   it("preserves historical and revoked packages and rejects changed same-version assets", () => {
-    const p = buildPackage().manifest, index = { schemaVersion: 1, packages: [{ ...p, revoked: true }] };
+    const p = { ...buildPackage().manifest, version: "1.0.0" }, index = { schemaVersion: 1, packages: [{ ...p, revoked: true }] };
     expect(mergeRelease(index, p).packages[0].revoked).toBe(true);
     expect(() => mergeRelease(index, { ...p, sha256: "different" })).toThrow();
-    expect(mergeRelease(index, { ...p, version: "0.1.3" }).packages).toHaveLength(2);
+    expect(mergeRelease(index, { ...p, version: "1.0.1" }).packages).toHaveLength(2);
   });
   it("changes only compatibility and preserves history, revocation and immutable content", () => {
     const p = buildPackage().manifest;

@@ -54,7 +54,7 @@ A stale hash requires a fresh read and reconstructed diff. Do not attach a newer
 2. Approve an outline before creating/resuming a draft. New drafts have metadata without weeks; current-plan drafts clone the editable plan.
 3. Write one session per call and validate. Resolve blocker failures and unknowns.
 4. Show the compact week/session table, progression, findings, unusual-duration exceptions, and replacement impact; offer any session's full prescription on request. Obtain detailed approval; outline approval is insufficient.
-5. Re-read database path, plan revision, state snapshot, and Profile hash. Rebase/revalidate and renew approval when relevant context or the proposal changed.
+5. Re-read the database path alone. If it changed, repeat confirmation before reading athlete data. Otherwise refresh plan revision, compact state snapshot, and Profile hash. Rebase/revalidate and renew approval when relevant context or the proposal changed.
 6. Commit atomically with current guards and confirmation.
 
 **Example — Draft commit fragment:**

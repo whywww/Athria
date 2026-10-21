@@ -16,15 +16,17 @@ Successful calls expose `structuredContent.result` and a JSON text representatio
 | `get_data_source_status` | Check local source connections and freshness in Profile timezone without credentials |
 | `get_athlete_profile` | Read stable confirmed context and its update hash |
 | `get_training_memory` | Read the current experience/capability portrait and revision |
-| `get_training_state` | Read the state snapshot and `inputSnapshotHash` |
+| `get_training_state` | Read metrics and `inputSnapshotHash`; `view: "compact"` omits personal information and Wellness |
 | `list_training_sessions` | Read canonical actual history and target snapshot hashes |
 | `get_training_summary` | Read recent metrics separated by domain |
 | `list_wellness` | Read dated measurements and per-field provenance |
 | `get_wellness_day` | Read one day; a missing day returns an empty result |
-| `list_xunji_training_sessions` | Read locally synchronized SynFit/Xunji history and freshness |
+| `list_xunji_training_sessions` | Read local SynFit/Xunji history and freshness; paired inclusive `from`/`to` dates override rolling `days` |
 | `get_xunji_sync_status` | Read SynFit/Xunji connection and synchronization status |
 | `update_athlete_profile` | Apply an approved Profile patch with its expected hash |
 | `update_training_memory` | Replace the concise portrait with revision protection |
+
+`get_training_state` defaults to the existing full result. Compact reads retain the same full-evidence snapshot hash (Profile, 90-day history, 42-day Wellness, and training memory), so they do not weaken commit freshness checks. Read Wellness separately for the decision-relevant dates.
 
 Source reads do not fetch live external records. Connections owns synchronization. Hevy status may be returned for existing data; it does not mean new import is available.
 
@@ -33,11 +35,13 @@ Source reads do not fetch live external records. Connections owns synchronizatio
 | Tool | Use |
 | --- | --- |
 | `get_training_taxonomy` | Read versioned vocabularies and fact-confidence requirements |
-| `list_session_templates` | List available built-in and local archetypes |
+| `list_session_templates` | List built-in/local metadata summaries without nodes; fetch selected structures with `get_session_template` |
 | `get_session_template` | Read one archetype |
 | `create_session_template` | Create a local archetype, including a derivation of a built-in |
 | `update_session_template` | Revise a local archetype with its expected revision |
 | `delete_session_template` | Explicitly delete an unreferenced local template or hide a built-in |
+
+Template list results retain ID, name, intent, domain, and origin-specific revision/catalog version. Detailed nodes are returned only by `get_session_template`. Tool schemas use self-contained local `$defs` references to share repeated structures without relaxing validation.
 
 Templates carry structure, not executable dose. See [data model](data-model.md) and [taxonomy](training-taxonomy.md).
 
