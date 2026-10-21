@@ -9,6 +9,7 @@ Use shared application services for writes. Approval, optimistic concurrency, an
 | Profile patch | Approve the exact diff | `confirmed` and current `expectedProfileHash` |
 | Template create/update | Approve the operation | Schema/reference checks; update has `expectedRevision` |
 | Template deletion | Explicit deletion request | `confirmedExplicitRequest`; applicable revision and in-use checks |
+| Draft session write | Approve outline before drafting | `expectedDraftRevision`; inserts, replaces, or removes one session and preserves the week |
 | Draft week replacement | Approve outline before drafting | `expectedDraftRevision`; replaces a complete week |
 | Plan commit | Approve complete detailed plan | Confirmation, draft/plan revisions, state snapshot, and plan validation |
 | Next-day append/replace | Approve complete prescriptions | `clientRequestId`, scheduled day, plan revision, and validation |
@@ -51,8 +52,8 @@ A stale hash requires a fresh read and reconstructed diff. Do not attach a newer
 
 1. Confirm the database path; inspect relevant Profile, Memory, history, Wellness, state, and source freshness.
 2. Approve an outline before creating/resuming a draft. New drafts have metadata without weeks; current-plan drafts clone the editable plan.
-3. Write complete weeks and validate. Resolve blocker failures and unknowns.
-4. Show all prescriptions, progression, findings, unusual-duration exceptions, and replacement impact. Obtain detailed approval; outline approval is insufficient.
+3. Write one session per call and validate. Resolve blocker failures and unknowns.
+4. Show the compact week/session table, progression, findings, unusual-duration exceptions, and replacement impact; offer any session's full prescription on request. Obtain detailed approval; outline approval is insufficient.
 5. Re-read database path, plan revision, state snapshot, and Profile hash. Rebase/revalidate and renew approval when relevant context or the proposal changed.
 6. Commit atomically with current guards and confirmation.
 

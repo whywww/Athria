@@ -1731,6 +1731,88 @@ fn plan_drafts_persist_weeks_validate_and_commit_atomically() {
 }
 
 #[test]
+fn draft_sessions_write_one_at_a_time_with_revision_checks() {
+    let app = test_app();
+    patch_profile(
+        &app,
+        json!({ "trainingRhythm": { "kind": "fixed_week", "days": [0] } }),
+    );
+    let complete = monday_plan_write(0);
+    let weeks = complete["mesocycle"]["weeks"].as_array().unwrap().clone();
+    let mut metadata = complete.clone();
+    metadata["mesocycle"]["weeks"] = json!([]);
+    let created = app
+        .create_plan_draft(&json!({ "mode": "new", "plan": metadata }))
+        .unwrap();
+    let id = created["draftId"].as_str().unwrap();
+    let session = weeks[0]["sessions"][0].clone();
+
+    let first = app
+        .upsert_plan_draft_session(id, 0, 1, Some(json!("Base")), &session)
+        .unwrap();
+    assert_eq!(first["draftRevision"], 1);
+    assert_eq!(first["existingWeekNumbers"], json!([1]));
+    let week = app.store().list_plan_draft_weeks(id).unwrap();
+    assert_eq!(week[0]["focus"], "Base");
+    assert_eq!(week[0]["sessions"].as_array().unwrap().len(), 1);
+
+    assert_eq!(
+        app.upsert_plan_draft_session(id, 0, 1, None, &session)
+            .unwrap_err()
+            .code(),
+        AthriaErrorCode::DraftRevisionConflict
+    );
+    assert_eq!(
+        app.upsert_plan_draft_session(id, 1, 2, None, &session)
+            .unwrap_err()
+            .code(),
+        AthriaErrorCode::InvalidData
+    );
+
+    let second = app
+        .upsert_plan_draft_session(id, 1, 2, Some(json!("Build")), &weeks[1]["sessions"][0])
+        .unwrap();
+    assert_eq!(second["draftRevision"], 2);
+    assert_eq!(second["missingWeekNumbers"], json!([]));
+
+    let mut replacement = session.clone();
+    replacement["name"] = json!("Replaced Run");
+    let replaced = app
+        .upsert_plan_draft_session(id, 2, 1, None, &replacement)
+        .unwrap();
+    assert_eq!(replaced["draftRevision"], 3);
+    let week = app
+        .store()
+        .list_plan_draft_weeks(id)
+        .unwrap()
+        .into_iter()
+        .find(|week| week["weekNumber"] == 1)
+        .unwrap();
+    assert_eq!(week["focus"], "Base");
+    assert_eq!(week["sessions"].as_array().unwrap().len(), 1);
+    assert_eq!(week["sessions"][0]["name"], "Replaced Run");
+
+    assert_eq!(
+        app.remove_plan_draft_session(id, 3, 1, "missing")
+            .unwrap_err()
+            .code(),
+        AthriaErrorCode::PlannedSessionNotFound
+    );
+    let removed = app.remove_plan_draft_session(id, 3, 1, "s1").unwrap();
+    assert_eq!(removed["draftRevision"], 4);
+    assert_eq!(removed["existingWeekNumbers"], json!([1, 2]));
+    let week = app
+        .store()
+        .list_plan_draft_weeks(id)
+        .unwrap()
+        .into_iter()
+        .find(|week| week["weekNumber"] == 1)
+        .unwrap();
+    assert!(week["sessions"].as_array().unwrap().is_empty());
+    assert!(app.store().get_plan_draft(id, "local-user").unwrap().is_some());
+}
+
+#[test]
 fn draft_discard_checks_owner_and_revision_then_cascades() {
     let app = test_app();
     patch_profile(&app, json!({ "trainingRhythm": { "kind": "fixed_week", "days": [0] } }));

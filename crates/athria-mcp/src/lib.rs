@@ -75,6 +75,8 @@ enum ToolKind {
     ListPlanDrafts,
     GetPlanDraft,
     UpsertPlanDraftWeek,
+    UpsertPlanDraftSession,
+    RemovePlanDraftSession,
     ValidatePlanDraft,
     CommitPlanDraft,
     DiscardPlanDraft,
@@ -124,6 +126,8 @@ impl ToolKind {
             "list_plan_drafts" => Self::ListPlanDrafts,
             "get_plan_draft" => Self::GetPlanDraft,
             "upsert_plan_draft_week" => Self::UpsertPlanDraftWeek,
+            "upsert_plan_draft_session" => Self::UpsertPlanDraftSession,
+            "remove_plan_draft_session" => Self::RemovePlanDraftSession,
             "validate_plan_draft" => Self::ValidatePlanDraft,
             "commit_plan_draft" => Self::CommitPlanDraft,
             "discard_plan_draft" => Self::DiscardPlanDraft,
@@ -349,6 +353,25 @@ impl<S: AthriaStore> McpService<S> {
                     input
                         .get("week")
                         .ok_or_else(|| ToolError::invalid("week is required"))?,
+                ),
+            ),
+            ToolKind::UpsertPlanDraftSession => application(
+                app.upsert_plan_draft_session(
+                    required_str(input, "draftId")?,
+                    required_i64(input, "expectedDraftRevision")?,
+                    required_i64(input, "weekNumber")?,
+                    input.get("weekFocus").cloned(),
+                    input
+                        .get("session")
+                        .ok_or_else(|| ToolError::invalid("session is required"))?,
+                ),
+            ),
+            ToolKind::RemovePlanDraftSession => application(
+                app.remove_plan_draft_session(
+                    required_str(input, "draftId")?,
+                    required_i64(input, "expectedDraftRevision")?,
+                    required_i64(input, "weekNumber")?,
+                    required_str(input, "sessionId")?,
                 ),
             ),
             ToolKind::ValidatePlanDraft => serialize(
@@ -846,7 +869,7 @@ mod tests {
     #[test]
     fn exposes_contract_and_calls_application() {
         let service = service();
-        assert_eq!(service.tools().len(), 44);
+        assert_eq!(service.tools().len(), 46);
         assert!(service.tools().iter().all(|tool| {
             tool.get("handlerKey").and_then(Value::as_str).is_some()
                 && tool.get("outputSchema").is_some()
@@ -969,7 +992,7 @@ mod tests {
         let service = service();
         let fixtures: Value =
             serde_json::from_str(include_str!("../tests/fixtures/tool-results.json")).unwrap();
-        assert_eq!(fixtures.as_object().unwrap().len(), 44);
+        assert_eq!(fixtures.as_object().unwrap().len(), 46);
 
         for (tool, registered) in service.tools().iter().zip(&service.registry) {
             let name = tool["name"].as_str().unwrap();
@@ -982,6 +1005,53 @@ mod tests {
                 "fixture for {name} must match its outputSchema"
             );
         }
+    }
+    #[test]
+    fn session_level_draft_tools_advance_one_revision_per_session() {
+        let service = service();
+        let created = service.call_result(
+            "create_plan_draft",
+            &json!({"mode":"new","plan":{
+                "planSchemaVersion":"7.0","title":"Block","summary":"","effectiveStartDate":"2026-09-14",
+                "mesocycle":{"durationWeeks":1,"schedule":{"kind":"fixed_week","days":[0]},"domainProgressions":[],"weeks":[]},
+                "sourceAgent":"test","model":null,"skillVersion":"test"
+            }}),
+        );
+        assert_ne!(created["isError"], true, "{created}");
+        let draft_id = created["structuredContent"]["result"]["draftId"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let session = json!({
+            "id":"w1-run","scheduledDate":"2026-09-14","order":0,"type":"Run","domain":"endurance",
+            "name":"Easy Run","intent":"Aerobic base","durationMinutes":45,
+            "prescription":{"blocks":[]}
+        });
+        let upserted = service.call_result(
+            "upsert_plan_draft_session",
+            &json!({"draftId":draft_id,"expectedDraftRevision":0,"weekNumber":1,"weekFocus":"Base","session":session}),
+        );
+        assert_ne!(upserted["isError"], true, "{upserted}");
+        assert_eq!(
+            upserted["structuredContent"]["result"]["draftRevision"],
+            1
+        );
+        assert_eq!(
+            upserted["structuredContent"]["result"]["existingWeekNumbers"],
+            json!([1])
+        );
+        let removed = service.call_result(
+            "remove_plan_draft_session",
+            &json!({"draftId":draft_id,"expectedDraftRevision":1,"weekNumber":1,"sessionId":"w1-run"}),
+        );
+        assert_ne!(removed["isError"], true, "{removed}");
+        assert_eq!(removed["structuredContent"]["result"]["draftRevision"], 2);
+        assert_eq!(
+            service
+                .call_result("get_plan_draft", &json!({"draftId":draft_id,"weekNumber":1}))
+                ["structuredContent"]["result"]["week"]["sessions"],
+            json!([])
+        );
     }
     #[test]
     fn manual_mcp_records_reject_api_load_metrics() {
@@ -1124,6 +1194,7 @@ mod tests {
             "report_skill_version",
             "create_plan_draft",
             "upsert_plan_draft_week",
+            "upsert_plan_draft_session",
         ];
         let destructive = [
             "update_session_template",
@@ -1139,6 +1210,7 @@ mod tests {
             "update_training_memory",
             "commit_plan_draft",
             "discard_plan_draft",
+            "remove_plan_draft_session",
         ];
 
         for tool in service
@@ -1254,7 +1326,7 @@ mod tests {
     #[test]
     fn rmcp_server_advertises_only_the_wire_it_emits() {
         let server = RmcpServer::new(service());
-        assert_eq!(server.tools.len(), 44);
+        assert_eq!(server.tools.len(), 46);
         assert!(server.tools.iter().all(|tool| tool.output_schema.is_some()));
         assert_eq!(
             server.supported_protocol_versions().as_ref(),

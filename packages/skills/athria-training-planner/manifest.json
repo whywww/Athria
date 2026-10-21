@@ -1,6 +1,6 @@
 {
   "name": "athria-training-planner",
-  "version": "0.9.10",
+  "version": "0.9.11",
   "purpose": "Create, review, revise, validate, and save the single current Mesocycle and its reusable session templates.",
   "appliesWhen": [
     "The user asks to create their first training cycle, revise the current cycle, review an ending cycle, plan the next cycle, or manage session templates."
@@ -36,6 +36,8 @@
     "list_plan_drafts",
     "get_plan_draft",
     "upsert_plan_draft_week",
+    "upsert_plan_draft_session",
+    "remove_plan_draft_session",
     "validate_plan_draft",
     "commit_plan_draft",
     "discard_plan_draft",
@@ -50,7 +52,7 @@
     "review-data-source-freshness",
     "confirm-outline",
     "create-or-resume-draft",
-    "upsert-weeks",
+    "upsert-sessions",
     "validate",
     "confirm-detailed-plan",
     "freshness-check",

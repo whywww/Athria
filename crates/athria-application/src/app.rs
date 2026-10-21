@@ -197,6 +197,28 @@ fn require_plan_types(value: &Value) -> Result<()> {
     Ok(())
 }
 
+/// Session-level draft writes merge with stored sessions, which may still
+/// carry migrated null prescriptions, so only merge invariants are checked.
+fn require_unique_week_sessions(sessions: &[Value]) -> Result<()> {
+    let mut ids = HashSet::new();
+    let mut slots = HashSet::new();
+    for session in sessions {
+        if !ids.insert(session["id"].as_str().unwrap_or_default().to_owned()) {
+            return Err(invalid_input("session ids must be unique within a week"));
+        }
+        let slot = (
+            session["scheduledDate"].as_str().unwrap_or_default().to_owned(),
+            session["order"].as_i64().unwrap_or(0),
+        );
+        if !slots.insert(slot) {
+            return Err(invalid_input(
+                "session order must be unique within a date",
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// `sessionDomains`: the stored domains, or the ones implied by the payload.
 fn session_domains(session: &Value) -> Vec<Value> {
     session.get("domains").and_then(Value::as_array).cloned().unwrap_or_default()
@@ -1674,6 +1696,149 @@ impl<S: AthriaStore> AthriaApplication<S> {
         self.store
             .save_plan_draft_week(draft_id, &self.owner_id, expected_revision, &week)?;
         self.plan_draft_summary(draft_id)
+    }
+
+    /// Inserts or replaces one session so an agent can send a draft one
+    /// session at a time. The stored week is merged with the parsed session,
+    /// then written with the same revision check as a whole-week write.
+    pub fn upsert_plan_draft_session(
+        &self,
+        draft_id: &str,
+        expected_revision: i64,
+        week_number: i64,
+        week_focus: Option<Value>,
+        session: &Value,
+    ) -> Result<Value> {
+        let draft = self
+            .store
+            .get_plan_draft(draft_id, &self.owner_id)?
+            .ok_or_else(|| {
+                failure(
+                    AthriaErrorCode::DraftNotFound,
+                    "The plan draft was not found.",
+                    404,
+                )
+            })?;
+        let duration = draft["data"]["mesocycle"]["durationWeeks"]
+            .as_i64()
+            .unwrap_or(0);
+        if !(1..=duration).contains(&week_number) {
+            return Err(invalid_input("weekNumber is outside the draft mesocycle"));
+        }
+        let parsed = parse_plan_week(&json!({
+            "weekNumber": week_number,
+            "sessions": [session],
+        }))?;
+        require_plan_types(&parsed)?;
+        let session = parsed["sessions"][0].clone();
+        let start = draft["data"]["effectiveStartDate"]
+            .as_str()
+            .unwrap_or_default();
+        let date = session["scheduledDate"]
+            .as_str()
+            .unwrap_or_default();
+        let elapsed = day_difference(start, date);
+        if elapsed < 0 || elapsed / 7 + 1 != week_number {
+            return Err(invalid_input(
+                "session.scheduledDate must fall inside its draft week",
+            ));
+        }
+        let existing = self
+            .store
+            .list_plan_draft_weeks(draft_id)?
+            .into_iter()
+            .find(|week| week["weekNumber"].as_i64() == Some(week_number));
+        let mut sessions = existing
+            .as_ref()
+            .and_then(|week| week["sessions"].as_array().cloned())
+            .unwrap_or_default();
+        let session_id = session["id"].as_str().unwrap_or_default().to_owned();
+        match sessions
+            .iter()
+            .position(|candidate| candidate["id"].as_str() == Some(session_id.as_str()))
+        {
+            Some(index) => sessions[index] = session,
+            None => sessions.push(session),
+        }
+        sessions.sort_by(|left, right| {
+            let key = |session: &Value| {
+                (
+                    session["scheduledDate"].as_str().unwrap_or_default().to_owned(),
+                    session["order"].as_i64().unwrap_or(0),
+                )
+            };
+            key(left).cmp(&key(right))
+        });
+        let focus = week_focus
+            .or_else(|| existing.as_ref().map(|week| week["focus"].clone()))
+            .unwrap_or(Value::Null);
+        let focus = match focus {
+            Value::String(text) => Value::String(text),
+            _ => Value::Null,
+        };
+        require_unique_week_sessions(&sessions)?;
+        let week = json!({
+            "weekNumber": week_number,
+            "focus": focus,
+            "sessions": sessions,
+        });
+        self.store
+            .save_plan_draft_week(draft_id, &self.owner_id, expected_revision, &week)?;
+        let mut summary = self.plan_draft_summary(draft_id)?;
+        summary["weekNumber"] = Value::from(week_number);
+        summary["sessionId"] = Value::String(session_id);
+        Ok(summary)
+    }
+
+    pub fn remove_plan_draft_session(
+        &self,
+        draft_id: &str,
+        expected_revision: i64,
+        week_number: i64,
+        session_id: &str,
+    ) -> Result<Value> {
+        self.store
+            .get_plan_draft(draft_id, &self.owner_id)?
+            .ok_or_else(|| {
+                failure(
+                    AthriaErrorCode::DraftNotFound,
+                    "The plan draft was not found.",
+                    404,
+                )
+            })?;
+        let week = self
+            .store
+            .list_plan_draft_weeks(draft_id)?
+            .into_iter()
+            .find(|week| week["weekNumber"].as_i64() == Some(week_number))
+            .ok_or_else(|| {
+                failure(
+                    AthriaErrorCode::PlanWeekNotFound,
+                    "The draft week was not found.",
+                    404,
+                )
+            })?;
+        let mut sessions = week["sessions"].as_array().cloned().unwrap_or_default();
+        let before = sessions.len();
+        sessions.retain(|session| session["id"].as_str() != Some(session_id));
+        if sessions.len() == before {
+            return Err(failure(
+                AthriaErrorCode::PlannedSessionNotFound,
+                "The draft session was not found.",
+                404,
+            ));
+        }
+        let week = json!({
+            "weekNumber": week_number,
+            "focus": week["focus"].clone(),
+            "sessions": sessions,
+        });
+        self.store
+            .save_plan_draft_week(draft_id, &self.owner_id, expected_revision, &week)?;
+        let mut summary = self.plan_draft_summary(draft_id)?;
+        summary["weekNumber"] = Value::from(week_number);
+        summary["sessionId"] = Value::String(session_id.to_owned());
+        Ok(summary)
     }
 
     fn assembled_plan_draft(

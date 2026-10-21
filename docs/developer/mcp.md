@@ -63,6 +63,8 @@ These tools do not write data.
 | `list_plan_drafts` | Locate persisted draft summaries |
 | `get_plan_draft` | Read a draft summary or one requested week |
 | `upsert_plan_draft_week` | Atomically replace a complete week with draft revision protection |
+| `upsert_plan_draft_session` | Insert or replace one session in a draft week with draft revision protection |
+| `remove_plan_draft_session` | Remove one session from a draft week with draft revision protection |
 | `validate_plan_draft` | Assemble and check the draft without changing Current Plan |
 | `commit_plan_draft` | After detailed approval, validate and atomically replace Current Plan |
 | `discard_plan_draft` | Discard an open draft with revision protection |
