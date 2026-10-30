@@ -157,6 +157,13 @@ export function formatWellnessRange(start: string, end: string) {
   return startYear === endYear ? `${wellnessDayShort(start)} – ${wellnessDayShort(end)}, ${endYear}` : `${wellnessDayShort(start)}, ${startYear} – ${wellnessDayShort(end)}, ${endYear}`;
 }
 
+function recoveryScope(assessment: ReadinessAssessment | undefined) {
+  if (!assessment || assessment.cardiacScore === null || assessment.sleepScore !== null || assessment.subjectiveScore !== null) return null;
+  if (!assessment.heartRateField) return "Based on HRV only";
+  if (!assessment.hrvField) return assessment.heartRateField === "restingHeartRateBpm" ? "Based on resting HR only" : "Based on heart rate only";
+  return "Based on cardiac signals only";
+}
+
 export function recoveryStatus(records: WellnessRecord[], today: string) {
   const day = addDays(today, -1);
   const current = records.find((record) => record.day === day);
@@ -169,10 +176,11 @@ export function recoveryStatus(records: WellnessRecord[], today: string) {
   const series = records.filter((record) => record.ownerId === current.ownerId && record.day <= day)
     .sort((a, b) => b.day.localeCompare(a.day)).flatMap((record) => { const value = storedScore(record); return value === null ? [] : [value]; }).slice(0, 5).reverse();
   const assessment = current.readinessAssessment;
+  const scope = recoveryScope(assessment);
   const signalCount = assessment ? [assessment.cardiacScore, assessment.sleepScore, assessment.subjectiveScore].filter((value) => value !== null).length : 3;
-  if (score >= 70) return { label: "Ready", detail: "Ready to train", value: score, day, series, signalCount };
-  if (score >= 45) return { label: "Caution", detail: "Train with care", value: score, day, series, signalCount };
-  return { label: "Rest", detail: "Prioritize recovery", value: score, day, series, signalCount };
+  if (score >= 70) return { label: "Ready", detail: scope ?? "Ready to train", value: score, day, series, signalCount };
+  if (score >= 45) return { label: "Caution", detail: scope ?? "Train with care", value: score, day, series, signalCount };
+  return { label: "Rest", detail: scope ?? "Prioritize recovery", value: score, day, series, signalCount };
 }
 
 // The readiness ring colour follows the verdict: green when ready, amber for caution, red for rest.
@@ -356,7 +364,8 @@ export function RecoveryHelpModal({ onClose, assessment, dataDay }: { onClose: (
   const status = assessment?.status ?? "Insufficient data";
   const tone = status === "Ready" ? "ready" : status === "Caution" ? "caution" : status === "Rest" ? "rest" : "insufficient";
   const verdict = status === "Ready" ? "Recovered" : status === "Caution" ? "Train with caution" : status === "Rest" ? "Rest and recover" : "Insufficient data";
-  const advice = status === "Ready" ? "Recovered. Train as planned." : status === "Caution" ? "You can train, but keep it lighter." : status === "Rest" ? "Prioritize recovery today." : "More wellness data needed.";
+  const scope = recoveryScope(assessment);
+  const advice = scope ?? (status === "Ready" ? "Recovered. Train as planned." : status === "Caution" ? "You can train, but keep it lighter." : status === "Rest" ? "Prioritize recovery today." : "More wellness data needed.");
   const signals = [
     { key: "cardiac", label: "Cardiac recovery", value: assessment?.cardiacScore ?? null },
     { key: "sleep", label: "Sleep", value: assessment?.sleepScore ?? null },
@@ -367,6 +376,7 @@ export function RecoveryHelpModal({ onClose, assessment, dataDay }: { onClose: (
       <header><div><h2 id="recovery-help-title"><T>{"How We Calculate Overall Readiness"}</T></h2><p>{displayedDay && `${formatWellnessDate(displayedDay)} · `}<T>{"Based on the day's data"}</T></p></div><button type="button" className="modal-close" aria-label={tr("Close dialog")} onClick={onClose}><svg className="app-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>
       <div className="modal-body">
         <p className="recovery-intro"><T>{"Estimates your overall training readiness from recovery signals and recent training load. Scored 0–100; higher means more suitable for higher-intensity training."}</T></p>
+        {scope && <p><T>{scope}</T>{" · "}<T>{"Limited data"}</T>{" · "}<T>{"Sleep and subjective fatigue are not included. Normal cardiac signals do not establish complete recovery."}</T></p>}
         <div className="recovery-flow">
           <section className="recovery-step signals-step">
             <div className="recovery-step-head"><b>01</b><div><h3><T>{"Recovery signals"}</T></h3><p><T>{"Based on last night's sleep, cardiac recovery, and how you feel."}</T></p></div></div>
@@ -402,7 +412,7 @@ export function RecoveryHelpModal({ onClose, assessment, dataDay }: { onClose: (
           <RecoveryArrow/>
           <div className={`recovery-final ${tone}`}>
             <RecoveryGlyph kind="star" className="final-icon"/>
-            <div className="final-copy"><span className="final-score"><strong>{assessment?.score ?? "–"}</strong><small>/ 100</small></span><em><T>{verdict}</T></em><span><T>{advice}</T></span></div>
+            <div className="final-copy"><span className="final-score"><strong>{assessment?.score ?? "–"}</strong><small>/ 100</small></span><em><T>{scope ? "Limited estimate" : verdict}</T></em><span><T>{advice}</T></span></div>
           </div>
         </div>
         <footer className="recovery-legend">

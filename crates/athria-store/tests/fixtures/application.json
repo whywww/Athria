@@ -182,7 +182,7 @@
         "unitSystem": "metric",
         "weightKg": 67.2,
         "weightDate": "2026-09-17",
-        "snapshotHash": "fnv1a-d322175b"
+        "snapshotHash": "fnv1a-7cd131c6"
       }
     },
     {
@@ -216,7 +216,7 @@
         },
         "updatedAt": "2026-09-17T04:00:00.000Z",
         "readinessAssessment": {
-          "algorithmVersion": "athria-readiness-percentile-load",
+          "algorithmVersion": "athria-readiness-cardiac-estimate",
           "assessmentDay": "2026-09-17",
           "score": null,
           "status": "Insufficient data",
@@ -265,7 +265,7 @@
             "Cardiac baseline unavailable",
             "Subjective fatigue not included",
             "Training baseline is still developing",
-            "At least two recovery dimensions required"
+            "Cardiac recovery or both sleep and subjective recovery required"
           ],
           "hrvField": null,
           "heartRateField": null,
@@ -750,7 +750,7 @@
         "sourceAgent": "compat",
         "model": null,
         "skillVersion": "phase-5",
-        "inputSnapshotHash": "fnv1a-7c302fa3",
+        "inputSnapshotHash": "fnv1a-b9e8f2c2",
         "expectedRevision": 0
       },
       "expected": {
@@ -830,7 +830,7 @@
           "sourceAgent": "compat",
           "model": null,
           "skillVersion": "phase-5",
-          "inputSnapshotHash": "fnv1a-7c302fa3",
+          "inputSnapshotHash": "fnv1a-b9e8f2c2",
           "updatedAt": "2026-09-17T04:00:00.000Z",
           "sourceDraftId": null
         },
@@ -1102,7 +1102,7 @@
         "sourceAgent": "compat",
         "model": null,
         "skillVersion": "phase-5",
-        "inputSnapshotHash": "fnv1a-7c302fa3",
+        "inputSnapshotHash": "fnv1a-b9e8f2c2",
         "expectedRevision": 0
       },
       "error": {

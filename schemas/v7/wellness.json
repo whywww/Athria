@@ -690,7 +690,7 @@
           "maximum": 100
         },
         "algorithmVersion": {
-          "const": "athria-readiness-percentile-load"
+          "const": "athria-readiness-cardiac-estimate"
         },
         "assessmentDay": {
           "type": "string",

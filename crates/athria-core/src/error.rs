@@ -25,6 +25,7 @@ pub enum AthriaErrorCode {
     DuplicatePlannedSessionId,
     ExplicitRecoveryInterval,
     FutureSessionCannotBeCompleted,
+    HistoricalSessionProtected,
     ImportPreviewNotFound,
     InputSnapshotChanged,
     IntervalsNormalizationFailed,
@@ -65,7 +66,7 @@ pub enum AthriaErrorCode {
 
 impl AthriaErrorCode {
     /// All known codes; the wire lookup [`Self::from_wire`] is built from it.
-    pub const ALL: [Self; 43] = [
+    pub const ALL: [Self; 44] = [
         Self::CompletedSessionCannotBeReplaced,
         Self::DraftIncomplete,
         Self::DraftNotFound,
@@ -73,6 +74,7 @@ impl AthriaErrorCode {
         Self::DuplicatePlannedSessionId,
         Self::ExplicitRecoveryInterval,
         Self::FutureSessionCannotBeCompleted,
+        Self::HistoricalSessionProtected,
         Self::ImportPreviewNotFound,
         Self::InputSnapshotChanged,
         Self::IntervalsNormalizationFailed,
@@ -121,6 +123,7 @@ impl AthriaErrorCode {
             Self::DuplicatePlannedSessionId => "DUPLICATE_PLANNED_SESSION_ID",
             Self::ExplicitRecoveryInterval => "EXPLICIT_RECOVERY_INTERVAL",
             Self::FutureSessionCannotBeCompleted => "FUTURE_SESSION_CANNOT_BE_COMPLETED",
+            Self::HistoricalSessionProtected => "HISTORICAL_SESSION_PROTECTED",
             Self::ImportPreviewNotFound => "IMPORT_PREVIEW_NOT_FOUND",
             Self::InputSnapshotChanged => "INPUT_SNAPSHOT_CHANGED",
             Self::IntervalsNormalizationFailed => "INTERVALS_NORMALIZATION_FAILED",

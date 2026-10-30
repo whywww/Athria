@@ -200,6 +200,51 @@ pub fn validate_adjustment_scope(
     }
 }
 
+/// Rejects any change to sessions that are historical, already resolved, or
+/// explicitly protected, while leaving today and future planned sessions free.
+pub fn validate_historical_sessions(
+    original: &Value,
+    proposed: &Value,
+    protected_session_ids: &BTreeSet<String>,
+    review_date: &str,
+) -> ScopeDiffValidation {
+    let original_sessions = sessions(original);
+    let proposed_sessions = sessions(proposed);
+    let session_ids: BTreeSet<&str> = original_sessions
+        .keys()
+        .chain(proposed_sessions.keys())
+        .copied()
+        .collect();
+    let mut violations = Vec::new();
+    for id in session_ids {
+        let before = original_sessions.get(id);
+        let after = proposed_sessions.get(id);
+        let protected = protected_session_ids.contains(id)
+            || before.is_some_and(|session| is_historical(session.value, review_date))
+            || after.is_some_and(|session| is_historical(session.value, review_date));
+        if !protected {
+            continue;
+        }
+        let code = match (before, after) {
+            (Some(_), None) => Some(ScopeViolationCode::HistoricalSessionRemoved),
+            (None, Some(_)) => Some(ScopeViolationCode::HistoricalSessionAdded),
+            (Some(left), Some(right))
+                if left.week_number != right.week_number || left.value != right.value =>
+            {
+                Some(ScopeViolationCode::HistoricalSessionChanged)
+            }
+            _ => None,
+        };
+        if let Some(code) = code {
+            violations.push(violation(code, "/mesocycle/weeks/sessions", Some(id)));
+        }
+    }
+    ScopeDiffValidation {
+        valid: violations.is_empty(),
+        violations,
+    }
+}
+
 fn sessions(plan: &Value) -> BTreeMap<&str, SessionRef<'_>> {
     let mut result = BTreeMap::new();
     for week in plan["mesocycle"]["weeks"].as_array().into_iter().flatten() {
@@ -352,5 +397,106 @@ mod tests {
             result.violations[0].code,
             ScopeViolationCode::ChangeOutsideRecommendedScope
         );
+    }
+
+    #[test]
+    fn historical_session_validation_allows_today_and_future_planned_edits() {
+        let original = plan();
+        let mut proposed = original.clone();
+        proposed["mesocycle"]["weeks"][1]["sessions"][0]["scheduledDate"] = json!("2026-09-22");
+        proposed["mesocycle"]["weeks"][1]["sessions"][0]["name"] = json!("Changed");
+
+        let result = validate_historical_sessions(
+            &original,
+            &proposed,
+            &BTreeSet::new(),
+            "2026-09-18",
+        );
+        assert!(result.valid, "{:?}", result.violations);
+    }
+
+    #[test]
+    fn historical_session_validation_rejects_changes_removals_and_backdated_additions() {
+        let original = plan();
+        let review_date = "2026-09-18";
+
+        let mut changed = original.clone();
+        changed["mesocycle"]["weeks"][0]["sessions"][0]["name"] = json!("Rewritten");
+        let changed_result =
+            validate_historical_sessions(&original, &changed, &BTreeSet::new(), review_date);
+        assert_eq!(
+            changed_result.violations[0].code,
+            ScopeViolationCode::HistoricalSessionChanged
+        );
+        assert_eq!(changed_result.violations[0].subject_ref.as_deref(), Some("past"));
+
+        let mut removed = original.clone();
+        removed["mesocycle"]["weeks"][0]["sessions"] = json!([]);
+        let removed_result =
+            validate_historical_sessions(&original, &removed, &BTreeSet::new(), review_date);
+        assert_eq!(
+            removed_result.violations[0].code,
+            ScopeViolationCode::HistoricalSessionRemoved
+        );
+
+        let mut added = original.clone();
+        added["mesocycle"]["weeks"][0]["sessions"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"id":"backdated","scheduledDate":"2026-09-15","status":"planned"}));
+        let added_result =
+            validate_historical_sessions(&original, &added, &BTreeSet::new(), review_date);
+        assert_eq!(
+            added_result.violations[0].code,
+            ScopeViolationCode::HistoricalSessionAdded
+        );
+    }
+
+    #[test]
+    fn protected_future_sessions_are_read_only_even_when_their_date_is_adjustable() {
+        let original = plan();
+        let mut proposed = original.clone();
+        proposed["mesocycle"]["weeks"][1]["sessions"][0]["name"] = json!("Changed");
+        let protected = BTreeSet::from(["future".to_owned()]);
+
+        let result =
+            validate_historical_sessions(&original, &proposed, &protected, "2026-09-18");
+        assert!(!result.valid);
+        assert_eq!(
+            result.violations[0].code,
+            ScopeViolationCode::HistoricalSessionChanged
+        );
+
+        let mut moved_week = original.clone();
+        let session = moved_week["mesocycle"]["weeks"][1]["sessions"]
+            .as_array_mut()
+            .unwrap()
+            .remove(0);
+        moved_week["mesocycle"]["weeks"][0]["sessions"]
+            .as_array_mut()
+            .unwrap()
+            .push(session);
+        let moved_result =
+            validate_historical_sessions(&original, &moved_week, &protected, "2026-09-18");
+        assert_eq!(
+            moved_result.violations[0].code,
+            ScopeViolationCode::HistoricalSessionChanged
+        );
+    }
+
+    #[test]
+    fn a_planned_session_dated_today_is_editable() {
+        let mut original = plan();
+        original["mesocycle"]["weeks"][1]["sessions"][0]["scheduledDate"] = json!("2026-09-18");
+        let mut proposed = original.clone();
+        proposed["mesocycle"]["weeks"][1]["sessions"][0]["name"] = json!("Today changed");
+
+        let result = validate_historical_sessions(
+            &original,
+            &proposed,
+            &BTreeSet::new(),
+            "2026-09-18",
+        );
+        assert!(result.valid, "{:?}", result.violations);
     }
 }

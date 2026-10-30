@@ -18,7 +18,7 @@
 //! are ported here; a violation raises `INVALID_DATA`.
 
 use std::cell::RefCell;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ops::RangeInclusive;
 use std::sync::Arc;
 
@@ -37,7 +37,7 @@ use athria_core::vocab::{
 use athria_core::{
     AI_HARD_CONFIDENCE, AthriaError, AthriaErrorCode, Clock, DEFAULT_OWNER_ID, PlanValidation,
     Result, SystemClock, TAXONOMY_VERSION, calculate_training_metrics, js_locale_compare,
-    stable_hash, tz, validate_plan,
+    session_in_validation_scope, stable_hash, tz, validate_plan, validate_plan_from,
 };
 use athria_integrations::{
     HEVY_PARSER_VERSION, XUNJI_PARSER_VERSION, normalize_intervals_activity,
@@ -390,7 +390,7 @@ impl<S: AthriaStore> AthriaApplication<S> {
         &self.owner_id
     }
 
-    fn now_iso(&self) -> String {
+    pub(crate) fn now_iso(&self) -> String {
         self.clock.now_iso()
     }
 
@@ -1684,6 +1684,39 @@ impl<S: AthriaStore> AthriaApplication<S> {
         }
     }
 
+    /// Only unchanged protected history may retain a migrated missing type.
+    fn require_draft_plan_types(&self, value: &Value) -> Result<()> {
+        let (today, protected) = self.plan_history_boundary()?;
+        let mut preserved = Vec::new();
+        if let Some(current) = self.get_current_plan()? {
+            for week in current["mesocycle"]["weeks"].as_array().into_iter().flatten() {
+                let week = parse_plan_week(week)?;
+                for session in week["sessions"].as_array().into_iter().flatten() {
+                    if session["scheduledDate"].as_str().is_some_and(|date| date < today.as_str())
+                        || session["id"].as_str().is_some_and(|id| protected.contains(id))
+                    {
+                        preserved.push(session.clone());
+                    }
+                }
+            }
+        }
+        fn check(value: &Value, preserved: &[Value]) -> Result<()> {
+            match value {
+                Value::Array(items) => for item in items { check(item, preserved)?; },
+                Value::Object(object) => {
+                    if object.contains_key("prescription") && object.contains_key("scheduledDate") {
+                        if !preserved.contains(value) { require_plan_types(value)?; }
+                    } else {
+                        for item in object.values() { check(item, preserved)?; }
+                    }
+                }
+                _ => {},
+            }
+            Ok(())
+        }
+        check(value, &preserved)
+    }
+
     pub fn upsert_plan_draft_week(
         &self,
         draft_id: &str,
@@ -1701,7 +1734,7 @@ impl<S: AthriaStore> AthriaApplication<S> {
                 )
             })?;
         let week = parse_plan_week(week)?;
-        require_plan_types(&week)?;
+        self.require_draft_plan_types(&week)?;
         let duration = draft["data"]["mesocycle"]["durationWeeks"]
             .as_i64()
             .unwrap_or(0);
@@ -1759,7 +1792,7 @@ impl<S: AthriaStore> AthriaApplication<S> {
             "weekNumber": week_number,
             "sessions": [session],
         }))?;
-        require_plan_types(&parsed)?;
+        self.require_draft_plan_types(&parsed)?;
         let session = parsed["sessions"][0].clone();
         let start = draft["data"]["effectiveStartDate"]
             .as_str()
@@ -1924,7 +1957,17 @@ impl<S: AthriaStore> AthriaApplication<S> {
                 409,
             ));
         }
-        self.validate_current_plan(&plan)
+        let (today, protected) = self.plan_history_boundary()?;
+        let validation = self.validate_current_plan_from(&plan, &today, &protected)?;
+        if validation.valid {
+            self.assert_plan_history_preserved(
+                &plan,
+                draft["basePlanRevision"].as_i64().unwrap_or(0),
+                &today,
+                &protected,
+            )?;
+        }
+        Ok(validation)
     }
 
     pub fn commit_plan_draft(
@@ -2005,8 +2048,13 @@ impl<S: AthriaStore> AthriaApplication<S> {
     }
 
     /// `assertTemplateReferences`: every referenced session template must
-    /// resolve to the requested version at write time.
-    fn assert_template_references(&self, mesocycle: &Value) -> Result<()> {
+    /// resolve to the requested version at write time. Draft validation skips
+    /// historical sessions so stale references cannot block future work.
+    fn assert_template_references(
+        &self,
+        mesocycle: &Value,
+        scope: Option<(&str, &BTreeSet<String>)>,
+    ) -> Result<()> {
         let user = self.store.list_templates(&self.owner_id)?;
         let builtins = builtin_session_templates();
         for week in mesocycle["weeks"]
@@ -2019,6 +2067,15 @@ impl<S: AthriaStore> AthriaApplication<S> {
                 .map(Vec::as_slice)
                 .unwrap_or(&[])
             {
+                if let Some((validation_from, resolved_session_ids)) = scope {
+                    if !session_in_validation_scope(
+                        session,
+                        validation_from,
+                        resolved_session_ids,
+                    ) {
+                        continue;
+                    }
+                }
                 let reference = &session["templateRef"];
                 if reference.is_null() {
                     continue;
@@ -2048,17 +2105,51 @@ impl<S: AthriaStore> AthriaApplication<S> {
         Ok(())
     }
 
+    fn validate_plan_input(
+        &self,
+        input: &Value,
+        from: Option<(&str, &BTreeSet<String>)>,
+    ) -> Result<PlanValidation> {
+        match from {
+            None => {
+                self.assert_template_references(&input["mesocycle"], None)?;
+                Ok(validate_plan(
+                    &self.get_profile()?,
+                    &plan_validation_draft(input),
+                    &self.now_iso(),
+                ))
+            }
+            Some((today, protected)) => {
+                self.assert_template_references(&input["mesocycle"], Some((today, protected)))?;
+                Ok(validate_plan_from(
+                    &self.get_profile()?,
+                    &plan_validation_draft(input),
+                    &self.now_iso(),
+                    today,
+                    protected,
+                ))
+            }
+        }
+    }
+
     /// `validateCurrentPlan(value)`: the template-resolution check and core
     /// validation a plan save would run, without writing anything.
     pub fn validate_current_plan(&self, value: &Value) -> Result<PlanValidation> {
         let input = parse_current_plan_write(value)?;
         require_plan_types(&input)?;
-        self.assert_template_references(&input["mesocycle"])?;
-        Ok(validate_plan(
-            &self.get_profile()?,
-            &plan_validation_draft(&input),
-            &self.now_iso(),
-        ))
+        self.validate_plan_input(&input, None)
+    }
+
+    /// Draft validation excludes history from Profile-dependent rules.
+    fn validate_current_plan_from(
+        &self,
+        value: &Value,
+        today: &str,
+        protected: &BTreeSet<String>,
+    ) -> Result<PlanValidation> {
+        let input = parse_current_plan_write(value)?;
+        self.require_draft_plan_types(&input)?;
+        self.validate_plan_input(&input, Some((today, protected)))
     }
 
     /// `sessionsForPlan(plan, onOrAfterDate)`: every scheduled occurrence with
@@ -2130,7 +2221,11 @@ impl<S: AthriaStore> AthriaApplication<S> {
 
     fn save_current_plan_from_draft(&self, value: &Value, source_draft_id: Option<&str>) -> Result<Value> {
         let input = parse_current_plan_write(value)?;
-        require_plan_types(&input)?;
+        if source_draft_id.is_some() {
+            self.require_draft_plan_types(&input)?;
+        } else {
+            require_plan_types(&input)?;
+        }
         if input["ownerId"].as_str() != Some(self.owner_id.as_str()) {
             return Err(failure(
                 AthriaErrorCode::OwnerMismatch,
@@ -2151,12 +2246,12 @@ impl<S: AthriaStore> AthriaApplication<S> {
                 ));
             }
         }
-        self.assert_template_references(&input["mesocycle"])?;
-        let validation = validate_plan(
-            &self.get_profile()?,
-            &plan_validation_draft(&input),
-            &self.now_iso(),
-        );
+        let validation = if source_draft_id.is_some() {
+            let (today, protected) = self.plan_history_boundary()?;
+            self.validate_plan_input(&input, Some((&today, &protected)))?
+        } else {
+            self.validate_plan_input(&input, None)?
+        };
         if !validation.valid {
             return Err(failure(
                 AthriaErrorCode::PlanHasBlockers,
@@ -2640,7 +2735,7 @@ impl<S: AthriaStore> AthriaApplication<S> {
             mesocycle["weeks"] = Value::Array(vec![
                 json!({ "weekNumber": week_number, "focus": Value::Null, "sessions": [Value::Object(candidate)] }),
             ]);
-            self.assert_template_references(&mesocycle)?;
+            self.assert_template_references(&mesocycle, None)?;
             let mut candidate = item.as_object().cloned().unwrap_or_default();
             candidate.insert("occurrenceId".into(), next_day["occurrenceId"].clone());
             candidate.insert("ownerId".into(), Value::String(self.owner_id.clone()));

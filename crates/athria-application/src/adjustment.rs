@@ -12,7 +12,8 @@ use athria_core::{
     AdjustmentTrigger, AthriaError, AthriaErrorCode, FeasibilityStatus, GoalModality,
     HealthRecoveryEvidence, PlannedSessionEvidence, ProfileChangeFacts, ProfileConstraintKind,
     ProfileConstraintMismatch, RecoveryStatus, Result, SessionOutcome, WeeklyReviewFacts,
-    assess_adjustment, evaluate_adjustment_reminder, tz, validate_adjustment_scope, validate_plan,
+    assess_adjustment, evaluate_adjustment_reminder, tz, validate_adjustment_scope,
+    validate_historical_sessions, validate_plan,
 };
 use serde_json::{Value, json};
 
@@ -124,6 +125,73 @@ impl<S: AthriaStore> AthriaApplication<S> {
         context["profileHash"] = self.profile_hash()?.into();
         context["inputSnapshotHash"] = state["inputSnapshotHash"].clone();
         Ok(context)
+    }
+
+    /// The local date that separates history from adjustable work, plus every
+    /// session already completed or skipped (completion is match-derived).
+    pub(crate) fn plan_history_boundary(&self) -> Result<(String, BTreeSet<String>)> {
+        let profile = self.get_profile()?;
+        let today = tz::local_date(
+            &self.now_iso(),
+            profile["timezone"].as_str().unwrap_or("UTC"),
+        )?;
+        let protected = self
+            .store()
+            .list_current_planned_sessions(self.owner_id(), None)?
+            .into_iter()
+            .filter(|session| {
+                session["status"].as_str() != Some("planned")
+                    || session["scheduledDate"]
+                        .as_str()
+                        .is_some_and(|date| date < today.as_str())
+            })
+            .filter_map(|session| session["id"].as_str().map(str::to_owned))
+            .collect();
+        Ok((today, protected))
+    }
+
+    /// Rejects a draft that rewrites, removes, or re-adds protected history.
+    /// A genuinely new cycle may replace the whole document instead.
+    pub(crate) fn assert_plan_history_preserved(
+        &self,
+        proposed: &Value,
+        base_plan_revision: i64,
+        today: &str,
+        protected_session_ids: &BTreeSet<String>,
+    ) -> Result<()> {
+        let Some(current) = self.get_current_plan()? else {
+            return Ok(());
+        };
+        if current["revision"].as_i64() != Some(base_plan_revision) {
+            return Ok(());
+        }
+        if is_successor_plan(&current, proposed, today) {
+            return Ok(());
+        }
+        let validation =
+            validate_historical_sessions(&current, proposed, protected_session_ids, today);
+        if validation.valid {
+            return Ok(());
+        }
+        let affected: Vec<&str> = validation
+            .violations
+            .iter()
+            .filter_map(|violation| violation.subject_ref.as_deref())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        let detail = if affected.is_empty() {
+            String::new()
+        } else {
+            format!(" ({})", affected.join(", "))
+        };
+        Err(AthriaError::new(
+            AthriaErrorCode::HistoricalSessionProtected,
+            format!(
+                "Historical sessions and completed or skipped entries are read-only{detail}. Change only today and later planned sessions, or start a new cycle after the current plan ends and no earlier than today."
+            ),
+        )
+        .with_status(409))
     }
 
     /// Runs the authoritative plan validator and the minimum-change policy
@@ -258,6 +326,37 @@ impl<S: AthriaStore> AthriaApplication<S> {
             next_week_feasibility: FeasibilityStatus::Feasible,
         })
     }
+}
+
+fn plan_end_date(plan: &Value) -> Option<String> {
+    let start = plan["effectiveStartDate"].as_str()?;
+    let duration = plan["mesocycle"]["durationWeeks"].as_i64()?;
+    (duration > 0).then(|| add_days(start, duration * 7 - 1))
+}
+
+fn is_successor_plan(current: &Value, proposed: &Value, today: &str) -> bool {
+    let Some(start) = proposed["effectiveStartDate"].as_str() else {
+        return false;
+    };
+    if start < today {
+        return false;
+    }
+    let Some(current_end) = plan_end_date(current) else {
+        return false;
+    };
+    if start <= current_end.as_str() {
+        return false;
+    }
+    proposed["mesocycle"]["weeks"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|week| week["sessions"].as_array().into_iter().flatten())
+        .all(|session| {
+            session["scheduledDate"]
+                .as_str()
+                .is_some_and(|date| date >= today)
+        })
 }
 
 fn profile_change_facts(profile: &Value, plan: &Value, results: &[Value]) -> ProfileChangeFacts {

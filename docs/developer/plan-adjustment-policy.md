@@ -77,7 +77,17 @@ At all scopes, sessions before reviewDate and every non-planned session are prot
 
 Core scope validation reports violations such as `MISSING_SCOPE_TARGET`, `CHANGE_OUTSIDE_RECOMMENDED_SCOPE`, and `HISTORICAL_SESSION_CHANGED`. The combined application validator requires both plan and scope validation to pass.
 
-**MCP boundary:** there is no dedicated scope-validation tool. Draft commit runs ordinary plan validation but does not automatically apply the minimum-change validator. Agents preserve this policy during drafting.
+**MCP boundary:** there is no dedicated scope-validation tool. Draft commit runs ordinary plan validation but does not automatically apply the minimum-change validator; Agents preserve this policy during drafting. Draft validation and commit do enforce the history boundary below.
+
+## Draft history boundary
+
+Plan drafts may change only today and future planned sessions. Occurrences dated before today in the Profile timezone, and every completed or skipped occurrence regardless of date, are read-only: draft validation and commit reject changing, removing, or retroactively adding them with `HISTORICAL_SESSION_PROTECTED`. Actual training records are never deleted by a plan commit.
+
+Draft validation also excludes protected sessions from Profile-dependent and per-session training-rule checks, so conflicts caused by a changed Profile, goal, rhythm, or equipment do not block future adjustment. Historical sessions still count for plan structure and domain/phase coverage; today and future planned sessions are validated against the current Profile. The review strategy still uses `reviewDate` over the complete plan, while the draft commit boundary is always today in the Profile timezone.
+
+A successor cycle may replace Current Plan despite the protection when its `effectiveStartDate` is today or later, later than the current plan's last day, and every proposed session is today or later. A cycle that overlaps the current plan or starts before today is rejected.
+
+Desktop adjustment reminders and Profile-conflict detection are unchanged: they continue to evaluate the complete Current Plan, including historical sessions. The history exclusion applies only to draft validation and commit.
 
 ## Current evidence coverage
 

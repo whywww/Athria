@@ -6,7 +6,7 @@
 //! compare complete outputs. Like the rest of the core, the engine reads
 //! schema-validated JSON directly (see [`crate::json`]).
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 
 use serde::Serialize;
 use serde_json::{Map, Value, json};
@@ -108,7 +108,62 @@ fn pattern_count(counts: &Map<String, Value>, key: &str) -> f64 {
     counts.get(key).and_then(Value::as_f64).unwrap_or(0.0)
 }
 
+/// Checks that only planned sessions on or after `validation_from` that are
+/// not already resolved take part in Profile-dependent rules.
+struct ValidationScope<'a> {
+    validation_from: &'a str,
+    resolved_session_ids: &'a BTreeSet<String>,
+}
+
+/// A session is editable while it is still planned, not yet resolved, and not
+/// scheduled before `validation_from`.
+pub fn session_in_validation_scope(
+    session: &Value,
+    validation_from: &str,
+    resolved_session_ids: &BTreeSet<String>,
+) -> bool {
+    session["scheduledDate"]
+        .as_str()
+        .is_some_and(|date| date >= validation_from)
+        && session["status"]
+            .as_str()
+            .is_none_or(|status| status == "planned")
+        && !session["id"]
+            .as_str()
+            .is_some_and(|id| resolved_session_ids.contains(id))
+}
+
 pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidation {
+    validate_plan_with_scope(profile, draft, now, None)
+}
+
+/// Validates only the adjustable part of a plan: historical or resolved
+/// sessions are excluded from Profile-dependent and per-session rules, while
+/// plan structure and domain coverage still describe the whole document.
+pub fn validate_plan_from(
+    profile: &Value,
+    draft: &Value,
+    now: &str,
+    validation_from: &str,
+    resolved_session_ids: &BTreeSet<String>,
+) -> PlanValidation {
+    validate_plan_with_scope(
+        profile,
+        draft,
+        now,
+        Some(&ValidationScope {
+            validation_from,
+            resolved_session_ids,
+        }),
+    )
+}
+
+fn validate_plan_with_scope(
+    profile: &Value,
+    draft: &Value,
+    now: &str,
+    scope: Option<&ValidationScope<'_>>,
+) -> PlanValidation {
     let mut results: Vec<Value> = Vec::new();
     let mut data_gaps: Vec<Value> = Vec::new();
     let mut movement_facts_total = 0i64;
@@ -134,10 +189,36 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
         let duration_weeks = int_field(mesocycle, "durationWeeks");
         let schedule_occurrences = expand_schedule(effective_start, duration_weeks, schedule);
         let weeks = array_field(mesocycle, "weeks");
-        let prescriptions: Vec<&Value> = weeks
+        let all_prescriptions: Vec<&Value> = weeks
             .iter()
             .flat_map(|week| array_field(week, "sessions").iter())
             .collect();
+        let prescriptions: Vec<&Value> = all_prescriptions
+            .iter()
+            .copied()
+            .filter(|session| match scope {
+                Some(scope) => session_in_validation_scope(
+                    session,
+                    scope.validation_from,
+                    scope.resolved_session_ids,
+                ),
+                None => true,
+            })
+            .collect();
+        let historical_sessions: Vec<&Value> = match scope {
+            Some(scope) => all_prescriptions
+                .iter()
+                .copied()
+                .filter(|session| {
+                    !session_in_validation_scope(
+                        session,
+                        scope.validation_from,
+                        scope.resolved_session_ids,
+                    )
+                })
+                .collect(),
+            None => Vec::new(),
+        };
 
         let mut scheduled_dates: Vec<String> = Vec::new();
         for session in &prescriptions {
@@ -177,40 +258,91 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
             }
         };
         let weekly_rhythm_matches = match rhythm_kind {
-            "fixed_week" => {
-                let mut profile_days: Vec<i64> = array_field(rhythm, "days")
-                    .iter()
-                    .filter_map(Value::as_i64)
-                    .collect();
-                profile_days.sort_unstable();
-                let mut actual_days: Vec<i64> = scheduled_dates
-                    .iter()
-                    .map(|date| date::monday_weekday(date) as i64)
-                    .collect();
-                actual_days.sort_unstable();
-                actual_days.dedup();
-                actual_days == profile_days
-            }
+            "fixed_week" => match scope {
+                Some(_) if scheduled_dates.is_empty() => true,
+                Some(_) => {
+                    let profile_days: BTreeSet<i64> = array_field(rhythm, "days")
+                        .iter()
+                        .filter_map(Value::as_i64)
+                        .collect();
+                    let checked_days: BTreeSet<i64> = scheduled_dates
+                        .iter()
+                        .map(|date| date::monday_weekday(date) as i64)
+                        .collect();
+                    let historical_days: BTreeSet<i64> = historical_sessions
+                        .iter()
+                        .filter_map(|session| session["scheduledDate"].as_str())
+                        .map(|date| date::monday_weekday(date) as i64)
+                        .collect();
+                    checked_days.is_subset(&profile_days)
+                        && profile_days.iter().all(|day| {
+                            checked_days.contains(day) || historical_days.contains(day)
+                        })
+                }
+                None => {
+                    let mut profile_days: Vec<i64> = array_field(rhythm, "days")
+                        .iter()
+                        .filter_map(Value::as_i64)
+                        .collect();
+                    profile_days.sort_unstable();
+                    let mut actual_days: Vec<i64> = scheduled_dates
+                        .iter()
+                        .map(|date| date::monday_weekday(date) as i64)
+                        .collect();
+                    actual_days.sort_unstable();
+                    actual_days.dedup();
+                    actual_days == profile_days
+                }
+            },
             "flexible_week" => {
                 let min_days = int_field(rhythm, "minDaysPerWeek");
                 let max_days = int_field(rhythm, "maxDaysPerWeek");
                 weeks.iter().all(|week| {
-                    let mut distinct: Vec<&str> = array_field(week, "sessions")
+                    let sessions = array_field(week, "sessions");
+                    let mut all_dates: Vec<&str> = sessions
                         .iter()
                         .map(|session| string_field(session, "scheduledDate"))
                         .collect();
-                    distinct.sort_unstable();
-                    distinct.dedup();
-                    let training_days = distinct.len() as i64;
-                    training_days >= min_days && training_days <= max_days
+                    all_dates.sort_unstable();
+                    all_dates.dedup();
+                    if let Some(scope) = scope {
+                        let mut checked_dates: Vec<&str> = sessions
+                            .iter()
+                            .filter(|session| {
+                                session_in_validation_scope(
+                                    session,
+                                    scope.validation_from,
+                                    scope.resolved_session_ids,
+                                )
+                            })
+                            .map(|session| string_field(session, "scheduledDate"))
+                            .collect();
+                        if checked_dates.is_empty() {
+                            return true;
+                        }
+                        checked_dates.sort_unstable();
+                        checked_dates.dedup();
+                        let checked_days = checked_dates.len() as i64;
+                        let total_days = all_dates.len() as i64;
+                        checked_days <= max_days && total_days >= min_days
+                    } else {
+                        let training_days = all_dates.len() as i64;
+                        training_days >= min_days && training_days <= max_days
+                    }
                 })
             }
             "interval" => {
                 let interval_days = int_field(rhythm, "intervalDays");
-                scheduled_dates.first().map(String::as_str) == Some(effective_start)
-                    && scheduled_dates
+                if scope.is_some() {
+                    scheduled_dates
                         .windows(2)
                         .all(|pair| date::day_difference(&pair[0], &pair[1]) == interval_days)
+                } else {
+                    scheduled_dates.first().map(String::as_str) == Some(effective_start)
+                        && scheduled_dates
+                            .windows(2)
+                            .all(|pair| date::day_difference(&pair[0], &pair[1]) == interval_days)
+                }
             }
             _ => false,
         };
@@ -270,7 +402,7 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
             .map(|progression| string_field(progression, "domain"))
             .collect();
         let mut session_domains: Vec<String> = Vec::new();
-        for session in &prescriptions {
+        for session in &all_prescriptions {
             if let Some(domain) = crate::training_type::session_domain(session) {
                 if !session_domains.iter().any(|existing| existing == domain) { session_domains.push(domain.to_string()); }
             }
@@ -618,17 +750,32 @@ pub fn validate_plan(profile: &Value, draft: &Value, now: &str) -> PlanValidatio
         equipment_facts_resolved,
         equipment_facts_total,
     };
-    let input_hash = stable_hash(&json!({
-        "mesocycle": mesocycle,
-        "profile": profile,
-        "taxonomyVersion": TAXONOMY_VERSION,
-        "rulePacks": {
-            "structure": RULE_VERSION,
-            "constraints": RULE_VERSION,
-            "strength": RULE_VERSION,
-            "balance": RULE_VERSION,
-        },
-    }));
+    let input_hash = match scope {
+        Some(scope) => stable_hash(&json!({
+            "mesocycle": mesocycle,
+            "profile": profile,
+            "taxonomyVersion": TAXONOMY_VERSION,
+            "rulePacks": {
+                "structure": RULE_VERSION,
+                "constraints": RULE_VERSION,
+                "strength": RULE_VERSION,
+                "balance": RULE_VERSION,
+            },
+            "validationFrom": scope.validation_from,
+            "resolvedSessionIds": scope.resolved_session_ids,
+        })),
+        None => stable_hash(&json!({
+            "mesocycle": mesocycle,
+            "profile": profile,
+            "taxonomyVersion": TAXONOMY_VERSION,
+            "rulePacks": {
+                "structure": RULE_VERSION,
+                "constraints": RULE_VERSION,
+                "strength": RULE_VERSION,
+                "balance": RULE_VERSION,
+            },
+        })),
+    };
     PlanValidation {
         valid,
         results,
@@ -790,4 +937,201 @@ mod tests {
         }
     }
 
+    fn scoped_session(id: &str, scheduled_date: &str) -> Value {
+        json!({
+            "id": id,
+            "scheduledDate": scheduled_date,
+            "order": 0,
+            "status": "planned",
+            "domain": "mobility",
+            "recoveryDemand": "normal",
+            "durationMinutes": 30,
+            "prescription": {"blocks": []},
+        })
+    }
+
+    fn scoped_rhythm_draft() -> Value {
+        json!({
+            "effectiveStartDate": "2026-09-14",
+            "mesocycle": {
+                "durationWeeks": 2,
+                "schedule": { "kind": "fixed_week", "days": [1] },
+                "domainProgressions": [{
+                    "domain": "mobility",
+                    "phases": [{
+                        "id": "base", "phaseType": "foundation", "name": "Base",
+                        "startWeek": 1, "endWeek": 2, "focus": "Base", "progression": [],
+                    }],
+                }],
+                "weeks": [
+                    {"weekNumber": 1, "focus": null, "sessions": [scoped_session("s1", "2026-09-14")]},
+                    {"weekNumber": 2, "focus": null, "sessions": [scoped_session("s2", "2026-09-22")]},
+                ],
+            },
+        })
+    }
+
+    fn scoped_rhythm_profile() -> Value {
+        json!({
+            "trainingRhythm": { "kind": "fixed_week", "days": [1] },
+            "usualSessionMinutes": 60,
+            "equipment": ["barbell"],
+        })
+    }
+
+    #[test]
+    fn scoped_validation_skips_historical_equipment_conflicts() {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/validate_plan.constraint_failures.json"
+        ))
+        .expect("fixture is JSON");
+        let profile = &fixture["input"]["profile"];
+        let draft = &fixture["input"]["draft"];
+        let now = fixture["input"]["now"].as_str().unwrap();
+
+        let full = validate_plan(profile, draft, now);
+        assert!(!full.valid);
+        assert!(full.results.iter().any(|rule| {
+            rule["reasonCode"] == "EXERCISE_EQUIPMENT"
+                && matches!(rule["status"].as_str(), Some("fail" | "unknown"))
+        }));
+
+        let scoped = validate_plan_from(profile, draft, now, "2026-09-17", &BTreeSet::new());
+        assert!(scoped.valid);
+        assert!(!scoped
+            .results
+            .iter()
+            .any(|rule| rule["reasonCode"] == "EXERCISE_EQUIPMENT"));
+        assert_ne!(scoped.input_hash, full.input_hash);
+    }
+
+    #[test]
+    fn scoped_validation_skips_resolved_sessions_dated_today() {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/validate_plan.constraint_failures.json"
+        ))
+        .expect("fixture is JSON");
+        let profile = &fixture["input"]["profile"];
+        let now = fixture["input"]["now"].as_str().unwrap();
+        let mut draft = fixture["input"]["draft"].clone();
+        draft["mesocycle"]["weeks"][0]["sessions"][0]["scheduledDate"] = json!("2026-09-17");
+
+        let resolved = BTreeSet::from(["mon-strength".to_owned()]);
+        let scoped = validate_plan_from(profile, &draft, now, "2026-09-17", &resolved);
+        assert!(scoped.valid);
+        assert!(!scoped
+            .results
+            .iter()
+            .any(|rule| rule["reasonCode"] == "EXERCISE_EQUIPMENT"));
+
+        let unchecked = validate_plan_from(profile, &draft, now, "2026-09-17", &BTreeSet::new());
+        assert!(!unchecked.valid);
+    }
+
+    #[test]
+    fn scoped_validation_ignores_historical_weekdays_after_a_rhythm_change() {
+        let draft = scoped_rhythm_draft();
+        let profile = scoped_rhythm_profile();
+        let now = "2026-09-17T10:30:00.000Z";
+
+        let full = validate_plan(&profile, &draft, now);
+        assert!(!full.valid);
+        let full_rhythm = full
+            .results
+            .iter()
+            .find(|rule| rule["reasonCode"] == "PROFILE_TRAINING_RHYTHM")
+            .expect("rhythm rule runs");
+        assert_eq!(full_rhythm["status"], "fail");
+        assert_eq!(full_rhythm["enforcement"], "blocker");
+
+        let scoped = validate_plan_from(&profile, &draft, now, "2026-09-17", &BTreeSet::new());
+        assert!(scoped.valid);
+        let scoped_rhythm = scoped
+            .results
+            .iter()
+            .find(|rule| rule["reasonCode"] == "PROFILE_TRAINING_RHYTHM")
+            .expect("rhythm rule runs");
+        assert_eq!(scoped_rhythm["status"], "pass");
+        assert_eq!(scoped_rhythm["evidence"]["scheduledDates"], json!(["2026-09-22"]));
+    }
+
+    #[test]
+    fn scoped_validation_lets_history_cover_fixed_week_days() {
+        let draft = json!({
+            "effectiveStartDate": "2026-09-14",
+            "mesocycle": {
+                "durationWeeks": 1,
+                "schedule": { "kind": "fixed_week", "days": [0, 2, 4] },
+                "domainProgressions": [{
+                    "domain": "mobility",
+                    "phases": [{
+                        "id": "base", "phaseType": "foundation", "name": "Base",
+                        "startWeek": 1, "endWeek": 1, "focus": "Base", "progression": [],
+                    }],
+                }],
+                "weeks": [{
+                    "weekNumber": 1,
+                    "focus": null,
+                    "sessions": [
+                        scoped_session("s1", "2026-09-14"),
+                        scoped_session("s2", "2026-09-16"),
+                        scoped_session("s3", "2026-09-18"),
+                    ],
+                }],
+            },
+        });
+        let profile = json!({
+            "trainingRhythm": { "kind": "fixed_week", "days": [0, 2, 4] },
+            "usualSessionMinutes": 60,
+            "equipment": ["barbell"],
+        });
+        let now = "2026-09-17T10:30:00.000Z";
+
+        assert!(validate_plan(&profile, &draft, now).valid);
+        let scoped = validate_plan_from(&profile, &draft, now, "2026-09-17", &BTreeSet::new());
+        assert!(scoped.valid, "{:?}", scoped.results);
+    }
+
+    #[test]
+    fn scoped_validation_counts_history_toward_flexible_week_minimums() {
+        let rhythm = json!({
+            "kind": "flexible_week",
+            "targetDaysPerWeek": 3,
+            "minDaysPerWeek": 3,
+            "maxDaysPerWeek": 4,
+        });
+        let draft = json!({
+            "effectiveStartDate": "2026-09-14",
+            "mesocycle": {
+                "durationWeeks": 1,
+                "schedule": rhythm,
+                "domainProgressions": [{
+                    "domain": "mobility",
+                    "phases": [{
+                        "id": "base", "phaseType": "foundation", "name": "Base",
+                        "startWeek": 1, "endWeek": 1, "focus": "Base", "progression": [],
+                    }],
+                }],
+                "weeks": [{
+                    "weekNumber": 1,
+                    "focus": null,
+                    "sessions": [
+                        scoped_session("s1", "2026-09-14"),
+                        scoped_session("s2", "2026-09-16"),
+                        scoped_session("s3", "2026-09-18"),
+                    ],
+                }],
+            },
+        });
+        let profile = json!({
+            "trainingRhythm": rhythm,
+            "usualSessionMinutes": 60,
+            "equipment": ["barbell"],
+        });
+        let now = "2026-09-17T10:30:00.000Z";
+
+        assert!(validate_plan(&profile, &draft, now).valid);
+        let scoped = validate_plan_from(&profile, &draft, now, "2026-09-17", &BTreeSet::new());
+        assert!(scoped.valid, "{:?}", scoped.results);
+    }
 }

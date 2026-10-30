@@ -531,6 +531,36 @@ describe("Overview", () => {
     missingReasons: [], hrvField: "hrvRmssdMs", heartRateField: null, hrvBaselineDays: 14, heartRateBaselineDays: 0,
   };
 
+  it.each(["en", "zh-CN"])("identifies cardiac-only estimates without training advice in %s", (language) => {
+    vi.stubGlobal("localStorage", { getItem: () => language, setItem: () => {} });
+    try {
+      for (const [hrvField, heartRateField, english, chinese] of [
+        ["hrvRmssdMs", "restingHeartRateBpm", "Based on cardiac signals only", "仅基于心脏指标"],
+        ["hrvSdnnMs", null, "Based on HRV only", "仅基于 HRV"],
+        [null, "restingHeartRateBpm", "Based on resting HR only", "仅基于静息心率"],
+        [null, "avgSleepingHeartRateBpm", "Based on heart rate only", "仅基于心率"],
+      ] as const) {
+        for (const [score, status] of [[85, "Ready"], [60, "Caution"], [30, "Rest"]] as const) {
+          const assessment = { ...chainAssessment, score, status, cardiacScore: score, sleepScore: null, subjectiveScore: null, baseScore: score, scoreCap: null, hrvField, heartRateField };
+          const record = { ...recoveryRecord("2026-10-05", { readiness: { ...field(score), source: "athria" } }), readinessAssessment: assessment };
+          expect(recoveryStatus([record], "2026-10-06")).toMatchObject({ value: score, label: status, detail: english, signalCount: 1 });
+          const html = renderToStaticMarkup(createElement(LanguageProvider, null, createElement(OverviewDashboard, { summary, wellness: [record], history: [], planned: [], today: "2026-10-06", timezone: "Asia/Hong_Kong" })));
+          const card = html.match(/<article class="overview-summary-card recovery-summary">[\s\S]*?<\/article>/)![0];
+          expect(card).toContain(`<small>${language === "en" ? english : chinese}</small>`);
+          expect(card.match(/<small>/g)).toHaveLength(1);
+          const help = renderToStaticMarkup(createElement(LanguageProvider, null, createElement(RecoveryHelpModal, { onClose: () => undefined, assessment })));
+          expect(help).toContain(language === "en" ? "Limited estimate" : "有限估计");
+          expect(help).toContain(language === "en" ? "Sleep and subjective fatigue are not included." : "未纳入睡眠和主观疲劳。");
+          expect(help).not.toContain("Recovered. Train as planned.");
+        }
+      }
+    } finally {
+      vi.stubGlobal("localStorage", { getItem: () => "en", setItem: () => {} });
+      renderToStaticMarkup(createElement(LanguageProvider, null, createElement("span", null, "reset")));
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("shows the readiness chain in the redesigned calculation dialog", () => {
     const html = renderToStaticMarkup(createElement(RecoveryHelpModal, { assessment: chainAssessment, onClose: () => undefined }));
     expect(html).toContain("Oct 5, 2026 · Based on the day&#x27;s data");

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use crate::{date, tz};
 
-pub const ALGORITHM_VERSION: &str = "athria-readiness-percentile-load";
+pub const ALGORITHM_VERSION: &str = "athria-readiness-cardiac-estimate";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -296,7 +296,8 @@ pub fn assess_readiness(current: &Value, records: &[Value], sessions: &[Value], 
     let dimensions = [(cardiac, 0.4), (sleep, 0.35), (subjective, 0.25)];
     let count = dimensions.iter().filter(|(v, _)| v.is_some()).count();
     let weight: f64 = dimensions.iter().filter_map(|(v, w)| v.map(|_| w)).sum();
-    let base = (count >= 2).then(|| dimensions.iter().filter_map(|(v, w)| v.map(|v| v * w)).sum::<f64>() / weight);
+    let can_score = cardiac.is_some() || (sleep.is_some() && subjective.is_some());
+    let base = can_score.then(|| dimensions.iter().filter_map(|(v, w)| v.map(|v| v * w)).sum::<f64>() / weight);
     let mut load = training_assessment(current, records, sessions, timezone);
     let mut reasons = Vec::new();
     for (value, reason) in [(cardiac, "Cardiac baseline unavailable"), (sleep, "Sleep not included"), (subjective, "Subjective fatigue not included")] {
@@ -306,7 +307,7 @@ pub fn assess_readiness(current: &Value, records: &[Value], sessions: &[Value], 
     if hrv.is_some_and(|(_, _, n)| n < 14) || heart.is_some_and(|(_, _, n)| n < 14) { reasons.push("Preliminary cardiac baseline".into()); }
     if load.groups.iter().any(|g| !g.complete) { reasons.push("Partial training load data".into()); }
     if load.groups.iter().any(|g| g.status == "building_baseline") { reasons.push("Training baseline is still developing".into()); }
-    if count < 2 { reasons.push("At least two recovery dimensions required".into()); }
+    if !can_score { reasons.push("Cardiac recovery or both sleep and subjective recovery required".into()); }
     let mut cap: Option<f64> = None;
     for (applies, limit) in [
         (fatigue.is_some_and(|f| f >= 75.0), 44.0),
@@ -482,7 +483,7 @@ mod tests {
             if mask & 1 != 0 { values["hrvRmssdMs"]=json!(50); }
             if mask & 2 != 0 { values["sleepScore"]=json!(85); }
             if mask & 4 != 0 { values["subjectiveFatigue"]=json!(0); }
-            assert_eq!(assess(values).score.is_some(), (mask as u32).count_ones()>=2);
+            assert_eq!(assess(values).score.is_some(), mask & 1 != 0 || (mask as u32).count_ones()>=2);
         }
         for (raw,score,status) in [(44.49,44,"Rest"),(44.51,45,"Caution"),(69.49,69,"Caution"),(69.51,70,"Ready")] {
             let sleep=(raw*0.6-25.0)/0.35;
@@ -532,10 +533,19 @@ mod tests {
     }
 
     #[test]
-    fn groups_correlated_signals_and_requires_two_dimensions() {
+    fn cardiac_alone_is_a_limited_estimate_other_single_dimensions_are_insufficient() {
         let cardiac = assess(json!({"hrvRmssdMs":50,"restingHeartRateBpm":50}));
         assert_eq!(cardiac.cardiac_score, Some(85.0));
-        assert_eq!(cardiac.score, None);
+        assert_eq!(cardiac.score, Some(85));
+        assert_eq!(cardiac.data_quality, "limited");
+        for values in [json!({"hrvRmssdMs":50}), json!({"restingHeartRateBpm":50})] {
+            let result = assess(values);
+            assert_eq!(result.base_score, Some(85.0));
+            assert_eq!(result.score, Some(85));
+            assert_eq!(result.status, "Ready");
+            assert_eq!(result.data_quality, "limited");
+            assert!(result.missing_reasons.iter().any(|r| r == "Partial cardiac signals"));
+        }
         assert_eq!(assess(json!({"sleepScore":90,"sleepSeconds":28800})).score, None);
         assert_eq!(assess(json!({"subjectiveFatigue":0})).score, None);
         assert_eq!(assess(json!({"sleepScore":90,"subjectiveFatigue":0})).score, Some(94));
@@ -544,7 +554,7 @@ mod tests {
     }
     #[test]
     fn cardiac_baselines_exclude_target_future_other_owner_and_source() {
-        let current = record(0, json!({"hrvRmssdMs":50,"sleepScore":85}));
+        let current = record(0, json!({"hrvRmssdMs":50}));
         let mut records: Vec<_> = (1..=6).map(|n| record(-n, json!({"hrvRmssdMs":50}))).collect();
         records.extend([current.clone(), record(1,json!({"hrvRmssdMs":50})), record(-29,json!({"hrvRmssdMs":50}))]);
         let mut other = record(-7,json!({"hrvRmssdMs":50})); other["ownerId"] = json!("b"); records.push(other);
@@ -555,6 +565,22 @@ mod tests {
         let result = assess_readiness(&current,&records,&[],"UTC");
         assert_eq!(result.score,Some(85)); assert_eq!(result.hrv_baseline_days,7);
         assert_eq!(result.assessment_day,"2026-10-16");
+    }
+    #[test]
+    fn cardiac_only_estimates_keep_load_adjustments_and_optional_signal_caps() {
+        let current = record(0,json!({"hrvRmssdMs":50,"restingHeartRateBpm":50}));
+        let mut workouts = sessions();
+        let usual = assess_readiness(&current,&history(),&workouts,"UTC");
+        workouts.iter_mut().find(|s| s["id"] == "0").unwrap()["rpe"] = json!(10);
+        let heavy = assess_readiness(&current,&history(),&workouts,"UTC");
+        assert_eq!(usual.base_score,heavy.base_score);
+        assert!(heavy.load_adjustment > usual.load_adjustment);
+        assert!(heavy.score < usual.score);
+        assert_eq!(heavy.data_quality,"limited");
+        assert_eq!(assess(json!({"hrvRmssdMs":50,"subjectiveFatigue":75})).score,Some(44));
+        assert_eq!(assess(json!({"hrvRmssdMs":50,"sleepSeconds":0})).score,Some(44));
+        assert_eq!(assess(json!({"hrvRmssdMs":0,"restingHeartRateBpm":0,"atl":60,"ctl":40,"steps":10000,"spo2":98})).score,None);
+        assert_eq!(assess(json!({"hrvRmssdMs":50,"sleepScore":null,"subjectiveFatigue":101})).score,Some(85));
     }
     #[test]
     fn cardiac_fallbacks_are_independent_and_mad_has_a_floor() {

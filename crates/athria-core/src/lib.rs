@@ -58,9 +58,11 @@ pub use reminder::{AdjustmentReminder, evaluate_adjustment_reminder};
 pub use schedule::{ScheduleOccurrence, expand_schedule};
 pub use scope_diff::{
     AdjustmentPlanValidation, AdjustmentScopePolicy, ScopeDiffValidation, ScopeViolation,
-    ScopeViolationCode, validate_adjustment_scope,
+    ScopeViolationCode, validate_adjustment_scope, validate_historical_sessions,
 };
-pub use validation::{Coverage, PlanValidation, validate_plan};
+pub use validation::{
+    Coverage, PlanValidation, session_in_validation_scope, validate_plan, validate_plan_from,
+};
 
 /// Version of the deterministic formulas; byte-identical to `FORMULA_VERSION`
 /// used by persisted plans.

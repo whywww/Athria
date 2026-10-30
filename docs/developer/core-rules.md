@@ -28,6 +28,10 @@ Statuses are `pass`, `fail`, `unknown`, and `not_applicable`. Enforcement is `bl
 
 Resolve the fact named in the accompanying data gap. Do not clear an unknown by guessing.
 
+## Validation scope
+
+`validate_plan` evaluates the complete plan. Draft validation and commit use a scoped entry point in which sessions before today in the Profile timezone, completed or skipped sessions, and resolved session IDs are excluded from Profile-dependent and per-session rules: training-rhythm dates and frequency, strength prescription, session domain presence, equipment, exercise IDs, volume/balance, effort notation, and recovery spacing. Those sessions still count for `MESOCYCLE_SCHEDULE` and for `DOMAIN_PROGRESSION` domain and phase coverage. The default entry point and its golden output do not change.
+
 ## Structure and constraint rules
 
 | Reason code | Condition / result | Resolution |

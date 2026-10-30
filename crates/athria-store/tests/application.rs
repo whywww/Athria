@@ -3351,3 +3351,454 @@ fn effort_edits_require_confirmation_valid_integers_and_a_fresh_snapshot() {
     let fresh = app.list_sessions_with_snapshots(30).unwrap().remove(0);
     assert!(app.set_training_session_effort(id,&json!({"rpe":null,"confirmed":true,"expectedSnapshotHash":fresh["snapshotHash"]})).unwrap()["rpe"].is_null());
 }
+
+// ---------------------------------------------------------------------------
+// Draft history protection and scoped validation
+// ---------------------------------------------------------------------------
+
+#[test]
+fn draft_commits_cannot_rewrite_or_delete_historical_sessions() {
+    let app = test_app();
+    commit_monday_plan(&app);
+    app.update_planned_session(
+        "s1",
+        &json!({ "action": "complete", "expectedRevision": 1 }),
+    )
+    .unwrap();
+    let plan_before = app.get_current_plan().unwrap().unwrap();
+    let plan_revision = plan_before["revision"].as_i64().unwrap();
+    let projection_before = app
+        .store()
+        .list_current_planned_sessions("local-user", None)
+        .unwrap();
+    let workouts_before = app.list_sessions(28).unwrap();
+
+    let draft = app
+        .create_plan_draft(&json!({ "mode": "current_plan" }))
+        .unwrap();
+    let id = draft["draftId"].as_str().unwrap().to_owned();
+    let mut week = app
+        .store()
+        .list_plan_draft_weeks(&id)
+        .unwrap()
+        .into_iter()
+        .find(|week| week["weekNumber"] == 1)
+        .unwrap();
+    week["sessions"][0]["name"] = json!("Rewritten Run");
+    app.upsert_plan_draft_week(&id, 2, &week).unwrap();
+    let error = app.validate_plan_draft(&id).unwrap_err();
+    assert_eq!(error.code(), AthriaErrorCode::HistoricalSessionProtected);
+    assert_eq!(error.status(), 409);
+    assert!(error.message().contains("s1"));
+    let commit_error = app
+        .commit_plan_draft(&id, 3, plan_revision, &app.snapshot_hash().unwrap(), true)
+        .unwrap_err();
+    assert_eq!(
+        commit_error.code(),
+        AthriaErrorCode::HistoricalSessionProtected
+    );
+    assert_eq!(app.get_current_plan().unwrap().unwrap(), plan_before);
+    assert!(app.store().get_plan_draft(&id, "local-user").unwrap().is_some());
+    assert_eq!(
+        app.store()
+            .list_current_planned_sessions("local-user", None)
+            .unwrap(),
+        projection_before
+    );
+    assert_eq!(app.list_sessions(28).unwrap(), workouts_before);
+    app.discard_plan_draft(&id, 3).unwrap();
+
+    let draft = app
+        .create_plan_draft(&json!({ "mode": "current_plan" }))
+        .unwrap();
+    let id = draft["draftId"].as_str().unwrap().to_owned();
+    app.remove_plan_draft_session(&id, 2, 1, "s1").unwrap();
+    let error = app.validate_plan_draft(&id).unwrap_err();
+    assert_eq!(error.code(), AthriaErrorCode::HistoricalSessionProtected);
+    assert!(error.message().contains("s1"));
+    assert_eq!(app.get_current_plan().unwrap().unwrap(), plan_before);
+}
+
+#[test]
+fn profile_rhythm_change_does_not_block_future_adjustment_but_keeps_app_review_conflict() {
+    let app = test_app();
+    commit_monday_plan(&app);
+    app.update_planned_session(
+        "s1",
+        &json!({ "action": "complete", "expectedRevision": 1 }),
+    )
+    .unwrap();
+    patch_profile(
+        &app,
+        json!({ "trainingRhythm": { "kind": "fixed_week", "days": [1] } }),
+    );
+
+    let full = app.validate_current_plan(&monday_plan_write(1)).unwrap();
+    assert!(!full.valid);
+    assert!(full.results.iter().any(|rule| {
+        rule["reasonCode"] == "PROFILE_TRAINING_RHYTHM" && rule["status"] == "fail"
+    }));
+
+    let review = app
+        .review_current_plan_for_adjustment(AdjustmentTrigger::ProfileChange)
+        .unwrap();
+    assert_eq!(review.review_status, ReviewStatus::ReviewRequired);
+    assert!(
+        review
+            .reasons
+            .iter()
+            .any(|reason| reason.reason_code == ReasonCode::ProfileTrainingRhythmConflict)
+    );
+
+    let complete = monday_plan_write(0);
+    let weeks = complete["mesocycle"]["weeks"].as_array().unwrap().clone();
+    let mut metadata = complete;
+    metadata["mesocycle"]["weeks"] = json!([]);
+    metadata["mesocycle"]["schedule"]["days"] = json!([1]);
+    let draft = app
+        .create_plan_draft(&json!({ "mode": "new", "plan": metadata }))
+        .unwrap();
+    let id = draft["draftId"].as_str().unwrap().to_owned();
+    app.upsert_plan_draft_week(&id, 0, &weeks[0]).unwrap();
+    let mut week2 = weeks[1].clone();
+    week2["sessions"][0]["scheduledDate"] = json!("2026-09-22");
+    app.upsert_plan_draft_week(&id, 1, &week2).unwrap();
+
+    let validation = app.validate_plan_draft(&id).unwrap();
+    assert!(validation.valid);
+    let committed = app
+        .commit_plan_draft(&id, 2, 1, &app.snapshot_hash().unwrap(), true)
+        .unwrap();
+    assert_eq!(committed["revision"], 2);
+
+    let plan = app.get_current_plan().unwrap().unwrap();
+    assert_eq!(plan["effectiveStartDate"], "2026-09-14");
+    assert_eq!(plan["mesocycle"]["schedule"]["days"], json!([1]));
+    assert_eq!(plan["mesocycle"]["weeks"][0]["sessions"][0]["id"], "s1");
+    assert_eq!(
+        plan["mesocycle"]["weeks"][0]["sessions"][0]["scheduledDate"],
+        "2026-09-14"
+    );
+    assert_eq!(
+        plan["mesocycle"]["weeks"][0]["sessions"][0]["name"],
+        "Easy Run"
+    );
+    assert_eq!(
+        plan["mesocycle"]["weeks"][1]["sessions"][0]["scheduledDate"],
+        "2026-09-22"
+    );
+    let projection = app
+        .store()
+        .list_current_planned_sessions("local-user", None)
+        .unwrap();
+    let s1 = projection
+        .iter()
+        .find(|session| session["id"] == "s1")
+        .unwrap();
+    assert_eq!(s1["status"], "completed");
+    assert_eq!(s1["match"]["method"], "manual");
+    assert_eq!(app.list_sessions(28).unwrap().len(), 1);
+}
+
+#[test]
+fn today_and_future_planned_sessions_remain_editable_after_a_completed_day() {
+    let app = test_app();
+    let flexible = json!({
+        "kind": "flexible_week",
+        "targetDaysPerWeek": 3,
+        "minDaysPerWeek": 1,
+        "maxDaysPerWeek": 3,
+    });
+    patch_profile(&app, json!({ "trainingRhythm": flexible.clone() }));
+    let plan = plan_write(
+        flexible,
+        2,
+        "2026-09-14",
+        endurance_progressions(2),
+        vec![
+            plan_week(
+                1,
+                vec![
+                    plan_session(
+                        "s1",
+                        "2026-09-16",
+                        0,
+                        "low",
+                        plan_component("c1", "Run", "endurance")["prescription"].clone(),
+                    ),
+                    plan_session(
+                        "s2",
+                        "2026-09-17",
+                        0,
+                        "low",
+                        plan_component("c2", "Run", "endurance")["prescription"].clone(),
+                    ),
+                ],
+            ),
+            plan_week(
+                2,
+                vec![plan_session(
+                    "s3",
+                    "2026-09-21",
+                    0,
+                    "low",
+                    plan_component("c3", "Run", "endurance")["prescription"].clone(),
+                )],
+            ),
+        ],
+        0,
+    );
+    app.save_current_plan(&plan).unwrap();
+    app.update_planned_session(
+        "s1",
+        &json!({ "action": "complete", "expectedRevision": 1 }),
+    )
+    .unwrap();
+
+    let draft = app
+        .create_plan_draft(&json!({ "mode": "current_plan" }))
+        .unwrap();
+    let id = draft["draftId"].as_str().unwrap().to_owned();
+    let mut week1 = app
+        .store()
+        .list_plan_draft_weeks(&id)
+        .unwrap()
+        .into_iter()
+        .find(|week| week["weekNumber"] == 1)
+        .unwrap();
+    week1["sessions"][1]["name"] = json!("Adjusted Today Run");
+    app.upsert_plan_draft_week(&id, 2, &week1).unwrap();
+    let mut week2 = app
+        .store()
+        .list_plan_draft_weeks(&id)
+        .unwrap()
+        .into_iter()
+        .find(|week| week["weekNumber"] == 2)
+        .unwrap();
+    week2["sessions"][0]["scheduledDate"] = json!("2026-09-22");
+    app.upsert_plan_draft_week(&id, 3, &week2).unwrap();
+
+    assert!(app.validate_plan_draft(&id).unwrap().valid);
+    app.commit_plan_draft(&id, 4, 1, &app.snapshot_hash().unwrap(), true)
+        .unwrap();
+
+    let plan = app.get_current_plan().unwrap().unwrap();
+    assert_eq!(
+        plan["mesocycle"]["weeks"][0]["sessions"][0]["name"],
+        "Easy Run"
+    );
+    assert_eq!(
+        plan["mesocycle"]["weeks"][0]["sessions"][1]["name"],
+        "Adjusted Today Run"
+    );
+    assert_eq!(
+        plan["mesocycle"]["weeks"][1]["sessions"][0]["scheduledDate"],
+        "2026-09-22"
+    );
+    let projection = app
+        .store()
+        .list_current_planned_sessions("local-user", None)
+        .unwrap();
+    let s1 = projection
+        .iter()
+        .find(|session| session["id"] == "s1")
+        .unwrap();
+    assert_eq!(s1["status"], "completed");
+    assert_eq!(s1["match"]["method"], "manual");
+    assert_eq!(app.list_sessions(28).unwrap().len(), 1);
+}
+
+#[test]
+fn a_successor_cycle_can_replace_the_plan_but_cannot_overlap_or_start_before_today() {
+    let app = test_app();
+    commit_monday_plan(&app);
+    app.update_planned_session(
+        "s1",
+        &json!({ "action": "complete", "expectedRevision": 1 }),
+    )
+    .unwrap();
+    assert_eq!(app.list_sessions(28).unwrap().len(), 1);
+
+    let successor = plan_write(
+        json!({ "kind": "fixed_week", "days": [0] }),
+        2,
+        "2026-09-28",
+        endurance_progressions(2),
+        vec![],
+        0,
+    );
+    let draft = app
+        .create_plan_draft(&json!({ "mode": "new", "plan": successor }))
+        .unwrap();
+    let id = draft["draftId"].as_str().unwrap().to_owned();
+    let week1 = plan_week(
+        1,
+        vec![plan_session(
+            "n1",
+            "2026-09-28",
+            0,
+            "low",
+            plan_component("n1-c1", "Run", "endurance")["prescription"].clone(),
+        )],
+    );
+    let week2 = plan_week(
+        2,
+        vec![plan_session(
+            "n2",
+            "2026-10-05",
+            0,
+            "low",
+            plan_component("n2-c1", "Run", "endurance")["prescription"].clone(),
+        )],
+    );
+    app.upsert_plan_draft_week(&id, 0, &week1).unwrap();
+    app.upsert_plan_draft_week(&id, 1, &week2).unwrap();
+    assert!(app.validate_plan_draft(&id).unwrap().valid);
+    let committed = app
+        .commit_plan_draft(&id, 2, 1, &app.snapshot_hash().unwrap(), true)
+        .unwrap();
+    assert_eq!(committed["revision"], 2);
+    let plan = app.get_current_plan().unwrap().unwrap();
+    assert_eq!(plan["effectiveStartDate"], "2026-09-28");
+    assert_eq!(app.list_sessions(28).unwrap().len(), 1);
+
+    let overlapping = test_app();
+    commit_monday_plan(&overlapping);
+    let metadata = plan_write(
+        json!({ "kind": "fixed_week", "days": [0] }),
+        2,
+        "2026-09-21",
+        endurance_progressions(2),
+        vec![],
+        0,
+    );
+    let draft = overlapping
+        .create_plan_draft(&json!({ "mode": "new", "plan": metadata }))
+        .unwrap();
+    let id = draft["draftId"].as_str().unwrap().to_owned();
+    let week1 = plan_week(
+        1,
+        vec![plan_session(
+            "n1",
+            "2026-09-21",
+            0,
+            "low",
+            plan_component("n1-c1", "Run", "endurance")["prescription"].clone(),
+        )],
+    );
+    let week2 = plan_week(
+        2,
+        vec![plan_session(
+            "n2",
+            "2026-09-28",
+            0,
+            "low",
+            plan_component("n2-c1", "Run", "endurance")["prescription"].clone(),
+        )],
+    );
+    overlapping
+        .upsert_plan_draft_week(&id, 0, &week1)
+        .unwrap();
+    overlapping
+        .upsert_plan_draft_week(&id, 1, &week2)
+        .unwrap();
+    let error = overlapping.validate_plan_draft(&id).unwrap_err();
+    assert_eq!(error.code(), AthriaErrorCode::HistoricalSessionProtected);
+    assert!(error.message().contains("s1"));
+
+    let ended = test_app();
+    patch_profile(
+        &ended,
+        json!({ "trainingRhythm": { "kind": "fixed_week", "days": [0] } }),
+    );
+    let old = plan_write(
+        json!({ "kind": "fixed_week", "days": [0] }),
+        2,
+        "2026-08-31",
+        endurance_progressions(2),
+        vec![
+            plan_week(
+                1,
+                vec![plan_session(
+                    "s1",
+                    "2026-08-31",
+                    0,
+                    "low",
+                    plan_component("c1", "Run", "endurance")["prescription"].clone(),
+                )],
+            ),
+            plan_week(
+                2,
+                vec![plan_session(
+                    "s2",
+                    "2026-09-07",
+                    0,
+                    "low",
+                    plan_component("c2", "Run", "endurance")["prescription"].clone(),
+                )],
+            ),
+        ],
+        0,
+    );
+    ended.save_current_plan(&old).unwrap();
+    let metadata = plan_write(
+        json!({ "kind": "fixed_week", "days": [0] }),
+        2,
+        "2026-09-14",
+        endurance_progressions(2),
+        vec![],
+        0,
+    );
+    let draft = ended
+        .create_plan_draft(&json!({ "mode": "new", "plan": metadata }))
+        .unwrap();
+    let id = draft["draftId"].as_str().unwrap().to_owned();
+    let week1 = plan_week(
+        1,
+        vec![plan_session(
+            "n1",
+            "2026-09-14",
+            0,
+            "low",
+            plan_component("n1-c1", "Run", "endurance")["prescription"].clone(),
+        )],
+    );
+    let week2 = plan_week(
+        2,
+        vec![plan_session(
+            "n2",
+            "2026-09-21",
+            0,
+            "low",
+            plan_component("n2-c1", "Run", "endurance")["prescription"].clone(),
+        )],
+    );
+    ended.upsert_plan_draft_week(&id, 0, &week1).unwrap();
+    ended.upsert_plan_draft_week(&id, 1, &week2).unwrap();
+    let error = ended.validate_plan_draft(&id).unwrap_err();
+    assert_eq!(error.code(), AthriaErrorCode::HistoricalSessionProtected);
+}
+
+#[test]
+fn drafts_preserve_unclassified_history_but_reject_new_unclassified_sessions() {
+    let app = test_app();
+    patch_profile(&app, json!({ "trainingRhythm": { "kind": "fixed_week", "days": [0] } }));
+    app.save_current_plan(&monday_plan_write(0)).unwrap();
+    let mut legacy = app.get_current_plan().unwrap().unwrap();
+    legacy["mesocycle"]["weeks"][0]["sessions"][0]["type"] = Value::Null;
+    app.store().save_current_plan(&legacy, 1).unwrap();
+    let draft = app.create_plan_draft(&json!({ "mode": "current_plan" })).unwrap();
+    let id = draft["draftId"].as_str().unwrap();
+    let historical = legacy["mesocycle"]["weeks"][0]["sessions"][0].clone();
+    app.upsert_plan_draft_session(id, 2, 1, None, &historical).unwrap();
+    let mut week = legacy["mesocycle"]["weeks"][0].clone();
+    app.upsert_plan_draft_week(id, 3, &week).unwrap();
+    let mut invalid = legacy["mesocycle"]["weeks"][1]["sessions"][0].clone();
+    invalid["type"] = Value::Null;
+    assert_eq!(app.upsert_plan_draft_session(id, 4, 2, None, &invalid).unwrap_err().code(), AthriaErrorCode::InvalidData);
+    week["sessions"][0]["name"] = json!("Changed history");
+    assert_eq!(app.upsert_plan_draft_week(id, 4, &week).unwrap_err().code(), AthriaErrorCode::InvalidData);
+    assert!(app.validate_plan_draft(id).unwrap().valid);
+    app.commit_plan_draft(id, 4, 1, &app.snapshot_hash().unwrap(), true).unwrap();
+    assert_eq!(app.get_current_plan().unwrap().unwrap()["mesocycle"]["weeks"][0]["sessions"][0], historical);
+}

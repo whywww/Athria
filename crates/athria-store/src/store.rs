@@ -2092,7 +2092,6 @@ mod tests {
                 "fields": {
                     "hrvRmssdMs": { "value": 50, "source": "intervals_icu", "updatedAt": "original" },
                     "restingHeartRateBpm": { "value": 50, "source": "intervals_icu", "updatedAt": "original" },
-                    "sleepScore": { "value": 85, "source": "intervals_icu", "updatedAt": "original" },
                     "readiness": { "value": 1, "source": "intervals_icu", "updatedAt": "original" }
                 }
             });
@@ -2106,6 +2105,9 @@ mod tests {
         let record = store.get_wellness(DEFAULT_OWNER_ID, "2026-10-05").unwrap().unwrap();
         assert_eq!(record["fields"]["readiness"]["value"], 85);
         assert_eq!(record["fields"]["readiness"]["source"], "athria");
+        assert_eq!(record["readinessAssessment"]["dataQuality"], "limited");
+        assert!(record["readinessAssessment"]["sleepScore"].is_null());
+        assert_eq!(record["readinessAssessment"]["algorithmVersion"], athria_core::readiness::ALGORITHM_VERSION);
         assert_eq!(store.get_wellness(DEFAULT_OWNER_ID, "2026-10-06").unwrap().unwrap()["fields"]["readiness"]["value"], 85);
         store.close();
         let store = SqliteStore::open_with_clock(&path, clock).unwrap();

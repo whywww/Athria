@@ -36,6 +36,13 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 export function useLanguage() { return useContext(LanguageContext); }
 
 export const zh: Record<string, string> = {
+  "Based on cardiac signals only": "仅基于心脏指标",
+  "Based on HRV only": "仅基于 HRV",
+  "Based on resting HR only": "仅基于静息心率",
+  "Based on heart rate only": "仅基于心率",
+  "Limited data": "数据有限",
+  "Limited estimate": "有限估计",
+  "Sleep and subjective fatigue are not included. Normal cardiac signals do not establish complete recovery.": "未纳入睡眠和主观疲劳。心脏指标正常不代表身体已完全恢复。",
   "Based on the day's data": "根据当日数据评估",
   "Estimates your overall training readiness from recovery signals and recent training load. Scored 0–100; higher means more suitable for higher-intensity training.": "根据恢复信号与近期训练负荷，估计你当前的整体训练准备度。分数范围 0–100，\n分数越高，表示越适合进行较高强度的训练。",
   "Cardiac recovery": "心脏恢复",

@@ -11,7 +11,7 @@ Use shared application services for writes. Approval, optimistic concurrency, an
 | Template deletion | Explicit deletion request | `confirmedExplicitRequest`; applicable revision and in-use checks |
 | Draft session write | Approve outline before drafting | `expectedDraftRevision`; inserts, replaces, or removes one session and preserves the week |
 | Draft week replacement | Approve outline before drafting | `expectedDraftRevision`; replaces a complete week |
-| Plan commit | Approve complete detailed plan | Confirmation, draft/plan revisions, state snapshot, and plan validation |
+| Plan commit | Approve complete detailed plan | Confirmation, draft/plan revisions, state snapshot, history protection, and scoped plan validation |
 | Next-day append/replace | Approve complete prescriptions | `clientRequestId`, scheduled day, plan revision, and validation |
 | Occurrence complete/skip/restore/move | Approve the action | Nested action carries applicable confirmation/revision guards |
 | Manual-history edit / matching correction | Approve exact correction | Confirmation, target snapshot hash, and plan revision where required |
@@ -71,7 +71,7 @@ A stale hash requires a fresh read and reconstructed diff. Do not attach a newer
 
 Revision values are illustrative. Profile-hash comparison and database-path approval are Agent duties, not extra commit arguments.
 
-Runtime commit checks draft/base revisions, references, and current plan validation, then saves atomically. Successful commit deletes the draft and its weeks in the same transaction and records `sourceDraftId` on Current Plan. Repeated submissions return `DRAFT_NOT_FOUND`; there is no commit replay. Discarding deletes the draft and its weeks and leaves Current Plan untouched. A changed base plan requires a fresh draft and rebase.
+Runtime commit checks draft/base revisions, references, history protection, and scoped plan validation, then saves atomically. Draft validation excludes historical, completed, and skipped occurrences from Profile-dependent and per-session training-rule checks while keeping plan structure and domain/phase coverage whole-plan. Protected occurrences are read-only; a successor cycle is exempt only when it starts today or later, after the current plan's last day, and contains no earlier sessions. Direct non-draft saves and desktop adjustment reminders still validate the complete Current Plan. Successful commit deletes the draft and its weeks in the same transaction and records `sourceDraftId` on Current Plan. Repeated submissions return `DRAFT_NOT_FOUND`; there is no commit replay. Discarding deletes the draft and its weeks and leaves Current Plan untouched. A changed base plan requires a fresh draft and rebase.
 
 Drafts persist work without changing Current Plan. Resuming across conversations repeats the planning checkpoints.
 
