@@ -111,7 +111,7 @@ dependencies = [
 
 [[package]]
 name = "athria"
-version = "0.2.1-beta.2"
+version = "0.2.1-beta.3"
 dependencies = [
  "athria-application",
  "athria-core",
