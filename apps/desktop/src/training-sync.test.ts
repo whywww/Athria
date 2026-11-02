@@ -8,7 +8,7 @@ import { notify } from "./toasts";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("./toasts", () => ({ notify: vi.fn(), notifyError: vi.fn() }));
 
-const vault: VaultStatus = { databaseUuid: "a", databasePath: "a.sqlite3", initialized: true, locked: false, remembered: true, canRemember: true, legacySources: [] };
+const vault: VaultStatus = { databaseUuid: "a", databasePath: "a.sqlite3", initialized: true, locked: false, remembered: true, canRemember: true };
 
 describe("daily training sync", () => {
   it("waits for setup and unlock, runs once per database, and permits a new database", async () => {

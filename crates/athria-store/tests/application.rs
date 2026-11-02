@@ -144,18 +144,13 @@ fn manual_sleep_entries_survive_sync_until_cleared_and_use_snapshot_conflict_che
 }
 
 #[test]
-fn profile_writes_accept_legacy_session_minutes_and_persist_only_the_new_key() {
-    let app = test_app();
-    let saved = app.save_profile(&json!({"maxSessionMinutes": 90})).unwrap();
-    assert_eq!(saved["usualSessionMinutes"], 90);
-    for patch in [json!({"maxSessionMinutes": 75}), json!({"usualSessionMinutes": 75, "maxSessionMinutes": 120})] {
-        let hash = app.profile_hash().unwrap();
-        let updated = app.update_profile(&json!({"patch": patch, "expectedProfileHash": hash})).unwrap();
-        assert_eq!(updated["usualSessionMinutes"], 75);
-        assert!(updated.get("maxSessionMinutes").is_none());
-        let stored = app.store().get_profile("local-user").unwrap().unwrap();
-        assert_eq!(stored["usualSessionMinutes"], 75);
-        assert!(stored.get("maxSessionMinutes").is_none());
+fn profile_writes_reject_old_session_minutes_without_changing_profile() {
+    let app=test_app();
+    let before=app.profile_hash().unwrap();
+    assert!(app.save_profile(&json!({"maxSessionMinutes":90})).is_err());
+    for patch in [json!({"maxSessionMinutes":75}),json!({"usualSessionMinutes":75,"maxSessionMinutes":120})] {
+        assert!(app.update_profile(&json!({"patch":patch,"expectedProfileHash":before})).is_err());
+        assert_eq!(app.profile_hash().unwrap(),before);
     }
 }
 
@@ -661,8 +656,7 @@ fn plan_with_run() -> Value {
                     "id": "s1", "scheduledDate": "2026-09-10", "order": 0, "status": "planned", "templateRef": null,
                     "type": "Run", "subtype": null, "domain": "endurance", "name": "Easy Run", "intent": "Aerobic base", "durationMinutes": 60, "recoveryDemand": "low", "keySession": false,
                     "prescription": {"blocks":[]},
-                    "progressionNote": null, "schedulingRationale": null, "legacySnapshot": false,
-                }],
+                    "progressionNote": null, "schedulingRationale": null, }],
             }],
         },
     })
@@ -1509,7 +1503,7 @@ fn training_taxonomy_exposes_the_versioned_vocabularies() {
             "aiHardConfidence"
         ]
     );
-    assert_eq!(taxonomy["planSchemaVersion"], json!("7.0"));
+    assert_eq!(taxonomy["planSchemaVersion"], json!("8.0"));
     assert_eq!(taxonomy["taxonomyVersion"], json!("strength-2.0"));
     assert_eq!(taxonomy["templateCatalogVersion"], json!("2.0"));
     assert_eq!(
@@ -1606,8 +1600,7 @@ fn plan_session(
         "id": id, "scheduledDate": scheduled_date, "order": order, "status": "planned", "templateRef": null,
         "type": "Run", "subtype": null, "domain": "endurance", "name": "Easy Run", "intent": "Aerobic base", "durationMinutes": 45, "recoveryDemand": recovery_demand, "keySession": false,
         "prescription": prescription,
-        "progressionNote": null, "schedulingRationale": null, "legacySnapshot": false,
-    })
+        "progressionNote": null, "schedulingRationale": null, })
 }
 
 fn plan_phase(id: &str, phase_type: &str, name: &str, start_week: i64, end_week: i64) -> Value {
@@ -1647,7 +1640,7 @@ fn plan_write(
     expected_revision: i64,
 ) -> Value {
     json!({
-        "planSchemaVersion": "7.0", "ownerId": "local-user", "title": "Base Block", "summary": "", "effectiveStartDate": effective_start,
+        "planSchemaVersion": "8.0", "ownerId": "local-user", "title": "Base Block", "summary": "", "effectiveStartDate": effective_start,
         "mesocycle": { "durationWeeks": duration_weeks, "schedule": schedule, "domainProgressions": progressions, "weeks": weeks },
         "sourceAgent": "test", "model": null, "skillVersion": "0.6.0", "inputSnapshotHash": null,
         "expectedRevision": expected_revision,
@@ -2229,8 +2222,7 @@ fn next_day_session(id: &str) -> Value {
         "id": id, "status": "planned", "templateRef": null, "name": "Tempo Run", "intent": "Threshold",
         "durationMinutes": 50, "recoveryDemand": "normal", "keySession": false,
         "prescription": plan_component(&format!("{id}-c1"), "Run", "endurance")["prescription"].clone(),
-        "progressionNote": null, "schedulingRationale": null, "legacySnapshot": false,
-    })
+        "progressionNote": null, "schedulingRationale": null, })
 }
 
 fn next_day_write(scheduled_date: &str, expected_revision: i64, sessions: Vec<Value>) -> Value {
@@ -2313,7 +2305,7 @@ fn saved_plans_materialize_weekly_occurrences_with_impact_and_revision() {
     assert_eq!(saved["validation"]["valid"], json!(true));
     assert_eq!(
         saved["impact"],
-        json!({ "affectedCount": 0, "updatedCount": 2, "deletedCount": 0, "legacySkippedCount": 0 })
+        json!({ "affectedCount": 0, "updatedCount": 2, "deletedCount": 0 })
     );
     assert_eq!(
         saved["plan"]
@@ -2366,7 +2358,6 @@ fn saved_plans_materialize_weekly_occurrences_with_impact_and_revision() {
             "prescription",
             "progressionNote",
             "schedulingRationale",
-            "legacySnapshot"
         ]
     );
 
@@ -2405,7 +2396,6 @@ fn saved_plans_materialize_weekly_occurrences_with_impact_and_revision() {
             "status",
             "displayState",
             "prescription",
-            "legacySnapshot",
             "overrideReason",
             "completedTrainingSessionId",
             "completedAt",
@@ -3082,9 +3072,8 @@ fn intervals_swim_resync_matches_plan_and_preserves_user_choices() {
         "start_date": "2026-10-07T11:03:08Z", "moving_time": 2880, "distance": 925 }], "wellness": [] });
     let id = "intervals:activities:i194646139";
     let mut old = imported_session("intervals", "activities:i194646139", id, "2026-10-07T11:03:08Z", "2026-10-07T11:51:08Z", 48, "Swim");
-    old["modality"] = json!("unknown");
     old["domains"] = json!([]);
-    old["sport"] = json!("OpenWaterSwim");
+    old["type"] = json!("OpenWaterSwim");
     app.store().upsert_sessions(&[old]).unwrap();
     app.commit_intervals(&payload, &context).unwrap();
     let read = || app.store().list_sessions("local-user", None).unwrap();
@@ -3134,6 +3123,9 @@ fn new_manual_records_and_plans_require_a_known_type() {
     assert_eq!(app.record_training_session(&value).unwrap_err().code(), AthriaErrorCode::InvalidData);
     value["sport"] = json!("WeightTraining");
     value["type"] = Value::Null;
+    assert!(app.record_training_session(&value).is_err());
+    value.as_object_mut().unwrap().remove("sport");
+    value["type"] = json!("WeightTraining");
     let session = app.record_training_session(&value).unwrap();
     assert_eq!(session["type"], "StrengthTraining");
     assert_eq!(session["subtype"], Value::Null);

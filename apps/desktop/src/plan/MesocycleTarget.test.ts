@@ -5,7 +5,7 @@ import type { CurrentPlan } from "../view-models";
 import { MesocycleTarget } from "./MesocycleTarget";
 
 const plan: CurrentPlan = {
-  planSchemaVersion: "7.0",
+  planSchemaVersion: "8.0",
   ownerId: "local-user",
   title: "10K Build",
   summary: "",

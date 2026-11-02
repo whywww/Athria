@@ -34,8 +34,7 @@ fn weekly_session_projection(session: &Value, status: &str) -> Value {
         "prescription": session["prescription"],
         "progressionNote": session["progressionNote"],
         "schedulingRationale": session["schedulingRationale"],
-        "legacySnapshot": session["legacySnapshot"],
-    })
+        })
 }
 
 /// Phase reference for the session's single resolved domain.
@@ -151,7 +150,6 @@ fn project_session(
         "progressionNote": session["progressionNote"],
         "schedulingRationale": session["schedulingRationale"],
         "exerciseOverrides": [],
-        "legacySnapshot": session["legacySnapshot"],
         "notes": "",
         "overrideReason": Value::Null,
         "status": status,
@@ -424,8 +422,7 @@ mod tests {
             "id": id, "scheduledDate": scheduled_date, "order": order, "status": "planned", "templateRef": null,
             "name": name, "domain": "endurance", "intent": "Aerobic base", "durationMinutes": 60, "recoveryDemand": "low", "keySession": false,
             "prescription": {"blocks":[]},
-            "progressionNote": null, "schedulingRationale": null, "legacySnapshot": false,
-        })
+            "progressionNote": null, "schedulingRationale": null, })
     }
 
     fn plan() -> Value {
@@ -496,7 +493,6 @@ mod tests {
                 "progressionNote",
                 "schedulingRationale",
                 "exerciseOverrides",
-                "legacySnapshot",
                 "notes",
                 "overrideReason",
                 "status",

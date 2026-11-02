@@ -2325,7 +2325,6 @@ impl<S: AthriaStore> AthriaApplication<S> {
                 "affectedCount": existing.len(),
                 "updatedCount": desired.len(),
                 "deletedCount": deleted.len(),
-                "legacySkippedCount": 0,
             },
         }))
     }
@@ -2493,7 +2492,6 @@ impl<S: AthriaStore> AthriaApplication<S> {
                     "status": session["status"],
                     "displayState": display_state,
                     "prescription": session["prescription"],
-                    "legacySnapshot": session["legacySnapshot"],
                     "overrideReason": session["overrideReason"],
                     "completedTrainingSessionId": session["completedTrainingSessionId"],
                     "completedAt": session["completedAt"],

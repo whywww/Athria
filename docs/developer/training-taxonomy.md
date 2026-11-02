@@ -78,7 +78,7 @@ Both plan sessions and History records have at most one whole-session domain. Ea
 
 Template nodes use domain-specific roles/variables. Functional templates currently use endurance-style roles/variables; mobility uses down-regulation, mobility, and easy-movement roles. This does not establish a functional scientific rule pack.
 
-**Current schema limitation:** `schemas/v7/session-template.json` still describes the older recovery-based domain set. The runtime template parser accepts the six domains above. For mobility/functional templates, consult the [runtime parser](../../crates/athria-core/src/schema/template.rs) and the live tool contract; the standalone template schema is not yet aligned.
+**Current schema limitation:** `schemas/v8/session-template.json` still describes the older recovery-based domain set. The runtime template parser accepts the six domains above. For mobility/functional templates, consult the [runtime parser](../../crates/athria-core/src/schema/template.rs) and the live tool contract; the standalone template schema is not yet aligned.
 
 ## Exercise facts
 
@@ -99,6 +99,6 @@ Use taxonomy IDs, not translated labels. A familiar exercise name alone cannot c
 
 ## Legacy data
 
-Current prescriptions use mobility instead of the legacy recovery domain. Only database schema 40 is supported; historical taxonomy conversion files and database upgrade paths are not shipped. Ambiguous or unrecognized names remain unclassified; do not infer from broad domain alone.
+Current prescriptions use mobility instead of the legacy recovery domain. Only database schema 41 is supported; historical taxonomy conversion files and database upgrade paths are not shipped. Ambiguous or unrecognized names remain unclassified; do not infer from broad domain alone.
 
 Runtime parsing is not a general free-text name classifier.

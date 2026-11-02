@@ -675,7 +675,7 @@
     {
       "operation": "save_current_plan",
       "input": {
-        "planSchemaVersion": "7.0",
+        "planSchemaVersion": "8.0",
         "ownerId": "local-user",
         "title": "Compat Plan",
         "summary": "",
@@ -726,7 +726,6 @@
                   "keySession": false,
                   "progressionNote": null,
                   "schedulingRationale": null,
-                  "legacySnapshot": false,
                   "type": "Run",
                   "subtype": null,
                   "domain": "endurance",
@@ -755,7 +754,7 @@
       },
       "expected": {
         "plan": {
-          "planSchemaVersion": "7.0",
+          "planSchemaVersion": "8.0",
           "ownerId": "local-user",
           "title": "Compat Plan",
           "summary": "",
@@ -819,8 +818,7 @@
                       ]
                     },
                     "progressionNote": null,
-                    "schedulingRationale": null,
-                    "legacySnapshot": false
+                    "schedulingRationale": null
                   }
                 ]
               }
@@ -1004,7 +1002,7 @@
           ],
           "dataGaps": [],
           "validatedAt": "2026-09-17T04:00:00.000Z",
-          "inputHash": "fnv1a-5764eeb6",
+          "inputHash": "fnv1a-20a3ae3a",
           "coverage": {
             "hardChecksResolved": 4,
             "hardChecksTotal": 4,
@@ -1019,15 +1017,14 @@
         "impact": {
           "affectedCount": 0,
           "updatedCount": 1,
-          "deletedCount": 0,
-          "legacySkippedCount": 0
+          "deletedCount": 0
         }
       }
     },
     {
       "operation": "save_current_plan",
       "input": {
-        "planSchemaVersion": "7.0",
+        "planSchemaVersion": "8.0",
         "ownerId": "local-user",
         "title": "Compat Plan",
         "summary": "",
@@ -1078,7 +1075,6 @@
                   "keySession": false,
                   "progressionNote": null,
                   "schedulingRationale": null,
-                  "legacySnapshot": false,
                   "type": "Run",
                   "subtype": null,
                   "domain": "endurance",
@@ -1161,7 +1157,6 @@
               }
             ]
           },
-          "legacySnapshot": false,
           "overrideReason": null,
           "completedTrainingSessionId": null,
           "completedAt": null,
@@ -1225,7 +1220,6 @@
             "progressionNote": null,
             "schedulingRationale": null,
             "exerciseOverrides": [],
-            "legacySnapshot": false,
             "notes": "",
             "overrideReason": null,
             "status": "skipped",

@@ -29,6 +29,6 @@ Reference for Athria's data contracts, training classification, and behavior. St
 - **Agent policy:** conversation and approval behavior specified by [Athria Skills](../../packages/skills). A tool cannot verify that the conversation occurred.
 - **Current limitation:** a concept not fully implemented across all layers.
 
-JSON examples marked **fragment** are partial objects, not complete requests. Public ranges come from [v7 schemas](../../schemas/README.md); runtime behavior comes from the linked implementation. Existing defaults do not imply user confirmation.
+JSON examples marked **fragment** are partial objects, not complete requests. Public ranges come from [v8 schemas](../../schemas/README.md); runtime behavior comes from the linked implementation. Existing defaults do not imply user confirmation.
 
 Related: [Contributor setup](../../README.md#potential-contributors), [known limitations](../KNOWN_LIMITATIONS.md), and [data sync guide](../DATA_SYNC.md). Update these pages when the corresponding contract changes.

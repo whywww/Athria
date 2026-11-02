@@ -102,7 +102,6 @@
                 "keySession": false,
                 "progressionNote": null,
                 "schedulingRationale": null,
-                "legacySnapshot": false,
                 "domain": "mobility",
                 "prescription": {
                   "blocks": [
@@ -127,7 +126,6 @@
                 "keySession": false,
                 "progressionNote": null,
                 "schedulingRationale": null,
-                "legacySnapshot": false,
                 "domain": "mobility",
                 "prescription": {
                   "blocks": [
@@ -152,7 +150,6 @@
                 "keySession": false,
                 "progressionNote": null,
                 "schedulingRationale": null,
-                "legacySnapshot": false,
                 "domain": "mobility",
                 "prescription": {
                   "blocks": [
@@ -183,7 +180,6 @@
                 "keySession": false,
                 "progressionNote": null,
                 "schedulingRationale": null,
-                "legacySnapshot": false,
                 "domain": "mobility",
                 "prescription": {
                   "blocks": [
@@ -208,7 +204,6 @@
                 "keySession": false,
                 "progressionNote": null,
                 "schedulingRationale": null,
-                "legacySnapshot": false,
                 "domain": "mobility",
                 "prescription": {
                   "blocks": [
@@ -233,7 +228,6 @@
                 "keySession": false,
                 "progressionNote": null,
                 "schedulingRationale": null,
-                "legacySnapshot": false,
                 "domain": "mobility",
                 "prescription": {
                   "blocks": [
@@ -424,7 +418,7 @@
     ],
     "dataGaps": [],
     "validatedAt": "2026-09-17T10:30:00.000Z",
-    "inputHash": "fnv1a-901da203",
+    "inputHash": "fnv1a-bb21533d",
     "coverage": {
       "hardChecksResolved": 4,
       "hardChecksTotal": 4,

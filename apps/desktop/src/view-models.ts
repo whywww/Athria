@@ -122,7 +122,7 @@ export interface Mesocycle {
   durationWeeks: number;
   schedule: AthleteProfile["trainingRhythm"];
   domainProgressions: Array<{ domain: TemplateComponentDomain; phases: DomainPhase[] }>;
-  weeks: Array<{ weekNumber: number; focus: string | null; sessions: Array<{ id: string; scheduledDate: string; order: number; templateRef: TemplateRef | null; domain?: TemplateComponentDomain | null; type?: string | null; subtype?: string | null; name: string; intent: string; durationMinutes: number; recoveryDemand: "low" | "normal" | "high"; keySession: boolean; prescription: SessionPrescription | null; progressionNote: string | null; schedulingRationale: string | null; legacySnapshot: boolean }> }>;
+  weeks: Array<{ weekNumber: number; focus: string | null; sessions: Array<{ id: string; scheduledDate: string; order: number; templateRef: TemplateRef | null; domain?: TemplateComponentDomain | null; type?: string | null; subtype?: string | null; name: string; intent: string; durationMinutes: number; recoveryDemand: "low" | "normal" | "high"; keySession: boolean; prescription: SessionPrescription | null; progressionNote: string | null; schedulingRationale: string | null; }> }>;
 }
 
 export interface TrainingHistorySession { trainingLoad?: number | null; powerLoad?: number | null; hrLoad?: number | null; paceLoad?: number | null; intensity?: number | null; rpe?: number | null; sessionRpe?: number | null; id: string; name: string; startAt: string; timezone: string | null; domains: string[]; type: string | null; subtype: string | null; durationMinutes: number; timePrecision: "exact" | "date_only"; sources: Array<{ source: string; externalId: string }>; plannedSessionId: string | null; planMatch: { plannedSessionId: string; method: "auto" | "manual" } | null; isPlanMatchExcluded: boolean; snapshotHash?: string }
@@ -197,7 +197,7 @@ export interface PlanTarget {
   maintenance?: Array<{ label: string; detail?: string }>;
   coordinationStrategy?: string;
 }
-export interface CurrentPlan { planSchemaVersion: "7.0"; ownerId: string; title: string; summary: string; effectiveStartDate: string; mesocycle: Mesocycle; revision: number; sourceAgent: string | null; model: string | null; skillVersion: string | null; inputSnapshotHash: string | null; sourceDraftId: string | null; updatedAt: string; target?: PlanTarget }
+export interface CurrentPlan { planSchemaVersion: "8.0"; ownerId: string; title: string; summary: string; effectiveStartDate: string; mesocycle: Mesocycle; revision: number; sourceAgent: string | null; model: string | null; skillVersion: string | null; inputSnapshotHash: string | null; sourceDraftId: string | null; updatedAt: string; target?: PlanTarget }
 
 export interface PlannedSession {
   id: string;
@@ -224,7 +224,6 @@ export interface PlannedSession {
   match?: { plannedSessionId: string; method: "auto" | "manual" } | null;
   prescription: SessionPrescription | null;
   notes: string;
-  legacySnapshot: boolean;
   overrideReason: string | null;
 }
 
@@ -255,7 +254,6 @@ export interface CalendarSession {
   completionSource?: "manual" | "import" | null;
   match?: { plannedSessionId: string; method: "auto" | "manual" } | null;
   prescription: SessionPrescription | null;
-  legacySnapshot: boolean;
   overrideReason: string | null;
 }
 

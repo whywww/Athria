@@ -1,7 +1,5 @@
 CREATE TABLE athria_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
 
-CREATE TABLE athria_data_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL);
-
 CREATE TABLE connection_secrets (
           source TEXT PRIMARY KEY,
           config TEXT NOT NULL,

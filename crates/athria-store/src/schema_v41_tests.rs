@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn fresh_v40_database_enforces_one_canonical_rpe_value() {
+fn fresh_v41_database_enforces_one_canonical_rpe_value() {
     let store=SqliteStore::open_in_memory().unwrap();
     assert!(!store.table_exists("training_session_effort_overrides").unwrap());
     for value in [json!(0),json!(11),json!(3.5),json!("3")] {
@@ -32,10 +32,10 @@ fn date_and_source_queries_use_range_indexes() {
 #[test]
 fn future_versions_are_rejected_without_changes() {
     let store=SqliteStore::open_in_memory().unwrap();
-    store.connection.execute("INSERT INTO athria_migrations VALUES (41,'original')", []).unwrap();
+    store.connection.execute("INSERT INTO athria_migrations VALUES (42,'original')", []).unwrap();
     let before=store.data_version().unwrap();
     assert_eq!(store.require_supported_schema().unwrap_err().code(),AthriaErrorCode::SchemaVersionUnsupported);
-    assert_eq!(store.schema_version().unwrap(),41);
+    assert_eq!(store.schema_version().unwrap(),42);
     assert_eq!(store.data_version().unwrap(),before);
 }
 
@@ -46,7 +46,7 @@ fn metadata_timestamp_writes_use_the_injected_clock() {
     store.set_database_uuid("replacement").unwrap();
     store.connection.execute_batch("INSERT INTO connection_secrets VALUES ('hevy','{}',1,'nonce','cipher','original');").unwrap();
     store.set_connection_daily_auto_sync("hevy",true).unwrap();
-    for query in ["SELECT updated_at FROM vault_meta", "SELECT updated_at FROM connection_secrets", "SELECT applied_at FROM athria_migrations WHERE version=40"] {
+    for query in ["SELECT updated_at FROM vault_meta", "SELECT updated_at FROM connection_secrets", "SELECT applied_at FROM athria_migrations WHERE version=41"] {
         assert_eq!(store.connection.query_row(query, [], |r|r.get::<_,String>(0)).unwrap(),now);
     }
 }
@@ -56,8 +56,8 @@ fn current_schema_has_complete_structure_and_reopens_without_changes() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("current.sqlite3");
     let store = SqliteStore::open(&path).unwrap();
-    assert_eq!(store.schema_version().unwrap(), 40);
-    for (kind, count) in [("table", 22), ("trigger", 58)] {
+    assert_eq!(store.schema_version().unwrap(), 41);
+    for (kind, count) in [("table", 21), ("trigger", 58)] {
         let actual: i64 = store.connection.query_row("SELECT count(*) FROM sqlite_master WHERE type=?1 AND name NOT LIKE 'sqlite_%'", [kind], |r|r.get(0)).unwrap();
         assert_eq!(actual,count);
     }
@@ -73,12 +73,12 @@ fn current_schema_has_complete_structure_and_reopens_without_changes() {
 
 #[test]
 fn previous_versions_are_rejected_by_writable_and_read_only_opens_without_changes() {
-    for version in [37,38,39] {
+    for version in [37,38,39,40] {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("unsupported.sqlite3");
         let store = SqliteStore::open(&path).unwrap();
         store.save_profile(&json!({"ownerId":"a","preferredName":"Keep"})).unwrap();
-        store.connection.execute("DELETE FROM athria_migrations WHERE version>?1",[version]).unwrap();
+        store.connection.execute("UPDATE athria_migrations SET version=?1",[version]).unwrap();
         drop(store);
         let before = std::fs::read(&path).unwrap();
         assert_eq!(SqliteStore::open(&path).unwrap_err().code(),AthriaErrorCode::SchemaVersionUnsupported);

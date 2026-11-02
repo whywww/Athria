@@ -2,9 +2,9 @@
 
 Athria stores a workspace as a single SQLite file. The schema is a thin relational shell around JSON documents: columns carry only what the app queries and guards (identity, owner, dates, status, revision counters), while each row's complete business document lives as camelCase JSON in a `data` column — the same shapes returned by the API and MCP tools.
 
-This is the field dictionary for the current SQLite schema version **40** and plan contract **7.0**. Writable opens accept only schema 40; older and future versions are rejected without modification. Read-only backup previews accept only schema 40 and never migrate. A fresh database is created directly at this schema. It describes the current application contract, not the values present in every existing database row.
+This is the field dictionary for the current SQLite schema version **41** and plan contract **8.0**. Writable opens accept only schema 41; older and future versions are rejected without modification. Read-only backup previews accept only schema 41 and never migrate. A fresh database is created directly at this schema. It describes the current application contract, not the values present in every existing database row.
 
-Column declarations live in the [store schema directory](../../crates/athria-store/src/schema) and [store.rs](../../crates/athria-store/src/store.rs); public JSON ranges come from the [v7 schemas](../../schemas/v7) and runtime normalization from the linked Rust sources.
+Column declarations live in the [store schema directory](../../crates/athria-store/src/schema) and [store.rs](../../crates/athria-store/src/store.rs); public JSON ranges come from the [v8 schemas](../../schemas/v8) and runtime normalization from the linked Rust sources.
 
 ## Conventions
 
@@ -130,7 +130,7 @@ Each present `fields.<key>` carries its own `value`, `source` (`intervals_icu`, 
 
 Every value below is nullable; missing keys remain absent.
 
-`subjectiveFatigue` replaces legacy `fatigue`. Writable schema-40 opens perform a named, transactional data migration; read-only reads normalize in memory. The new field wins if both exist. Legacy ICU grades are mapped only while converting the old field; new low scores remain unchanged. ICU payloads still use `fatigue` for user-reported ratings, not device measurements.
+`subjectiveFatigue` is the stored 0–100 rating. Old internal Wellness field names are rejected. ICU payloads still use `fatigue`; the importer maps those external grades to the current rating without altering new low scores.
 
 | Field key | Value type / runtime range | Unit / meaning |
 | --- | --- | --- |
@@ -199,7 +199,7 @@ Current Plan
 
 | Field | Type / public range | Meaning |
 | --- | --- | --- |
-| `planSchemaVersion` | `"7.0"` | Current accepted plan contract |
+| `planSchemaVersion` | `"8.0"` | Current accepted plan contract |
 | `ownerId` | String | Owner; default `local-user` |
 | `title`, `summary` | String | Plan title and description; summary defaults to empty string |
 | `effectiveStartDate` | `YYYY-MM-DD` | Start of plan week 1 |
@@ -269,7 +269,6 @@ Each `mesocycle.weeks[].sessions[]` object describes one planned training sessio
 | `domain` | Single session domain | Derived from recognized type, or explicit when type is unknown |
 | `prescription` | One structured prescription | Domain-specific `blocks[]`; null only for sessions without executable content |
 | `progressionNote`, `schedulingRationale` | String or null | Session-specific progression and scheduling explanation |
-| `legacySnapshot` | Boolean | Preserved legacy content marker; default false |
 
 #### `prescription` — executable training content
 
@@ -629,7 +628,7 @@ Tracked Profile fields are `goals`, `preference`, `usualSessionMinutes`, `traini
 
 ### Planned occurrences (read model)
 
-Current occurrences are read projections, not separately persisted prescription snapshots. [planned.rs](../../crates/athria-store/src/planned.rs) combines Weekly Sessions in `current_mesocycles.data` with plan matches and actual workouts. The prescription is the owning Weekly Session's prescription. Phase references match the single session domain and resolve against progression timelines. Resolved and legacy session content is protected by plan-write policy.
+Current occurrences are read projections, not separately persisted prescription snapshots. [planned.rs](../../crates/athria-store/src/planned.rs) combines Weekly Sessions in `current_mesocycles.data` with plan matches and actual workouts. The prescription is the owning Weekly Session's prescription. Phase references match the single session domain and resolve against progression timelines. Resolved session content is protected by plan-write policy.
 
 The projection reuses the Weekly Session fields and adds:
 
@@ -753,7 +752,7 @@ Applied schema versions.
 | `version` (INTEGER) | Applied version; PK |
 | `applied_at` | Timestamp |
 
-Writable opens accept only schema 40; automatic database upgrades are not supported. Read-only opens require schema 40. Other versions are rejected without conversion.
+Writable opens accept only schema 41; automatic database upgrades are not supported. Read-only opens require schema 41. Other versions are rejected without conversion.
 
 ### `athria_data_version` — change counter
 
@@ -766,10 +765,10 @@ Monotonic counter used to detect data changes cheaply.
 
 Insert/update/delete on 18 of the 21 tables — all except `athria_migrations`, `athria_data_version`, and `daily_sync_attempts` — bumps this counter through 54 SQL triggers.
 
-Definitions: [public schemas](../../schemas/v7), [runtime parsers](../../crates/athria-core/src/schema), and [application services](../../crates/athria-application/src/app.rs); implementation details remain authoritative in the linked sources.
+Definitions: [public schemas](../../schemas/v8), [runtime parsers](../../crates/athria-core/src/schema), and [application services](../../crates/athria-application/src/app.rs); implementation details remain authoritative in the linked sources.
 
-Schema 40 creates the current structure directly. Migration bookkeeping retains rows 1–40. The template list uses `(owner_id, updated_at DESC)` and source history uses `(owner_id, source, start_at)`. Template content is described by `session-template.json`; full user and built-in read responses use `session-template-read.json`. Profile writes enforce the numeric ranges and fixed-week day constraints in `athlete-profile.json`; historical reads remain permissive, and updating an invalid legacy profile requires correcting its invalid values.
+Schema 41 creates the current structure directly. The version table contains only the current schema version; no historical data migrations run. The template list uses `(owner_id, updated_at DESC)` and source history uses `(owner_id, source, start_at)`. Template content is described by `session-template.json`; full user and built-in read responses use `session-template-read.json`. Profile writes enforce the numeric ranges and fixed-week day constraints in `athlete-profile.json`; historical reads remain permissive, and updating an invalid legacy profile requires correcting its invalid values.
 
 Sleep dates use the evening date: sleep from D to D+1 is stored on D for manual/API entries. ICU sleep fields (`sleepSeconds`, `sleepScore`, `avgSleepingHeartRateBpm`) are converted from the source wake date to the previous evening at import; all other fields keep their source date. UI charts and highlights use stored dates directly.
 
-On the first writable open after this date correction, the `sleep_evening_dates` data migration moves legacy sleep fields back one day for every owner and source, preserving field provenance and timestamps. It leaves other metrics on their original dates, recomputes readiness, and commits a migration marker in the same transaction. Read-only opens do not migrate. Further writable opens do not shift dates again.
+Sleep dates are stored using the current evening-date convention. Database opens do not shift dates or convert historical data.

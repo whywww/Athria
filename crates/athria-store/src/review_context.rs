@@ -109,7 +109,7 @@ mod tests {
         {
             let store = SqliteStore::open(&path).unwrap();
             store.save_profile(&profile).unwrap();
-            store.sqlite().execute_batch("DROP TABLE plan_review_context; DELETE FROM athria_migrations WHERE version>=32;").unwrap();
+            store.sqlite().execute_batch("DROP TABLE plan_review_context; UPDATE athria_migrations SET version=31;").unwrap();
         }
         assert_eq!(SqliteStore::open(&path).unwrap_err().code(), AthriaErrorCode::SchemaVersionUnsupported);
         let connection = rusqlite::Connection::open(&path).unwrap();

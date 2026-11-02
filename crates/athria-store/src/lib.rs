@@ -2,10 +2,10 @@
 //! the shared `AthriaStore` interface.
 //!
 //! [`SqliteStore`] is the rusqlite implementation that owns the Rust
-//! current schema (version 38), the training-session
+//! current schema (version 41), the training-session
 //! reconciliation engine, planned-session projection, and entity writes with
 //! stable application-facing behavior and error codes. Only the current schema
-//! version opens, with a transactional upgrade from 37; other versions fail with `SCHEMA_VERSION_UNSUPPORTED`.
+//! version opens; other versions fail with `SCHEMA_VERSION_UNSUPPORTED`.
 //! Fresh database creation is authoritative here. Encrypted vault persistence is also owned here while
 //! portable cryptography lives in `athria-vault`.
 

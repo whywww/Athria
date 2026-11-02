@@ -15,7 +15,7 @@ use crate::Result;
 use crate::vocab::{DOMAIN_IDS, MOVEMENT_PATTERN_IDS, MUSCLE_GROUP_IDS};
 
 /// `PLAN_SCHEMA_VERSION`.
-pub const PLAN_SCHEMA_VERSION: &str = "7.0";
+pub const PLAN_SCHEMA_VERSION: &str = "8.0";
 
 /// `factSourceSchema`. The taxonomy response advertises only four of these,
 /// but plan facts may also be `catalog` (built-in plans) or `migration`.
@@ -121,6 +121,9 @@ pub fn parse_current_plan(value: &Value) -> Result<Value> {
 /// `plannedSessionSchema.parse(value)`: the stored occurrence document.
 pub fn parse_planned_session(value: &Value) -> Result<Value> {
     object(value, "plannedSession")?;
+    for key in ["legacySnapshot", "sport", "modality"] {
+        if value.get(key).is_some() { return Err(invalid(&format!("session.{key}"), "use the current session contract")); }
+    }
     let mut session = Map::new();
     let (kind, subtype) = crate::training_type::fields(value);
     session.insert("type".into(), kind);
@@ -204,15 +207,6 @@ pub fn parse_planned_session(value: &Value) -> Result<Value> {
     session.insert(
         "exerciseOverrides".into(),
         parse_exercise_overrides(value, "plannedSession")?,
-    );
-    session.insert(
-        "legacySnapshot".into(),
-        Value::Bool(
-            value
-                .get("legacySnapshot")
-                .and_then(Value::as_bool)
-                .unwrap_or(false),
-        ),
     );
     session.insert("notes".into(), Value::String(text_or(value, "notes", "")));
     session.insert(
@@ -599,6 +593,9 @@ fn parse_weeks(value: &Value, path: &str) -> Result<Value> {
 /// `weeklySessionSchema.parse(value)`.
 fn parse_weekly_session(value: &Value, path: &str) -> Result<Value> {
     object(value, path)?;
+    for key in ["legacySnapshot", "sport", "modality"] {
+        if value.get(key).is_some() { return Err(invalid(&format!("session.{key}"), "use the current session contract")); }
+    }
     let mut session = Map::new();
     let (kind, subtype) = crate::training_type::fields(value);
     session.insert("type".into(), kind);
@@ -663,15 +660,6 @@ fn parse_weekly_session(value: &Value, path: &str) -> Result<Value> {
         "schedulingRationale".into(),
         text_or_null(value, "schedulingRationale"),
     );
-    session.insert(
-        "legacySnapshot".into(),
-        Value::Bool(
-            value
-                .get("legacySnapshot")
-                .and_then(Value::as_bool)
-                .unwrap_or(false),
-        ),
-    );
     Ok(Value::Object(session))
 }
 
@@ -679,6 +667,9 @@ fn parse_weekly_session(value: &Value, path: &str) -> Result<Value> {
 /// `scheduledDate`/`order`, plus the derived-write fields).
 fn parse_planned_session_input(value: &Value, path: &str) -> Result<Value> {
     object(value, path)?;
+    for key in ["legacySnapshot", "sport", "modality"] {
+        if value.get(key).is_some() { return Err(invalid(&format!("session.{key}"), "use the current session contract")); }
+    }
     let mut session = Map::new();
     let (kind, subtype) = crate::training_type::fields(value);
     session.insert("type".into(), kind);
@@ -734,15 +725,6 @@ fn parse_planned_session_input(value: &Value, path: &str) -> Result<Value> {
     session.insert(
         "schedulingRationale".into(),
         text_or_null(value, "schedulingRationale"),
-    );
-    session.insert(
-        "legacySnapshot".into(),
-        Value::Bool(
-            value
-                .get("legacySnapshot")
-                .and_then(Value::as_bool)
-                .unwrap_or(false),
-        ),
     );
     session.insert("notes".into(), Value::String(text_or(value, "notes", "")));
     if let Some(reason) = value.get("overrideReason").and_then(Value::as_str) {
@@ -1439,9 +1421,20 @@ mod tests {
         })
     }
 
+    #[test]
+    fn rejects_old_plan_versions_and_session_fields() {
+        let mut old=plan_write(); old["planSchemaVersion"]=json!("7.0");
+        assert!(parse_current_plan_write(&old).unwrap_err().message().contains("schema"));
+        for key in ["legacySnapshot", "sport", "modality"] {
+            let mut old=plan_write();
+            old["mesocycle"]["weeks"][0]["sessions"][0][key]=json!(false);
+            assert!(parse_current_plan_write(&old).unwrap_err().message().contains(key));
+        }
+    }
+
     fn plan_write() -> Value {
         json!({
-            "planSchemaVersion": "7.0",
+            "planSchemaVersion": "8.0",
             "title": "Base Block",
             "effectiveStartDate": "2026-09-07",
             "mesocycle": {
@@ -1550,7 +1543,6 @@ mod tests {
                 "prescription",
                 "progressionNote",
                 "schedulingRationale",
-                "legacySnapshot"
             ]
         );
         assert_eq!(session["status"], json!("planned"));
@@ -1653,7 +1645,6 @@ mod tests {
                 "progressionNote",
                 "schedulingRationale",
                 "exerciseOverrides",
-                "legacySnapshot",
                 "notes",
                 "overrideReason",
                 "status",
@@ -1744,7 +1735,6 @@ mod tests {
                 "prescription",
                 "progressionNote",
                 "schedulingRationale",
-                "legacySnapshot",
                 "notes"
             ]
         );

@@ -13,7 +13,7 @@ import { LanguageProvider } from "./i18n";
 
 function renderGate(initialized: boolean, locked: boolean, canRemember = true) {
   const client = new QueryClient();
-  client.setQueryData(["vault-status"], { databaseUuid: "database-id", databasePath: "C:\\profiles\\active.sqlite3", initialized, locked, remembered: false, canRemember, legacySources: [] });
+  client.setQueryData(["vault-status"], { databaseUuid: "database-id", databasePath: "C:\\profiles\\active.sqlite3", initialized, locked, remembered: false, canRemember });
   return renderToStaticMarkup(createElement(QueryClientProvider, { client }, createElement(DatabaseGate)));
 }
 

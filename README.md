@@ -290,7 +290,7 @@ Use **ATHRIA_DATABASE_PATH** for isolated development data. Do not run tests or 
 
 On macOS, Athria asks for its database password each time it starts and keeps the unlocked key only in memory. The "Remember on this computer" option remains available on Windows. macOS development app builds use ad-hoc signing and do not need a local signing certificate.
 
-Athria does not read, write, or delete macOS Keychain items. Old Athria entries can remain in Keychain without affecting the app or causing a password prompt. To remove them, open Keychain Access, search for `Athria`, and delete them manually. Legacy API keys stored separately in Keychain are not migrated on macOS; re-enter those keys in Connections if needed. Public macOS distribution requires a separate Developer ID signing and notarization workflow.
+Athria does not read, write, or delete macOS Keychain items. Old Athria entries can remain in Keychain without affecting the app or causing a password prompt. To remove them, open Keychain Access, search for `Athria`, and delete them manually. Public macOS distribution requires a separate Developer ID signing and notarization workflow.
 
 ### Repository structure
 

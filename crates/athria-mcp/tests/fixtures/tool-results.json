@@ -125,8 +125,7 @@
     "impact": {
       "affectedCount": 0,
       "updatedCount": 2,
-      "deletedCount": 0,
-      "legacySkippedCount": 0
+      "deletedCount": 0
     },
     "blockerSummary": {
       "valid": true,

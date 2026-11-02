@@ -21,8 +21,6 @@ use daily_sync::{sync_training_apps_daily, set_connection_daily_auto_sync, daily
 mod agent_integrations;
 mod skill_updates;
 use skill_updates::{skill_update_status, check_skill_updates, install_skill_update, set_skill_auto_update};
-mod legacy_replica_cleanup;
-use legacy_replica_cleanup::cleanup_legacy_replicas;
 use application_ipc::{DesktopApplication, dispatch as dispatch_application};
 use agent_integrations::{AgentKind, SkillUpdateAction, home_dir, resource_skills};
 use athria_application::AthriaApplication;
@@ -67,11 +65,6 @@ fn startup_status(state: State<'_, RuntimeState>) -> Result<Value, String> {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn credential(name: &str) -> Result<keyring::Entry, String> {
-    keyring::Entry::new("Athria", &format!("local-user:{name}")).map_err(|error| error.to_string())
-}
-
-#[cfg(not(target_os = "macos"))]
 fn vault_credential(database_uuid: &str) -> Result<keyring::Entry, String> {
     keyring::Entry::new("Athria", &format!("vault:{database_uuid}:v1"))
         .map_err(|error| error.to_string())
@@ -85,8 +78,6 @@ fn new_runtime_token() -> String {
 #[serde(rename_all = "camelCase")]
 struct AppConfig {
     database_path: Option<PathBuf>,
-    #[serde(default)]
-    data_dir: Option<PathBuf>,
 }
 
 #[cfg(windows)]
@@ -135,12 +126,6 @@ fn read_config_from(root: &Path) -> Option<PathBuf> {
         .database_path
         .filter(|path| path.is_absolute())
         .map(|path| simplify_path(&path))
-        .or_else(|| {
-            config
-                .data_dir
-                .filter(|dir| dir.is_absolute())
-                .map(|dir| simplify_path(&dir).join("athria.sqlite3"))
-        })
 }
 
 // Windows fs::canonicalize returns verbatim paths (\\?\C:\...), which leak into
@@ -160,7 +145,6 @@ fn write_config_to(root: &Path, database_path: &Path) -> Result<(), String> {
     fs::create_dir_all(root).map_err(|error| error.to_string())?;
     let config = AppConfig {
         database_path: Some(database_path.to_path_buf()),
-        data_dir: None,
     };
     let content = serde_json::to_string_pretty(&config).map_err(|error| error.to_string())?;
     let target = root.join("athria.config.json");
@@ -204,7 +188,7 @@ fn initialize_database_at(root: &Path) -> (PathBuf, Option<DesktopApplication>, 
 fn initialize_database_direct_at(root: &Path) -> (PathBuf, Option<DesktopApplication>, Option<String>) {
     let configured = checked_database_path_at(root);
     let display_path = configured.as_ref().cloned().unwrap_or_else(|_| root.join("athria.config.json"));
-    let opened = cleanup_legacy_replicas(root).and_then(|_| configured).and_then(|path| {
+    let opened = configured.and_then(|path| {
         if !path.exists() { return Err("The database file does not exist. Choose an existing database or create a new one.".to_string()); }
         if !path.is_file() { return Err("The database path is not a file.".to_string()); }
         let store = SqliteStore::open(&path).map_err(|error| error.message().to_owned())?;
@@ -253,8 +237,6 @@ fn run_mcp_stdio() -> i32 {
         Ok(path) => path,
         Err(error) => { eprintln!("{error}"); return 1; }
     };
-    let root = match platform_config_root() { Ok(root) => root, Err(error) => { eprintln!("{error}"); return 1; } };
-    if let Err(error) = cleanup_legacy_replicas(&root) { eprintln!("{error}"); return 1; }
     if !database_path.is_file() { eprintln!("The database file does not exist."); return 1; }
     let store = match SqliteStore::open(&database_path) {
         Ok(store) => store,
@@ -297,8 +279,6 @@ fn mcp_refresh(initial_path: PathBuf) -> Arc<dyn Fn(&mut McpService<SqliteStore>
         let configured = simplify_path(&fs::canonicalize(&configured).map_err(|error| error.to_string())?);
         let mut active = active_path.lock().map_err(|_| "MCP database state is unavailable.".to_string())?;
         if *active != configured {
-            let root = platform_config_root()?;
-            cleanup_legacy_replicas(&root)?;
             let store = SqliteStore::open(&configured).map_err(|error| error.message().to_owned())?;
             service.replace_workspace(AthriaApplication::new(store), configured.clone());
             *active = configured;
@@ -502,28 +482,7 @@ async fn vault_status(state: State<'_, RuntimeState>) -> Result<Value, String> {
     let remembered_key = initialized.then(|| remembered_master_key(&bundle)).flatten();
     let remembered = remembered_key.is_some();
     let locked = initialized && cached_master_key_with(&state, &bundle, || remembered_key).is_none();
-    #[cfg(target_os = "macos")]
-    let legacy_sources: Vec<&str> = Vec::new();
-    #[cfg(not(target_os = "macos"))]
-    let legacy_sources: Vec<&str> = if initialized {
-        Vec::new()
-    } else {
-        [
-            ("intervals", "intervals-api-key"),
-            ("xunji", "xunji-api-key"),
-        ]
-        .into_iter()
-        .filter_map(|(source, name)| {
-            credential(name)
-                .ok()?
-                .get_password()
-                .ok()
-                .filter(|value| !value.is_empty())
-                .map(|_| source)
-        })
-        .collect()
-    };
-    Ok(json!({ "databaseUuid": bundle.database_uuid, "databasePath": database_path, "initialized": initialized, "locked": locked, "remembered": remembered, "canRemember": !cfg!(target_os = "macos"), "legacySources": legacy_sources }))
+    Ok(json!({ "databaseUuid": bundle.database_uuid, "databasePath": database_path, "initialized": initialized, "locked": locked, "remembered": remembered, "canRemember": !cfg!(target_os = "macos") }))
 }
 
 #[tauri::command]
@@ -539,42 +498,7 @@ async fn setup_vault(
     }
     let master = vault::new_master_key();
     let envelope = vault::create_envelope(&bundle.database_uuid, &password, &master)?;
-    #[cfg(target_os = "macos")]
     let secrets = Vec::new();
-    #[cfg(not(target_os = "macos"))]
-    let mut secrets = Vec::new();
-    #[cfg(not(target_os = "macos"))]
-    if let Ok(api_key) = credential("intervals-api-key")
-        .and_then(|entry| entry.get_password().map_err(|error| error.to_string()))
-    {
-        if !api_key.is_empty() {
-            let athlete_id = credential("intervals-athlete-id")
-                .ok()
-                .and_then(|entry| entry.get_password().ok())
-                .unwrap_or_else(|| "0".to_string());
-            secrets.push(vault::encrypt_secret(
-                &bundle.database_uuid,
-                "intervals",
-                json!({ "athleteId": athlete_id }),
-                &api_key,
-                &master,
-            )?);
-        }
-    }
-    #[cfg(not(target_os = "macos"))]
-    if let Ok(api_key) = credential("xunji-api-key")
-        .and_then(|entry| entry.get_password().map_err(|error| error.to_string()))
-    {
-        if !api_key.is_empty() {
-            secrets.push(vault::encrypt_secret(
-                &bundle.database_uuid,
-                "xunji",
-                json!({}),
-                &api_key,
-                &master,
-            )?);
-        }
-    }
     let application = active_application(&state)?;
     ensure_generation(&state, generation)?;
     application
@@ -583,12 +507,6 @@ async fn setup_vault(
         .map_err(|error| error.message().to_owned())?;
     cache_master_key(&state, &bundle.database_uuid, &master, Some(remember))?;
     drop(application);
-    #[cfg(not(target_os = "macos"))]
-    for name in ["intervals-api-key", "intervals-athlete-id", "xunji-api-key"] {
-        if let Ok(entry) = credential(name) {
-            let _ = entry.delete_credential();
-        }
-    }
     Ok(json!({ "status": "unlocked" }))
 }
 
@@ -1143,7 +1061,6 @@ fn acquire_startup_guard() -> Option<StartupGuard> {
         log_lifecycle("duplicate desktop launch exited");
     } else {
         log_lifecycle("desktop acquired startup guard");
-        clean_legacy_desktops();
     }
     guard
 }
@@ -1225,7 +1142,6 @@ fn exit_desktop(app: &AppHandle) {
 #[cfg(windows)]
 fn quit_all_desktops(app: &AppHandle) {
     use windows_sys::Win32::System::Threading::SetEvent;
-    clean_legacy_desktops();
     let handle = QUIT_EVENT.load(Ordering::SeqCst);
     if handle != 0 {
         if unsafe { SetEvent(handle as _) } == 0 {
@@ -1237,40 +1153,6 @@ fn quit_all_desktops(app: &AppHandle) {
 
 #[cfg(not(windows))]
 fn quit_all_desktops(app: &AppHandle) { exit_desktop(app); }
-
-#[cfg(windows)]
-fn clean_legacy_desktops() {
-    use std::os::windows::process::CommandExt;
-    let current = std::process::id();
-    let script = format!(r#"
-Start-Sleep -Milliseconds 700
-$session = [Diagnostics.Process]::GetCurrentProcess().SessionId
-try {{
-Get-CimInstance Win32_Process -Filter "Name='athria.exe'" -ErrorAction Stop | Where-Object {{ $_.ProcessId -ne {current} -and $_.SessionId -eq $session -and $_.CommandLine -and $_.ExecutablePath }} | ForEach-Object {{
-  try {{
-    $quoted = '"' + $_.ExecutablePath + '"'
-    $arguments = $null
-    if ($_.CommandLine.StartsWith($quoted, [StringComparison]::OrdinalIgnoreCase)) {{ $arguments = $_.CommandLine.Substring($quoted.Length).TrimStart() }}
-    elseif ($_.CommandLine.StartsWith($_.ExecutablePath, [StringComparison]::OrdinalIgnoreCase)) {{ $arguments = $_.CommandLine.Substring($_.ExecutablePath.Length).TrimStart() }}
-    if ($null -ne $arguments -and $arguments -notmatch '^mcp(?:\s|$)') {{
-      $info = [Diagnostics.FileVersionInfo]::GetVersionInfo($_.ExecutablePath)
-      if ($info.ProductName -eq 'Athria') {{
-        Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop
-        Add-Content -Path (Join-Path $env:LOCALAPPDATA 'Athria\athria-lifecycle.log') -Value "legacy desktop pid=$($_.ProcessId) terminated" -ErrorAction SilentlyContinue
-      }}
-    }}
-  }} catch {{ Add-Content -Path (Join-Path $env:LOCALAPPDATA 'Athria\athria-lifecycle.log') -Value "legacy desktop pid=$($_.ProcessId) cleanup failed: $($_.Exception.Message)" -ErrorAction SilentlyContinue }}
-}}
-}} catch {{ Add-Content -Path (Join-Path $env:LOCALAPPDATA 'Athria\athria-lifecycle.log') -Value "legacy cleanup failed: $($_.Exception.Message)" -ErrorAction SilentlyContinue }}
-"#);
-    if let Err(error) = std::process::Command::new("powershell.exe")
-        .args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", &script])
-        .creation_flags(0x08000000)
-        .spawn()
-    {
-        log_lifecycle(&format!("could not start legacy desktop cleanup: {error}"));
-    }
-}
 
 fn should_hide_main_window_on_close(window_label: &str, exit_requested: bool) -> bool {
     window_label == "main" && !exit_requested
@@ -1411,7 +1293,6 @@ fn switch_database_at(state: &RuntimeState, target: &Path, config_root: &Path) -
     if !target.is_file() {
         return Err("The selected database no longer exists.".to_string());
     }
-    cleanup_legacy_replicas(config_root)?;
     let store = SqliteStore::open(target).map_err(|error| error.message().to_owned())?;
     let mut application = state.application.lock().map_err(|_| "Athria runtime state is unavailable.".to_string())?;
     let mut path = state.database_path.lock().map_err(|_| "Athria runtime state is unavailable.".to_string())?;
@@ -1694,7 +1575,7 @@ mod tests {
         assert!(error.is_none());
         let application = application.unwrap();
         let writer = SqliteStore::open(&path).unwrap();
-        writer.save_wellness(&json!({"ownerId":"local-user","day":"2026-09-29","updatedAt":"2026-09-29T00:00:00Z"})).unwrap();
+        writer.save_wellness(&json!({"ownerId":"local-user","day":"2026-09-29","fields":{},"updatedAt":"2026-09-29T00:00:00Z"})).unwrap();
         assert!(application.store().get_wellness("local-user", "2026-09-29").unwrap().is_some());
         assert_eq!(application.store().data_version().unwrap(), writer.data_version().unwrap());
         assert!(!root.join("replicas").exists());
@@ -1876,18 +1757,7 @@ mod tests {
         std::fs::remove_dir_all(&root).unwrap();
     }
 
-    #[test]
-    fn reads_a_legacy_data_dir_as_a_database_path() {
-        let root = temp_root("athria-config-legacy");
-        let data = root.join("legacy-data");
-        std::fs::write(
-            root.join("athria.config.json"),
-            serde_json::json!({ "dataDir": data }).to_string(),
-        )
-        .unwrap();
-        assert_eq!(read_config_from(&root), Some(data.join("athria.sqlite3")));
-        std::fs::remove_dir_all(&root).unwrap();
-    }
+
 
     #[test]
     fn ignores_relative_paths_in_the_config() {

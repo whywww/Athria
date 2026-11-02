@@ -13,21 +13,9 @@ use crate::{DEFAULT_OWNER_ID, Result};
 const GENDERS: [&str; 4] = ["female", "male", "non_binary", "prefer_not_to_say"];
 const UNIT_SYSTEMS: [&str; 2] = ["metric", "imperial"];
 
-/// Accept the legacy field only at the input boundary; always emit the canonical key.
-fn normalize_session_minutes(value: &Value) -> Value {
-    let mut normalized = value.clone();
-    if let Some(entries) = normalized.as_object_mut() {
-        if let Some(legacy) = entries.remove("maxSessionMinutes") {
-            entries.entry("usualSessionMinutes").or_insert(legacy);
-        }
-    }
-    normalized
-}
-
 /// Numeric write constraints; historical reads intentionally remain permissive.
 pub fn validate_profile_numbers(value: &Value) -> Result<()> {
-    let normalized = normalize_session_minutes(value);
-    let value = &normalized;
+    if value.get("maxSessionMinutes").is_some() { return Err(invalid("profile.maxSessionMinutes", "use usualSessionMinutes")); }
     fn number(value: &Value, key: &str, path: &str, min: f64, max: f64, integer: bool, nullable: bool) -> Result<()> {
         if let Some(input) = value.get(key) {
             if nullable && input.is_null() { return Ok(()); }
@@ -66,6 +54,7 @@ pub fn validate_profile_numbers(value: &Value) -> Result<()> {
 
 /// `athleteProfileSchema.parse(value)`.
 pub fn parse_profile(value: &Value) -> Result<Value> {
+    if value.get("maxSessionMinutes").is_some() { return Err(invalid("profile.maxSessionMinutes", "use usualSessionMinutes")); }
     let equipment_ids = equipment_type_ids();
     let mut profile = Map::new();
     profile.insert(
@@ -93,7 +82,7 @@ pub fn parse_profile(value: &Value) -> Result<Value> {
     );
     profile.insert(
         "usualSessionMinutes".into(),
-        int_or(&normalize_session_minutes(value), "usualSessionMinutes", 60),
+        int_or(value, "usualSessionMinutes", 60),
     );
     profile.insert(
         "trainingRhythm".into(),
@@ -235,8 +224,7 @@ pub fn patch_keys(patch: &Value) -> Vec<String> {
         "mesocycleDurationWeeks",
         "raceDays",
     ];
-    let normalized = normalize_session_minutes(patch);
-    let Some(entries) = normalized.as_object() else {
+    let Some(entries) = patch.as_object() else {
         return Vec::new();
     };
     PATCHABLE
@@ -249,8 +237,8 @@ pub fn patch_keys(patch: &Value) -> Vec<String> {
 /// Merges a profile patch over a stored profile, then re-parses: the
 /// TypeScript `athleteProfileSchema.parse({ ...profile, ...patch, ownerId })`.
 pub fn merge_profile(profile: &Value, patch: &Value, owner_id: &str) -> Result<Value> {
-    let mut merged = normalize_session_minutes(profile);
-    let patch = normalize_session_minutes(patch);
+    validate_profile_numbers(patch)?;
+    let mut merged = profile.clone();
     if let Some(entries) = merged.as_object_mut() {
         if let Some(source) = patch.as_object() {
             for key in patch_keys(&patch) {
@@ -282,7 +270,7 @@ pub fn parse_profile_update(value: &Value) -> Result<ProfileUpdate> {
     object(&patch, "profileUpdate.patch")?;
     validate_profile_numbers(&patch)?;
     Ok(ProfileUpdate {
-        patch: normalize_session_minutes(&patch),
+        patch,
         expected_profile_hash: required_text(value, "expectedProfileHash", "profileUpdate")?,
     })
 }
@@ -327,28 +315,9 @@ pub struct PersonalInformationWrite {
 mod tests {
     use super::*;
 
-    #[test]
-    fn session_minutes_accept_legacy_values_and_prefer_the_new_key() {
-        for input in [json!({"maxSessionMinutes": 90}), json!({"usualSessionMinutes": 90}), json!({"usualSessionMinutes": 90, "maxSessionMinutes": 45})] {
-            let parsed = parse_profile(&input).unwrap();
-            assert_eq!(parsed["usualSessionMinutes"], 90);
-            assert!(parsed.get("maxSessionMinutes").is_none());
-        }
-        assert_eq!(parse_profile(&json!({})).unwrap()["usualSessionMinutes"], 60);
-    }
 
-    #[test]
-    fn legacy_patches_override_the_stored_value_without_leaking_the_old_key() {
-        let profile = parse_profile(&json!({"usualSessionMinutes": 45})).unwrap();
-        for patch in [json!({"maxSessionMinutes": 90}), json!({"usualSessionMinutes": 90, "maxSessionMinutes": 120})] {
-            let update = parse_profile_update(&json!({"patch": patch, "expectedProfileHash": "hash"})).unwrap();
-            assert_eq!(patch_keys(&patch), vec!["usualSessionMinutes"]);
-            assert!(update.patch.get("maxSessionMinutes").is_none());
-            let merged = merge_profile(&profile, &patch, "local-user").unwrap();
-            assert_eq!(merged["usualSessionMinutes"], 90);
-            assert!(merged.get("maxSessionMinutes").is_none());
-        }
-    }
+
+
 }
 
 #[cfg(test)]
@@ -391,6 +360,6 @@ mod numeric_write_tests {
         assert!(merge_profile(&old,&json!({"preference":"new"}),"a").is_err());
         assert_eq!(merge_profile(&old,&json!({"heightCm":180}),"a").unwrap()["heightCm"],180);
         assert!(parse_profile_update(&json!({"patch":{"usualSessionMinutes":"60"},"expectedProfileHash":"hash"})).is_err());
-        assert_eq!(merge_profile(&json!({}),&json!({"maxSessionMinutes":30}),"a").unwrap()["usualSessionMinutes"],30);
+        assert!(merge_profile(&json!({}),&json!({"maxSessionMinutes":30}),"a").is_err());
     }
 }

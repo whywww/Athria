@@ -9,7 +9,7 @@ const session: CalendarSession = {
   id: "easy-run", occurrenceId: "occ-run", revision: 1, scheduledDate: "2026-10-11", order: 0, weekNumber: 1,
   phaseRefs: [], templateRef: null, name: "Easy run", intent: "Keep it easy", durationMinutes: 60,
   recoveryDemand: "low", keySession: false, progressionNote: null, schedulingRationale: null,
-  status: "planned", legacySnapshot: false, overrideReason: null, type: null, domain: "endurance",
+  status: "planned", overrideReason: null, type: null, domain: "endurance",
   prescription: { blocks: [{ type: "step", name: "Easy work", role: "steady", durationSeconds: 3600, notes: "Keep it easy" }] },
 };
 
@@ -42,24 +42,13 @@ describe("SessionDetailDrawer domain presentation", () => {
     expect(html).toContain('<div class="rx-panel-copy"><h4>Easy run</h4>');
     expect(html).toContain("No structured prescription is available for this session.");
   });
-  it.each(["en", "zh-CN"])("keeps the legacy notice before the date and prescription card in %s", (language) => {
-    vi.stubGlobal("localStorage", { getItem: () => language });
-    const html = render({ ...session, legacySnapshot: true });
-    expect(html).toContain('<div class="rx-panel-copy"><h4>Easy run</h4>');
-    expect(html.match(/<h4>Easy run<\/h4>/g)).toHaveLength(1);
-    expect(html).toContain('class="sd-section sd-legacy"');
-    expect(html.indexOf('class="sd-section sd-legacy"')).toBeLessThan(html.indexOf('class="sd-date"'));
-    expect(html).toContain('<section class="sd-section sd-prescription-section"><div class="sd-prescriptions"><article');
-    expect(html).toContain("rx-endurance-table");
-    expect(html).toContain("Keep it easy");
-  });
   it.each(["en", "zh-CN"])("combines date, week and resolved phases without a tag row in %s", (language) => {
     vi.stubGlobal("localStorage", { getItem: () => language });
     const value = { ...session, scheduledDate: "2026-10-12", weekNumber: 2, type: "Swim" };
     const date = language === "zh-CN" ? "星期一 · 2026-10-12 · 第 2 周" : "Monday · 2026-10-12 · Week 2";
     expect(render(value)).toContain(`<p class="sd-date">${date}</p>`);
     const plan: CurrentPlan = {
-      planSchemaVersion: "7.0", ownerId: "local-user", title: "Restart", summary: "", effectiveStartDate: "2026-10-05",
+      planSchemaVersion: "8.0", ownerId: "local-user", title: "Restart", summary: "", effectiveStartDate: "2026-10-05",
       revision: 1, sourceAgent: null, model: null, skillVersion: null, inputSnapshotHash: null, sourceDraftId: null, updatedAt: "2026-10-05T00:00:00Z",
       mesocycle: { durationWeeks: 2, schedule: { kind: "fixed_week", days: [0] }, weeks: [],
         domainProgressions: [{ domain: "endurance", phases: ["Restart", "Progression"].map((name, index) => ({

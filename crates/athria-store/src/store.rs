@@ -22,10 +22,10 @@ use crate::sessions::js_number_value;
 pub use athria_core::DEFAULT_OWNER_ID;
 
 /// Latest schema version this store opens and creates.
-pub const SUPPORTED_SCHEMA_VERSION: i64 = 40;
+pub const SUPPORTED_SCHEMA_VERSION: i64 = 41;
 
 /// Authoritative current schema, used only for empty databases.
-const SCHEMA_SQL: &str = include_str!("schema/schema-v40.sql");
+const SCHEMA_SQL: &str = include_str!("schema/schema-v41.sql");
 const VERSIONED_TABLES: &[&str] = &[
     "connection_secrets", "connection_sync_state", "current_mesocycles",
     "plan_drafts", "plan_draft_weeks", "import_batches", "plan_workout_matches",
@@ -432,7 +432,7 @@ impl SqliteStore {
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(database_error)
     }
-    /// Opens a v40 Athria database, creating it when empty. Other schema versions are rejected.
+    /// Opens a v41 Athria database, creating it when empty. Other schema versions are rejected.
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         Self::open_with_clock(path, Arc::new(SystemClock))
     }
@@ -519,8 +519,6 @@ impl SqliteStore {
                 ));
             }
             store.transaction(&mut || {
-                store.migrate_subjective_fatigue()?;
-                store.migrate_sleep_dates()?;
                 store.backfill_readiness()
             })?;
         }
@@ -636,10 +634,7 @@ impl SqliteStore {
         self.transaction(&mut || {
             self.connection.execute_batch(SCHEMA_SQL).map_err(database_error)?;
             let now = self.now();
-            for version in 1..=SUPPORTED_SCHEMA_VERSION {
-                self.connection.execute("INSERT INTO athria_migrations(version, applied_at) VALUES (?1, ?2)", params![version, now]).map_err(database_error)?;
-            }
-            self.connection.execute("INSERT INTO athria_data_migrations(name, applied_at) VALUES ('sleep_evening_dates', ?1)", [&now]).map_err(database_error)?;
+            self.connection.execute("INSERT INTO athria_migrations(version, applied_at) VALUES (?1, ?2)", params![SUPPORTED_SCHEMA_VERSION, now]).map_err(database_error)?;
             self.connection.execute("INSERT INTO vault_meta(id, database_uuid, format_version, updated_at) VALUES (1, ?1, 1, ?2)", params![Uuid::new_v4().to_string(), now]).map_err(database_error)?;
             self.connection.execute_batch(&version_triggers_sql()).map_err(database_error)
         })
@@ -758,8 +753,7 @@ impl SqliteStore {
             .optional()
             .map_err(database_error)?;
         data.map(|value| {
-            let mut record = parse_json_column(&value)?;
-            athria_core::schema::fold_wellness_fields(&mut record);
+            let record = parse_json_column(&value)?;
             Ok(record)
         }).transpose()
     }
@@ -778,8 +772,7 @@ impl SqliteStore {
         for row in rows {
             let (_day, data) = row.map_err(database_error)?;
 
-            let mut record = parse_json_column(&data)?;
-            athria_core::schema::fold_wellness_fields(&mut record);
+            let record = parse_json_column(&data)?;
             records.push(record);
         }
         Ok(records)
@@ -809,74 +802,6 @@ impl SqliteStore {
                 params![owner_of(&record), day, record.to_string(), updated_at],
             )
             .map_err(database_error)?;
-        Ok(())
-    }
-
-    /// Rename subjective ratings once without changing their provenance or timestamps.
-    fn migrate_subjective_fatigue(&self) -> Result<()> {
-        self.connection.execute_batch("CREATE TABLE IF NOT EXISTS athria_data_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)").map_err(database_error)?;
-        let applied: bool = self.connection.query_row(
-            "SELECT EXISTS(SELECT 1 FROM athria_data_migrations WHERE name = 'subjective_fatigue_field')", [], |row| row.get(0),
-        ).map_err(database_error)?;
-        if applied { return Ok(()); }
-        let mut statement = self.connection.prepare("SELECT owner_id, day, data FROM wellness").map_err(database_error)?;
-        let rows = statement.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?)))
-            .map_err(database_error)?.collect::<std::result::Result<Vec<_>, _>>().map_err(database_error)?;
-        drop(statement);
-        for (owner, day, data) in rows {
-            let mut record: Value = serde_json::from_str(&data).map_err(json_error)?;
-            if record["fields"].get("fatigue").is_none() { continue; }
-            athria_core::schema::fold_wellness_fields(&mut record);
-            self.connection.execute("UPDATE wellness SET data = ?1 WHERE owner_id = ?2 AND day = ?3",
-                params![serde_json::to_string(&record).map_err(json_error)?, owner, day]).map_err(database_error)?;
-        }
-        self.connection.execute("INSERT INTO athria_data_migrations(name, applied_at) VALUES ('subjective_fatigue_field', ?1)", [self.now()]).map_err(database_error)?;
-        Ok(())
-    }
-
-    /// Convert legacy wake-date sleep to evening dates once, without moving other metrics.
-    fn migrate_sleep_dates(&self) -> Result<()> {
-        self.connection.execute_batch("CREATE TABLE IF NOT EXISTS athria_data_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)").map_err(database_error)?;
-        let applied: bool = self.connection.query_row(
-            "SELECT EXISTS(SELECT 1 FROM athria_data_migrations WHERE name = 'sleep_evening_dates')", [], |row| row.get(0),
-        ).map_err(database_error)?;
-        if applied { return Ok(()); }
-
-        let mut statement = self.connection.prepare("SELECT data FROM wellness").map_err(database_error)?;
-        let rows = statement.query_map([], |row| row.get::<_, String>(0)).map_err(database_error)?
-            .collect::<std::result::Result<Vec<_>, _>>().map_err(database_error)?;
-        drop(statement);
-        let mut records = std::collections::BTreeMap::new();
-        let mut changed = std::collections::BTreeSet::new();
-        let mut sleep = Vec::new();
-        for row in rows {
-            let mut record: Value = serde_json::from_str(&row).map_err(json_error)?;
-            athria_core::schema::fold_wellness_fields(&mut record);
-            let owner = owner_of(&record).to_string();
-            let day = record["day"].as_str().filter(|day| is_iso_date(day)).ok_or_else(|| missing_field("day"))?.to_string();
-            let fields = record["fields"].as_object_mut().ok_or_else(|| missing_field("fields"))?;
-            let mut moved = Map::new();
-            for key in ["sleepSeconds", "sleepScore", "avgSleepingHeartRateBpm"] {
-                if let Some(field) = fields.shift_remove(key) { moved.insert(key.into(), field); }
-            }
-            if !moved.is_empty() {
-                let evening = athria_core::date::format_iso_date(athria_core::date::epoch_day(&day) - 1);
-                changed.insert((owner.clone(), day.clone()));
-                changed.insert((owner.clone(), evening.clone()));
-                sleep.push((owner.clone(), evening, moved, record["updatedAt"].clone()));
-            }
-            records.insert((owner, day), record);
-        }
-        // Strip every source day before inserting, so adjacent nights cannot overwrite one another.
-        for (owner, day, fields, updated_at) in sleep {
-            let record = records.entry((owner.clone(), day.clone())).or_insert_with(|| json!({
-                "ownerId": owner, "day": day, "fields": {}, "updatedAt": updated_at,
-            }));
-            record["fields"].as_object_mut().ok_or_else(|| missing_field("fields"))?.extend(fields);
-            if updated_at.as_str() > record["updatedAt"].as_str() { record["updatedAt"] = updated_at; }
-        }
-        for key in changed { self.write_wellness_record(&records[&key])?; }
-        self.connection.execute("INSERT INTO athria_data_migrations(name, applied_at) VALUES ('sleep_evening_dates', ?1)", [self.now()]).map_err(database_error)?;
         Ok(())
     }
 
@@ -1603,7 +1528,7 @@ mod tests {
         for version in 24..SUPPORTED_SCHEMA_VERSION {
             let store = SqliteStore::open_in_memory().unwrap();
             store.save_profile(&json!({"ownerId":"a","preferredName":"Original"})).unwrap();
-            store.connection.execute("DELETE FROM athria_migrations WHERE version>?1", [version]).unwrap();
+            store.connection.execute("UPDATE athria_migrations SET version=?1", [version]).unwrap();
             let before = store.data_version().unwrap();
             assert_eq!(store.require_supported_schema().unwrap_err().code(), AthriaErrorCode::SchemaVersionUnsupported);
             assert_eq!(store.schema_version().unwrap(), version);
@@ -1617,7 +1542,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("old.sqlite3");
         let store = SqliteStore::open(&path).unwrap();
-        store.connection.execute_batch("DELETE FROM athria_migrations WHERE version>=36; PRAGMA journal_mode=WAL;").unwrap();
+        store.connection.execute_batch("UPDATE athria_migrations SET version=35; PRAGMA journal_mode=WAL;").unwrap();
         drop(store);
         assert_eq!(SqliteStore::open(&path).unwrap_err().code(), AthriaErrorCode::SchemaVersionUnsupported);
         assert_eq!(SqliteStore::open_read_only(&path).unwrap_err().code(), AthriaErrorCode::SchemaVersionUnsupported);
@@ -1667,7 +1592,7 @@ mod tests {
                 row.get(0)
             })
             .unwrap();
-        assert_eq!(migrations, SUPPORTED_SCHEMA_VERSION);
+        assert_eq!(migrations, 1);
     }
 
     #[test]
@@ -1842,7 +1767,7 @@ mod tests {
         let path = directory.path().join("rollback.sqlite3");
         {
             let store = SqliteStore::open(&path).unwrap();
-            store.connection.execute("DELETE FROM athria_migrations WHERE version>=28", []).unwrap();
+            store.connection.execute("UPDATE athria_migrations SET version=27", []).unwrap();
             store.connection.execute_batch("INSERT INTO profiles VALUES ('a', '{\"maxSessionMinutes\":90}', 'original'); INSERT INTO profiles VALUES ('b', 'invalid json', 'original');").unwrap();
         }
         assert!(SqliteStore::open(&path).is_err());
@@ -2116,43 +2041,7 @@ mod tests {
         std::fs::remove_file(path).unwrap();
     }
 
-    #[test]
-    fn retired_wellness_fields_are_folded_and_removed_on_save() {
-        let store = SqliteStore::open_in_memory().unwrap();
-        let record = json!({ "ownerId": DEFAULT_OWNER_ID, "day": "2026-10-14", "updatedAt": "2026-10-14T00:00:00Z",
-            "fields": {
-                "notes": { "value": "Legacy note", "source": "user", "updatedAt": "2026-10-14T00:00:00Z" },
-                "eftpWatts": { "value": 250, "source": "intervals_icu", "updatedAt": "2026-10-14T00:00:00Z" },
-                "wPrimeJoules": { "value": 20000, "source": "intervals_icu", "updatedAt": "2026-10-14T00:00:00Z" },
-                "pMaxWatts": { "value": 900, "source": "intervals_icu", "updatedAt": "2026-10-14T00:00:00Z" },
-                "stress": { "value": 4, "source": "intervals_icu", "updatedAt": "2026-10-14T00:00:00Z" },
-                "sleepQuality": { "value": 2, "source": "user", "updatedAt": "2026-10-14T00:00:00Z" },
-                "sleepSeconds": { "value": 28800, "source": "intervals_icu", "updatedAt": "2026-10-14T00:00:00Z" },
-                "manualSleepSeconds": { "value": 27000, "source": "user", "updatedAt": "2026-10-14T01:00:00Z" }
-            }
-        });
-        store.connection.execute("INSERT INTO wellness(owner_id, day, data, updated_at) VALUES (?1, ?2, ?3, ?4)",
-            params![DEFAULT_OWNER_ID, "2026-10-14", record.to_string(), "2026-10-14T00:00:00Z"]).unwrap();
-        let parsed = athria_core::schema::parse_wellness_record(&record).unwrap();
-        let fetched = store.get_wellness(DEFAULT_OWNER_ID, "2026-10-14").unwrap().unwrap();
-        let listed = store.list_wellness(DEFAULT_OWNER_ID, None).unwrap();
-        for value in [&parsed, &fetched, &listed[0]] {
-            assert_eq!(value["fields"].as_object().unwrap().len(), 2);
-            assert_eq!(value["fields"]["sleepScore"], json!({ "value": 75, "source": "user", "updatedAt": "2026-10-14T00:00:00Z" }));
-            assert_eq!(value["fields"]["sleepSeconds"], json!({ "value": 27000, "source": "user", "updatedAt": "2026-10-14T01:00:00Z" }));
-        }
-        store.save_wellness(&record).unwrap();
-        let raw: String = store.connection.query_row("SELECT data FROM wellness WHERE day = '2026-10-14'", [], |row| row.get(0)).unwrap();
-        let stored: Value = serde_json::from_str(&raw).unwrap();
-        assert_eq!(stored["fields"].as_object().unwrap().len(), 2);
-        assert_eq!(stored["fields"]["sleepScore"]["value"], json!(75));
-        assert_eq!(stored["fields"]["sleepSeconds"]["value"], json!(27000));
-        store.upsert_wellness(DEFAULT_OWNER_ID, &[json!({ "id": "2026-10-14", "comments": "ICU comment", "restingHR": 50, "stress": 5 })]).unwrap();
-        let imported = store.get_wellness(DEFAULT_OWNER_ID, "2026-10-14").unwrap().unwrap();
-        assert!(imported["fields"].get("notes").is_none());
-        assert!(imported["fields"].get("stress").is_none());
-        assert_eq!(imported["fields"]["restingHeartRateBpm"]["value"], 50);
-    }
+
 
     #[test]
     fn sleep_imports_prefer_the_payload_score_and_keep_manual_entries() {
@@ -2245,12 +2134,7 @@ mod tests {
         assert!(store.get_wellness(DEFAULT_OWNER_ID, "2026-09-11").unwrap().unwrap()["fields"].get("subjectiveFatigue").is_none());
         store.upsert_wellness(DEFAULT_OWNER_ID, &[json!({ "id": "2026-09-11", "fatigue": 1 })]).unwrap();
         assert_eq!(field(&store, "2026-09-11", "subjectiveFatigue"), json!({ "value": 25, "source": "intervals_icu", "updatedAt": "2026-09-17T04:00:00.000Z" }));
-        // Legacy raw grades stored before the mapping existed are refolded on read.
-        let legacy = json!({ "ownerId": DEFAULT_OWNER_ID, "day": "2026-09-12", "updatedAt": "2026-09-17T04:00:00.000Z",
-            "fields": { "fatigue": { "value": 3, "source": "intervals_icu", "updatedAt": "2026-09-17T04:00:00.000Z" } } });
-        store.connection.execute("INSERT INTO wellness(owner_id, day, data, updated_at) VALUES (?1, ?2, ?3, ?4)",
-            params![DEFAULT_OWNER_ID, "2026-09-12", legacy.to_string(), "2026-09-17T04:00:00.000Z"]).unwrap();
-        assert_eq!(field(&store, "2026-09-12", "subjectiveFatigue")["value"], json!(75));
+
     }
 
     #[test]
@@ -2270,8 +2154,8 @@ mod tests {
             data: &data,
         };
         let first = store.record_import_batch(&input).unwrap();
-        // Both named data migrations record their application time during open.
-        assert_eq!(first["createdAt"], json!("2026-09-17T04:02:00.000Z"));
+        // Opening a fresh database performs no historical data migrations.
+        assert_eq!(first["createdAt"], json!("2026-09-17T04:01:00.000Z"));
         assert_eq!(first["data"], json!({ "workouts": 3 }));
         assert!(
             first["id"]
@@ -2351,7 +2235,7 @@ mod tests {
         let path = directory.path().join("broken.sqlite3");
         {
             let store = SqliteStore::open(&path).unwrap();
-            store.connection.execute_batch("ALTER TABLE training_sessions ADD COLUMN modality TEXT NOT NULL DEFAULT 'unknown'; CREATE TABLE training_session_type_overrides(owner_id TEXT, training_session_id TEXT, domain TEXT, updated_at TEXT); DELETE FROM athria_migrations WHERE version>=30; INSERT INTO profiles VALUES ('a','{invalid','original');").unwrap();
+            store.connection.execute_batch("ALTER TABLE training_sessions ADD COLUMN modality TEXT NOT NULL DEFAULT 'unknown'; CREATE TABLE training_session_type_overrides(owner_id TEXT, training_session_id TEXT, domain TEXT, updated_at TEXT); UPDATE athria_migrations SET version=29; INSERT INTO profiles VALUES ('a','{invalid','original');").unwrap();
             let record = json!({"id":"r","source":"manual","externalId":"e","name":"Weights","sport":"WeightTraining","startAt":"2026-10-07T10:00:00Z","endAt":"2026-10-07T11:00:00Z","durationMinutes":60});
             store.connection.execute("INSERT INTO training_sessions(id,owner_id,start_at,data,modality) VALUES ('r','a','2026-10-07T10:00:00Z',?1,'unknown')", [record.to_string()]).unwrap();
         }
@@ -2397,73 +2281,5 @@ mod tests {
 }
 
 #[cfg(test)]
-#[path = "schema_v40_tests.rs"]
-mod schema_v40_tests;
-
-#[cfg(test)]
-#[path = "sleep_date_tests.rs"]
-mod sleep_date_tests;
-
-#[cfg(test)]
-mod subjective_fatigue_tests {
-    use super::*;
-
-    #[test]
-    fn legacy_ratings_normalize_read_only_and_migrate_once_on_writable_open() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("subjective-fatigue.sqlite3");
-        let store = SqliteStore::open(&path).unwrap();
-        store.connection.execute("DELETE FROM athria_data_migrations WHERE name = 'subjective_fatigue_field'", []).unwrap();
-        for (owner, source, value, canonical) in [("a", "intervals_icu", 3, None), ("b", "user", 3, None), ("c", "llm", 40, Some(2))] {
-            let mut fields = json!({ "fatigue": { "value": value, "source": source, "updatedAt": "original" } });
-            if let Some(value) = canonical { fields["subjectiveFatigue"] = json!({ "value": value, "source": "intervals_icu", "updatedAt": "canonical" }); }
-            let record = json!({ "ownerId": owner, "day": "2026-10-15", "fields": fields, "updatedAt": "record-original" });
-            store.connection.execute("INSERT INTO wellness(owner_id, day, data, updated_at) VALUES (?1, '2026-10-15', ?2, 'record-original')",
-                params![owner, record.to_string()]).unwrap();
-        }
-        drop(store);
-        let inspect = SqliteStore::open_read_only(&path).unwrap();
-        for (owner, expected, source, stamp) in [("a", 75, "intervals_icu", "original"), ("b", 3, "user", "original"), ("c", 2, "intervals_icu", "canonical")] {
-            let record = inspect.get_wellness(owner, "2026-10-15").unwrap().unwrap();
-            assert!(record["fields"].get("fatigue").is_none());
-            assert_eq!(record["fields"]["subjectiveFatigue"], json!({ "value": expected, "source": source, "updatedAt": stamp }));
-            assert_eq!(inspect.list_wellness(owner, None).unwrap(), vec![record]);
-        }
-        let raw: String = inspect.connection.query_row("SELECT data FROM wellness WHERE owner_id='a'", [], |row| row.get(0)).unwrap();
-        assert!(serde_json::from_str::<Value>(&raw).unwrap()["fields"].get("fatigue").is_some());
-        drop(inspect);
-        let store = SqliteStore::open(&path).unwrap();
-        assert_eq!(store.schema_version().unwrap(), 40);
-        let rows = || store.connection.query_row("SELECT data FROM wellness WHERE owner_id='a'", [], |row| row.get::<_, String>(0)).unwrap();
-        let after = rows();
-        let migrated: Value = serde_json::from_str(&after).unwrap();
-        assert!(migrated["fields"].get("fatigue").is_none());
-        assert_eq!(migrated["fields"]["subjectiveFatigue"]["value"], 75);
-        assert_eq!(migrated["fields"]["subjectiveFatigue"]["updatedAt"], "original");
-        assert_eq!(migrated["readinessAssessment"]["algorithmVersion"], athria_core::readiness::ALGORITHM_VERSION);
-        drop(store);
-        let reopened = SqliteStore::open(&path).unwrap();
-        let again: String = reopened.connection.query_row("SELECT data FROM wellness WHERE owner_id='a'", [], |row| row.get(0)).unwrap();
-        assert_eq!(again, after);
-    }
-
-    #[test]
-    fn rating_migration_rolls_back_records_and_marker_together() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("rollback-fatigue.sqlite3");
-        let store = SqliteStore::open(&path).unwrap();
-        store.connection.execute("DELETE FROM athria_data_migrations WHERE name = 'subjective_fatigue_field'", []).unwrap();
-        let record = json!({ "ownerId": "a", "day": "2026-10-15", "updatedAt": "original", "fields": {
-            "fatigue": { "value": 3, "source": "user", "updatedAt": "original" }
-        }});
-        store.connection.execute("INSERT INTO wellness VALUES ('a', '2026-10-15', ?1, 'original')", [record.to_string()]).unwrap();
-        store.connection.execute_batch("CREATE TRIGGER fail_rating BEFORE UPDATE ON wellness BEGIN SELECT RAISE(ABORT, 'rating migration failed'); END;").unwrap();
-        drop(store);
-        assert!(SqliteStore::open(&path).is_err());
-        let inspect = SqliteStore::open_read_only(&path).unwrap();
-        let marker: bool = inspect.connection.query_row("SELECT EXISTS(SELECT 1 FROM athria_data_migrations WHERE name='subjective_fatigue_field')", [], |row| row.get(0)).unwrap();
-        assert!(!marker);
-        let raw: String = inspect.connection.query_row("SELECT data FROM wellness", [], |row| row.get(0)).unwrap();
-        assert_eq!(serde_json::from_str::<Value>(&raw).unwrap(), record);
-    }
-}
+#[path = "schema_v41_tests.rs"]
+mod schema_v41_tests;

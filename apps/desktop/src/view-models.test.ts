@@ -79,7 +79,7 @@ describe("dashboard v7 view models", () => {
   });
   it("resolves provenance references from weekly sessions", () => {
     const stored = { ...template, origin: "user", revision: 2 } satisfies StoredSessionTemplate;
-    const mesocycle: Mesocycle = { durationWeeks: 1, schedule: { kind: "fixed_week", days: [0] }, domainProgressions: [], weeks: [{ weekNumber: 1, focus: null, sessions: [{ id: "s", scheduledDate: "2026-09-07", order: 0, templateRef: { source: "user", id: "lower", revision: 2 }, name: "Session", intent: "Train", durationMinutes: 45, recoveryDemand: "normal", keySession: false, prescription: null, progressionNote: null, schedulingRationale: null, legacySnapshot: false }] }] };
+    const mesocycle: Mesocycle = { durationWeeks: 1, schedule: { kind: "fixed_week", days: [0] }, domainProgressions: [], weeks: [{ weekNumber: 1, focus: null, sessions: [{ id: "s", scheduledDate: "2026-09-07", order: 0, templateRef: { source: "user", id: "lower", revision: 2 }, name: "Session", intent: "Train", durationMinutes: 45, recoveryDemand: "normal", keySession: false, prescription: null, progressionNote: null, schedulingRationale: null, }] }] };
     expect(referencedTemplates(mesocycle, [stored])).toMatchObject({ templates: [{ id: "lower" }], missingIds: [] });
   });
   it("formats the timezone label as city plus zero-padded GMT offset", () => {

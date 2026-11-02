@@ -5,7 +5,7 @@ import type { CalendarSession, CurrentPlan, SessionPrescription, PlanExercise } 
 import { WeeklyCalendar } from "./WeeklyCalendar";
 
 const plan: CurrentPlan = {
-  planSchemaVersion: "7.0",
+  planSchemaVersion: "8.0",
   ownerId: "local-user",
   title: "Calendar test plan",
   summary: "",
@@ -43,7 +43,6 @@ function session(id: string, scheduledDate: string, overrides: Partial<CalendarS
     schedulingRationale: null,
     status: "planned",
     prescription: null,
-    legacySnapshot: false,
     overrideReason: null,
     ...overrides,
   };

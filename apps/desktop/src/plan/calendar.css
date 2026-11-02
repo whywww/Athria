@@ -220,7 +220,7 @@
 .sd-prescription-section { padding-top: 0; padding-bottom: 16px; }
 .sd-prescriptions { display: grid; gap: 14px; }
 .sd-empty { margin: 0; color: #8a9099; font-size: 12px; }
-.sd-legacy { margin: 10px 0; padding-inline: 12px; border: 1px solid #f0d5a8; border-radius: 12px; background: #fff9ee; }
+
 .sd-completed { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .sd-completed p { margin: 0; color: #4b5560; font-size: 13px; line-height: 1.55; }
 
@@ -295,7 +295,7 @@
 .rx-blocks { display: grid; gap: 7px; }
 .rx-block { display: grid; gap: 2px; padding: 8px 10px; border-left: 3px solid #d8e0eb; border-radius: 0 8px 8px 0; background: #f8f9fb; color: #465467; font-size: 11px; }
 .rx-block b { color: #273a54; font-size: 12px; }
-.rx-legacy { margin: 0; color: #66717e; font-size: 12px; line-height: 1.55; }
+
 
 @container prescription (max-width: 720px) {
   .rx-panel-header { padding: 13px 15px 11px; }

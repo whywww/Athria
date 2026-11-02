@@ -3,7 +3,7 @@
   "name": "nested_plan_snapshot",
   "input": {
     "value": {
-      "planSchemaVersion": "7.0",
+      "planSchemaVersion": "8.0",
       "title": "Base Block",
       "revision": 3,
       "effectiveStartDate": "2026-09-07",
@@ -31,5 +31,5 @@
       "target": null
     }
   },
-  "expected": "fnv1a-804e6ae3"
+  "expected": "fnv1a-9e8227be"
 }

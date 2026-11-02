@@ -104,7 +104,6 @@
                 "keySession": false,
                 "progressionNote": null,
                 "schedulingRationale": null,
-                "legacySnapshot": false,
                 "domain": "mobility",
                 "prescription": {
                   "blocks": [
@@ -129,7 +128,6 @@
                 "keySession": false,
                 "progressionNote": null,
                 "schedulingRationale": null,
-                "legacySnapshot": false,
                 "domain": "mobility",
                 "prescription": {
                   "blocks": [
@@ -335,7 +333,7 @@
     ],
     "dataGaps": [],
     "validatedAt": "2026-09-17T10:30:00.000Z",
-    "inputHash": "fnv1a-05793df0",
+    "inputHash": "fnv1a-cfdb44a8",
     "coverage": {
       "hardChecksResolved": 4,
       "hardChecksTotal": 4,

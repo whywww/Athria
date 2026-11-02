@@ -3,7 +3,7 @@
 - Native development targets Windows x64 and Apple Silicon macOS. Windows ARM, Intel macOS, Linux, mobile clients, and cross-compilation are future work rather than supported targets. The MSI is unsigned and may trigger SmartScreen. macOS development builds use ad-hoc signing and require the Athria database password on each launch; Athria does not access the macOS Keychain.
 - The UI supports English and Simplified Chinese.
 - The MVP has no built-in LLM, cloud service, mobile client, or third-party write-back.
-- Only the current Plan Schema v7 contracts are retained in the working tree; older contracts remain available through Git history. Runtime writes accept v7 only, and incompatible planning data is cleared during the development cutover so saved plans use authoritative Weekly Sessions and domain progression timelines.
+- Only the current Plan Schema v8 contracts are retained in the working tree; older contracts remain available through Git history. Runtime writes accept v8 only, and incompatible planning data is cleared during the development cutover so saved plans use authoritative Weekly Sessions and domain progression timelines.
 - Exercises are open-world and Athria has no exercise catalog. Every planned exercise carries its own classified facts; a blocker lacking a required trusted fact returns `UNKNOWN`.
 - Hevy import is not available in the 0.2.1-beta.2 interface; real-export validation remains for a later release.
 - Intervals.icu synchronization is read-only.
@@ -16,3 +16,7 @@
 - AI plan drafts cannot change history: occurrences before today in the Profile timezone and completed or skipped occurrences are read-only, and a successor cycle must start today or later after the current cycle. Draft validation excludes those historical sessions from training-rule checks so a changed Profile does not block future adjustment; desktop adjustment reminders and Profile-conflict checks still evaluate the complete Current Plan.
 - Future planned-session synchronization updates only reconstructable `planned` snapshots. Completed, skipped, and legacy snapshots are intentionally immutable; changing a Mesocycle does not auto-create new sessions.
 - The database password gates access inside Athria and unlocks saved connection keys. The `.sqlite3` file itself is not encrypted at rest, so direct file access with a standard SQLite tool is not protected. Resetting the password from the Unlock dialog keeps training data but permanently removes saved connection keys, which must be entered again.
+
+## Beta data baseline
+
+This beta opens database schema 41 and accepts plan contract 8.0 only. Older and future database versions are rejected without conversion. Create a new database when starting from an older release. No historical migration tools or credential imports are shipped.

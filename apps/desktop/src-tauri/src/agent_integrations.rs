@@ -128,12 +128,8 @@ struct SkillMarker {
     #[serde(default)]
     managed_by: Option<String>,
     name: String,
-    #[serde(alias = "version")]
     installed_version: String,
-    #[serde(alias = "contentHash")]
     installed_hash: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    source: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -583,7 +579,7 @@ fn skill_state(source: &Path, destination: &Path, name: &str) -> (SkillState, Op
     let Ok(marker) = read_skill_marker(destination) else {
         return (SkillState::Invalid, None);
     };
-    if marker.name != name || marker.managed_by.as_deref().is_some_and(|value| value != "athria") {
+    if marker.name != name || marker.schema_version != Some(1) || marker.managed_by.as_deref() != Some("athria") {
         return (SkillState::Invalid, Some(marker));
     }
     let (Ok(source_hash), Ok(target_hash)) = (hash_tree(source), hash_tree(destination)) else {
@@ -672,7 +668,6 @@ fn write_skill_marker(source: &Path, destination: &Path, name: &str) -> Result<(
         name: name.to_string(),
         installed_version: skill_version(source),
         installed_hash: hash_tree(source)?,
-        source: None,
     };
     atomic_write(
         &destination.join(MARKER),
@@ -1577,7 +1572,7 @@ mod tests {
     }
 
     #[test]
-    fn reads_legacy_markers_and_rewrites_them_after_update() {
+    fn rejects_old_marker_fields() {
         let root = env::temp_dir().join(format!("athria-agent-test-{}", Uuid::new_v4()));
         let source = root.join("source");
         let target = root.join("target");
@@ -1593,7 +1588,7 @@ mod tests {
             format!(r#"{{"name":"legacy","version":"1.0.0","contentHash":"{installed_hash}","source":"Athria Desktop"}}"#),
         ).unwrap();
         fs::write(source.join("SKILL.md"), "new").unwrap();
-        assert_eq!(skill_state(&source, &target, "legacy").0, SkillState::UpdateAvailable);
+        assert_eq!(skill_state(&source, &target, "legacy").0, SkillState::Invalid);
         replace_skill(&source, &target, "legacy").unwrap();
         let marker = read_skill_marker(&target).unwrap();
         assert_eq!(marker.schema_version, Some(1));

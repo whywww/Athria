@@ -107,7 +107,7 @@ export async function setSkillAutoUpdate(automatic: boolean): Promise<SkillUpdat
 export async function openIntervalsWebsite(): Promise<void> { await invoke("open_intervals_website"); }
 export async function removeAgentIntegration(agent: AgentKind): Promise<AgentIntegrationResult> { return invoke("remove_agent_integration", { agent }); }
 
-export interface VaultStatus { databaseUuid: string; databasePath: string; initialized: boolean; locked: boolean; remembered: boolean; canRemember: boolean; legacySources: string[] }
+export interface VaultStatus { databaseUuid: string; databasePath: string; initialized: boolean; locked: boolean; remembered: boolean; canRemember: boolean }
 export interface StartupStatus { ready: boolean; databasePath: string; error: string | null }
 export async function getStartupStatus(): Promise<StartupStatus> { return invoke("startup_status"); }
 export async function getVaultStatus(): Promise<VaultStatus> { return invoke("vault_status"); }

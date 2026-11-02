@@ -148,7 +148,6 @@ function DrawerPanel({ session, templates, plan, today, onClose, onMutated, retu
       <div className="sd-sheet" role="dialog" aria-modal="true" aria-label={session.name} ref={panelRef} tabIndex={-1}>
         <header className="sd-header">
           <div className="sd-header-text">
-            {session.legacySnapshot && <section className="sd-section sd-legacy"><h3 className="sd-eyebrow"><T>{"Needs structured review"}</T></h3><p><T>{"This legacy prescription is preserved as written and can be converted by a connected Agent."}</T></p></section>}
             <p className="sd-date">{weekdayName(weekdayIndex(session.scheduledDate), currentLanguage())} · {session.scheduledDate} · {currentLanguage() === "zh-CN" ? `第 ${session.weekNumber} 周` : `Week ${session.weekNumber}`}{phaseLabels.length > 0 ? ` · ${phaseLabels.join(" / ")}` : ""}</p>
           </div>
           <button type="button" className="sd-close" aria-label={tr("Close session details")} onClick={onClose}>

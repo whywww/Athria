@@ -973,7 +973,7 @@ mod tests {
     }
     #[test]
     fn template_read_schema_and_mcp_contract_agree_on_metadata() {
-        let schema: Value=serde_json::from_str(include_str!("../../../schemas/v7/session-template-read.json")).unwrap();
+        let schema: Value=serde_json::from_str(include_str!("../../../schemas/v8/session-template-read.json")).unwrap();
         let validator=jsonschema::options().with_draft(jsonschema::Draft::Draft202012).build(&schema).unwrap();
         let fixtures: Value=serde_json::from_str(include_str!("../tests/fixtures/tool-results.json")).unwrap();
         let service=service();
@@ -1050,7 +1050,7 @@ mod tests {
         let created = service.call_result(
             "create_plan_draft",
             &json!({"mode":"new","plan":{
-                "planSchemaVersion":"7.0","title":"Block","summary":"","effectiveStartDate":"2026-09-14",
+                "planSchemaVersion":"8.0","title":"Block","summary":"","effectiveStartDate":"2026-09-14",
                 "mesocycle":{"durationWeeks":1,"schedule":{"kind":"fixed_week","days":[0]},"domainProgressions":[],"weeks":[]},
                 "sourceAgent":"test","model":null,"skillVersion":"test"
             }}),

@@ -16,6 +16,7 @@ pub const API_SESSION_METRICS: [&str; 5] = ["trainingLoad", "powerLoad", "hrLoad
 /// `trainingSessionSchema.parse(value)`.
 pub fn parse_training_session(value: &Value) -> Result<Value> {
     object(value, "session")?;
+    for key in ["sport", "modality"] { if value.get(key).is_some() { return Err(invalid(&format!("session.{key}"), "use type")); } }
     let mut session = Map::new();
     session.insert(
         "id".into(),
@@ -365,8 +366,9 @@ mod tests {
     fn classification_ignores_metrics_and_legacy_overrides_with_type_priority() {
         let mut value = write_payload();
         value["type"] = json!("WeightTraining");
-        value["sport"] = json!("Swim");
-        value["modality"] = json!("endurance");
+        for key in ["sport", "modality"] {
+            let mut old=value.clone(); old[key]=json!("Swim"); assert!(parse_training_session(&old).is_err());
+        }
         value["domains"] = json!(["endurance"]);
         value["subtype"] = json!("weighttraining");
         value["strengthSets"] = json!([]);
@@ -377,7 +379,7 @@ mod tests {
         assert_eq!(session["domains"], json!(["strength"]));
         assert!(session.get("modality").is_none() && session.get("sport").is_none());
         value["type"] = Value::Null;
-        assert_eq!(parse_training_session(&value).unwrap()["type"], "Swim");
+        assert_eq!(parse_training_session(&value).unwrap()["type"], Value::Null);
         value["type"] = json!("Unknown");
         assert_eq!(parse_training_session(&value).unwrap()["domains"], json!([]));
     }

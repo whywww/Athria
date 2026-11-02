@@ -33,5 +33,5 @@ pub use template::{
     parse_session_template_update, stored_session_template, template_variables,
 };
 pub use wellness::{
-    WELLNESS_FIELD_ORDER, WellnessPatch, derive_wellness_form, fold_wellness_fields, icu_fatigue_score, icu_sleep_quality_score, parse_wellness_patch, parse_wellness_record,
+    WELLNESS_FIELD_ORDER, WellnessPatch, derive_wellness_form, icu_fatigue_score, icu_sleep_quality_score, parse_wellness_patch, parse_wellness_record,
 };

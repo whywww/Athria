@@ -116,7 +116,6 @@
                 "keySession": false,
                 "progressionNote": null,
                 "schedulingRationale": null,
-                "legacySnapshot": false,
                 "domain": "strength",
                 "prescription": {
                   "blocks": [
@@ -573,7 +572,7 @@
     ],
     "dataGaps": [],
     "validatedAt": "2026-09-17T10:30:00.000Z",
-    "inputHash": "fnv1a-d09de8cb",
+    "inputHash": "fnv1a-236106b7",
     "coverage": {
       "hardChecksResolved": 7,
       "hardChecksTotal": 7,

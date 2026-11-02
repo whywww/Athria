@@ -34,7 +34,7 @@ const strengthDay: NextTrainingDay = { reasonCode: null, nextTrainingDay: {
   existingSessions: [{
     id: "session-1", occurrenceId: "occ-1", weekNumber: 2, name: "Lower Strength A", intent: "Maintain squat strength.",
     scheduledDate: "2026-09-24", order: 0, durationMinutes: 45, templateRef: null, phaseRefs: [], recoveryDemand: "normal",
-    keySession: false, status: "planned", notes: "", legacySnapshot: false, overrideReason: null,
+    keySession: false, status: "planned", notes: "", overrideReason: null,
     domain: "strength",
     prescription: { blocks: [squat] },
   }],

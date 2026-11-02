@@ -4,7 +4,7 @@
   "properties": {
     "planSchemaVersion": {
       "type": "string",
-      "const": "7.0"
+      "const": "8.0"
     },
     "ownerId": {
       "default": "local-user",
@@ -363,10 +363,6 @@
                         }
                       ]
                     },
-                    "legacySnapshot": {
-                      "default": false,
-                      "type": "boolean"
-                    },
                     "type": {
                       "type": [
                         "string",
@@ -437,8 +433,7 @@
                     "keySession",
                     "prescription",
                     "progressionNote",
-                    "schedulingRationale",
-                    "legacySnapshot"
+                    "schedulingRationale"
                   ],
                   "additionalProperties": false,
                   "allOf": [
@@ -1943,7 +1938,10 @@
       ]
     },
     "sourceDraftId": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "default": null,
       "description": "Athria-managed ID of the most recent formally committed draft."
     },

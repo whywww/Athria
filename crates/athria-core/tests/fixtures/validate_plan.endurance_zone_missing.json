@@ -102,7 +102,6 @@
                 "keySession": false,
                 "progressionNote": null,
                 "schedulingRationale": null,
-                "legacySnapshot": false,
                 "domain": "endurance",
                 "prescription": {
                   "blocks": [
@@ -315,7 +314,7 @@
     ],
     "dataGaps": [],
     "validatedAt": "2026-09-17T10:30:00.000Z",
-    "inputHash": "fnv1a-bc96c01e",
+    "inputHash": "fnv1a-0115f052",
     "coverage": {
       "hardChecksResolved": 4,
       "hardChecksTotal": 4,

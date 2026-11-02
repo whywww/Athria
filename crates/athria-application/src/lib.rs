@@ -16,7 +16,7 @@ pub mod catalog;
 pub mod store;
 
 /// Current persisted plan schema version.
-pub const PLAN_SCHEMA_VERSION: &str = "7.0";
+pub const PLAN_SCHEMA_VERSION: &str = "8.0";
 
 /// Current built-in template catalog version.
 pub const TEMPLATE_CATALOG_VERSION: &str = "2.0";

@@ -1546,8 +1546,7 @@ mod tests {
                         "id": "s1", "scheduledDate": "2026-09-10", "order": 0, "status": "planned", "templateRef": null,
                         "type": "Run", "subtype": null, "name": "Easy Run", "intent": "Aerobic base", "durationMinutes": 60, "recoveryDemand": "low", "keySession": false,
                         "prescription": {"blocks":[]},
-                        "progressionNote": null, "schedulingRationale": null, "legacySnapshot": false,
-                    }],
+                        "progressionNote": null, "schedulingRationale": null, }],
                 }],
             },
         })
@@ -1995,7 +1994,7 @@ mod tests {
     }
 
     #[test]
-    fn stored_sessions_use_type_and_ignore_legacy_modality() {
+    fn stored_sessions_use_type_and_reject_old_modality() {
         let store = store();
         let mut session = run(
             "hevy",
@@ -2008,6 +2007,8 @@ mod tests {
         );
         session["domains"] = json!([]);
         session["modality"] = json!("mixed");
+        assert!(store.upsert_sessions(&[session.clone()]).is_err());
+        session.as_object_mut().unwrap().remove("modality");
         store.upsert_sessions(&[session]).unwrap();
         let stored: String = store
             .sqlite()

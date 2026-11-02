@@ -98,7 +98,6 @@
                 "keySession": false,
                 "progressionNote": null,
                 "schedulingRationale": null,
-                "legacySnapshot": false,
                 "domain": "mobility",
                 "prescription": {
                   "blocks": [
@@ -123,7 +122,6 @@
                 "keySession": false,
                 "progressionNote": null,
                 "schedulingRationale": null,
-                "legacySnapshot": false,
                 "domain": "mobility",
                 "prescription": {
                   "blocks": [
@@ -148,7 +146,6 @@
                 "keySession": false,
                 "progressionNote": null,
                 "schedulingRationale": null,
-                "legacySnapshot": false,
                 "domain": "mobility",
                 "prescription": {
                   "blocks": [
@@ -179,7 +176,6 @@
                 "keySession": false,
                 "progressionNote": null,
                 "schedulingRationale": null,
-                "legacySnapshot": false,
                 "domain": "mobility",
                 "prescription": {
                   "blocks": [
@@ -204,7 +200,6 @@
                 "keySession": false,
                 "progressionNote": null,
                 "schedulingRationale": null,
-                "legacySnapshot": false,
                 "domain": "mobility",
                 "prescription": {
                   "blocks": [
@@ -235,7 +230,6 @@
                 "keySession": false,
                 "progressionNote": null,
                 "schedulingRationale": null,
-                "legacySnapshot": false,
                 "domain": "mobility",
                 "prescription": {
                   "blocks": [
@@ -260,7 +254,6 @@
                 "keySession": false,
                 "progressionNote": null,
                 "schedulingRationale": null,
-                "legacySnapshot": false,
                 "domain": "mobility",
                 "prescription": {
                   "blocks": [
@@ -448,7 +441,7 @@
     ],
     "dataGaps": [],
     "validatedAt": "2026-09-17T10:30:00.000Z",
-    "inputHash": "fnv1a-c5939e3c",
+    "inputHash": "fnv1a-fa24b8fc",
     "coverage": {
       "hardChecksResolved": 4,
       "hardChecksTotal": 4,

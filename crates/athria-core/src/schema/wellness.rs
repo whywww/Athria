@@ -31,22 +31,6 @@ pub const WELLNESS_FIELD_ORDER: [&str; 17] = [
     "form",
 ];
 
-const RETIRED_WELLNESS_FIELDS: [&str; 13] = [
-    "fatigue",
-    "eftpWatts",
-    "wPrimeJoules",
-    "pMaxWatts",
-    "notes",
-    "soreness",
-    "stress",
-    "mood",
-    "motivation",
-    "injuryScore",
-    "subjectiveSleepScore",
-    "sleepQuality",
-    "manualSleepSeconds",
-];
-
 /// ICU `sleepQuality` grades mapped onto the 0–100 scale, aligned with the
 /// readiness sleep bands so folded imports keep their meaning.
 pub const ICU_SLEEP_QUALITY_SCORES: [(f64, f64); 4] =
@@ -71,129 +55,6 @@ pub fn icu_fatigue_score(grade: f64) -> Option<f64> {
         .into_iter()
         .find(|(candidate, _)| *candidate == grade)
         .map(|(_, score)| score)
-}
-
-/// Fold `subjectiveSleepScore`, `sleepQuality` and `manualSleepSeconds` into
-/// the single sleep fields, then drop obsolete fields; idempotent.
-pub fn fold_wellness_fields(record: &mut Value) {
-    if let Some(fields) = record.get_mut("fields").and_then(Value::as_object_mut) {
-        fold_sleep_fields_in(fields);
-        fold_sleep_duration_in(fields);
-        fold_fatigue_grade_in(fields);
-        for key in RETIRED_WELLNESS_FIELDS {
-            fields.shift_remove(key);
-        }
-    }
-}
-
-/// The usable 0–100 value of a sleep-score entry; `null` and out-of-range
-/// values count as absent.
-fn sleep_score_value(entry: Option<&Value>) -> Option<f64> {
-    entry?
-        .get("value")?
-        .as_f64()
-        .filter(|value| value.is_finite() && (0.0..=100.0).contains(value))
-}
-
-/// `true` when `later` carries a strictly later `updatedAt` instant than
-/// `earlier`; unparseable stamps never count as later.
-fn strictly_later(later: &Value, earlier: &Value) -> bool {
-    let stamp = |entry: &Value| {
-        entry
-            .get("updatedAt")
-            .and_then(Value::as_str)
-            .and_then(|iso| crate::tz::millis(iso).ok())
-    };
-    matches!((stamp(later), stamp(earlier)), (Some(later), Some(earlier)) if later > earlier)
-}
-
-/// The entry that replaces `sleepScore`, or `None` to keep the stored entry.
-/// The latest usable value wins; ties and unparseable timestamps favor
-/// `sleepScore`, and a mapped grade is the last resort.
-fn fold_sleep_winner(fields: &Map<String, Value>) -> Option<Value> {
-    let score = fields.get("sleepScore");
-    let subjective = fields.get("subjectiveSleepScore");
-    match (sleep_score_value(score), sleep_score_value(subjective)) {
-        (Some(_), Some(_)) => match (score, subjective) {
-            (Some(score), Some(subjective)) if strictly_later(subjective, score) => {
-                Some(subjective.clone())
-            }
-            _ => None,
-        },
-        (Some(_), None) => None,
-        (None, Some(_)) => subjective.cloned(),
-        (None, None) => mapped_quality_entry(fields),
-    }
-}
-
-/// A `sleepQuality` entry converted to a score entry, preserving its source
-/// and `updatedAt`; `None` when the grade is missing or outside 1–4.
-fn mapped_quality_entry(fields: &Map<String, Value>) -> Option<Value> {
-    let entry = fields.get("sleepQuality")?.as_object()?;
-    let mapped = icu_sleep_quality_score(entry.get("value")?.as_f64()?)?;
-    let mut entry = entry.clone();
-    entry.insert("value".into(), crate::js_number(mapped));
-    Some(Value::Object(entry))
-}
-
-/// Fold sleep fields in place, keeping the `sleepScore` key position when it
-/// already exists.
-fn fold_sleep_fields_in(fields: &mut Map<String, Value>) {
-    if let Some(winner) = fold_sleep_winner(fields) {
-        fields.insert("sleepScore".into(), winner);
-    }
-    fields.shift_remove("subjectiveSleepScore");
-    fields.shift_remove("sleepQuality");
-}
-
-/// The usable value of a sleep-duration entry: a whole number of seconds
-/// between 0 and 86,400; `null` and out-of-range values count as absent.
-fn sleep_duration_value(entry: Option<&Value>) -> Option<f64> {
-    entry?
-        .get("value")?
-        .as_f64()
-        .filter(|value| {
-            value.is_finite() && (0.0..=86400.0).contains(value) && value.fract() == 0.0
-        })
-}
-
-/// The entry that replaces `sleepSeconds`, or `None` to keep the stored entry.
-/// The latest usable value wins; ties and unparseable timestamps favor
-/// `sleepSeconds`.
-fn fold_duration_winner(fields: &Map<String, Value>) -> Option<Value> {
-    let stored = fields.get("sleepSeconds");
-    let manual = fields.get("manualSleepSeconds");
-    match (sleep_duration_value(stored), sleep_duration_value(manual)) {
-        (Some(_), Some(_)) => match (stored, manual) {
-            (Some(stored), Some(manual)) if strictly_later(manual, stored) => Some(manual.clone()),
-            _ => None,
-        },
-        (None, Some(_)) => manual.cloned(),
-        _ => None,
-    }
-}
-
-/// Fold `manualSleepSeconds` in place, keeping the `sleepSeconds` key position
-/// when it already exists.
-fn fold_sleep_duration_in(fields: &mut Map<String, Value>) {
-    if let Some(winner) = fold_duration_winner(fields) {
-        fields.insert("sleepSeconds".into(), winner);
-    }
-    fields.shift_remove("manualSleepSeconds");
-}
-
-/// Old stores kept raw ICU `fatigue` grades for imported user ratings; remap those
-/// onto the 0–100 scale in place, keeping source and timestamp; idempotent.
-fn fold_fatigue_grade_in(fields: &mut Map<String, Value>) {
-    let Some(mut entry) = fields.shift_remove("fatigue") else { return };
-    if fields.contains_key("subjectiveFatigue") { return; }
-    if entry.get("source").and_then(Value::as_str) == Some("intervals_icu") {
-        if let Some(mapped) = entry.get("value").and_then(Value::as_f64)
-            .filter(|grade| (1.0..=4.0).contains(grade)).and_then(icu_fatigue_score) {
-            entry["value"] = crate::js_number(mapped);
-        }
-    }
-    fields.insert("subjectiveFatigue".into(), entry);
 }
 
 /// `wellnessSourceSchema`.
@@ -245,13 +106,10 @@ pub fn parse_wellness_record(value: &Value) -> Result<Value> {
         return Err(invalid("wellness.day", "expected a YYYY-MM-DD date"));
     }
     let updated_at = required_text(value, "updatedAt", "wellness")?;
-    let mut fields = object(get(value, "fields"), "wellness.fields")?.clone();
-    fold_sleep_fields_in(&mut fields);
-    fold_sleep_duration_in(&mut fields);
-    fold_fatigue_grade_in(&mut fields);
+    let fields = object(get(value, "fields"), "wellness.fields")?.clone();
     let mut ordered = Map::new();
     for field in fields.keys() {
-        if !WELLNESS_FIELD_ORDER.contains(&field.as_str()) && !RETIRED_WELLNESS_FIELDS.contains(&field.as_str()) {
+        if !WELLNESS_FIELD_ORDER.contains(&field.as_str()) {
             return Err(invalid("wellness.fields", "unknown wellness field"));
         }
     }
@@ -275,7 +133,6 @@ pub fn parse_wellness_record(value: &Value) -> Result<Value> {
 
 /// Form is derived from same-day load values, never supplied independently.
 pub fn derive_wellness_form(record: &mut Value) {
-    fold_wellness_fields(record);
     let updated_at = record.get("updatedAt").cloned().unwrap_or(Value::Null);
     let Some(fields) = record.get_mut("fields").and_then(Value::as_object_mut) else { return };
     let load = |key: &str| fields.get(key)?.get("value")?.as_f64()
@@ -314,7 +171,7 @@ pub fn parse_wellness_patch(value: &Value) -> Result<WellnessPatch> {
         ));
     };
     let fields = object(get(value, "fields"), "wellnessPatch.fields")?;
-    if let Some(field) = fields.keys().find(|field| RETIRED_WELLNESS_FIELDS.contains(&field.as_str())) {
+    if let Some(field) = fields.keys().find(|field| !WELLNESS_FIELD_ORDER.contains(&field.as_str())) {
         return Err(invalid(&format!("wellnessPatch.fields.{field}"), "unknown wellness field"));
     }
     if fields.contains_key("readiness") {
@@ -364,6 +221,18 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn records_reject_old_fields_and_preserve_current_low_scores() {
+        for field in ["fatigue", "subjectiveSleepScore", "sleepQuality", "manualSleepSeconds", "unknown"] {
+            assert!(parse_wellness_record(&json!({"day":"2026-10-30","updatedAt":"now","fields":{field:{"value":3,"source":"user","updatedAt":"now"}}})).is_err());
+        }
+        for score in [0,1,4,100] {
+            let value=parse_wellness_record(&json!({"day":"2026-10-30","updatedAt":"now","fields":{"subjectiveFatigue":{"value":score,"source":"user","updatedAt":"now"}}})).unwrap();
+            assert_eq!(value["fields"]["subjectiveFatigue"]["value"],score);
+        }
+        for (grade, score) in ICU_SLEEP_QUALITY_SCORES { assert_eq!(icu_sleep_quality_score(grade),Some(score)); }
+    }
+
+    #[test]
     fn load_ranges_and_derived_form_are_validated() {
         let stamp = "2026-10-14T00:00:00Z";
         for (atl, ctl, expected) in [(60.5, 40.25, -20.25), (0.0, 4.5, 4.5), (0.0, 0.0, 0.0)] {
@@ -408,7 +277,7 @@ mod tests {
 
     #[test]
     fn wellness_patches_reject_retired_fields() {
-        for field in RETIRED_WELLNESS_FIELDS {
+        for field in ["fatigue", "subjectiveSleepScore", "sleepQuality", "manualSleepSeconds", "notes"] {
             for value in [json!("New note"), json!(3), json!(null)] {
                 let mut fields = Map::new();
                 fields.insert(field.to_owned(), value);
@@ -427,7 +296,7 @@ mod tests {
     #[test]
     fn field_order_holds_only_live_fields() {
         assert_eq!(WELLNESS_FIELD_ORDER.len(), 17);
-        for field in RETIRED_WELLNESS_FIELDS {
+        for field in ["fatigue", "subjectiveSleepScore", "sleepQuality", "manualSleepSeconds", "notes"] {
             assert!(!WELLNESS_FIELD_ORDER.contains(&field));
         }
     }
@@ -490,121 +359,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn legacy_sleep_fields_fold_into_sleep_score() {
-        let early = "2026-09-16T04:00:00.000Z";
-        let late_ = "2026-09-17T04:00:00.000Z";
-        let fold = |fields: Value| {
-            parse_wellness_record(&json!({ "day": "2026-09-17", "fields": fields, "updatedAt": late_ })).unwrap()
-        };
-        // The newer subjective entry wins, keeping its source and timestamp.
-        let record = fold(json!({
-            "sleepScore": { "value": 80, "source": "intervals_icu", "updatedAt": early },
-            "subjectiveSleepScore": { "value": 54, "source": "user", "updatedAt": late_ },
-        }));
-        assert_eq!(record["fields"]["sleepScore"], json!({ "value": 54, "source": "user", "updatedAt": late_ }));
-        assert!(record["fields"].get("subjectiveSleepScore").is_none());
-        // Ties, unparseable stamps and newer device scores keep sleepScore.
-        for subjective in [
-            json!({ "value": 54, "source": "user", "updatedAt": early }),
-            json!({ "value": 54, "source": "user", "updatedAt": late_ }),
-            json!({ "value": 54, "source": "user", "updatedAt": "yesterday" }),
-        ] {
-            let record = fold(json!({
-                "sleepScore": { "value": 80, "source": "intervals_icu", "updatedAt": late_ },
-                "subjectiveSleepScore": subjective,
-            }));
-            assert_eq!(record["fields"]["sleepScore"], json!({ "value": 80, "source": "intervals_icu", "updatedAt": late_ }));
-        }
-        // A null device value lets the subjective entry fill in.
-        let record = fold(json!({
-            "sleepScore": { "value": null, "source": "intervals_icu", "updatedAt": late_ },
-            "subjectiveSleepScore": { "value": 54, "source": "user", "updatedAt": early },
-        }));
-        assert_eq!(record["fields"]["sleepScore"], json!({ "value": 54, "source": "user", "updatedAt": early }));
-        // A lone subjective score becomes the sleep score under its own source.
-        let record = fold(json!({ "subjectiveSleepScore": { "value": 0, "source": "llm", "updatedAt": early } }));
-        assert_eq!(record["fields"]["sleepScore"], json!({ "value": 0, "source": "llm", "updatedAt": early }));
-        // ICU grades map onto the 0–100 scale, keeping source and timestamp.
-        for (grade, mapped) in [(1, 90), (2, 75), (3, 60), (4, 45)] {
-            let record = fold(json!({ "sleepQuality": { "value": grade, "source": "intervals_icu", "updatedAt": early } }));
-            assert_eq!(record["fields"]["sleepScore"], json!({ "value": mapped, "source": "intervals_icu", "updatedAt": early }));
-            assert!(record["fields"].get("sleepQuality").is_none());
-        }
-        // A usable score outranks the grade fallback.
-        let record = fold(json!({
-            "sleepScore": { "value": 80, "source": "intervals_icu", "updatedAt": early },
-            "sleepQuality": { "value": 2, "source": "intervals_icu", "updatedAt": late_ },
-        }));
-        assert_eq!(record["fields"]["sleepScore"]["value"], json!(80));
-        // Unusable grades produce no score, and other retired fields are dropped.
-        for grade in [json!(0), json!(5), json!(2.5), json!(null)] {
-            let record = fold(json!({ "sleepQuality": { "value": grade, "source": "intervals_icu", "updatedAt": early } }));
-            assert!(record["fields"].as_object().unwrap().is_empty());
-        }
-        let record = fold(json!({ "soreness": { "value": 3, "source": "user", "updatedAt": early } }));
-        assert!(record["fields"].as_object().unwrap().is_empty());
-        // Folding is idempotent.
-        let mut record = fold(json!({
-            "sleepScore": { "value": 80, "source": "intervals_icu", "updatedAt": early },
-            "subjectiveSleepScore": { "value": 54, "source": "user", "updatedAt": late_ },
-            "sleepQuality": { "value": 2, "source": "intervals_icu", "updatedAt": early },
-        }));
-        let once = record.clone();
-        fold_wellness_fields(&mut record);
-        assert_eq!(record, once);
-    }
 
-    #[test]
-    fn legacy_manual_duration_folds_into_sleep_seconds() {
-        let early = "2026-09-16T04:00:00.000Z";
-        let late_ = "2026-09-17T04:00:00.000Z";
-        let fold = |fields: Value| {
-            parse_wellness_record(&json!({ "day": "2026-09-17", "fields": fields, "updatedAt": late_ })).unwrap()
-        };
-        // The newer manual entry wins, keeping its source and timestamp.
-        let record = fold(json!({
-            "sleepSeconds": { "value": 28800, "source": "intervals_icu", "updatedAt": early },
-            "manualSleepSeconds": { "value": 25200, "source": "user", "updatedAt": late_ },
-        }));
-        assert_eq!(record["fields"]["sleepSeconds"], json!({ "value": 25200, "source": "user", "updatedAt": late_ }));
-        assert!(record["fields"].get("manualSleepSeconds").is_none());
-        // Ties, unparseable stamps and newer device values keep sleepSeconds.
-        for manual in [
-            json!({ "value": 25200, "source": "user", "updatedAt": early }),
-            json!({ "value": 25200, "source": "user", "updatedAt": "yesterday" }),
-        ] {
-            let record = fold(json!({
-                "sleepSeconds": { "value": 28800, "source": "intervals_icu", "updatedAt": late_ },
-                "manualSleepSeconds": manual,
-            }));
-            assert_eq!(record["fields"]["sleepSeconds"], json!({ "value": 28800, "source": "intervals_icu", "updatedAt": late_ }));
-        }
-        // A null or unusable device value lets the manual entry fill in, including zero.
-        for stored in [json!(null), json!(86401), json!(1.5)] {
-            let record = fold(json!({
-                "sleepSeconds": { "value": stored, "source": "intervals_icu", "updatedAt": late_ },
-                "manualSleepSeconds": { "value": 0, "source": "user", "updatedAt": early },
-            }));
-            assert_eq!(record["fields"]["sleepSeconds"], json!({ "value": 0, "source": "user", "updatedAt": early }));
-        }
-        // A lone manual duration becomes the sleep duration under its own source.
-        let record = fold(json!({ "manualSleepSeconds": { "value": 27000, "source": "llm", "updatedAt": early } }));
-        assert_eq!(record["fields"]["sleepSeconds"], json!({ "value": 27000, "source": "llm", "updatedAt": early }));
-        // Unusable manual values never produce a value.
-        for manual in [json!(null), json!(-1), json!(86401), json!(1.5)] {
-            let record = fold(json!({ "manualSleepSeconds": { "value": manual, "source": "user", "updatedAt": early } }));
-            assert!(record["fields"].get("sleepSeconds").is_none());
-        }
-        // Folding is idempotent.
-        let mut record = fold(json!({
-            "sleepSeconds": { "value": 28800, "source": "intervals_icu", "updatedAt": early },
-            "manualSleepSeconds": { "value": 25200, "source": "user", "updatedAt": late_ },
-        }));
-        let once = record.clone();
-        fold_wellness_fields(&mut record);
-        assert_eq!(record, once);
-    }
+
+
 
     #[test]
     fn icu_fatigue_grades_map_onto_the_hundred_scale() {
@@ -616,45 +373,7 @@ mod tests {
         }
     }
 
-    #[test]
-    fn subjective_fatigue_preserves_low_scores_and_wins_over_legacy() {
-        for value in [0, 1, 2, 3, 4, 100] {
-            let mut record = json!({ "fields": {
-                "fatigue": { "value": 4, "source": "intervals_icu", "updatedAt": "old" },
-                "subjectiveFatigue": { "value": value, "source": "intervals_icu", "updatedAt": "new" }
-            }});
-            fold_wellness_fields(&mut record);
-            assert!(record["fields"].get("fatigue").is_none());
-            assert_eq!(record["fields"]["subjectiveFatigue"]["value"], value);
-            let once = record.clone();
-            fold_wellness_fields(&mut record);
-            assert_eq!(record, once);
-        }
-    }
 
-    #[test]
-    fn legacy_icu_fatigue_grades_fold_onto_the_hundred_scale() {
-        let stamp = "2026-09-17T04:00:00.000Z";
-        let fold = |fields: Value| {
-            parse_wellness_record(&json!({ "day": "2026-09-17", "fields": fields, "updatedAt": stamp })).unwrap()
-        };
-        // Legacy device grades are remapped in place, keeping source and timestamp.
-        for (grade, mapped) in [(1, 25), (2, 50), (3, 75), (4, 100)] {
-            let record = fold(json!({ "fatigue": { "value": grade, "source": "intervals_icu", "updatedAt": stamp } }));
-            assert_eq!(record["fields"]["subjectiveFatigue"], json!({ "value": mapped, "source": "intervals_icu", "updatedAt": stamp }));
-        }
-        // A real zero, already-mapped scores, fractional and out-of-band grades stay put.
-        for value in [json!(0), json!(25), json!(75), json!(2.5), json!(5)] {
-            let record = fold(json!({ "fatigue": { "value": value, "source": "intervals_icu", "updatedAt": stamp } }));
-            assert_eq!(record["fields"]["subjectiveFatigue"]["value"], value);
-        }
-        // Manual entries are never remapped.
-        let record = fold(json!({ "fatigue": { "value": 3, "source": "user", "updatedAt": stamp } }));
-        assert_eq!(record["fields"]["subjectiveFatigue"]["value"], json!(3));
-        // Folding is idempotent.
-        let mut record = fold(json!({ "fatigue": { "value": 3, "source": "intervals_icu", "updatedAt": stamp } }));
-        let once = record.clone();
-        fold_wellness_fields(&mut record);
-        assert_eq!(record, once);
-    }
+
+
 }
